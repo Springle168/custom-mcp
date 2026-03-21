@@ -323,39 +323,64 @@ Android Studio 的 MCP 配置文件位置参考官方文档，添加：
 
 ## 继续移植 Gemini CLI 能力的参考
 
-如果后续需要从 Gemini CLI 移植更多工具或能力，以下是各项的评估。
+### 与 Android Studio 内置工具的覆盖分析
 
-### 可直接移植的工具
+Android Studio 已内置以下工具，无需移植：
 
-| 工具 | 复杂度 | 关键源文件 | 备注 |
-|------|--------|-----------|------|
-| `read_file` | 低 | `packages/core/src/tools/readFile.ts` | 文本读取 + 行范围支持，最实用的搭配 |
-| `write_file` | 低 | `packages/core/src/tools/writeFile.ts` | 全量写入，比 replace 简单 |
-| `glob` (FindFiles) | 中 | `packages/core/src/tools/glob.ts` | 需要 glob 库，如 `fast-glob` |
-| `grep_search` | 中 | `packages/core/src/tools/grep.ts` | 可简化为纯 JS 实现，不依赖 git grep |
-| `list_directory` | 低 | `packages/core/src/tools/readFolder.ts` | 基础 `fs.readdir` |
+| Gemini CLI 工具 | Android Studio 内置对应工具 |
+|---|---|
+| `read_file` | `read_file` |
+| `write_file` | `write_file` |
+| `list_directory` | `list_files` |
+| `glob` | `find_files` |
+| `grep_search` | `grep` |
 
-**推荐优先级：** `read_file` > `list_directory` > `glob` > `grep_search` > `write_file`
+Android Studio **未覆盖**、值得考虑的工具：
 
-`read_file` 优先级最高，因为 replace 工具的错误消息会引导 AI 去调用它验证文件内容。目前这个引导指向的是宿主环境中可能存在的其他 read_file 实现，如果自己提供一个会更可靠。
+| 工具 | 价值 |
+|---|---|
+| `read_many_files` | 一次调用读取多个文件，减少 AI 往返次数，提升批量上下文加载效率 |
 
-### 可选能力增强
+### `read_many_files` 移植参考
 
-| 能力 | 复杂度 | 关键源文件 | 价值评估 |
-|------|--------|-----------|----------|
-| LLM 自纠错 | 高 | `packages/core/src/utils/llm-edit-fixer.ts` | 替换失败时调 LLM 修正参数后重试。需要接入 LLM API，成本高但能显著提升成功率 |
-| 按模型差异化 Schema | 中 | `packages/core/src/tools/definitions/resolver.ts` | 不同模型用不同的 description。单一宿主环境下价值不大 |
-| Diff 输出 | 低 | 使用 `diff` npm 包 | 在成功消息中返回 unified diff，帮助 AI 验证修改结果 |
+**核心源文件：**
 
-### 移植时的通用注意事项
+| 文件 | 内容 |
+|---|---|
+| `packages/core/src/tools/readManyFiles.ts` | 工具实现，包含文件读取、glob 展开、递归逻辑 |
+| `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts` | 搜索 `READ_MANY_FILES_TOOL_NAME`，获取完整的 Schema 和参数描述 |
+| `packages/core/src/tools/definitions/base-declarations.ts` | 搜索 `READ_MANY_PARAM_`，查看所有参数名常量 |
 
-1. **去除框架依赖**：Gemini CLI 的工具重度依赖 `Config`、`MessageBus`、`AbortSignal` 等框架对象。移植时需要用直接的 `fs` 调用和本项目的 `Config` 替代。
+**关键参数：**
 
-2. **去除遥测代码**：所有 `logEditStrategy()`、`EditStrategyEvent` 等遥测调用可以直接删除，本项目用自己的日志系统。
+| 参数 | 说明 |
+|---|---|
+| `include` | glob 数组，指定要读取的文件 |
+| `exclude` | glob 数组，排除文件 |
+| `recursive` | 是否递归展开目录 |
+| `use_default_excludes` | 是否启用默认排除（node_modules 等） |
 
-3. **async 清理**：Gemini CLI 中很多函数标记为 `async` 但内部没有真正的异步操作（如四级替换策略）。移植时可以去掉 `async` 简化调用。
+**移植时需要处理的差异：**
+- 原版返回格式是多段拼接文本，需要确认 MCP 返回 `content` 数组的方式是否适合
+- 依赖 `gitignore` / `geminiignore` 的过滤逻辑可以简化，直接使用 `rootDir` 沙箱校验代替
+- 文件数量和总大小应设上限，防止单次调用传入过大 context
 
-4. **Schema 来源**：每个工具的 JSON Schema 定义在 `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts` 中，可以直接参考其 `description` 和 `parametersJsonSchema` 字段，根据需要精简后使用。
+### 移植通用注意事项
+
+1. **定位 Schema**：所有工具的参数描述统一在
+   `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts`
+   中，按工具名搜索即可找到完整 `description` 和 `inputSchema`。
+
+2. **定位实现**：工具执行逻辑在
+   `packages/core/src/tools/<toolName>.ts`。
+
+3. **移除框架依赖**：原版工具依赖 `Config`、`MessageBus`、`AbortSignal` 等
+   Gemini CLI 内部对象，移植时用本项目的 `Config` 和直接的 `fs` 调用替代。
+
+4. **移除遥测**：删除所有 `logEditStrategy()`、`EditStrategyEvent` 等调用。
+
+5. **async 清理**：原版部分函数标记 `async` 但无实际异步操作，
+   可视情况简化。
 
 ---
 
