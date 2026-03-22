@@ -6,9 +6,11 @@ import type { MCPTool, ToolCallResult } from './types.js';
 // 加新工具时只需要在这里加一行 import + 加到 registry 数组里
 // =============================
 import replaceTool from './replace.js';
+import readManyFilesTool from './read-many-files.js';
 
 const registry: MCPTool[] = [
   replaceTool,
+  readManyFilesTool,
   // 未来: import xxxTool from './xxx.js'; 然后加在这里
 ];
 
