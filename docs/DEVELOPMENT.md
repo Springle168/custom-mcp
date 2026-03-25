@@ -216,12 +216,13 @@ return {
 
 ### 输出位置
 
-- **终端（stdout）**：实时查看
-- **日志文件**：`logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动生成新文件
+- **终端（stdout）**：实时查看，带颜色高亮
+- **日志文件**：`logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动生成新文件，纯文本格式
 
 ### 日志格式
 
 ```
+────────────────────────────────
 [2025-01-15T14:30:00.000Z] ← CALL replace_text
   {
     "file_path": "src/index.ts",
@@ -233,11 +234,29 @@ return {
   Modified src/index.ts:1 replacement(s) via exact match.
 ```
 
+### 颜色高亮
+
+终端输出使用多种颜色区分不同信息类型（时间戳、调用方向、工具名、状态等），提升可读性。每次工具调用前会输出分隔线，便于区分不同调用。
+
+**JSON 语法高亮**：参数和结果中的 JSON 内容会进行语法着色（键名、字符串、数字、布尔值等使用不同颜色）。当 JSON 内容超过 50KB 时，自动降级为无高亮输出以保证性能。
+
+日志文件保持纯文本格式（无 ANSI 转义码），便于工具处理和长期存档。
+
 ### 扩展日志
 
 日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。在 `src/index.ts` 的路由层统一拦截，**工具 handler 内部不需要写任何日志代码**。
 
 如需在handler 内部输出调试日志，可以将 `logger` 实例通过参数传入，或扩展 `MCPTool` 接口。
+
+### 测试日志
+
+运行 `test/test-logger.ts` 可以测试日志系统的颜色输出效果：
+
+```bash
+npx tsx test/test-logger.ts
+```
+
+测试生成的日志文件保存在 `test/logs/` 目录下，不会与生产日志混淆。
 
 ---
 

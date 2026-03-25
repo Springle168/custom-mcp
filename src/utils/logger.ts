@@ -1,10 +1,10 @@
 import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import chalk from 'chalk';
 import type { ToolCallResult } from '../tools/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const LOGS_DIR = join(__dirname, '..', '..', 'logs');
 
 function ts(): string {
   return new Date().toISOString();
@@ -13,32 +13,77 @@ function ts(): string {
 export class Logger {
   private stream: WriteStream;
   readonly logFile: string;
-
-  constructor() {
-    mkdirSync(LOGS_DIR, { recursive: true });
+  constructor(logsDir?: string) {
+    const dir = logsDir ?? join(__dirname, '..', '..', 'logs');
+    mkdirSync(dir, { recursive: true });
     const name = ts()
       .replace(/T/, '_')
       .replace(/:/g, '-')
       .replace(/\..+/, '');
-    this.logFile = join(LOGS_DIR, `${name}.log`);
+    this.logFile = join(dir, `${name}.log`);
     this.stream = createWriteStream(this.logFile, { flags: 'a' });
   }
 
-  private write(entry: string) {
-    process.stdout.write(entry);
-    this.stream.write(entry);
+  private write(consoleText: string, fileText: string) {
+    process.stdout.write(consoleText);
+    this.stream.write(fileText);
+  }
+
+  private colorizeJson(json: string): string {
+    const MAX_SIZE = 50 * 1024; // 50KB
+    if (json.length > MAX_SIZE) {
+      return chalk.dim(json);
+    }
+
+    return json.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      (match) => {
+        if (match.startsWith('"')) {
+          if (match.endsWith(':')) {
+            // Key
+            return chalk.cyan(match);
+          } else {
+            // String value
+            return chalk.green(match);
+          }
+        } else if (match === 'true' || match === 'false') {
+          return chalk.magenta(match);
+        } else if (match === 'null') {
+          return chalk.dim(match);
+        } else {
+          // Number
+          return chalk.yellow(match);
+        }
+      }
+    );
   }
 
   info(message: string) {
-    this.write(`[${ts()}] ${message}\n`);
+    const timestamp = ts();
+    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${message}\n`;
+    const fileText = `[${timestamp}] ${message}\n`;
+    this.write(consoleText, fileText);
   }
 
   logToolCall(toolName: string, args: Record<string, unknown>) {
-    const body = JSON.stringify(args, null, 2)
+    const timestamp = ts();
+    const plainJson = JSON.stringify(args, null, 2);
+    const fileBody = plainJson
       .split('\n')
       .map((l) => '  ' + l)
       .join('\n');
-    this.write(`\n[${ts()}] ← CALL ${toolName}\n${body}\n`);
+
+    const coloredJson = this.colorizeJson(plainJson);
+    const consoleBody = coloredJson
+      .split('\n')
+      .map((l) => '  ' + l)
+      .join('\n');
+
+    const separator = chalk.gray('─'.repeat(60));
+    const consoleText = `\n${separator}\n${chalk.gray(`[${timestamp}]`)} ${chalk.cyan('← CALL')} ${chalk.yellow(toolName)}\n${consoleBody}\n`;
+    const fileText = `\n[${timestamp}] ← CALL ${toolName}\n${fileBody}\n`;
+
+    this.write(consoleText, fileText);
   }
 
   logToolResult(
@@ -46,6 +91,7 @@ export class Logger {
     result: ToolCallResult,
     durationMs?: number,
   ) {
+    const timestamp = ts();
     const isError = result.isError === true;
     const status = isError ? 'FAIL' : 'OK';
     const duration = durationMs !== undefined ? ` (${durationMs}ms)` : '';
@@ -53,11 +99,24 @@ export class Logger {
       .map((c) => c.text ?? '')
       .filter(Boolean)
       .join('\n');
-    const body = text
+
+    const fileBody = text
       .split('\n')
       .map((l) => '  ' + l)
       .join('\n');
-    this.write(`[${ts()}] → ${status} ${toolName}${duration}\n${body}\n`);
+
+    const consoleBody = chalk.dim(
+      text
+        .split('\n')
+        .map((l) => '  ' + l)
+        .join('\n')
+    );
+
+    const statusColor = isError ? chalk.red : chalk.green;
+    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleBody}\n`;
+    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileBody}\n`;
+
+    this.write(consoleText, fileText);
   }
 
   close() {
