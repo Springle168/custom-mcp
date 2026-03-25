@@ -40,7 +40,7 @@ custom-mcp/
 ### 各层职责
 
 | 层 | 目录 | 职责 | 原则 |
-|---|---|---|---|
+|-|-|-|-|
 | 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理 | 加新工具时不需要改动 |
 | 工具层 | `src/tools/` | 工具定义、参数校验、业务编排 | 每个工具一个文件 |
 | 引擎层 | `src/engine/` | 纯算法逻辑，无 I/O 操作 | 可独立测试，无副作用 |
@@ -51,7 +51,7 @@ custom-mcp/
 ## 已实现工具
 
 | 工具名| 功能 | 文档 |
-|--------|------|------|
+|-|-|-|
 | `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 
@@ -174,7 +174,7 @@ return {
 
 ### 文件操作类工具的通用考虑
 
-1. **路径安全**：所有文件操作必须调用 `validatePathAccess()` 校验路径在`rootDir` 范围内。
+1. **路径安全**：所有文件操作必须调用 `validatePathAccess()` 校验路径在 `rootDir` 范围内。
 2. **并发安全**：涉及文件写入的操作应使用 `withFileLock()` 包裹。只读工具不需要加锁。
 3. **行尾符**：读取时统一转为 `\n` 处理，写入时用 `resolveLineEnding()` 恢复。
 4. **错误处理**：区分 `ENOENT`（文件不存在）和其他文件系统错误，给出不同的错误消息。
@@ -187,7 +187,7 @@ return {
 ### config.json
 
 | 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
+|-|-|-|-|
 | `rootDir` | string | 无（必填） | 工作区根目录，所有文件操作限制在此范围内 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | `"auto"` | 文件写入时的行尾符策略 |
 | `port` | number | `3100` | HTTP 服务器监听端口 |
@@ -195,7 +195,7 @@ return {
 ### 环境变量覆盖
 
 | 环境变量 | 覆盖字段 |
-|----------|----------|
+|-|-|
 | `MCP_ROOT_DIR` | `rootDir` |
 | `MCP_LINE_ENDING` | `lineEnding` |
 | `MCP_PORT` | `port` |
@@ -205,7 +205,7 @@ return {
 ### 行尾符策略详解
 
 | 设置 | 已有文件 | 新建文件 |
-|------|----------|----------|
+|-|-|-|
 | `auto` | 检测并保留原始行尾符 | 使用 `\n` (LF) |
 | `lf` | 强制 `\n` | 强制 `\n` |
 | `crlf` | 强制 `\r\n` | 强制 `\r\n` |
@@ -281,7 +281,7 @@ Android Studio 的 MCP 配置文件位置参考官方文档，添加：
 最终显示名由两处决定：
 
 | 段| 来源 | 文件 |
-|---|---|---|
+|-|-|-|
 | 中间段 (server name) | `Server` 构造函数的 `name` | `src/index.ts` |
 | 末段 (tool name) | 工具定义的 `name` | 各工具文件 |
 
@@ -292,7 +292,7 @@ Android Studio 的 MCP 配置文件位置参考官方文档，添加：
 Android Studio 已内置以下工具，无需移植：
 
 | Gemini CLI 工具 | Android Studio 内置对应工具 |
-|---|---|
+|-|-|
 | `read_file` | `read_file` |
 | `write_file` | `write_file` |
 | `list_directory` | `list_files` |
@@ -343,9 +343,9 @@ npm install -D <package>    # 仅开发依赖
 ## 故障排查
 
 | 现象 | 可能原因 | 解决方案 |
-|------|----------|----------|
+|-|-|-|
 | 启动报"rootDir is not configured" | config.json 中 rootDir 为空 | 填入项目绝对路径 |
-| Android Studio 连接失败 | 服务器未启动 / 端口不对 | 确认`npm start` 正常运行，端口与 AS 配置一致 |
+| Android Studio 连接失败 | 服务器未启动 / 端口不对 | 确认 `npm start` 正常运行，端口与 AS 配置一致 |
 | 工具调用返回 "Path outside workspace" | AI 传了rootDir 范围外的路径 | 检查 config.json 的 rootDir 是否覆盖目标项目 |
 | 替换失败 "0 occurrences found" | AI 给的 old_string 与文件实际内容不匹配 | 四级策略都未命中，AI 需要先read_file 确认内容 |
 | 替换失败 "expected 1 but found N" | old_string 匹配了多处 | AI 需要提供更多上下文，或设置 allow_multiple |
