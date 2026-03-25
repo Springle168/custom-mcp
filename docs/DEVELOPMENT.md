@@ -13,7 +13,10 @@ custom-mcp/
 ├── config.json                 # 运行时配置
 ├── package.json
 ├── tsconfig.json
-├── logs/                       # 自动生成，每次启动一个日志文件
+├── logs/                       # 生产日志，每次启动一个日志文件
+├── test/
+│   ├── test-logger.ts          # 日志系统测试
+│   └── logs/                   # 测试日志输出目录
 ├── docs/
 │   ├── DEVELOPMENT.md          # 本文件
 │   └── tools/
@@ -24,17 +27,17 @@ custom-mcp/
 │   ├── config.ts               # 配置加载（文件 + 环境变量）
 │   ├── tools/
 │   │   ├── types.ts            # MCPTool 接口定义
-│   │   ├── index.ts            # 工具注册表+ 路由分发
+│   ├── index.ts                # 工具注册表+ 路由分发
 │   │   ├── replace.ts          # replace_text 工具
 │   │   └── read-many-files.ts  # read_many_files 工具
 │   ├── engine/
 │   │   ├── replacement.ts      # 四级替换策略
-│   │   └── text-utils.ts       # 文本处理工具集
+│   └── text-utils.ts           # 文本处理工具集
 │   └── utils/
 │       ├── paths.ts            # 路径解析 + 沙箱校验
 │       ├── file-lock.ts        # 按文件路径的并发锁
 │       ├── file-read.ts        # 文件读取 + 截断 + 二进制检测
-│       └── logger.ts           # 日志系统（console +文件双输出）
+│       └── logger.ts           # 日志系统（终端彩色 + 文件纯文本双输出）
 ```
 
 ### 各层职责
