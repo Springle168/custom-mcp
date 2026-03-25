@@ -23,7 +23,7 @@ export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text',
   description: `Replaces text within a file. By default expects exactly ONE occurrence of \`old_string\`. Set \`allow_multiple\` to true to replace all occurrences.
 
-Use empty \`old_string\` with a non-existent file path to create a new file.
+Use empty \`old_string\` with a non-existent file path to create a new file. But it is recommended to use \`write_file\` as much as possible to create new files.
 
 Rules for \`old_string\`:
 - Must be EXACT literal text including all whitespace, indentation, and newlines.
@@ -40,6 +40,7 @@ Rules for \`new_string\`:
 Best practices:
 - Always use read_file to examine file content before making replacements.
 - Prefer multiple small, atomic replacements over one large replacement.
+- If the target file requires extensive refactoring, it is recommended to first perform a full overwrite of the file using \`write_file\`, and then perform partial replacements based on needs and subsequent plan adjustments.
 - Verify file content after changes.`,
   inputSchema: {
     type: 'object' as const,
@@ -51,7 +52,7 @@ Best practices:
       old_string: {
         type: 'string',
         description:
-          'The exact literal text to find. Empty string = create new file. Include surrounding context lines for precise matching.',
+          'The exact literal text to find. Include surrounding context lines for precise matching.',
       },
       new_string: {
         type: 'string',
