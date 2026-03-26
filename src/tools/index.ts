@@ -7,10 +7,12 @@ import type { MCPTool, ToolCallResult } from './types.js';
 // =============================
 import replaceTool from './replace.js';
 import readManyFilesTool from './read-many-files.js';
+import askUserTool from './ask-user.js';
 
 const registry: MCPTool[] = [
   replaceTool,
   readManyFilesTool,
+  askUserTool,
   // 未来: import xxxTool from './xxx.js'; 然后加在这里
 ];
 
