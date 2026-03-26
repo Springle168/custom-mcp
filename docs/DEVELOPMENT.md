@@ -16,6 +16,7 @@ custom-mcp/
 ├── logs/                       # 生产日志，每次启动一个日志文件
 ├── test/
 │   ├── test-logger.ts          # 日志系统测试
+│   ├── test-ask-user.ts        # ask_user 工具测试
 │   └── logs/                   # 测试日志输出目录
 ├── docs/
 │   ├── DEVELOPMENT.md          # 本文件
@@ -57,6 +58,7 @@ custom-mcp/
 |-|-|-|
 | `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
 
 ---
 
