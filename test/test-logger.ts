@@ -13,8 +13,8 @@ logger.info('Server started on port 3100');
 // 测试 2: 小 JSON 参数（各种数据类型）
 logger.logToolCall('replace_text', {
   filepath: 'src/index.ts',
-  old_string: 'const port = 3000;',
   new_string: 'const port = 3100;',
+  old_string: 'const port = 3000;',
   allow_multiple: false,
   max_count: 10,
   metadata: null,

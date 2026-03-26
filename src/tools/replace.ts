@@ -23,19 +23,19 @@ export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text',
   description: `Replaces text within a file. By default expects exactly ONE occurrence of \`old_string\`. Set \`allow_multiple\` to true to replace all occurrences.
 
-Use empty \`old_string\` with a non-existent file path to create a new file. But it is recommended to use \`write_file\` as much as possible to create new files.
-
-Rules for \`old_string\`:
-- Must be EXACT literal text including all whitespace, indentation, and newlines.
-- Include at least 3 lines of context BEFORE and AFTER the target text for unique matching.
-- NEVER escape the string content.
-- If multiple locations match and \`allow_multiple\` is not true, the tool will fail.
+Use a non-existent path and an empty \`old_string\` for new file creation. But it is recommended to use \`write_file\` as much as possible to create new files.
 
 Rules for \`new_string\`:
 - Must be EXACT literal replacement text.
 - Ensure the resulting code is correct and idiomatic.
 - Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'.
 - Must be different from \`old_string\`.
+
+Rules for \`old_string\`:
+- Must be EXACT literal text including all whitespace, indentation, and newlines.
+- Include at least 3 lines of context BEFORE and AFTER the target text for unique matching.
+- NEVER escape the string content.
+- If multiple locations match and \`allow_multiple\` is not true, the tool will fail.
 
 Best practices:
 - Always use read_file to examine file content before making replacements.
@@ -49,15 +49,15 @@ Best practices:
         type: 'string',
         description: 'The path to the file to modify.',
       },
-      old_string: {
-        type: 'string',
-        description:
-          'The exact literal text to find. Include surrounding context lines for precise matching.',
-      },
       new_string: {
         type: 'string',
         description:
           'The exact literal replacement text. Must be complete code, no placeholders.',
+      },
+      old_string: {
+        type: 'string',
+        description:
+          'The exact literal text to find. Include surrounding context lines for precise matching.',
       },
       allow_multiple: {
         type: 'boolean',
@@ -65,7 +65,7 @@ Best practices:
           'If true, replace ALL occurrences. If false (default), succeeds only if exactly one occurrence is found.',
       },
     },
-    required: ['file_path', 'old_string', 'new_string'],
+    required: ['file_path', 'new_string', 'old_string'],
   },
 };
 
@@ -89,11 +89,11 @@ function validateParams(args: Record<string, unknown>): string | null {
   if (typeof args.file_path !== 'string' || !args.file_path) {
     return "The 'file_path' parameter must be a non-empty string.";
   }
-  if (typeof args.old_string !== 'string') {
-    return "The 'old_string' parameter must be a string.";
-  }
   if (typeof args.new_string !== 'string') {
     return "The 'new_string' parameter must be a string.";
+  }
+  if (typeof args.old_string !== 'string') {
+    return "The 'old_string' parameter must be a string.";
   }
 
   // 省略占位符检测
@@ -125,8 +125,8 @@ export async function handleReplace(
   if (validationError) return errorResult(validationError);
 
   const filePath = String(args.file_path);
-  const oldString = String(args.old_string);
   const newString = String(args.new_string);
+  const oldString = String(args.old_string);
   const allowMultiple = Boolean(args.allow_multiple ?? false);
 
   // 2. 路径解析 + 安全校验
@@ -183,8 +183,8 @@ export async function handleReplace(
     // 7. 计算替换
     const params: ReplaceParams = {
       file_path: filePath,
-      old_string: oldString,
       new_string: newString,
+      old_string: oldString,
       allow_multiple: allowMultiple,
     };
 
