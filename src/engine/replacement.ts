@@ -20,8 +20,8 @@ const WHITESPACE_PENALTY_FACTOR = 0.1;
 
 export interface ReplaceParams {
   file_path: string;
-  old_string: string;
   new_string: string;
+  old_string: string;
   allow_multiple?: boolean;
 }
 
@@ -44,8 +44,8 @@ function exactMatch(
   params: ReplaceParams,
 ): ReplacementResult | null {
   const normalizedCode = currentContent;
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
   const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
+  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
 
   const exactOccurrences = normalizedCode.split(normalizedSearch).length - 1;
 
@@ -87,8 +87,8 @@ function flexibleMatch(
   params: ReplaceParams,
 ): ReplacementResult | null {
   const normalizedCode = currentContent;
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
   const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
+  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
 
   // 按行分割，保留每行的尾部换行符
   const sourceLines = normalizedCode.match(/.*(?:\n|$)/g)?.slice(0, -1) ?? [];
@@ -146,8 +146,8 @@ function regexMatch(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult | null {
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
   const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
+  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
 
   const delimiters = ['(', ')', ':', '[', ']', '{', '}', '>', '<', '='];
 
@@ -198,14 +198,14 @@ function fuzzyMatch(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult | null {
-  const { old_string, new_string } = params;
+  const { new_string, old_string } = params;
 
   // 太短的搜索串容易误匹配
   if (old_string.length < 10) return null;
 
   const normalizedCode = currentContent.replace(/\r\n/g, '\n');
-  const normalizedSearch = old_string.replace(/\r\n/g, '\n');
   const normalizedReplace = new_string.replace(/\r\n/g, '\n');
+  const normalizedSearch = old_string.replace(/\r\n/g, '\n');
 
   const sourceLines = normalizedCode.match(/.*(?:\n|$)/g)?.slice(0, -1) ?? [];
   const searchLines = normalizedSearch
@@ -317,8 +317,8 @@ export function calculateReplacement(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult {
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
   const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
+  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
 
   if (normalizedSearch === '') {
     return {
@@ -381,8 +381,8 @@ export function getErrorReplaceResult(
 
   if (finalOldString === finalNewString) {
     return {
-      display: 'No changes to apply. The old_string and new_string are identical.',
-      raw: `No changes to apply. The old_string and new_string are identical in file: ${params.file_path}`,
+      display: 'No changes to apply. The new_string and old_string are identical.',
+      raw: `No changes to apply. The new_string and old_string are identical in file: ${params.file_path}`,
     };
   }
 
