@@ -22,18 +22,19 @@ custom-mcp/
 │   ├── DEVELOPMENT.md          # 本文件
 │   └── tools/
 │       ├── replace-text.md     # replace_text 工具文档
-│       └── read-many-files.md  # read_many_files 工具文档
+│       ├── read-many-files.md  # read_many_files 工具文档
+│       └── ask-user.md         # ask_user 工具文档
 ├── src/
 │   ├── index.ts                # HTTP 入口 + MCP 会话管理
 │   ├── config.ts               # 配置加载（文件 + 环境变量）
 │   ├── tools/
+│   │   ├── index.ts            # 工具注册表+ 路由分发
 │   │   ├── types.ts            # MCPTool 接口定义
-│   ├── index.ts                # 工具注册表+ 路由分发
 │   │   ├── replace.ts          # replace_text 工具
 │   │   └── read-many-files.ts  # read_many_files 工具
 │   ├── engine/
 │   │   ├── replacement.ts      # 四级替换策略
-│   └── text-utils.ts           # 文本处理工具集
+│   │   └── text-utils.ts       # 文本处理工具集
 │   └── utils/
 │       ├── paths.ts            # 路径解析 + 沙箱校验
 │       ├── file-lock.ts        # 按文件路径的并发锁
@@ -322,6 +323,44 @@ Android Studio 已内置以下工具，无需移植：
 | `list_directory` | `list_files` |
 | `glob` | `find_files` |
 | `grep_search` | `grep` |
+
+---
+
+## Android Studio MCP → Gemini 转换层限制
+
+### 问题描述
+
+Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为 Gemini Function Calling 格式时，**只保留第一层 `properties` 的 `description`**，嵌套在 `items.properties` 内的所有`description` 会被静默丢弃。`minItems`、`maxItems` 等约束也一并丢失。
+
+受影响的结构示例：
+
+```
+properties
+└── questions (ARRAY)          ← description ✓ 保留
+    └── items.properties
+        ├── question (STRING)  ← description ✗ 丢失
+        ├── type (STRING)      ← description ✗ 丢失
+        └── options (ARRAY)
+            └── items.properties
+                └── label      ← description ✗ 丢失
+```
+
+扁平结构（如 `replace_text`、`read_many_files`）不受影响。
+
+### 规避方案
+
+凡是含有嵌套 `items.properties` 的工具，必须在顶层 `description` 中用纯文本描述
+所有嵌套字段的语义、类型、取值范围和使用条件。`inputSchema` 本身保持完整，
+仍负责结构校验；顶层 `description` 负责向 AI 传达语义。
+
+当前受影响工具：`ask_user`（已按此方案处理）。
+
+### 新增工具时的检查项
+
+- 若工具 schema 含有嵌套对象数组（`array` of `object`），必须将嵌套字段的说明
+  上提到顶层 `description`。
+- 可运行 `npx tsx test/inspect-tools.ts` 查看原始 schema 结构，
+  但该脚本无法模拟 Android Studio 的转换行为，需在宿主中实际验证。
 
 ---
 

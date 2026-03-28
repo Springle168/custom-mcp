@@ -38,8 +38,17 @@ export const pendingQuestions = new Map<string, PendingQuestion>();
 // Schema 定义
 const ASK_USER_TOOL_DEFINITION = {
   name: 'ask_user',
-  description:
-    'Ask the user one or more questions to gather preferences, clarify requirements, or make decisions. Returns structured answers with optional additional notes.',
+  description: `Ask the user 1-4 questions to gather preferences, clarify requirements, or make decisions. Returns structured answers with optional additional notes.
+
+Each item in the questions array must be an object with these fields:
+- question (string, required): The complete question text, clear and specific, ending with "?"
+- header (string, required): Very short chip/tag label, use abbreviations. e.g. "Auth" not "Authentication", "Library", "Approach"
+- type (string, required): "choice" for multiple-choice with options | "text" for free-form input | "yesno" for Yes/No confirmation
+- options (array, required when type="choice"): 2-4 selectable choices, each with:
+    - label (string): Display text for this option, 1-5 words. e.g. "OAuth 2.0"
+    - description (string): Brief explanation. e.g. "Industry standard, supports SSO"
+- multiSelect (boolean, optional): Only for type="choice". Set true to allow selecting multiple options.
+- placeholder (string, optional): Only for type="text". Hint text shown in the input field.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
