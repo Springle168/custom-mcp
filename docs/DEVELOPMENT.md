@@ -17,7 +17,17 @@ custom-mcp/
 ├── test/
 │   ├── test-logger.ts          # 日志系统测试
 │   ├── test-ask-user.ts        # ask_user 工具测试
-│   └── logs/                   # 测试日志输出目录
+│   ├── test-read-many-files.ts # read_many_files 工具测试
+│   ├── logs/                   # 测试日志输出目录
+│   └── fixtures/               # 测试数据文件
+│       └── read-many-files/
+│           ├── setup.ts        # fixtures 生成脚本
+│           ├── src/            # Kotlin 测试文件
+│           ├── docs/           # Markdown 测试文件
+│           ├── special-names/  # 特殊文件名测试
+│           ├── binary/         # 二进制文件测试
+│           ├── node_modules/   # 默认排除测试
+│           └── build/          # 默认排除测试
 ├── docs/
 │   ├── DEVELOPMENT.md          # 本文件
 │   └── tools/

@@ -113,6 +113,22 @@ async function testMixedPathsAndGlobs() {
   console.log('  ✓ Passed\n');
 }
 
+async function testGlobStartingWithSlash() {
+  console.log('Test: Glob pattern starting with / (should work as relative glob)');
+  
+  const result = await readManyFilesTool.handler(
+    { include: ['/**/Foo.kt'] },  // 以 / 开头但包含 glob 元字符
+    testConfig
+  );
+  
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+  
+  assertIncludes(text, 'Foo.kt', 'Should find Foo.kt');
+  
+  console.log('  ✓ Passed\n');
+}
+
 async function testDefaultExcludes() {
   console.log('Test: Default excludes (node_modules, build)');
   
@@ -183,7 +199,7 @@ async function testFileNotFound() {
     testConfig
   );
   
-  assert(!result.isError, 'Should not be an error (just skipped)');
+  assert(result.isError === true, 'Should be an error when all files fail');
   const text = getResultText(result);
   
   assertIncludes(text, 'skipped 1', 'Should report 1 file skipped');
@@ -220,7 +236,7 @@ async function testPathOutsideRoot() {
     testConfig
   );
   
-  assert(!result.isError, 'Should not be an error (just skipped)');
+  assert(result.isError === true, 'Should be an error when all files fail');
   const text = getResultText(result);
   
   assertIncludes(text, 'skipped', 'Should report file skipped');
@@ -283,6 +299,124 @@ async function testCustomExclude() {
   console.log('  ✓ Passed\n');
 }
 
+async function testPartialSuccess() {
+  console.log('Test: Partial success (some files read, some skipped)');
+  
+  const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
+  const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
+  const result = await readManyFilesTool.handler(
+    { include: [fooPath, nonexistentPath] },
+    testConfig
+  );
+  
+  assert(result.isError !== true, 'Should succeed when at least one file is read');
+  const text = getResultText(result);
+  
+  assertIncludes(text, 'Read 1 file(s), skipped 1', 'Should report both read and skipped');
+  assertIncludes(text, 'Foo.kt', 'Should include successful file');
+  assertIncludes(text, 'nonexistent.kt', 'Should mention skipped file');
+  
+  console.log('  ✓ Passed\n');
+}
+
+async function testRelativePathWithGlobChars() {
+  console.log('Test: Relative path with glob metacharacters (escape logic)');
+  
+  // 使用相对路径读取文件名含 [ ] 的文件
+  const result = await readManyFilesTool.handler(
+    { include: ['special-names/file[test].kt'] },
+    testConfig
+  );
+  
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+  
+  assertIncludes(text, 'Read 1 file(s)', 'Should read 1 file');
+  assertIncludes(text, 'file[test].kt', 'Should include the file with brackets');
+  assertIncludes(text, 'class FileWithBrackets', 'Should include file content');
+  
+  console.log('  ✓ Passed\n');
+}
+
+async function testRelativePathWithBraces() {
+  console.log('Test: Relative path with braces in filename');
+  
+  const result = await readManyFilesTool.handler(
+    { include: ['special-names/file{brace}.kt'] },
+    testConfig
+  );
+  
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+  
+  assertIncludes(text, 'Read 1 file(s)', 'Should read 1 file');
+  assertIncludes(text, 'file{brace}.kt', 'Should include the file with braces');
+  assertIncludes(text, 'class FileWithBraces', 'Should include file content');
+  
+  console.log('  ✓ Passed\n');
+}
+
+async function testPathIsDirectory() {
+  console.log('Test: Path pointing to a directory');
+  
+  const dirPath = path.join(FIXTURES_DIR, 'src');
+  const result = await readManyFilesTool.handler(
+    { include: [dirPath] },
+    testConfig
+  );
+  
+  assert(result.isError === true, 'Should be an error when all files fail');
+  const text = getResultText(result);
+  
+  assertIncludes(text, 'skipped 1', 'Should report 1 item skipped');
+  assertIncludes(text, 'not a file', 'Should explain it is a directory');
+  
+  console.log('  ✓ Passed\n');
+}
+
+async function testBinaryFileSkipped() {
+  console.log('Test: Binary file is skipped (extension-based detection)');
+  
+  // 使用绝对路径绕过 exclude，或者关闭 useDefaultExcludes
+  const pngPath = path.join(FIXTURES_DIR, 'binary', 'fake.png');
+  const result = await readManyFilesTool.handler(
+    { include: [pngPath] },  // 绝对路径绕过 exclude
+    testConfig
+  );
+  
+  assert(result.isError === true, 'Should be an error when all files fail');
+  const text = getResultText(result);
+  
+  assertIncludes(text, 'skipped 1', 'Should report 1 file skipped');
+  assertIncludes(text, 'fake.png', 'Should mention the PNG file');
+  assertIncludes(text, 'binary file', 'Should explain it is binary');
+  
+  console.log('  ✓ Passed\n');
+}
+
+async function testBinaryFileInGlob() {
+  console.log('Test: Binary files are filtered out in glob results');
+  
+  const result = await readManyFilesTool.handler(
+    { 
+      include: ['**/*.{kt,png}'],
+      useDefaultExcludes: false  // 关闭默认排除，让 PNG 能被 glob 匹配到
+    },
+    testConfig
+  );
+  
+  assert(result.isError !== true, 'Should succeed (kt files found)');
+  const text = getResultText(result);
+  
+  // Should read .kt files but skip .png
+  assertIncludes(text, 'Foo.kt', 'Should include Kotlin files');
+  assertIncludes(text, 'skipped', 'Should report skipped files');
+  assertIncludes(text, 'fake.png', 'Should mention the PNG file');
+  assertIncludes(text, 'binary file', 'Should explain skip reason');
+  
+  console.log('  ✓ Passed\n');
+}
+
 // ================
 // Main Test Runner
 // ================
@@ -297,6 +431,7 @@ async function main() {
     testSingleFileAbsolutePath,
     testGlobPattern,
     testMixedPathsAndGlobs,
+    testGlobStartingWithSlash,
     testDefaultExcludes,
     testDefaultExcludesDisabled,
     testAbsolutePathBypassesExcludes,
@@ -306,6 +441,12 @@ async function main() {
     testEmptyInclude,
     testInvalidIncludeType,
     testCustomExclude,
+    testPartialSuccess,
+    testRelativePathWithGlobChars,
+    testRelativePathWithBraces,
+    testPathIsDirectory,
+    testBinaryFileSkipped,
+    testBinaryFileInGlob,
   ];
 
   let passed = 0;

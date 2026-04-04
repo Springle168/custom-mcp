@@ -111,6 +111,10 @@ function errorResult(text: string) {
 // ================
 
 function isAbsolutePath(p: string): boolean {
+  // Glob patterns should not be treated as absolute paths
+  const hasGlobChars = /[*?[\]{}]/.test(p);
+  if (hasGlobChars) return false;
+  
   return p.startsWith('/') || /^[a-zA-Z]:/.test(p);
 }
 
