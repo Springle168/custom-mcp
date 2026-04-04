@@ -191,6 +191,7 @@ async function handleReadManyFiles(
 
   // 4. Resolve absolute paths directly (bypass glob, no exclude filtering)
   const fileSet = new Set<string>();
+  const absolutePathSet = new Set<string>();
   const skipped: Array<{ path: string; reason: string }> = [];
 
   for (const absPath of absolutePaths) {
@@ -207,6 +208,7 @@ async function handleReadManyFiles(
         continue;
       }
       fileSet.add(resolved);
+      absolutePathSet.add(resolved);
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       skipped.push({
@@ -296,9 +298,13 @@ async function handleReadManyFiles(
       continue;
     }
 
+    const displayPath = absolutePathSet.has(r.filePath)
+      ? r.filePath
+      : path.relative(config.rootDir, r.filePath);
+
     const separator = OUTPUT_SEPARATOR_FORMAT.replace(
       '{filePath}',
-      r.filePath,
+      displayPath,
     );
     let block = '';
     if (r.isTruncated) {
