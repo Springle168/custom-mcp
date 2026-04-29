@@ -118,6 +118,27 @@ function testAnsiRemovalAndTailTruncation() {
   console.log('  ✓ Passed\n');
 }
 
+function testCombinedOutputPreservesArrivalOrder() {
+  console.log('Test: combined output preserves arrival order');
+
+  const result = parseAndroidGradleOutput({
+    exitCode: 1,
+    stdout: ['stdout-1', 'stdout-2'].join('\n'),
+    stderr: 'stderr-1',
+    combinedOutput: ['stdout-1', 'stderr-1', 'stdout-2'].join('\n'),
+    maxErrorBlockChars: 2500,
+    maxLogTailChars: 4000,
+  });
+
+  assertEqual(
+    result.logTail,
+    ['stdout-1', 'stderr-1', 'stdout-2'].join('\n'),
+    'Should prefer the merged arrival-order stream for logTail',
+  );
+
+  console.log('  ✓ Passed\n');
+}
+
 function main() {
   console.log('='.repeat(60));
   console.log('Testing android gradle output parser');
@@ -127,6 +148,7 @@ function main() {
   testCompilerErrorExtraction();
   testWhatWentWrongExtraction();
   testAnsiRemovalAndTailTruncation();
+  testCombinedOutputPreservesArrivalOrder();
 
   console.log('='.repeat(60));
   console.log('All parser tests passed');
