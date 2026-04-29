@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../src/config.js';
-import androidAssembleDebugTool from '../src/tools/android-assemble-debug.js';
-import androidTestDebugUnitTestTool from '../src/tools/android-test-debug-unit-test.js';
+import type { Config } from '../../src/config.js';
+import androidAssembleDebugTool from '../../src/tools/android-assemble-debug.js';
+import androidTestDebugUnitTestTool from '../../src/tools/android-test-debug-unit-test.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.join(__dirname, '..');
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

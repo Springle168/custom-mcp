@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
-import { runAndroidGradle } from '../src/utils/android-gradle.js';
+import { runAndroidGradle } from '../../src/utils/android-gradle.js';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

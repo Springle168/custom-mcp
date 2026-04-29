@@ -1,4 +1,4 @@
-import { parseAndroidGradleOutput } from '../src/engine/android-gradle-output.js';
+import { parseAndroidGradleOutput } from '../../src/engine/android-gradle-output.js';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

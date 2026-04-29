@@ -10,54 +10,56 @@
 
 ```
 custom-mcp/
-├── config.json                 # 运行时配置
+├── config.json                  # 运行时配置
 ├── package.json
 ├── tsconfig.json
-├── logs/                       # 生产日志，每次启动一个日志文件
+├── logs/                        # 生产日志，每次启动一个日志文件
 ├── test/
-│   ├── test-logger.ts          # 日志系统测试
-│   ├── test-ask-user.ts        # ask_user 工具测试
-│   ├── test-read-many-files.ts # read_many_files 工具测试
-│   ├── logs/                   # 测试日志输出目录
-│   └── fixtures/               # 测试数据文件
-│       └── read-many-files/
-│           ├── setup.ts        # fixtures 生成脚本
-│           ├── src/            # Kotlin 测试文件
-│           ├── docs/           # Markdown 测试文件
-│           ├── special-names/  # 特殊文件名测试
-│           ├── binary/         # 二进制文件测试
-│           ├── node_modules/   # 默认排除测试
-│           └── build/          # 默认排除测试
+│   ├── android-build/           # Android 构建相关测试
+│   ├── fixtures/                # 测试数据文件
+│   │   └── read-many-files/
+│   │       ├── setup.ts         # fixtures 生成脚本
+│   │       ├── src/             # Kotlin 测试文件
+│   │       ├── docs/            # Markdown 测试文件
+│   │       ├── special-names/   # 特殊文件名测试
+│   │       ├── binary/          # 二进制文件测试
+│   │       ├── node_modules/    # 默认排除测试
+│   │       └── build/           # 默认排除测试
+│   ├── logs/                    # 测试日志输出目录
+│   ├── inspect-tools.ts         # 输出 tools/list 结构
+│   ├── test-ask-user.ts         # ask_user 工具测试
+│   ├── test-config.ts           # 通用配置加载测试
+│   ├── test-logger.ts           # 日志系统测试
+│   └── test-read-many-files.ts  # read_many_files 工具测试
 ├── docs/
-│   ├── DEVELOPMENT.md                  # 本文件
+│   ├── DEVELOPMENT.md           # 本文件
 │   └── tools/
-│       ├── replace-text.md             # replace_text 工具文档
-│       ├── read-many-files.md          # read_many_files 工具文档
-│       ├── ask-user.md                 # ask_user 工具文档
-│       ├── android-assemble-debug.md   # android.assembleDebug 工具文档
-│       └── android-test-debug-unit-test.md # android.testDebugUnitTest 工具文档
+│       ├── replace-text.md      # replace_text 工具文档
+│       ├── read-many-files.md   # read_many_files 工具文档
+│       ├── ask-user.md          # ask_user 工具文档
+│       └── android-build.md     # Android 构建工具文档
 ├── src/
-│   ├── index.ts                        # HTTP 入口 + MCP 会话管理
-│   ├── config.ts                       # 配置加载（文件 + 环境变量）
+│   ├── index.ts                 # HTTP 入口 + MCP 会话管理
+│   ├── config.ts                # 配置加载（文件 + 环境变量）
 │   ├── tools/
-│   │   ├── index.ts                    # 工具注册表 + 路由分发
-│   │   ├── types.ts                    # MCPTool 接口定义
-│   │   ├── replace.ts                  # replace_text 工具
-│   │   ├── read-many-files.ts          # read_many_files 工具
-│   │   ├── ask-user.ts                 # ask_user 工具
-│   │   ├── android-build-shared.ts     # Android 构建工具共享逻辑
-│   │   ├── android-assemble-debug.ts   # android.assembleDebug 工具
+│   │   ├── index.ts             # 工具注册表 + 路由分发
+│   │   ├── types.ts             # MCPTool 接口定义
+│   │   ├── replace.ts           # replace_text 工具
+│   │   ├── read-many-files.ts   # read_many_files 工具
+│   │   ├── ask-user.ts          # ask_user 工具
+│   │   ├── android-build-shared.ts # Android 构建工具共享逻辑
+│   │   ├── android-assemble-debug.ts # android.assembleDebug 工具
 │   │   └── android-test-debug-unit-test.ts # android.testDebugUnitTest 工具
 │   ├── engine/
-│   │   ├── replacement.ts              # 四级替换策略
-│   │   ├── text-utils.ts               # 文本处理工具集
-│   │   └── android-gradle-output.ts    # Gradle 输出解析
+│   │   ├── replacement.ts       # 四级替换策略
+│   │   ├── text-utils.ts        # 文本处理工具集
+│   │   └── android-gradle-output.ts # Gradle 输出解析
 │   └── utils/
-│       ├── paths.ts                    # 路径解析 + 沙箱校验
-│       ├── file-lock.ts                # 按文件路径的并发锁
-│       ├── file-read.ts                # 文件读取 + 截断 + 二进制检测
-│       ├── logger.ts                   # 日志系统（终端彩色 + 文件纯文本双输出）
-│       └── android-gradle.ts           # Gradle 执行 + 超时控制 + JAVA_HOME 注入
+│       ├── paths.ts             # 路径解析 + 沙箱校验
+│       ├── file-lock.ts         # 按文件路径的并发锁
+│       ├── file-read.ts         # 文件读取 + 截断 + 二进制检测
+│       ├── logger.ts            # 日志系统（终端彩色 + 文件纯文本双输出）
+│       └── android-gradle.ts    # Gradle 执行 + 超时控制 + JAVA_HOME 注入
 ```
 
 ### 各层职责
@@ -78,14 +80,14 @@ custom-mcp/
 | `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
-| `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-assemble-debug.md](tools/android-assemble-debug.md) |
-| `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-test-debug-unit-test.md](tools/android-test-debug-unit-test.md) |
+| `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
+| `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
 
 ---
 
-## Android 构建配置
+## 配置文件说明
 
-Android 构建工具读取 `config.json` 中的 `android` 配置段，或对应环境变量覆盖值：
+运行配置放在根目录 `config.json`，也可通过环境变量覆盖部分字段：
 
 ```json
 {
@@ -102,20 +104,38 @@ Android 构建工具读取 `config.json` 中的 `android` 配置段，或对应�
 }
 ```
 
-对应环境变量：
+### 顶层字段
 
+- `rootDir`：文件类工具的工作根目录，必填
+- `lineEnding`：文本写回策略，支持 `auto` / `lf` / `crlf`
+- `port`：HTTP MCP 服务端口
+
+### `android` 配置段
+
+- `workspaceRoot`：Android 构建工具的工作目录，应包含 `gradlew.bat`
+- `javaHome`：构建时注入的 JBR / JDK 根目录
+- `buildTimeoutMs`：Gradle 超时时间，默认 `900000`
+- `maxErrorBlockChars`：失败时 `firstErrorBlock` 的最大长度，默认 `2500`
+- `maxLogTailChars`：失败时 `logTail` 的最大长度，默认 `4000`
+
+### 环境变量覆盖
+
+支持以下环境变量：
+
+- `MCP_ROOT_DIR`
+- `MCP_LINE_ENDING`
+- `MCP_PORT`
 - `ANDROID_WORKSPACE_ROOT`
 - `ANDROID_JAVA_HOME`
 - `ANDROID_BUILD_TIMEOUT_MS`
 - `ANDROID_MAX_ERROR_BLOCK_CHARS`
 - `ANDROID_MAX_LOG_TAIL_CHARS`
 
-说明：
+覆盖规则：
 
-- `rootDir` 继续服务现有文件类工具
-- `android.workspaceRoot` 独立于 `rootDir`，用于执行 `gradlew.bat`
-- 若 Android 配置缺失，服务仍可启动；只有调用 Android 工具时才会返回配置错误
-- 当前仅支持 Windows，因为执行目标固定为 `gradlew.bat`
+- 非空环境变量优先于 `config.json`
+- 空字符串环境变量视为“未设置”，会回退到 `config.json`
+- 若 Android 配置缺失，服务仍可启动；只有调用 Android 构建工具时才会返回配置错误
 
 ---
 
