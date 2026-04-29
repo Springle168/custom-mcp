@@ -17,7 +17,7 @@ export interface Config {
   android?: AndroidConfig;
 }
 
-interface RawAndroidConfig {
+export interface AndroidConfigSource {
   workspaceRoot?: unknown;
   javaHome?: unknown;
   buildTimeoutMs?: unknown;
@@ -25,11 +25,11 @@ interface RawAndroidConfig {
   maxLogTailChars?: unknown;
 }
 
-interface RawConfig {
+export interface ConfigSource {
   rootDir?: unknown;
   lineEnding?: unknown;
   port?: unknown;
-  android?: RawAndroidConfig;
+  android?: AndroidConfigSource;
 }
 
 const DEFAULT_ANDROID_BUILD_TIMEOUT_MS = 15 * 60 * 1000;
@@ -85,32 +85,69 @@ function readPositiveInt(
   return parsed;
 }
 
-function buildAndroidConfig(raw: RawAndroidConfig | undefined): AndroidConfig | undefined {
-  const workspaceRoot = readOptionalString(
-    process.env.ANDROID_WORKSPACE_ROOT ?? raw?.workspaceRoot,
+function getEnvOverride(
+  env: NodeJS.ProcessEnv,
+  name: string,
+): string | undefined {
+  return readOptionalString(env[name]);
+}
+
+function getConfiguredValue(
+  env: NodeJS.ProcessEnv,
+  envName: string,
+  fileValue: unknown,
+): unknown {
+  return getEnvOverride(env, envName) ?? fileValue;
+}
+
+function hasAndroidEnvOverrides(env: NodeJS.ProcessEnv): boolean {
+  return (
+    getEnvOverride(env, 'ANDROID_WORKSPACE_ROOT') !== undefined ||
+    getEnvOverride(env, 'ANDROID_JAVA_HOME') !== undefined ||
+    getEnvOverride(env, 'ANDROID_BUILD_TIMEOUT_MS') !== undefined ||
+    getEnvOverride(env, 'ANDROID_MAX_ERROR_BLOCK_CHARS') !== undefined ||
+    getEnvOverride(env, 'ANDROID_MAX_LOG_TAIL_CHARS') !== undefined
   );
-  const javaHome = readOptionalString(
-    process.env.ANDROID_JAVA_HOME ?? raw?.javaHome,
+}
+
+function buildAndroidConfig(
+  raw: AndroidConfigSource | undefined,
+  env: NodeJS.ProcessEnv,
+): AndroidConfig | undefined {
+  const workspaceRootSource = getConfiguredValue(
+    env,
+    'ANDROID_WORKSPACE_ROOT',
+    raw?.workspaceRoot,
+  );
+  const javaHomeSource = getConfiguredValue(
+    env,
+    'ANDROID_JAVA_HOME',
+    raw?.javaHome,
+  );
+  const buildTimeoutMsSource = getConfiguredValue(
+    env,
+    'ANDROID_BUILD_TIMEOUT_MS',
+    raw?.buildTimeoutMs,
+  );
+  const maxErrorBlockCharsSource = getConfiguredValue(
+    env,
+    'ANDROID_MAX_ERROR_BLOCK_CHARS',
+    raw?.maxErrorBlockChars,
+  );
+  const maxLogTailCharsSource = getConfiguredValue(
+    env,
+    'ANDROID_MAX_LOG_TAIL_CHARS',
+    raw?.maxLogTailChars,
   );
 
-  const buildTimeoutMsSource =
-    process.env.ANDROID_BUILD_TIMEOUT_MS ?? raw?.buildTimeoutMs;
-  const maxErrorBlockCharsSource =
-    process.env.ANDROID_MAX_ERROR_BLOCK_CHARS ?? raw?.maxErrorBlockChars;
-  const maxLogTailCharsSource =
-    process.env.ANDROID_MAX_LOG_TAIL_CHARS ?? raw?.maxLogTailChars;
-
-  const hasAndroidConfig =
-    raw !== undefined ||
-    workspaceRoot !== undefined ||
-    javaHome !== undefined ||
-    buildTimeoutMsSource !== undefined ||
-    maxErrorBlockCharsSource !== undefined ||
-    maxLogTailCharsSource !== undefined;
+  const hasAndroidConfig = raw !== undefined || hasAndroidEnvOverrides(env);
 
   if (!hasAndroidConfig) {
     return undefined;
   }
+
+  const workspaceRoot = readOptionalString(workspaceRootSource);
+  const javaHome = readOptionalString(javaHomeSource);
 
   return {
     workspaceRoot: workspaceRoot ? resolve(workspaceRoot) : undefined,
@@ -133,12 +170,32 @@ function buildAndroidConfig(raw: RawAndroidConfig | undefined): AndroidConfig | 
   };
 }
 
+export function buildConfig(
+  fileConfig: ConfigSource = {},
+  env: NodeJS.ProcessEnv = process.env,
+): Config {
+  return {
+    rootDir: readRequiredString(
+      getConfiguredValue(env, 'MCP_ROOT_DIR', fileConfig.rootDir),
+    ),
+    lineEnding: readLineEnding(
+      getConfiguredValue(env, 'MCP_LINE_ENDING', fileConfig.lineEnding),
+    ),
+    port: readPositiveInt(
+      'MCP_PORT',
+      getConfiguredValue(env, 'MCP_PORT', fileConfig.port),
+      3100,
+    ),
+    android: buildAndroidConfig(fileConfig.android, env),
+  };
+}
+
 export function loadConfig(): Config {
-  let fileConfig: RawConfig = {};
+  let fileConfig: ConfigSource = {};
 
   try {
     const raw = readFileSync(CONFIG_PATH, 'utf-8');
-    fileConfig = JSON.parse(raw) as RawConfig;
+    fileConfig = JSON.parse(raw) as ConfigSource;
   } catch (err) {
     console.error(`Failed to read config file at ${CONFIG_PATH}`);
     console.error(err);
@@ -146,16 +203,7 @@ export function loadConfig(): Config {
   }
 
   try {
-    const config: Config = {
-      rootDir: readRequiredString(
-        process.env.MCP_ROOT_DIR ?? fileConfig.rootDir,
-      ),
-      lineEnding: readLineEnding(
-        process.env.MCP_LINE_ENDING ?? fileConfig.lineEnding,
-      ),
-      port: readPositiveInt('MCP_PORT', process.env.MCP_PORT ?? fileConfig.port, 3100),
-      android: buildAndroidConfig(fileConfig.android),
-    };
+    const config = buildConfig(fileConfig);
 
     if (!config.rootDir) {
       console.error(

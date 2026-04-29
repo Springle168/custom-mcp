@@ -11,6 +11,7 @@ export interface ParseAndroidGradleOutputOptions {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  combinedOutput?: string;
   maxErrorBlockChars: number;
   maxLogTailChars: number;
 }
@@ -18,7 +19,9 @@ export interface ParseAndroidGradleOutputOptions {
 export function parseAndroidGradleOutput(
   options: ParseAndroidGradleOutputOptions,
 ): ParsedAndroidGradleOutput {
-  const merged = normalizeOutput([options.stdout, options.stderr].join('\n'));
+  const merged = normalizeOutput(
+    options.combinedOutput ?? [options.stdout, options.stderr].join('\n'),
+  );
 
   if (options.exitCode === 0) {
     return {

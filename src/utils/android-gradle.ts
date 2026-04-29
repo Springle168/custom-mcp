@@ -1,6 +1,7 @@
 import { access } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { join, delimiter } from 'node:path';
+import { promisify } from 'node:util';
 import {
   parseAndroidGradleOutput,
   type ParsedAndroidGradleOutput,
@@ -29,6 +30,9 @@ export interface RunAndroidGradleResult extends ParsedAndroidGradleOutput {
   timedOut: boolean;
 }
 
+const execFileAsync = promisify(execFile);
+const TERMINATION_GRACE_PERIOD_MS = 5000;
+
 export async function runAndroidGradle(
   task: AndroidGradleTask,
   runtimeConfig: AndroidGradleRuntimeConfig,
@@ -37,6 +41,7 @@ export async function runAndroidGradle(
   const args = buildGradleArgs(task, options);
   const gradlewPath = join(runtimeConfig.workspaceRoot, 'gradlew.bat');
   const command = formatDisplayCommand(args);
+  const commandLine = buildWindowsCommandLine(gradlewPath, args);
   const startedAt = Date.now();
 
   if (process.platform !== 'win32') {
@@ -50,6 +55,8 @@ export async function runAndroidGradle(
         stdout: '',
         stderr:
           'error: This MCP server currently supports Windows only because it runs gradlew.bat.',
+        combinedOutput:
+          'error: This MCP server currently supports Windows only because it runs gradlew.bat.',
       },
       runtimeConfig,
     );
@@ -58,6 +65,8 @@ export async function runAndroidGradle(
   try {
     await access(gradlewPath);
   } catch {
+    const message = `error: Gradle wrapper not found: ${gradlewPath}`;
+
     return buildResult(
       {
         task,
@@ -66,7 +75,8 @@ export async function runAndroidGradle(
         durationMs: Date.now() - startedAt,
         timedOut: false,
         stdout: '',
-        stderr: `error: Gradle wrapper not found: ${gradlewPath}`,
+        stderr: message,
+        combinedOutput: message,
       },
       runtimeConfig,
     );
@@ -75,36 +85,31 @@ export async function runAndroidGradle(
   return await new Promise<RunAndroidGradleResult>((resolve) => {
     let stdout = '';
     let stderr = '';
+    let combinedOutput = '';
     let timedOut = false;
     let settled = false;
+    let forceFinishHandle: NodeJS.Timeout | undefined;
 
-    const child = spawn(gradlewPath, args, {
+    const child = spawn('cmd.exe', ['/d', '/s', '/c', commandLine], {
       cwd: runtimeConfig.workspaceRoot,
       env: createChildEnv(runtimeConfig.javaHome),
-      shell: true,
       windowsHide: true,
     });
 
-    child.stdout?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => {
+    const appendStdout = (chunk: string): void => {
       stdout += chunk;
-    });
+      combinedOutput += chunk;
+    };
 
-    child.stderr?.setEncoding('utf8');
-    child.stderr?.on('data', (chunk: string) => {
+    const appendStderr = (chunk: string): void => {
       stderr += chunk;
-    });
+      combinedOutput += chunk;
+    };
 
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      stderr = appendLine(
-        stderr,
-        `error: Gradle process timed out after ${runtimeConfig.buildTimeoutMs}ms.`,
-      );
-      child.kill();
-    }, runtimeConfig.buildTimeoutMs);
-
-    timeoutHandle.unref?.();
+    const appendSyntheticError = (message: string): void => {
+      stderr = appendLine(stderr, message);
+      combinedOutput = appendLine(combinedOutput, message);
+    };
 
     const finish = (exitCode: number | null): void => {
       if (settled) {
@@ -113,6 +118,7 @@ export async function runAndroidGradle(
 
       settled = true;
       clearTimeout(timeoutHandle);
+      clearTimeout(forceFinishHandle);
 
       resolve(
         buildResult(
@@ -124,17 +130,53 @@ export async function runAndroidGradle(
             timedOut,
             stdout,
             stderr,
+            combinedOutput,
           },
           runtimeConfig,
         ),
       );
     };
 
-    child.on('error', (error: Error) => {
-      stderr = appendLine(
-        stderr,
-        `error: Failed to start Gradle: ${error.message}`,
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      appendStdout(chunk);
+    });
+
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => {
+      appendStderr(chunk);
+    });
+
+    const timeoutHandle = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      timedOut = true;
+      appendSyntheticError(
+        `error: Gradle process timed out after ${runtimeConfig.buildTimeoutMs}ms.`,
       );
+
+      void terminateProcessTree(child);
+
+      forceFinishHandle = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        appendSyntheticError(
+          'error: Timed-out Gradle process did not exit after termination request.',
+        );
+        finish(null);
+      }, TERMINATION_GRACE_PERIOD_MS);
+
+      forceFinishHandle.unref?.();
+    }, runtimeConfig.buildTimeoutMs);
+
+    timeoutHandle.unref?.();
+
+    child.on('error', (error: Error) => {
+      appendSyntheticError(`error: Failed to start Gradle: ${error.message}`);
       finish(null);
     });
 
@@ -167,6 +209,24 @@ function formatDisplayCommand(args: string[]): string {
   return ['.\\gradlew.bat', ...args].join(' ');
 }
 
+function buildWindowsCommandLine(gradlewPath: string, args: string[]): string {
+  return [quoteWindowsArgument(gradlewPath), ...args.map(quoteWindowsArgument)].join(
+    ' ',
+  );
+}
+
+function quoteWindowsArgument(value: string): string {
+  if (value.length === 0) {
+    return '""';
+  }
+
+  if (!/[\s"]/u.test(value)) {
+    return value;
+  }
+
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 function createChildEnv(javaHome: string): NodeJS.ProcessEnv {
   const javaBinPath = join(javaHome, 'bin');
   const currentPath = process.env.Path ?? process.env.PATH ?? '';
@@ -183,6 +243,29 @@ function createChildEnv(javaHome: string): NodeJS.ProcessEnv {
   };
 }
 
+async function terminateProcessTree(child: ChildProcess): Promise<void> {
+  try {
+    if (child.pid === undefined) {
+      child.kill();
+      return;
+    }
+
+    if (process.platform !== 'win32') {
+      child.kill('SIGKILL');
+      return;
+    }
+
+    await execFileAsync('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+      windowsHide: true,
+    });
+  } catch {
+    try {
+      child.kill();
+    } catch {
+    }
+  }
+}
+
 function buildResult(
   input: {
     task: AndroidGradleTask;
@@ -192,6 +275,7 @@ function buildResult(
     timedOut: boolean;
     stdout: string;
     stderr: string;
+    combinedOutput: string;
   },
   runtimeConfig: AndroidGradleRuntimeConfig,
 ): RunAndroidGradleResult {
@@ -199,6 +283,7 @@ function buildResult(
     exitCode: input.exitCode,
     stdout: input.stdout,
     stderr: input.stderr,
+    combinedOutput: input.combinedOutput,
     maxErrorBlockChars: runtimeConfig.maxErrorBlockChars,
     maxLogTailChars: runtimeConfig.maxLogTailChars,
   });
