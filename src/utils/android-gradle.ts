@@ -32,6 +32,7 @@ export interface RunAndroidGradleResult extends ParsedAndroidGradleOutput {
 
 const execFileAsync = promisify(execFile);
 const TERMINATION_GRACE_PERIOD_MS = 5000;
+const GRADLE_WRAPPER_COMMAND = '.\\gradlew.bat';
 
 export async function runAndroidGradle(
   task: AndroidGradleTask,
@@ -41,7 +42,7 @@ export async function runAndroidGradle(
   const args = buildGradleArgs(task, options);
   const gradlewPath = join(runtimeConfig.workspaceRoot, 'gradlew.bat');
   const command = formatDisplayCommand(args);
-  const commandLine = buildWindowsCommandLine(gradlewPath, args);
+  const commandLine = buildWindowsCommandLine(args);
   const startedAt = Date.now();
 
   if (process.platform !== 'win32') {
@@ -206,11 +207,11 @@ function buildGradleArgs(
 }
 
 function formatDisplayCommand(args: string[]): string {
-  return ['.\\gradlew.bat', ...args].join(' ');
+  return [GRADLE_WRAPPER_COMMAND, ...args].join(' ');
 }
 
-function buildWindowsCommandLine(gradlewPath: string, args: string[]): string {
-  return [quoteWindowsArgument(gradlewPath), ...args.map(quoteWindowsArgument)].join(
+function buildWindowsCommandLine(args: string[]): string {
+  return [quoteWindowsArgument(GRADLE_WRAPPER_COMMAND), ...args.map(quoteWindowsArgument)].join(
     ' ',
   );
 }
