@@ -1,5 +1,12 @@
 {
   "rootDir": "/path/to/your/workspace",
   "lineEnding": "auto",
-  "port": 3100
+  "port": 3100,
+  "android": {
+    "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
+    "javaHome": "E:/Android_Studio/jbr",
+    "buildTimeoutMs": 900000,
+    "maxErrorBlockChars": 2500,
+    "maxLogTailChars": 4000
+  }
 }

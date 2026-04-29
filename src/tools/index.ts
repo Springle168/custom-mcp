@@ -8,11 +8,15 @@ import type { MCPTool, ToolCallResult } from './types.js';
 import replaceTool from './replace.js';
 import readManyFilesTool from './read-many-files.js';
 import askUserTool from './ask-user.js';
+import androidAssembleDebugTool from './android-assemble-debug.js';
+import androidTestDebugUnitTestTool from './android-test-debug-unit-test.js';
 
 const registry: MCPTool[] = [
   replaceTool,
   readManyFilesTool,
   askUserTool,
+  androidAssembleDebugTool,
+  androidTestDebugUnitTestTool,
   // 未来: import xxxTool from './xxx.js'; 然后加在这里
 ];
 
