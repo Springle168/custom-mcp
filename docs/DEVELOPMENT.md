@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，提供精准的文件局部替换和批量文件读取能力。
+基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，当前提供三类能力：精准的文件局部替换、批量文件读取，以及固定环境下的 Android Gradle 构建能力。
 
 ---
 
@@ -29,27 +29,35 @@ custom-mcp/
 │           ├── node_modules/   # 默认排除测试
 │           └── build/          # 默认排除测试
 ├── docs/
-│   ├── DEVELOPMENT.md          # 本文件
+│   ├── DEVELOPMENT.md                  # 本文件
 │   └── tools/
-│       ├── replace-text.md     # replace_text 工具文档
-│       ├── read-many-files.md  # read_many_files 工具文档
-│       └── ask-user.md         # ask_user 工具文档
+│       ├── replace-text.md             # replace_text 工具文档
+│       ├── read-many-files.md          # read_many_files 工具文档
+│       ├── ask-user.md                 # ask_user 工具文档
+│       ├── android-assemble-debug.md   # android.assembleDebug 工具文档
+│       └── android-test-debug-unit-test.md # android.testDebugUnitTest 工具文档
 ├── src/
-│   ├── index.ts                # HTTP 入口 + MCP 会话管理
-│   ├── config.ts               # 配置加载（文件 + 环境变量）
+│   ├── index.ts                        # HTTP 入口 + MCP 会话管理
+│   ├── config.ts                       # 配置加载（文件 + 环境变量）
 │   ├── tools/
-│   │   ├── index.ts            # 工具注册表+ 路由分发
-│   │   ├── types.ts            # MCPTool 接口定义
-│   │   ├── replace.ts          # replace_text 工具
-│   │   └── read-many-files.ts  # read_many_files 工具
+│   │   ├── index.ts                    # 工具注册表 + 路由分发
+│   │   ├── types.ts                    # MCPTool 接口定义
+│   │   ├── replace.ts                  # replace_text 工具
+│   │   ├── read-many-files.ts          # read_many_files 工具
+│   │   ├── ask-user.ts                 # ask_user 工具
+│   │   ├── android-build-shared.ts     # Android 构建工具共享逻辑
+│   │   ├── android-assemble-debug.ts   # android.assembleDebug 工具
+│   │   └── android-test-debug-unit-test.ts # android.testDebugUnitTest 工具
 │   ├── engine/
-│   │   ├── replacement.ts      # 四级替换策略
-│   │   └── text-utils.ts       # 文本处理工具集
+│   │   ├── replacement.ts              # 四级替换策略
+│   │   ├── text-utils.ts               # 文本处理工具集
+│   │   └── android-gradle-output.ts    # Gradle 输出解析
 │   └── utils/
-│       ├── paths.ts            # 路径解析 + 沙箱校验
-│       ├── file-lock.ts        # 按文件路径的并发锁
-│       ├── file-read.ts        # 文件读取 + 截断 + 二进制检测
-│       └── logger.ts           # 日志系统（终端彩色 + 文件纯文本双输出）
+│       ├── paths.ts                    # 路径解析 + 沙箱校验
+│       ├── file-lock.ts                # 按文件路径的并发锁
+│       ├── file-read.ts                # 文件读取 + 截断 + 二进制检测
+│       ├── logger.ts                   # 日志系统（终端彩色 + 文件纯文本双输出）
+│       └── android-gradle.ts           # Gradle 执行 + 超时控制 + JAVA_HOME 注入
 ```
 
 ### 各层职责
@@ -70,6 +78,44 @@ custom-mcp/
 | `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
+| `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-assemble-debug.md](tools/android-assemble-debug.md) |
+| `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-test-debug-unit-test.md](tools/android-test-debug-unit-test.md) |
+
+---
+
+## Android 构建配置
+
+Android 构建工具读取 `config.json` 中的 `android` 配置段，或对应环境变量覆盖值：
+
+```json
+{
+  "rootDir": "E:/YourWorkspace",
+  "lineEnding": "auto",
+  "port": 3100,
+  "android": {
+    "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
+    "javaHome": "E:/Android_Studio/jbr",
+    "buildTimeoutMs": 900000,
+    "maxErrorBlockChars": 2500,
+    "maxLogTailChars": 4000
+  }
+}
+```
+
+对应环境变量：
+
+- `ANDROID_WORKSPACE_ROOT`
+- `ANDROID_JAVA_HOME`
+- `ANDROID_BUILD_TIMEOUT_MS`
+- `ANDROID_MAX_ERROR_BLOCK_CHARS`
+- `ANDROID_MAX_LOG_TAIL_CHARS`
+
+说明：
+
+- `rootDir` 继续服务现有文件类工具
+- `android.workspaceRoot` 独立于 `rootDir`，用于执行 `gradlew.bat`
+- 若 Android 配置缺失，服务仍可启动；只有调用 Android 工具时才会返回配置错误
+- 当前仅支持 Windows，因为执行目标固定为 `gradlew.bat`
 
 ---
 
