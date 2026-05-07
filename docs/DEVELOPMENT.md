@@ -264,7 +264,7 @@ return {
 
 ---
 
-## 配置说明
+## 配置速查
 
 ### config.json
 
@@ -273,6 +273,13 @@ return {
 | `rootDir` | string | 无（必填） | 工作区根目录，所有文件操作限制在此范围内 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | `"auto"` | 文件写入时的行尾符策略 |
 | `port` | number | `3100` | HTTP 服务器监听端口 |
+| `android.workspaceRoot` | string | 无 | Android 构建工具工作目录，应包含 `gradlew.bat` |
+| `android.javaHome` | string | 无 | Android 构建时注入的 JBR / JDK 根目录 |
+| `android.buildTimeoutMs` | number | `900000` | Gradle 进程超时时间 |
+| `android.maxErrorBlockChars` | number | `2500` | 失败结果中 `firstErrorBlock` 的最大长度 |
+| `android.maxLogTailChars` | number | `4000` | 失败结果中 `logTail` 的最大长度 |
+
+`android` 配置段是可选的；未配置时服务仍可启动，但调用 Android 构建工具会返回配置错误。
 
 ### 环境变量覆盖
 
@@ -281,8 +288,13 @@ return {
 | `MCP_ROOT_DIR` | `rootDir` |
 | `MCP_LINE_ENDING` | `lineEnding` |
 | `MCP_PORT` | `port` |
+| `ANDROID_WORKSPACE_ROOT` | `android.workspaceRoot` |
+| `ANDROID_JAVA_HOME` | `android.javaHome` |
+| `ANDROID_BUILD_TIMEOUT_MS` | `android.buildTimeoutMs` |
+| `ANDROID_MAX_ERROR_BLOCK_CHARS` | `android.maxErrorBlockChars` |
+| `ANDROID_MAX_LOG_TAIL_CHARS` | `android.maxLogTailChars` |
 
-优先级：**环境变量 > config.json**。
+优先级：**非空环境变量 > config.json**。空字符串环境变量视为未设置。
 
 ### 行尾符策略详解
 
