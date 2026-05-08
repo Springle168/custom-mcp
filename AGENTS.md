@@ -63,6 +63,7 @@
 - 默认允许只读 Git 操作：`git status`、`git diff`、`git log`、`git blame`。
 - 未经用户明确授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
 - 如果用户明确要求创建提交，先阅读并遵循 `docs/commit-guidelines.md`，再基于实际 diff 生成提交信息。
+- 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式提权流程运行 `git commit`，因为提交需要写入 `.git/`（如 `.git/index.lock`）。
 - 未经用户明确授权，不要执行历史改写或破坏性操作，包括 `git commit --amend`、`git rebase`、`git reset`、`git clean`、`git stash`、`git cherry-pick`。
 - 未经用户明确授权，不要执行远端操作，包括 `git push`、`git pull`、`git fetch` 或 force-push。
 - 会话开始时已有的提交历史是受保护基线；不得改写、压缩、删除或重排。
