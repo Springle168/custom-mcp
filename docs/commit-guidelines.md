@@ -46,36 +46,36 @@ A noun describing the section of the codebase (e.g., auth, api, ui, parser, conf
 
 ## Examples
 
-feat(profile): implement user profile screen with Compose
+feat(profile): implement user profile component with React and TypeScript
 
-Replace the legacy XML-based profile view with a declarative Jetpack Compose UI to improve rendering performance and simplify state management.
+Replace the legacy class-based profile view with functional components and Hooks to improve readability and leverage strict type checking.
 
-- Create `UserProfileScreen` composable for the main layout
-- Migrate `ProfileViewModel` to expose state via `StateFlow`
-- Add `AvatarImage` component using `coil-compose` for image loading
-
----
-
-fix(ui): prevent infinite recomposition in `LazyColumn`
+- Create UserProfile functional component with TypeScript interfaces for props
+- Migrate profile state management to use the useReducer hook
+- Add Avatar component using next/image for optimized image loading
 
 ---
 
-refactor(data): replace `LiveData` with `StateFlow` in repository layer
+fix(ui): prevent infinite re-render loop in `useEffect`
 
 ---
 
-chore(deps): bump `compose-bom` from 2023.08.00 to 2023.10.00
+refactor(api): replace `axios` with native `fetch` in service layer
 
 ---
 
-docs(changelog): update for v0.10.2 and clear completed active plan
-
-Record the newly extracted `ConfirmableDeleteButton` and `ConfirmableDeleteMenuItem` components in `CHANGELOG.md` for the v0.10.2 release, and remove the finished goal from `ACTIVE_PLAN.md`.
+chore(deps): bump `typescript` from 5.0.4 to 5.2.2
 
 ---
 
-build(deps)!: remove Material 2 and enforce Material 3
+docs(changelog): update for v1.2.0 and clear completed active plan
 
-Update the Gradle version catalog to remove `androidx.compose.material` entirely, enforcing the new Material Design 3 guidelines across the application.
+Record the newly extracted `CommonButton` and `ModalDialog` components in `CHANGELOG.md` for the v1.2.0 release.
 
-BREAKING CHANGE: The legacy Material 2 library is no longer available. The `MaterialTheme` now explicitly requires a `ColorScheme` instead of `Colors`. All downstream modules must update their components (e.g., `Scaffold`, `Button`) to use imports from `androidx.compose.material3.*`.
+---
+
+build(deps)!: remove TSLint and enforce ESLint
+
+Update `package.json` to remove TSLint entirely and migrate to ESLint with the latest TypeScript plugin for modern linting standards across the project.
+
+BREAKING CHANGE: The legacy `.tslintrc` configuration is no longer supported. All developers must use the new `.eslintrc.js` configuration and update their IDE plugins to support ESLint.
