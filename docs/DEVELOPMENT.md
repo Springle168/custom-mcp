@@ -10,9 +10,11 @@
 
 ```
 custom-mcp/
-├── config.json                  # 运行时配置
-├── package.json
-├── tsconfig.json
+├── AGENTS.md                    # AI Coding Agent 操作说明
+├── config.example.json          # 配置示例
+├── config.json                  # 本地运行配置
+├── package.json                 # npm 包信息与脚本
+├── tsconfig.json                # TypeScript 编译配置
 ├── logs/                        # 生产日志，每次启动一个日志文件
 ├── test/
 │   ├── android-build/           # Android 构建相关测试
@@ -33,6 +35,7 @@ custom-mcp/
 │   └── test-read-many-files.ts  # read_many_files 工具测试
 ├── docs/
 │   ├── DEVELOPMENT.md           # 本文件
+│   ├── commit-guidelines.md     # Git 提交信息规范
 │   └── tools/
 │       ├── replace-text.md      # replace_text 工具文档
 │       ├── read-many-files.md   # read_many_files 工具文档
