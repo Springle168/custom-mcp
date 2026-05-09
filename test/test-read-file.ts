@@ -166,9 +166,9 @@ async function testBinaryFileRejected() {
 }
 
 async function main() {
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('Testing read_file tool');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log(`Fixtures directory: ${FIXTURES_DIR}\n`);
 
   const tests = [
@@ -194,9 +194,9 @@ async function main() {
     }
   }
 
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 
   if (failed > 0) {
     process.exit(1);

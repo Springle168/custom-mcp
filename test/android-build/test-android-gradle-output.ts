@@ -140,9 +140,9 @@ function testCombinedOutputPreservesArrivalOrder() {
 }
 
 function main() {
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('Testing android gradle output parser');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 
   testSuccessResult();
   testCompilerErrorExtraction();
@@ -150,9 +150,9 @@ function main() {
   testAnsiRemovalAndTailTruncation();
   testCombinedOutputPreservesArrivalOrder();
 
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('All parser tests passed');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 }
 
 main();
