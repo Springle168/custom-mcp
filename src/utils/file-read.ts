@@ -207,6 +207,16 @@ export async function readTextFile(
     const lines = raw.split(/\r?\n/);
     const originalLineCount = lines.length;
 
+    if (
+      options.startLine !== undefined &&
+      options.startLine > originalLineCount
+    ) {
+      return {
+        ok: false,
+        reason: `start_line ${options.startLine} exceeds file line count (${originalLineCount})`,
+      };
+    }
+
     let sliceStart = 0;
     let sliceEnd = originalLineCount;
 
@@ -231,16 +241,30 @@ export async function readTextFile(
       actualStart > 0 || actualEnd < originalLineCount || actualEnd < requestedEnd;
 
     // Truncate long lines
+    const truncationSuffix = '... [truncated]';
     let lineLengthTruncated = false;
     const formattedLines = selectedLines.map((line, index) => {
-      if (line.length > MAX_LINE_LENGTH) {
+      const lineNumberPrefix = options.showLineNumbers === true
+        ? `${actualStart + index + 1}: `
+        : '';
+      const contentLengthLimit = Math.max(
+        0,
+        MAX_LINE_LENGTH - lineNumberPrefix.length,
+      );
+
+      if (line.length > contentLengthLimit) {
         lineLengthTruncated = true;
-        line = line.substring(0, MAX_LINE_LENGTH) + '... [truncated]';
+        const prefixLength = Math.max(
+          0,
+          contentLengthLimit - truncationSuffix.length,
+        );
+        line = line.substring(0, prefixLength) + truncationSuffix;
+        if (line.length > contentLengthLimit) {
+          line = line.substring(0, contentLengthLimit);
+        }
       }
-      if (options.showLineNumbers === true) {
-        return `${actualStart + index + 1}: ${line}`;
-      }
-      return line;
+
+      return `${lineNumberPrefix}${line}`;
     });
 
     const linesRead = selectedLines.length;
