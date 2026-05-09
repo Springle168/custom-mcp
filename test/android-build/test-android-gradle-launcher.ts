@@ -79,9 +79,9 @@ async function testWorkspacePathWithPercentExpansionSyntax() {
 }
 
 async function main() {
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('Testing Android Gradle launcher');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 
   if (process.platform !== 'win32') {
     console.log('Skipped on non-Windows platform');
@@ -91,9 +91,9 @@ async function main() {
   await testWorkspacePathWithAmpersand();
   await testWorkspacePathWithPercentExpansionSyntax();
 
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('All launcher tests passed');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 }
 
 main().catch((error) => {

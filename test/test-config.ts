@@ -136,17 +136,17 @@ function testNonBlankEnvStillOverridesFileConfig() {
 }
 
 function main() {
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('Testing config loading');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 
   testBlankMcpEnvFallsBackToFileConfig();
   testBlankAndroidEnvFallsBackToFileConfig();
   testNonBlankEnvStillOverridesFileConfig();
 
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('All config tests passed');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 }
 
 main();

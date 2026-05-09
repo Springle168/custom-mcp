@@ -115,18 +115,18 @@ async function testMissingGradleWrapper() {
 }
 
 async function main() {
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('Testing Android build tools');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 
   await testValidationErrorForUnknownField();
   await testValidationErrorForNonBoolean();
   await testMissingAndroidConfig();
   await testMissingGradleWrapper();
 
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
   console.log('All Android tool tests passed');
-  console.log('='.repeat(60));
+  console.log('='.repeat(24));
 }
 
 main().catch((error) => {
