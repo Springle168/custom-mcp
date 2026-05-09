@@ -57,6 +57,41 @@ function errorResult(text: string): ToolCallResult {
 // Parameter Validation
 // ================
 
+function isDotsOnly(text: string): boolean {
+  if (text.length < 3) return false;
+  return [...text].every((char) => char === '.');
+}
+
+function stripCommentMarkers(line: string): string {
+  let text = line.trim();
+  const prefixes = ['//', '#', '--', '*', '/*', '<!--'];
+  const suffixes = ['*/', '-->'];
+
+  for (const prefix of prefixes) {
+    if (text.startsWith(prefix)) {
+      text = text.slice(prefix.length).trim();
+      break;
+    }
+  }
+
+  for (const suffix of suffixes) {
+    if (text.endsWith(suffix)) {
+      text = text.slice(0, -suffix.length).trim();
+      break;
+    }
+  }
+
+  return text;
+}
+
+function containsOmissionPlaceholder(content: string): boolean {
+  if (detectOmissionPlaceholders(content).length > 0) return true;
+
+  return content
+    .split(/\r\n|\r|\n/)
+    .some((line) => isDotsOnly(stripCommentMarkers(line)));
+}
+
 function validateParams(args: Record<string, unknown>): string | null {
   if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
     return "The 'file_path' parameter must be a non-empty string.";
@@ -66,9 +101,8 @@ function validateParams(args: Record<string, unknown>): string | null {
     return "The 'content' parameter must be a string.";
   }
 
-  const placeholders = detectOmissionPlaceholders(args.content);
-  if (placeholders.length > 0) {
-    return "The 'content' parameter contains an omission placeholder (e.g. 'rest of code ...'). Provide the full file content.";
+  if (containsOmissionPlaceholder(args.content)) {
+    return "The 'content' parameter contains an omission placeholder (e.g. '...' or 'rest of code ...'). Provide the full file content.";
   }
 
   return null;
@@ -98,6 +132,67 @@ function successPath(filePath: string, resolved: string, rootDir: string): strin
     : path.relative(rootDir, resolved);
 }
 
+async function findExistingAncestor(directoryPath: string): Promise<string> {
+  let current = directoryPath;
+
+  while (true) {
+    try {
+      await fs.lstat(current);
+      return current;
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+
+      const parent = path.dirname(current);
+      if (parent === current) {
+        throw error;
+      }
+      current = parent;
+    }
+  }
+}
+
+async function validateSafeWriteTarget(
+  resolved: string,
+  rootDir: string,
+  filePath: string,
+): Promise<string | null> {
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(rootDir);
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return `Could not resolve workspace root: ${error.message}. Check the server configuration.`;
+  }
+
+  try {
+    const existingAncestor = await findExistingAncestor(path.dirname(resolved));
+    const realAncestor = await fs.realpath(existingAncestor);
+    if (validatePathAccess(realAncestor, realRoot)) {
+      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return `Could not validate write path ${filePath}: ${error.message}. Check the path and permissions.`;
+  }
+
+  try {
+    const stat = await fs.lstat(resolved);
+    if (stat.isSymbolicLink()) {
+      return `Cannot write file ${filePath}: target path is a symbolic link. Provide a regular file path inside the workspace.`;
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      return `Could not validate write target ${filePath}: ${error.message}. Check the path and permissions.`;
+    }
+  }
+
+  return null;
+}
+
 // ================
 // Tool Handler
 // ================
@@ -120,6 +215,13 @@ async function handleWriteFile(
   }
 
   return withFileLock(resolved, async () => {
+    const safetyError = await validateSafeWriteTarget(
+      resolved,
+      config.rootDir,
+      filePath,
+    );
+    if (safetyError) return errorResult(safetyError);
+
     let detectedLineEnding: '\r\n' | '\n' | null = null;
 
     try {
@@ -158,6 +260,13 @@ async function handleWriteFile(
 
     try {
       await fs.mkdir(path.dirname(resolved), { recursive: true });
+      const postMkdirSafetyError = await validateSafeWriteTarget(
+        resolved,
+        config.rootDir,
+        filePath,
+      );
+      if (postMkdirSafetyError) return errorResult(postMkdirSafetyError);
+
       await fs.writeFile(resolved, finalContent, 'utf-8');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;

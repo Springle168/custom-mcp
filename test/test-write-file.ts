@@ -50,6 +50,26 @@ async function prepareFixtures(): Promise<void> {
 
 async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
+  await fs.rm(path.join(__dirname, 'fixtures', 'write-file-outside'), {
+    recursive: true,
+    force: true,
+  });
+}
+
+async function removeLinkIfExists(linkPath: string): Promise<void> {
+  try {
+    const stat = await fs.lstat(linkPath);
+    if (stat.isSymbolicLink()) {
+      await fs.unlink(linkPath);
+      return;
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+
+  await fs.rm(linkPath, { recursive: true, force: true });
 }
 
 async function testCreateNestedFile() {
@@ -139,17 +159,66 @@ async function testRejectBinaryTarget() {
 async function testRejectPlaceholderContent() {
   console.log('Test: Reject placeholder content');
 
-  const result = await writeFileTool.handler(
-    { file_path: 'placeholder.txt', content: '// rest of code ...' },
-    testConfig,
-  );
+  const cases = ['// rest of code ...', '...', '...\ractual code'];
+  for (const content of cases) {
+    const result = await writeFileTool.handler(
+      { file_path: 'placeholder.txt', content },
+      testConfig,
+    );
 
-  assert(result.isError === true, 'Should fail');
-  assertIncludes(
-    getResultText(result),
-    'omission placeholder',
-    'Should reject incomplete content',
-  );
+    assert(result.isError === true, `Should fail for ${JSON.stringify(content)}`);
+    assertIncludes(
+      getResultText(result),
+      'omission placeholder',
+      'Should reject incomplete content',
+    );
+  }
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testRejectSymlinkEscapingWorkspace() {
+  console.log('Test: Reject symlink escaping workspace');
+
+  const outsideDir = path.join(__dirname, 'fixtures', 'write-file-outside');
+  const linkPath = path.join(FIXTURES_DIR, 'escape-link');
+  await fs.mkdir(outsideDir, { recursive: true });
+
+  try {
+    try {
+      await fs.symlink(
+        outsideDir,
+        linkPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      console.log(`  - Skipped symlink assertion: ${error.message}\n`);
+      return;
+    }
+
+    const result = await writeFileTool.handler(
+      { file_path: path.join('escape-link', 'escaped.txt'), content: 'nope' },
+      testConfig,
+    );
+
+    assert(result.isError === true, 'Should fail');
+    assertIncludes(
+      getResultText(result),
+      'resolves outside the allowed workspace',
+      'Should reject symlink path escapes',
+    );
+
+    try {
+      await fs.stat(path.join(outsideDir, 'escaped.txt'));
+      assert(false, 'Should not write through the symlink');
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') throw error;
+    }
+  } finally {
+    await removeLinkIfExists(linkPath);
+  }
 
   console.log('  ✓ Passed\n');
 }
@@ -168,6 +237,7 @@ async function main() {
     testRejectOutsideWorkspace,
     testRejectBinaryTarget,
     testRejectPlaceholderContent,
+    testRejectSymlinkEscapingWorkspace,
   ];
 
   let passed = 0;
