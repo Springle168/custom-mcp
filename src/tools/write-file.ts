@@ -1,0 +1,181 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import type { Config } from '../config.js';
+import {
+  detectLineEnding,
+  resolveLineEnding,
+  detectOmissionPlaceholders,
+} from '../engine/text-utils.js';
+import { isBinaryFile } from '../utils/file-read.js';
+import { withFileLock } from '../utils/file-lock.js';
+import { resolvePath, validatePathAccess } from '../utils/paths.js';
+import type { MCPTool, ToolCallResult } from './types.js';
+
+// ================
+// Tool Schema
+// ================
+
+const WRITE_FILE_TOOL_DEFINITION = {
+  name: 'write_file',
+  description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
+
+Use this tool for new files or full-file rewrites. Use replace_text for targeted edits to existing files.
+The file path must stay inside the configured workspace root.
+The content parameter must contain the full file contents; do not use omission placeholders like "..." or "rest of code".
+On success, returns an English message with the written path and the file's total line count.`,
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      file_path: {
+        type: 'string',
+        description:
+          'Path to the file to write. Relative paths resolve from the configured workspace root.',
+      },
+      content: {
+        type: 'string',
+        description:
+          'Complete text content to write. Provide the full file; do not use omission placeholders.',
+      },
+    },
+    required: ['file_path', 'content'],
+  },
+};
+
+// ================
+// Response Helpers
+// ================
+
+function successResult(text: string): ToolCallResult {
+  return { content: [{ type: 'text', text }] };
+}
+
+function errorResult(text: string): ToolCallResult {
+  return { content: [{ type: 'text', text }], isError: true };
+}
+
+// ================
+// Parameter Validation
+// ================
+
+function validateParams(args: Record<string, unknown>): string | null {
+  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+    return "The 'file_path' parameter must be a non-empty string.";
+  }
+
+  if (typeof args.content !== 'string') {
+    return "The 'content' parameter must be a string.";
+  }
+
+  const placeholders = detectOmissionPlaceholders(args.content);
+  if (placeholders.length > 0) {
+    return "The 'content' parameter contains an omission placeholder (e.g. 'rest of code ...'). Provide the full file content.";
+  }
+
+  return null;
+}
+
+// ================
+// Content Helpers
+// ================
+
+function normalizeLineEndings(
+  content: string,
+  lineEnding: '\r\n' | '\n',
+): string {
+  if (lineEnding === '\r\n') {
+    return content.replace(/\r\n|\r|\n/g, '\r\n');
+  }
+  return content.replace(/\r\n|\r/g, '\n');
+}
+
+function countLines(content: string): number {
+  return content.split(/\r?\n/).length;
+}
+
+function successPath(filePath: string, resolved: string, rootDir: string): string {
+  return path.isAbsolute(filePath)
+    ? resolved
+    : path.relative(rootDir, resolved);
+}
+
+// ================
+// Tool Handler
+// ================
+
+async function handleWriteFile(
+  args: Record<string, unknown>,
+  config: Config,
+): Promise<ToolCallResult> {
+  const validationError = validateParams(args);
+  if (validationError) return errorResult(validationError);
+
+  const filePath = args.file_path as string;
+  const content = args.content as string;
+  const resolved = resolvePath(filePath, config.rootDir);
+  const pathError = validatePathAccess(resolved, config.rootDir);
+  if (pathError) {
+    return errorResult(
+      `${pathError} Provide a file path inside the configured workspace root.`,
+    );
+  }
+
+  return withFileLock(resolved, async () => {
+    let detectedLineEnding: '\r\n' | '\n' | null = null;
+
+    try {
+      const stat = await fs.stat(resolved);
+      if (stat.isDirectory()) {
+        return errorResult(
+          `Could not write file ${filePath}: target path is a directory. Provide a file path instead.`,
+        );
+      }
+
+      if (await isBinaryFile(resolved)) {
+        return errorResult(
+          `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
+        );
+      }
+
+      const raw = await fs.readFile(resolved, 'utf-8');
+      detectedLineEnding = detectLineEnding(raw);
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') {
+        if (await isBinaryFile(resolved)) {
+          return errorResult(
+            `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
+          );
+        }
+      } else if (error.code !== 'ENOENT') {
+        return errorResult(
+          `Could not prepare file ${filePath}: ${error.message}. Check the path and permissions.`,
+        );
+      }
+    }
+
+    const lineEnding = resolveLineEnding(config.lineEnding, detectedLineEnding);
+    const finalContent = normalizeLineEndings(content, lineEnding);
+
+    try {
+      await fs.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.writeFile(resolved, finalContent, 'utf-8');
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      return errorResult(
+        `Could not write file ${filePath}: ${error.message}. Check the path and permissions.`,
+      );
+    }
+
+    const displayPath = successPath(filePath, resolved, config.rootDir);
+    return successResult(
+      `Success: wrote ${displayPath}. Total lines: ${countLines(finalContent)}.`,
+    );
+  });
+}
+
+const writeFileTool: MCPTool = {
+  definition: WRITE_FILE_TOOL_DEFINITION,
+  handler: handleWriteFile,
+};
+
+export default writeFileTool;
