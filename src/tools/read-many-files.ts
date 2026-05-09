@@ -10,6 +10,7 @@ import {
   BINARY_EXTENSIONS,
   isBinaryFile,
   readTextFile,
+  MAX_LINE_LENGTH,
   MAX_LINES_PER_FILE,
 } from '../utils/file-read.js';
 
@@ -65,7 +66,9 @@ Use this tool when you need content from several files at once, such as:
 - Mixing paths and patterns: include ["/absolute/path/Config.kt", "src/**/*.kt"]
 
 Text files only. Binary files (images, archives, compiled output, etc.) are automatically skipped.
-Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file on that specific file for full content.
+Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file or a similar file-reading tool on that specific file for full content.
+Set shallow_read to true to list matched files with per-file line counts, total line count, and truncation status without returning file contents.
+Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".
 Default excludes filter out node_modules, .git, build directories, and binary files. Set useDefaultExcludes to false to disable.
 Prefer read_file for a single file. Use this tool when reading 2 or more files.`,
   inputSchema: {
@@ -88,6 +91,16 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
         type: 'boolean',
         description:
           'Whether to apply default exclusion patterns (node_modules, .git, build, binary files, etc.). Defaults to true.',
+      },
+      shallow_read: {
+        type: 'boolean',
+        description:
+          'If true, return only the matched file list with each file line count, total line count, and whether content would be truncated. Defaults to false.',
+      },
+      show_line_numbers: {
+        type: 'boolean',
+        description:
+          'If true, prefix each returned content line with its original 1-based line number. Use only when line numbers are necessary. Defaults to false.',
       },
     },
     required: ['include'],
@@ -141,6 +154,21 @@ function validateParams(args: Record<string, unknown>): string | null {
       }
     }
   }
+  if (
+    args.useDefaultExcludes !== undefined &&
+    typeof args.useDefaultExcludes !== 'boolean'
+  ) {
+    return "The 'useDefaultExcludes' parameter must be a boolean.";
+  }
+  if (args.shallow_read !== undefined && typeof args.shallow_read !== 'boolean') {
+    return "The 'shallow_read' parameter must be a boolean.";
+  }
+  if (
+    args.show_line_numbers !== undefined &&
+    typeof args.show_line_numbers !== 'boolean'
+  ) {
+    return "The 'show_line_numbers' parameter must be a boolean.";
+  }
   return null;
 }
 
@@ -160,6 +188,9 @@ async function handleReadManyFiles(
   const exclude = (args.exclude as string[] | undefined) ?? [];
   const useDefaultExcludes =
     (args.useDefaultExcludes as boolean | undefined) ?? true;
+  const shallowRead = (args.shallow_read as boolean | undefined) ?? false;
+  const showLineNumbers =
+    (args.show_line_numbers as boolean | undefined) ?? false;
 
   // 2. Build effective exclude patterns
   const effectiveExcludes = useDefaultExcludes
@@ -264,7 +295,9 @@ async function handleReadManyFiles(
       if (await isBinaryFile(filePath)) {
         return { filePath, ok: false as const, reason: 'binary file' };
       }
-      const result = await readTextFile(filePath);
+      const result = await readTextFile(filePath, {
+        showLineNumbers: !shallowRead && showLineNumbers,
+      });
       if (!result.ok) {
         return { filePath, ok: false as const, reason: result.reason };
       }
@@ -273,15 +306,30 @@ async function handleReadManyFiles(
         ok: true as const,
         content: result.content,
         isTruncated: result.isTruncated,
+        lineCountTruncated: result.lineCountTruncated,
+        lineLengthTruncated: result.lineLengthTruncated,
         originalLineCount: result.originalLineCount,
         linesRead: result.linesRead,
+        startLine: result.startLine,
+        endLine: result.endLine,
       };
     }),
   );
 
   // 9. Assemble file content blocks
   const contentParts: string[] = [];
-  const processedFiles: string[] = [];
+  const processedFiles: Array<{
+    filePath: string;
+    displayPath: string;
+    content: string;
+    isTruncated: boolean;
+    lineCountTruncated: boolean;
+    lineLengthTruncated: boolean;
+    originalLineCount: number;
+    linesRead: number;
+    startLine: number;
+    endLine: number;
+  }> = [];
 
   for (const settled of readResults) {
     if (settled.status === 'rejected') {
@@ -302,18 +350,18 @@ async function handleReadManyFiles(
       ? r.filePath
       : path.relative(config.rootDir, r.filePath);
 
-    const separator = OUTPUT_SEPARATOR_FORMAT.replace(
-      '{filePath}',
+    processedFiles.push({
+      filePath: r.filePath,
       displayPath,
-    );
-    let block = '';
-    if (r.isTruncated) {
-      block += `[WARNING: Truncated. Showing ${r.linesRead} of ${r.originalLineCount} lines. Use read_file for full content.]\n\n`;
-    }
-    block += r.content;
-
-    contentParts.push(`${separator}\n\n${block}\n`);
-    processedFiles.push(r.filePath);
+      content: r.content,
+      isTruncated: r.isTruncated,
+      lineCountTruncated: r.lineCountTruncated,
+      lineLengthTruncated: r.lineLengthTruncated,
+      originalLineCount: r.originalLineCount,
+      linesRead: r.linesRead,
+      startLine: r.startLine,
+      endLine: r.endLine,
+    });
   }
 
   // 10. Build summary header
@@ -324,6 +372,58 @@ async function handleReadManyFiles(
       (skipped.length > 0 ? `, skipped ${skipped.length}` : '') +
       '.',
   );
+
+  if (shallowRead && processedFiles.length > 0) {
+    const totalLineCount = processedFiles.reduce(
+      (sum, file) => sum + file.originalLineCount,
+      0,
+    );
+    summaryParts.push('Shallow read: file contents omitted.');
+    summaryParts.push(`Total lines: ${totalLineCount}.`);
+    summaryParts.push('Files:');
+    for (const file of processedFiles) {
+      const truncationStatus = file.isTruncated
+        ? `yes (${[
+            file.lineCountTruncated ? 'line count' : null,
+            file.lineLengthTruncated ? 'long lines' : null,
+          ].filter(Boolean).join(', ')})`
+        : 'no';
+      summaryParts.push(
+        `- ${file.displayPath}: ${file.originalLineCount} line(s), would be truncated: ${truncationStatus}.`,
+      );
+    }
+  } else if (processedFiles.length > 0) {
+    const hasTruncatedContent = processedFiles.some((file) => file.isTruncated);
+    if (!hasTruncatedContent) {
+      summaryParts.push('No truncation: all returned file contents are complete.');
+    } else {
+      summaryParts.push(
+        'Files without a truncation warning are returned completely.',
+      );
+    }
+
+    for (const file of processedFiles) {
+      const separator = OUTPUT_SEPARATOR_FORMAT.replace(
+        '{filePath}',
+        file.displayPath,
+      );
+      let block = '';
+      if (file.isTruncated) {
+        const truncationReasons = [
+          file.lineCountTruncated
+            ? `showing lines ${file.startLine}-${file.endLine} of ${file.originalLineCount}`
+            : null,
+          file.lineLengthTruncated
+            ? `some lines shortened to ${MAX_LINE_LENGTH} characters`
+            : null,
+        ].filter(Boolean);
+        block += `[WARNING: Truncated. ${truncationReasons.join('; ')}. Use read_file or a similar file-reading tool for full content.]\n\n`;
+      }
+      block += file.content;
+
+      contentParts.push(`${separator}\n\n${block}\n`);
+    }
+  }
 
   if (filesLimited) {
     summaryParts.push(

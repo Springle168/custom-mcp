@@ -90,10 +90,27 @@ export interface TextFileContent {
   content: string;
   /** Whether content was truncated by line count or line length limits. */
   isTruncated: boolean;
+  /** Whether the selected line range excludes part of the file. */
+  lineCountTruncated: boolean;
+  /** Whether any returned line was shortened due to line length limits. */
+  lineLengthTruncated: boolean;
   /** Total lines in the original file. */
   originalLineCount: number;
   /** Number of lines included in `content`. */
   linesRead: number;
+  /** First original line number included in `content` (1-based). */
+  startLine: number;
+  /** Last original line number included in `content` (1-based). */
+  endLine: number;
+}
+
+export interface ReadTextFileOptions {
+  /** Optional 1-based line number to start reading from. */
+  startLine?: number;
+  /** Optional 1-based line number to end reading at, inclusive. */
+  endLine?: number;
+  /** Prefix each returned line with its original 1-based line number. */
+  showLineNumbers?: boolean;
 }
 
 export type TextFileResult =
@@ -167,7 +184,10 @@ export async function isBinaryFile(filePath: string): Promise<boolean> {
  *
  * The caller should check {@link isBinaryFile} before calling this function.
  */
-export async function readTextFile(filePath: string): Promise<TextFileResult> {
+export async function readTextFile(
+  filePath: string,
+  options: ReadTextFileOptions = {},
+): Promise<TextFileResult> {
   try {
     const stats = await fs.stat(filePath);
 
@@ -187,26 +207,56 @@ export async function readTextFile(filePath: string): Promise<TextFileResult> {
     const lines = raw.split(/\r?\n/);
     const originalLineCount = lines.length;
 
-    // Truncate by line count
-    const selectedLines = lines.slice(0, MAX_LINES_PER_FILE);
-    const lineCountTruncated = originalLineCount > MAX_LINES_PER_FILE;
+    let sliceStart = 0;
+    let sliceEnd = originalLineCount;
+
+    if (options.startLine !== undefined || options.endLine !== undefined) {
+      sliceStart = options.startLine !== undefined ? options.startLine - 1 : 0;
+      sliceEnd = options.endLine !== undefined
+        ? Math.min(options.endLine, originalLineCount)
+        : Math.min(sliceStart + MAX_LINES_PER_FILE, originalLineCount);
+    } else {
+      sliceEnd = Math.min(MAX_LINES_PER_FILE, originalLineCount);
+    }
+
+    const actualStart = Math.min(sliceStart, originalLineCount);
+    const requestedEnd = Math.max(actualStart, sliceEnd);
+    const actualEnd = Math.min(
+      requestedEnd,
+      actualStart + MAX_LINES_PER_FILE,
+      originalLineCount,
+    );
+    const selectedLines = lines.slice(actualStart, actualEnd);
+    const lineCountTruncated =
+      actualStart > 0 || actualEnd < originalLineCount || actualEnd < requestedEnd;
 
     // Truncate long lines
     let lineLengthTruncated = false;
-    const formattedLines = selectedLines.map((line) => {
+    const formattedLines = selectedLines.map((line, index) => {
       if (line.length > MAX_LINE_LENGTH) {
         lineLengthTruncated = true;
-        return line.substring(0, MAX_LINE_LENGTH) + '... [truncated]';
+        line = line.substring(0, MAX_LINE_LENGTH) + '... [truncated]';
+      }
+      if (options.showLineNumbers === true) {
+        return `${actualStart + index + 1}: ${line}`;
       }
       return line;
     });
+
+    const linesRead = selectedLines.length;
+    const startLine = linesRead > 0 ? actualStart + 1 : actualStart + 1;
+    const endLine = linesRead > 0 ? actualStart + linesRead : actualStart;
 
     return {
       ok: true,
       content: formattedLines.join('\n'),
       isTruncated: lineCountTruncated || lineLengthTruncated,
+      lineCountTruncated,
+      lineLengthTruncated,
       originalLineCount,
-      linesRead: selectedLines.length,
+      linesRead,
+      startLine,
+      endLine,
     };
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;

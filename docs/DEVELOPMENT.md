@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，当前提供三类能力：精准的文件局部替换、批量文件读取，以及固定环境下的 Android Gradle 构建能力。
+基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，当前提供三类能力：精准的文件局部替换、文件读取（单文件与批量），以及固定环境下的 Android Gradle 构建能力。
 
 ---
 
@@ -32,12 +32,14 @@ custom-mcp/
 │   ├── test-ask-user.ts         # ask_user 工具测试
 │   ├── test-config.ts           # 通用配置加载测试
 │   ├── test-logger.ts           # 日志系统测试
+│   ├── test-read-file.ts        # read_file 工具测试
 │   └── test-read-many-files.ts  # read_many_files 工具测试
 ├── docs/
 │   ├── DEVELOPMENT.md           # 本文件
 │   ├── commit-guidelines.md     # Git 提交信息规范
 │   └── tools/
 │       ├── replace-text.md      # replace_text 工具文档
+│       ├── read-file.md         # read_file 工具文档
 │       ├── read-many-files.md   # read_many_files 工具文档
 │       ├── ask-user.md          # ask_user 工具文档
 │       └── android-build.md     # Android 构建工具文档
@@ -48,6 +50,7 @@ custom-mcp/
 │   │   ├── index.ts             # 工具注册表 + 路由分发
 │   │   ├── types.ts             # MCPTool 接口定义
 │   │   ├── replace.ts           # replace_text 工具
+│   │   ├── read-file.ts         # read_file 工具
 │   │   ├── read-many-files.ts   # read_many_files 工具
 │   │   ├── ask-user.ts          # ask_user 工具
 │   │   ├── android-build-shared.ts # Android 构建工具共享逻辑
@@ -82,6 +85,7 @@ custom-mcp/
 |-|-|-|
 | `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `read_file` | 读取单个文本文件，支持行范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
 | `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
 | `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
