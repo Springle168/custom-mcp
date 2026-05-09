@@ -417,6 +417,46 @@ async function testBinaryFileInGlob() {
   console.log('  ✓ Passed\n');
 }
 
+async function testShallowRead() {
+  console.log('Test: Shallow read returns file list and line counts');
+
+  const result = await readManyFilesTool.handler(
+    { include: ['src/Foo.kt', 'docs/README.md'], shallow_read: true },
+    testConfig
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'Read 2 file(s)', 'Should report 2 files read');
+  assertIncludes(text, 'Shallow read: file contents omitted.', 'Should explain shallow mode');
+  assertIncludes(text, 'Total lines: 37.', 'Should report total line count');
+  assertIncludes(text, 'src\\Foo.kt: 15 line(s), would be truncated: no.', 'Should report Foo line count');
+  assertIncludes(text, 'docs\\README.md: 22 line(s), would be truncated: no.', 'Should report README line count');
+  assertNotIncludes(text, 'data class Foo', 'Should not include file content');
+  assertNotIncludes(text, '--- End of content ---', 'Should not include content terminator');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testShowLineNumbers() {
+  console.log('Test: show_line_numbers prefixes returned content lines');
+
+  const result = await readManyFilesTool.handler(
+    { include: ['src/Foo.kt'], show_line_numbers: true },
+    testConfig
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'No truncation: all returned file contents are complete.', 'Should state no truncation');
+  assertIncludes(text, '1: package com.example.demo', 'Should prefix first line');
+  assertIncludes(text, '6: data class Foo(', 'Should preserve original line numbers');
+
+  console.log('  ✓ Passed\n');
+}
+
 // ================
 // Main Test Runner
 // ================
@@ -447,6 +487,8 @@ async function main() {
     testPathIsDirectory,
     testBinaryFileSkipped,
     testBinaryFileInGlob,
+    testShallowRead,
+    testShowLineNumbers,
   ];
 
   let passed = 0;
