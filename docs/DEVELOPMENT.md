@@ -460,7 +460,7 @@ properties
 ### 移植通用注意事项
 
 1. **定位Schema**：所有工具的参数描述统一在
-   `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts`
+   `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts`
    中，按工具名搜索即可找到完整 `description` 和 `inputSchema`。
 
 2. **定位实现**：工具执行逻辑在

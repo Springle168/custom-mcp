@@ -153,7 +153,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 | Gemini CLI 文件 | 参考内容 |
 |-|-|
 | `packages/core/src/tools/ask-user.ts` | 工具实现、参数校验逻辑、执行流程 |
-| `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts` | Schema 定义（`inputSchema`、`description`） |
+| `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts` | Schema 定义（`inputSchema`、`description`） |
 | `packages/core/src/tools/definitions/coreTools.ts` | 工具定义结构 |
 | `packages/core/src/tools/tool-names.ts` | 常量定义（参数名、字段名） |
 

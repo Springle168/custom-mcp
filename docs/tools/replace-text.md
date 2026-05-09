@@ -147,7 +147,7 @@ score = weightedDist / searchBlock.length
 | Gemini CLI 文件 | 参考内容 |
 |-|-|
 | `packages/core/src/tools/editTool.ts` | 整体流程：参数校验 → 文件读写 → 替换调用 |
-| `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts` | Schema 参数设计和 description |
+| `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts` | Schema 参数设计和 description |
 | `packages/core/src/utils/editOperations.ts` | 四级替换策略算法 |
 
 ### 移植时的裁剪

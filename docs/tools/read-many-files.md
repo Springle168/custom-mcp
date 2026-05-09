@@ -146,7 +146,7 @@ Skipped:
 | Gemini CLI 文件 | 参考内容 |
 |-|-|
 | `packages/core/src/tools/readManyFiles.ts` | 整体流程：glob 展开 → 安全校验 → 并行读取 → 拼接输出 |
-| `packages/core/src/tools/definitions/model-family-sets/default-legacy.ts` | Schema 参数设计和description 写法 |
+| `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts` | Schema 参数设计和description 写法 |
 | `packages/core/src/utils/fileUtils.ts` | 文本读取截断逻辑、二进制检测、常量值 |
 | `packages/core/src/utils/ignorePatterns.ts` | 默认排除模式、二进制扩展名列表 |
 | `packages/core/src/utils/constants.ts` | `DEFAULT_MAX_LINES_TEXT_FILE`、`MAX_LINE_LENGTH_TEXT_FILE`、`MAX_FILE_SIZE_MB` |
