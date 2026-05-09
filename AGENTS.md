@@ -55,6 +55,7 @@
 
 - TypeScript 编译：`npm run build`。
 - 单个脚本测试：`npx tsx test/<file>.ts`。
+- 在 Windows / PowerShell 下执行 `npx tsx test/<file>.ts` 时，需要显式加 `powershell.exe -ExecutionPolicy Bypass -Command ...`，或者改用 `cmd /c npx tsx test/<file>.ts`。`require_escalated` 无法绕过 `ExecutionPolicy`。
 - Android 构建相关测试集中在 `test/android-build/`。
 - 不要运行会改写源码、文档或快照的格式化/生成命令，除非用户明确要求或当前任务必须如此。
 
