@@ -6,6 +6,7 @@ import type { MCPTool, ToolCallResult } from './types.js';
 // 加新工具时只需要在这里加一行 import + 加到 registry 数组里
 // =============================
 import replaceTool from './replace.js';
+import writeFileTool from './write-file.js';
 import readManyFilesTool from './read-many-files.js';
 import readFileTool from './read-file.js';
 import askUserTool from './ask-user.js';
@@ -14,6 +15,7 @@ import androidTestDebugUnitTestTool from './android-test-debug-unit-test.js';
 
 const registry: MCPTool[] = [
   replaceTool,
+  writeFileTool,
   readManyFilesTool,
   readFileTool,
   askUserTool,

@@ -33,6 +33,7 @@ custom-mcp/
 │   ├── test-config.ts           # 通用配置加载测试
 │   ├── test-logger.ts           # 日志系统测试
 │   ├── test-read-file.ts        # read_file 工具测试
+│   ├── test-write-file.ts       # write_file 工具测试
 │   └── test-read-many-files.ts  # read_many_files 工具测试
 ├── docs/
 │   ├── DEVELOPMENT.md           # 本文件
@@ -40,6 +41,7 @@ custom-mcp/
 │   └── tools/
 │       ├── replace-text.md      # replace_text 工具文档
 │       ├── read-file.md         # read_file 工具文档
+│       ├── write-file.md        # write_file 工具文档
 │       ├── read-many-files.md   # read_many_files 工具文档
 │       ├── ask-user.md          # ask_user 工具文档
 │       └── android-build.md     # Android 构建工具文档
@@ -50,6 +52,7 @@ custom-mcp/
 │   │   ├── index.ts             # 工具注册表 + 路由分发
 │   │   ├── types.ts             # MCPTool 接口定义
 │   │   ├── replace.ts           # replace_text 工具
+│   │   ├── write-file.ts        # write_file 工具
 │   │   ├── read-file.ts         # read_file 工具
 │   │   ├── read-many-files.ts   # read_many_files 工具
 │   │   ├── ask-user.ts          # ask_user 工具
@@ -86,6 +89,7 @@ custom-mcp/
 | `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `read_file` | 读取单个文本文件，支持行范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
+| `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
 | `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
 | `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
@@ -409,7 +413,7 @@ Android Studio 的 MCP 配置文件位置参考官方文档，添加：
 
 ### 与 Android Studio 内置工具的覆盖分析
 
-Android Studio 已内置以下工具，无需移植：
+Android Studio 已内置以下工具，通常无需额外移植：
 
 | Gemini CLI 工具 | Android Studio 内置对应工具 |
 |-|-|
@@ -418,6 +422,8 @@ Android Studio 已内置以下工具，无需移植：
 | `list_directory` | `list_files` |
 | `glob` | `find_files` |
 | `grep_search` | `grep` |
+
+注：尽管 Android Studio 已内置 `write_file`，本仓库仍提供同名 server-side 工具，用于统一写入流程、保持与 `replace_text` 的配套体验，并在宿主不使用内置能力时保持可用。
 
 ---
 
