@@ -164,8 +164,19 @@ async function handleReadFile(
   ];
 
   if (result.isTruncated) {
+    const truncationDetails: string[] = [];
+    if (result.lineCountTruncated) {
+      truncationDetails.push(
+        `Showing lines ${result.startLine}-${result.endLine} of ${result.originalLineCount} total lines. Use start_line and end_line in a subsequent read_file call to read more.`,
+      );
+    }
+    if (result.lineLengthTruncated) {
+      truncationDetails.push(
+        `Some returned lines were shortened to ${MAX_LINE_LENGTH} characters; line-range reads cannot recover truncated line tails.`,
+      );
+    }
     summaryParts.push(
-      `IMPORTANT: The file content has been truncated. Showing lines ${result.startLine}-${result.endLine} of ${result.originalLineCount} total lines. Use start_line and end_line in a subsequent read_file call to read more.`,
+      `IMPORTANT: The file content has been truncated. ${truncationDetails.join(' ')}`,
     );
   } else {
     summaryParts.push('No truncation: all returned file content is complete.');

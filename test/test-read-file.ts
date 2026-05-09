@@ -1,5 +1,6 @@
 // test/test-read-file.ts
 
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
@@ -108,6 +109,48 @@ async function testInvalidRange() {
   console.log('  ✓ Passed\n');
 }
 
+async function testStartLineBeyondEof() {
+  console.log('Test: Reject start_line beyond EOF');
+
+  const result = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', start_line: 999 },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Should fail');
+  assertIncludes(getResultText(result), 'start_line 999 exceeds file line count (15)', 'Should explain EOF range');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testLongLineWithLineNumbersStaysWithinLimit() {
+  console.log('Test: Long line with line numbers stays within limit');
+
+  const fileName = 'long-line.tmp.txt';
+  const filePath = path.join(FIXTURES_DIR, fileName);
+  await fs.writeFile(filePath, 'x'.repeat(2010), 'utf-8');
+
+  try {
+    const result = await readFileTool.handler(
+      { file_path: fileName, show_line_numbers: true },
+      testConfig,
+    );
+
+    assert(result.isError !== true, 'Should succeed');
+    const text = getResultText(result);
+    const contentLine = text.split('\n').at(-1) ?? '';
+
+    assertIncludes(text, 'Some returned lines were shortened to 2000 characters', 'Should explain long-line truncation');
+    assertNotIncludes(text, 'Use start_line and end_line', 'Should not suggest line ranges for long-line-only truncation');
+    assert(contentLine.startsWith('1: '), 'Should include line number prefix');
+    assert(contentLine.length <= 2000, 'Returned content line should stay within 2000 characters');
+  } finally {
+    await fs.rm(filePath, { force: true });
+  }
+
+  console.log('  ✓ Passed\n');
+}
+
 async function testBinaryFileRejected() {
   console.log('Test: Reject binary file');
 
@@ -133,6 +176,8 @@ async function main() {
     testReadLineRange,
     testShowLineNumbers,
     testInvalidRange,
+    testStartLineBeyondEof,
+    testLongLineWithLineNumbersStaysWithinLimit,
     testBinaryFileRejected,
   ];
 
