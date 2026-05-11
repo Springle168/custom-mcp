@@ -59,10 +59,15 @@
 - Android 构建相关测试集中在 `test/android-build/`。
 - 不要运行会改写源码、文档或快照的格式化/生成命令，除非用户明确要求或当前任务必须如此。
 
+## 工具调用指导
+
+- 当一次性读取大量文件时，优先使用 `read_many_files` 工具的 `shallow_read` 功能，预防可能发生的截断问题。
+- 遇到行数过长的文件时，分多次读取完整文件。
+
 ## Git 使用规则
 
 - 默认允许只读 Git 操作：`git status`、`git diff`、`git log`、`git blame`。
-- 未经用户明确授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
+- 未经用户明确同意和授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
 - 如果用户明确要求创建提交，先阅读并遵循 `docs/commit-guidelines.md`，再基于实际 diff 生成提交信息。
 - 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式提权流程运行 `git commit`，因为提交需要写入 `.git/`（如 `.git/index.lock`）。
 - 未经用户明确授权，不要执行历史改写或破坏性操作，包括 `git commit --amend`、`git rebase`、`git reset`、`git clean`、`git stash`、`git cherry-pick`。
