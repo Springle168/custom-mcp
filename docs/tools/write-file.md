@@ -47,7 +47,7 @@
 
 ### 成功输出
 
-成功消息是英文，格式类似：
+格式类似：
 
 ```text
 Success: wrote nested/example.txt. Total lines: 2.
