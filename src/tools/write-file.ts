@@ -19,10 +19,10 @@ const WRITE_FILE_TOOL_DEFINITION = {
   name: 'write_file',
   description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
 
-Use this tool for new files or full-file rewrites. Use replace_text for targeted edits to existing files.
+Use this tool for new files or full-file rewrites. Use replace_text or similar tools for targeted edits to existing files.
 The file path must stay inside the configured workspace root.
 The content parameter must contain the full file contents; do not use omission placeholders like "..." or "rest of code".
-On success, returns an English message with the written path and the file's total line count.`,
+On success, returns a message with the written path and the file's total line count.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
