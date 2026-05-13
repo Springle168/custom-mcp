@@ -102,6 +102,8 @@ Partial read: showing lines A-B of N total lines.
 --- End of content ---
 ```
 
+输出中的 `{filePath}` 会跟随调用时的路径形式：`file_path` 传入绝对路径时显示解析后的绝对路径，传入相对路径时显示相对 `rootDir` 的路径。
+
 ### 输出示例
 
 完整读取：
