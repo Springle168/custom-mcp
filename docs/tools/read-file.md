@@ -45,8 +45,8 @@
 - `file_path` 必须是非空字符串。
 - `read_mode` 只能是 `line` 或 `regex`，省略时默认为 `line`。
 - `show_line_numbers` 必须是 boolean。
-- `line` 模式下，`start_line` / `end_line` 如果提供，必须是正整数。
-- `line` 模式下，同时提供 `start_line` 和 `end_line` 时，`start_line` 不得大于 `end_line`。
+- `line` 模式下，`start_line` / `end_line` 如果提供，必须是正整数 JSON number，字符串数字会被拒绝。
+- `line` 模式下，同时提供 `start_line` 和 `end_line` 时，`start_line` 不得大于 `end_line`；错误信息会包含实际传入值，便于修正。
 - `regex` 模式下，`start_line` / `end_line` 如果提供，必须是非空字符串，且能作为 JavaScript `RegExp` pattern 编译。
 
 ### `read_mode="line"`
@@ -89,41 +89,66 @@ Partial read: showing lines A-B of N total lines.
 
 主动范围读取不再输出 `IMPORTANT: The file content has been truncated.`；`read_file` 正常成功结果也不再因为行数或单行长度出现截断提示。
 
+成功返回固定使用以下结构，避免 summary 与正文混淆：
+
+```text
+<summary line 1>
+<summary line 2>
+
+--- {filePath} ---
+
+<file content>
+
+--- End of content ---
+```
+
 ### 输出示例
 
 完整读取：
 
-```
+```text
 Read 3 of 3 line(s) from src/Foo.kt.
 No truncation: all returned file content is complete.
+
+--- src/Foo.kt ---
 
 package com.example.demo
 
 class Foo
+
+--- End of content ---
 ```
 
 行号范围读取并显示行号：
 
-```
+```text
 Read 3 of 15 line(s) from src/Foo.kt.
 Partial read: showing lines 6-8 of 15 total lines.
+
+--- src/Foo.kt ---
 
 6: data class Foo(
 7:     val id: Long,
 8:     val name: String
+
+--- End of content ---
 ```
 
 正则范围读取：
 
-```
+```text
 Read 5 of 15 line(s) from src/Foo.kt.
 Partial read: showing lines 6-10 of 15 total lines.
+
+--- src/Foo.kt ---
 
 data class Foo(
     val id: Long,
     val name: String,
     val email: String
 ) {
+
+--- End of content ---
 ```
 
 ---
