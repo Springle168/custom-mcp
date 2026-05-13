@@ -50,9 +50,9 @@ feat(profile): implement user profile component with React and TypeScript
 
 Replace the legacy class-based profile view with functional components and Hooks to improve readability and leverage strict type checking.
 
-- Create UserProfile functional component with TypeScript interfaces for props
-- Migrate profile state management to use the useReducer hook
-- Add Avatar component using next/image for optimized image loading
+- create UserProfile functional component with TypeScript interfaces for props
+- migrate profile state management to use the useReducer hook
+- add Avatar component using next/image for optimized image loading
 
 ---
 
