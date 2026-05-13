@@ -2,9 +2,9 @@
 
 ## 概述
 
-读取单个文本文件内容，支持按 1-based 行号范围读取，并可按需给返回内容添加行号前缀。该工具只返回 text 内容，不处理图片、音频或 PDF 等多模态文件。
+读取单个文本文件内容，支持按 1-based 行号范围读取，或按逐行正则定位起止行后读取连续范围，并可按需给返回内容添加原始行号前缀。该工具只返回 text 内容，不处理图片、音频或 PDF 等多模态文件。
 
-适用场景：需要查看一个具体文件，或在 `read_many_files` 返回截断提示后，使用 `start_line` / `end_line` 对单文件进行更精确的分段读取。
+适用场景：需要查看一个具体文件，或在 `read_many_files` 返回截断提示后，使用 `read_file` 对单文件读取完整内容或更精确的局部范围。
 
 ---
 
@@ -19,15 +19,17 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
 | `file_path` | `string` | ✅ | — | 要读取的文本文件路径，支持相对 `rootDir` 或绝对路径 |
-| `start_line` | `number` | ❌ | — | 起始行号，1-based |
-| `end_line` | `number` | ❌ | — | 结束行号，1-based，包含该行 |
-| `show_line_numbers` | `boolean` | ❌ | `false` | 给返回内容每行添加原始行号前缀，仅在确实需要行号时开启 |
+| `start_line` | `integer \| string` | ❌ | — | 起始位置；解释方式由 `read_mode` 决定 |
+| `end_line` | `integer \| string` | ❌ | — | 结束位置，包含该行；解释方式由 `read_mode` 决定 |
+| `read_mode` | `"line" \| "regex"` | ❌ | `"line"` | 行定位模式：`line` 按行号解释，`regex` 按逐行正则解释 |
+| `show_line_numbers` | `boolean` | ❌ | `false` | 给返回内容每行添加原始 1-based 行号前缀，仅在确实需要行号时开启 |
 
 ### description 设计意图
 
-- **精确读取**：引导 AI 使用 `start_line` / `end_line` 做小范围读取，减少 token 浪费。
+- **精确读取**：引导 AI 使用 `read_mode`、`start_line` 和 `end_line` 做小范围读取，减少 token 浪费。
+- **模式明确**：通过 `read_mode` 区分行号定位和正则定位，避免把字符串行号误解为数字。
 - **文本限定**：明确当前实现只处理文本文件，二进制文件会返回错误。
-- **截断限制**：说明单文件 20MB、最多 2000 行、单行最多 2000 字符的限制。
+- **读取边界**：说明单文件保留 20MB 体积保护，但不再做返回行数或单行长度截断。
 - **行号提醒**：说明 `show_line_numbers` 只在需要精确引用行号时开启。
 
 ---
@@ -41,50 +43,94 @@
 ### 参数校验
 
 - `file_path` 必须是非空字符串。
-- `start_line` / `end_line` 必须是整数且不小于 1。
-- 同时提供 `start_line` 和 `end_line` 时，`start_line` 不得大于 `end_line`。
+- `read_mode` 只能是 `line` 或 `regex`，省略时默认为 `line`。
 - `show_line_numbers` 必须是 boolean。
+- `line` 模式下，`start_line` / `end_line` 如果提供，必须是正整数。
+- `line` 模式下，同时提供 `start_line` 和 `end_line` 时，`start_line` 不得大于 `end_line`。
+- `regex` 模式下，`start_line` / `end_line` 如果提供，必须是非空字符串，且能作为 JavaScript `RegExp` pattern 编译。
 
-### 文本读取与截断
+### `read_mode="line"`
 
-读取逻辑复用 `src/utils/file-read.ts` 的 `readTextFile()`：
+- 不提供 `start_line` 时从第 1 行开始。
+- 不提供 `end_line` 时读取到 EOF。
+- `start_line` 超出文件总行数时返回错误。
+- `end_line` 超出文件总行数时裁剪到 EOF，不视为截断。
+
+### `read_mode="regex"`
+
+- `start_line` / `end_line` 按 JavaScript `RegExp` pattern 编译，不额外添加 `g`、`m`、`s` 等标志。
+- 匹配按单行逐行执行，不支持跨行正则定位。
+- 不提供 `start_line` 时从第 1 行开始；提供时，从文件开头寻找第一条匹配行作为起始行。
+- 不提供 `end_line` 时读取到 EOF；提供时，从已解析的起始行开始寻找第一条匹配行作为结束行，并包含该行。
+- 正则语法无效、`start_line` 无匹配或 `end_line` 无匹配时返回错误，并提示检查 pattern。
+
+### 文本读取与输出
+
+读取逻辑复用 `src/utils/file-read.ts` 的 `readTextFile()`，但 `read_file` 会关闭行数与单行长度截断，仅保留文件大小和二进制保护：
 
 | 限制 | 值 | 行为 |
 |-|-|-|
 | 单文件体积 | 20MB | 超过直接返回错误 |
-| 返回行数 | 2000 行 | 超过会截断 |
-| 单行长度 | 2000 字符 | 超过会截断，行尾加 `... [truncated]` |
+| 二进制文件 | — | 拒绝读取并返回错误 |
+| 返回行数 | 不限制 | 可读取完整文本内容 |
+| 单行长度 | 不限制 | 不缩短长行内容 |
 
-未发生截断时，返回会明确包含：
+完整读取时，返回会明确包含：
 
 ```
 No truncation: all returned file content is complete.
 ```
 
-发生截断时，返回会明确说明当前显示的行号范围，并提示后续继续用 `start_line` / `end_line` 读取更多内容。
+主动范围读取时，返回会明确包含：
+
+```
+Partial read: showing lines A-B of N total lines.
+```
+
+主动范围读取不再输出 `IMPORTANT: The file content has been truncated.`；`read_file` 正常成功结果也不再因为行数或单行长度出现截断提示。
 
 ### 输出示例
 
 完整读取：
 
 ```
-Read 15 of 15 line(s) from src/Foo.kt.
+Read 3 of 3 line(s) from src/Foo.kt.
 No truncation: all returned file content is complete.
 
 package com.example.demo
-...
+
+class Foo
 ```
 
-范围读取并显示行号：
+行号范围读取并显示行号：
 
 ```
 Read 3 of 15 line(s) from src/Foo.kt.
-IMPORTANT: The file content has been truncated. Showing lines 6-8 of 15 total lines. Use start_line and end_line in a subsequent read_file call to read more.
+Partial read: showing lines 6-8 of 15 total lines.
 
 6: data class Foo(
 7:     val id: Long,
 8:     val name: String
 ```
+
+正则范围读取：
+
+```
+Read 5 of 15 line(s) from src/Foo.kt.
+Partial read: showing lines 6-10 of 15 total lines.
+
+data class Foo(
+    val id: Long,
+    val name: String,
+    val email: String
+) {
+```
+
+---
+
+## 与 read_many_files 的分工
+
+`read_many_files` 仍然保留批量输出保护：单文件最多返回 2000 行、单行最多 2000 字符，并在发生截断时提示使用 `read_file` 查看完整内容。`read_file` 面向单文件精读，不再应用这些输出截断限制。
 
 ---
 
@@ -92,8 +138,8 @@ IMPORTANT: The file content has been truncated. Showing lines 6-8 of 15 total li
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/read-file.ts` | Schema 定义、参数校验、路径安全、结果拼接 |
-| `src/utils/file-read.ts` | 二进制检测、文本读取、行范围、行号前缀和截断逻辑 |
+| `src/tools/read-file.ts` | Schema 定义、参数校验、`read_mode` 解析、路径安全、结果拼接 |
+| `src/utils/file-read.ts` | 二进制检测、20MB 文件大小保护、文本读取、可配置截断、行号前缀 |
 | `src/utils/paths.ts` | `resolvePath()` 与 `validatePathAccess()` 路径安全校验 |
 | `src/tools/index.ts` | 工具注册 |
 
