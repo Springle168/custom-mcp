@@ -28,7 +28,7 @@
 description 中包含了详细的使用规则，这些不是普通文档，而是直接影响 AI 行为的 prompt：
 
 - **old_string 规则**：强调必须是精确文本、包含上下文行、不要转义——这些是 AI 最常犯的错误
-- **new_string 规则**：禁止省略占位符（如 `...`、`rest of methods`），要求完整代码——防止 AI 偷懒
+- **new_string 规则**：提示避免省略占位符（如 `...`、`rest of methods`），要求完整代码——防止 AI 偷懒
 - **最佳实践**：引导 AI 先 `read_file` 再替换、偏好小替换——降低匹配失败率、如果目标文件需要大量重构就建议使用 `write_file` 进行全量覆写
 
 ---
@@ -38,7 +38,7 @@ description 中包含了详细的使用规则，这些不是普通文档，而�
 ### 执行流程
 
 ```
-参数校验（省略占位符检测）
+参数校验（包含 allow_multiple 严格类型检查）+ 生成省略占位符提醒
   → 路径解析 + 安全校验（validatePathAccess）
     → 文件锁（withFileLock）
       → 读取文件（统一 \n 处理）
@@ -70,7 +70,9 @@ description 中包含了详细的使用规则，这些不是普通文档，而�
 
 将 `old_string` 按分隔符 `( ) : [ ] { } > < =` 拆分为token，每个 token 转义后用 `\s*` 连接。容忍 token 之间的任意空白变化。
 
-命中条件：代码结构相同但空白/换行格式不同。
+实现上会把表达式锚定到行首或行首缩进后的位置（`^([ \t]*)`），因此它适合匹配完整代码行/代码块，不适合匹配行中间的任意片段。替换时会复用捕获到的目标缩进并应用到 `new_string`。
+
+命中条件：代码结构相同但空白/换行格式不同，且匹配片段位于行首或缩进之后。
 
 #### 4. Fuzzy（模糊匹配）
 
@@ -91,11 +93,16 @@ score = weightedDist / searchBlock.length
 - `old_string.length < 10` →跳过（防止短字符串误匹配）
 - `sourceLines.length * old_string.length² > 4e8` → 跳过（防止性能问题）
 
-### 省略占位符检测
+### 省略占位符提醒
 
-参数校验阶段会检查 `new_string` 中是否包含省略占位符（如 `...`、`rest of methods`、`unchanged code` 等）。如果 `new_string` 中出现了`old_string` 中不存在的占位符，直接拒绝，防止 AI 用占位符替代实际代码导致代码丢失。
+`replace_text` 会检查 `new_string` 中是否出现 `old_string` 中没有的疑似省略占位符，并在成功创建或修改后的返回消息中追加 `Warning:`，但不会直接拒绝写入。这样可以提醒 AI 自检，同时允许文档、测试数据或示例代码中合法出现这些文本。
 
-检测逻辑在 `src/engine/text-utils.ts` 的 `detectOmissionPlaceholders()` 中。
+当前提醒会覆盖两类模式：
+
+- `src/engine/text-utils.ts` 的 `detectOmissionPlaceholders()` 识别的带省略号短语，如 `rest of code ...`、`unchanged code ...`
+- `src/tools/replace.ts` 中的额外宽松检测，如裸 `...`、注释包裹的 `// ...`、`/* ... */`、`same as above`、`existing code ...`
+
+如果 warning 对应的是文档或真实内容，可以忽略；否则应使用 `read_file` 核对并提供完整 `new_string`。
 
 ### 行尾符处理
 
@@ -116,14 +123,14 @@ score = weightedDist / searchBlock.length
 错误消息不只是告诉 AI "失败了"，而是引导自我纠正：
 
 ```
-//匹配数量为 0
-"Failed to edit,0 occurrences found for old_string in src/index.ts.Ensure you're not escaping content incorrectly and check whitespace,
- indentation, and context. Use read_file tool to verify."
+// 匹配数量为 0
+"Failed to edit, 0 occurrences found for old_string in src/index.ts. Ensure you're not escaping content incorrectly and check whitespace, indentation, and context. Use read_file tool to verify."
 
-// 匹配数量 > 1且未设置 allow_multiple
-"Found N occurrences of old_string in src/index.ts, expected 1.
- Include more surrounding context to uniquely identify the target,
- or set allow_multiple to true."
+// 匹配数量 > 1 且未设置 allow_multiple
+"Failed to edit, expected 1 occurrence but found N for old_string in file: src/index.ts. If you intended to replace multiple occurrences, set 'allow_multiple' to true."
+
+// allow_multiple 类型错误
+"The 'allow_multiple' parameter must be a boolean when provided."
 ```
 
 ---
