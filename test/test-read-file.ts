@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
+import type { ToolCallResult } from '../src/tools/types.js';
 import readFileTool from '../src/tools/read-file.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,12 +36,33 @@ function assertNotIncludes(text: string, substring: string, message: string): vo
   }
 }
 
-function getResultText(result: any): string {
-  return result.content[0].text;
+function assertEquals<T>(actual: T, expected: T, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`Assertion failed: ${message}\nExpected: ${expected}\nActual: ${actual}`);
+  }
+}
+
+function getResultText(result: ToolCallResult): string {
+  return result.content[0]?.text ?? '';
+}
+
+async function withTempTextFile(
+  fileName: string,
+  content: string,
+  run: (fileName: string, filePath: string) => Promise<void>,
+): Promise<void> {
+  const filePath = path.join(FIXTURES_DIR, fileName);
+  await fs.writeFile(filePath, content, 'utf-8');
+
+  try {
+    await run(fileName, filePath);
+  } finally {
+    await fs.rm(filePath, { force: true });
+  }
 }
 
 async function testReadFullFile() {
-  console.log('Test: Read full text file');
+  console.log('Test: line mode reads full text file');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt' },
@@ -53,12 +75,13 @@ async function testReadFullFile() {
   assertIncludes(text, 'Read 15 of 15 line(s) from src\\Foo.kt.', 'Should report line count');
   assertIncludes(text, 'No truncation: all returned file content is complete.', 'Should report no truncation');
   assertIncludes(text, 'data class Foo', 'Should include file content');
+  assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report truncation');
 
   console.log('  ✓ Passed\n');
 }
 
 async function testReadLineRange() {
-  console.log('Test: Read targeted line range');
+  console.log('Test: line mode reads targeted line range');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8 },
@@ -69,11 +92,30 @@ async function testReadLineRange() {
   const text = getResultText(result);
 
   assertIncludes(text, 'Read 3 of 15 line(s) from src\\Foo.kt.', 'Should report selected line count');
-  assertIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should explain partial range');
-  assertIncludes(text, 'Showing lines 6-8 of 15 total lines', 'Should report selected range');
+  assertIncludes(text, 'Partial read: showing lines 6-8 of 15 total lines.', 'Should report partial range');
+  assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not call a range read truncation');
   assertIncludes(text, 'data class Foo(', 'Should include start line');
   assertIncludes(text, '    val name: String', 'Should include end line');
   assertNotIncludes(text, 'package com.example.demo', 'Should omit lines before range');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testEndLineBeyondEofClipsToEof() {
+  console.log('Test: line mode clips end_line beyond EOF');
+
+  const result = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', start_line: 13, end_line: 999 },
+    testConfig,
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'Read 3 of 15 line(s) from src\\Foo.kt.', 'Should report clipped line count');
+  assertIncludes(text, 'Partial read: showing lines 13-15 of 15 total lines.', 'Should report clipped range');
+  assertIncludes(text, '}', 'Should include EOF content');
+  assertNotIncludes(text, 'truncated', 'Should not call clipped end_line truncation');
 
   console.log('  ✓ Passed\n');
 }
@@ -91,6 +133,199 @@ async function testShowLineNumbers() {
 
   assertIncludes(text, '6: data class Foo(', 'Should prefix first selected line');
   assertIncludes(text, '8:     val name: String', 'Should preserve original line numbers');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testLargeFileReadsAllLines() {
+  console.log('Test: line mode reads more than 2000 lines');
+
+  const content = Array.from({ length: 2105 }, (_, index) => `line-${index + 1}`).join('\n');
+
+  await withTempTextFile('large-read-file-v2.tmp.txt', content, async (fileName) => {
+    const result = await readFileTool.handler(
+      { file_path: fileName },
+      testConfig,
+    );
+
+    assert(result.isError !== true, 'Should succeed');
+    const text = getResultText(result);
+
+    assertIncludes(text, `Read 2105 of 2105 line(s) from ${fileName}.`, 'Should report all lines');
+    assertIncludes(text, 'No truncation: all returned file content is complete.', 'Should report complete read');
+    assertIncludes(text, 'line-2105', 'Should include final line beyond old limit');
+    assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report line truncation');
+  });
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testLongLineIsNotShortened() {
+  console.log('Test: line mode reads more than 2000 characters in one line');
+
+  const longLine = 'x'.repeat(2010);
+
+  await withTempTextFile('long-line-read-file-v2.tmp.txt', longLine, async (fileName) => {
+    const result = await readFileTool.handler(
+      { file_path: fileName },
+      testConfig,
+    );
+
+    assert(result.isError !== true, 'Should succeed');
+    const text = getResultText(result);
+    const contentLine = text.split('\n').at(-1) ?? '';
+
+    assertEquals(contentLine.length, 2010, 'Returned content line should not be shortened');
+    assertEquals(contentLine, longLine, 'Returned content line should be complete');
+    assertNotIncludes(text, '[truncated]', 'Should not add long-line truncation marker');
+    assertNotIncludes(text, 'Some returned lines were shortened', 'Should not explain long-line truncation');
+  });
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testRegexRange() {
+  console.log('Test: regex mode locates start and end lines');
+
+  const result = await readFileTool.handler(
+    {
+      file_path: 'src/Foo.kt',
+      read_mode: 'regex',
+      start_line: 'data class Foo\\(',
+      end_line: '^\\)',
+      show_line_numbers: true,
+    },
+    testConfig,
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'Read 5 of 15 line(s) from src\\Foo.kt.', 'Should report regex-selected line count');
+  assertIncludes(text, 'Partial read: showing lines 6-10 of 15 total lines.', 'Should report resolved line range');
+  assertIncludes(text, '6: data class Foo(', 'Should include resolved start line');
+  assertIncludes(text, '10: ) {', 'Should include resolved end line');
+  assertNotIncludes(text, '11:     fun isValid()', 'Should stop at regex end line');
+  assertNotIncludes(text, 'truncated', 'Should not call regex range truncation');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testRegexStartOnlyReadsToEof() {
+  console.log('Test: regex mode start_line reads to EOF');
+
+  const result = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'fun isValid' },
+    testConfig,
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'Read 5 of 15 line(s) from src\\Foo.kt.', 'Should read from regex match to EOF');
+  assertIncludes(text, 'Partial read: showing lines 11-15 of 15 total lines.', 'Should report start-to-EOF range');
+  assertIncludes(text, 'fun isValid(): Boolean', 'Should include matched start line');
+  assertNotIncludes(text, 'data class Foo(', 'Should omit lines before regex start');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testRegexInvalidPattern() {
+  console.log('Test: regex mode rejects invalid pattern');
+
+  const result = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: '[' },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Should fail');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'Invalid start_line regex pattern:', 'Should explain invalid regex');
+  assertIncludes(text, 'Check the pattern syntax', 'Should suggest a corrective action');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testRegexStartNoMatch() {
+  console.log('Test: regex mode reports unmatched start pattern');
+
+  const result = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'NoSuchSymbol' },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Should fail');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'start_line regex pattern did not match any line', 'Should explain unmatched start pattern');
+  assertIncludes(text, 'Check the pattern', 'Should suggest checking the pattern');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testRegexEndNoMatch() {
+  console.log('Test: regex mode reports unmatched end pattern');
+
+  const result = await readFileTool.handler(
+    {
+      file_path: 'src/Foo.kt',
+      read_mode: 'regex',
+      start_line: 'data class Foo',
+      end_line: 'NoSuchSymbol',
+    },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Should fail');
+  const text = getResultText(result);
+
+  assertIncludes(text, 'end_line regex pattern did not match any line at or after the resolved start line', 'Should explain unmatched end pattern');
+  assertIncludes(text, 'Check the pattern', 'Should suggest checking the pattern');
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testModeSpecificRangeTypes() {
+  console.log('Test: read modes reject wrong range value types');
+
+  const lineModeResult = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'line', start_line: '6' },
+    testConfig,
+  );
+
+  assert(lineModeResult.isError === true, 'Line mode should reject string start_line');
+  assertIncludes(
+    getResultText(lineModeResult),
+    'In read_mode="line", start_line must be a positive integer.',
+    'Should explain line mode type requirement',
+  );
+
+  const regexModeResult = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 6 },
+    testConfig,
+  );
+
+  assert(regexModeResult.isError === true, 'Regex mode should reject numeric start_line');
+  assertIncludes(
+    getResultText(regexModeResult),
+    'In read_mode="regex", start_line must be a non-empty regex pattern string.',
+    'Should explain regex mode type requirement',
+  );
+
+  console.log('  ✓ Passed\n');
+}
+
+async function testInvalidReadMode() {
+  console.log('Test: Reject invalid read_mode');
+
+  const result = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'keyword' },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Should fail');
+  assertIncludes(getResultText(result), "The 'read_mode' parameter must be either 'line' or 'regex'.", 'Should explain valid modes');
 
   console.log('  ✓ Passed\n');
 }
@@ -123,34 +358,6 @@ async function testStartLineBeyondEof() {
   console.log('  ✓ Passed\n');
 }
 
-async function testLongLineWithLineNumbersStaysWithinLimit() {
-  console.log('Test: Long line with line numbers stays within limit');
-
-  const fileName = 'long-line.tmp.txt';
-  const filePath = path.join(FIXTURES_DIR, fileName);
-  await fs.writeFile(filePath, 'x'.repeat(2010), 'utf-8');
-
-  try {
-    const result = await readFileTool.handler(
-      { file_path: fileName, show_line_numbers: true },
-      testConfig,
-    );
-
-    assert(result.isError !== true, 'Should succeed');
-    const text = getResultText(result);
-    const contentLine = text.split('\n').at(-1) ?? '';
-
-    assertIncludes(text, 'Some returned lines were shortened to 2000 characters', 'Should explain long-line truncation');
-    assertNotIncludes(text, 'Use start_line and end_line', 'Should not suggest line ranges for long-line-only truncation');
-    assert(contentLine.startsWith('1: '), 'Should include line number prefix');
-    assert(contentLine.length <= 2000, 'Returned content line should stay within 2000 characters');
-  } finally {
-    await fs.rm(filePath, { force: true });
-  }
-
-  console.log('  ✓ Passed\n');
-}
-
 async function testBinaryFileRejected() {
   console.log('Test: Reject binary file');
 
@@ -174,10 +381,19 @@ async function main() {
   const tests = [
     testReadFullFile,
     testReadLineRange,
+    testEndLineBeyondEofClipsToEof,
     testShowLineNumbers,
+    testLargeFileReadsAllLines,
+    testLongLineIsNotShortened,
+    testRegexRange,
+    testRegexStartOnlyReadsToEof,
+    testRegexInvalidPattern,
+    testRegexStartNoMatch,
+    testRegexEndNoMatch,
+    testModeSpecificRangeTypes,
+    testInvalidReadMode,
     testInvalidRange,
     testStartLineBeyondEof,
-    testLongLineWithLineNumbersStaysWithinLimit,
     testBinaryFileRejected,
   ];
 

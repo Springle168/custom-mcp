@@ -6,10 +6,15 @@ import { resolvePath, validatePathAccess } from '../utils/paths.js';
 import {
   isBinaryFile,
   MAX_FILE_SIZE_MB,
-  MAX_LINE_LENGTH,
-  MAX_LINES_PER_FILE,
   readTextFile,
 } from '../utils/file-read.js';
+
+type ReadMode = 'line' | 'regex';
+
+interface LineRange {
+  startLine?: number;
+  endLine?: number;
+}
 
 // ================
 // Tool Schema
@@ -19,10 +24,11 @@ const READ_FILE_TOOL_DEFINITION = {
   name: 'read_file',
   description: `Reads and returns the content of a specified text file.
 
-Use start_line and end_line for targeted, surgical reads of specific sections. Both are 1-based and end_line is inclusive.
+Use read_mode="line" to interpret start_line and end_line as 1-based line numbers; end_line is inclusive.
+Use read_mode="regex" to interpret start_line and end_line as JavaScript RegExp patterns matched line-by-line; returned content is still one continuous line range.
 For context efficiency, always retrieve only the minimum content necessary for your next step.
 Text files only. Binary files (images, archives, compiled output, etc.) are rejected.
-Files exceeding ${MAX_FILE_SIZE_MB}MB are skipped. Output is automatically limited to ${MAX_LINES_PER_FILE} lines and ${MAX_LINE_LENGTH} characters per line.
+Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not apply line-count or line-length truncation.
 Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".`,
   inputSchema: {
     type: 'object' as const,
@@ -32,13 +38,20 @@ Set show_line_numbers to true only when line numbers are necessary; it prefixes 
         description: 'The path to the text file to read.',
       },
       start_line: {
-        type: 'number',
-        description: 'Optional: The 1-based line number to start reading from.',
+        type: ['integer', 'string'],
+        description:
+          'Optional: In read_mode="line", the 1-based line number to start reading from. In read_mode="regex", a non-empty JavaScript RegExp pattern whose first matching line becomes the start line.',
       },
       end_line: {
-        type: 'number',
+        type: ['integer', 'string'],
         description:
-          'Optional: The 1-based line number to end reading at (inclusive).',
+          'Optional: In read_mode="line", the 1-based line number to end reading at (inclusive). In read_mode="regex", a non-empty JavaScript RegExp pattern searched from the resolved start line and included as the end line.',
+      },
+      read_mode: {
+        type: 'string',
+        enum: ['line', 'regex'],
+        description:
+          'How to interpret start_line and end_line. Use "line" for positive integer line numbers, or "regex" for line-by-line JavaScript RegExp pattern positioning. Defaults to "line".',
       },
       show_line_numbers: {
         type: 'boolean',
@@ -47,6 +60,7 @@ Set show_line_numbers to true only when line numbers are necessary; it prefixes 
       },
     },
     required: ['file_path'],
+    additionalProperties: false,
   },
 };
 
@@ -66,35 +80,68 @@ function errorResult(text: string): ToolCallResult {
 // Parameter Validation
 // ================
 
+function getReadMode(args: Record<string, unknown>): ReadMode | null {
+  if (args.read_mode === undefined) return 'line';
+  if (args.read_mode === 'line' || args.read_mode === 'regex') {
+    return args.read_mode;
+  }
+  return null;
+}
+
 function validateParams(args: Record<string, unknown>): string | null {
   if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
     return "The 'file_path' parameter must be a non-empty string.";
   }
+
+  const readMode = getReadMode(args);
+  if (readMode === null) {
+    return "The 'read_mode' parameter must be either 'line' or 'regex'.";
+  }
+
   if (args.start_line !== undefined) {
     const startLine = args.start_line;
-    if (!Number.isInteger(startLine)) {
-      return "The 'start_line' parameter must be an integer.";
-    }
-    if ((startLine as number) < 1) {
-      return 'start_line must be at least 1';
+    if (readMode === 'line') {
+      if (!Number.isInteger(startLine) || (startLine as number) < 1) {
+        return 'In read_mode="line", start_line must be a positive integer.';
+      }
+    } else if (typeof startLine !== 'string' || startLine.length === 0) {
+      return 'In read_mode="regex", start_line must be a non-empty regex pattern string.';
     }
   }
+
   if (args.end_line !== undefined) {
     const endLine = args.end_line;
-    if (!Number.isInteger(endLine)) {
-      return "The 'end_line' parameter must be an integer.";
-    }
-    if ((endLine as number) < 1) {
-      return 'end_line must be at least 1';
+    if (readMode === 'line') {
+      if (!Number.isInteger(endLine) || (endLine as number) < 1) {
+        return 'In read_mode="line", end_line must be a positive integer.';
+      }
+    } else if (typeof endLine !== 'string' || endLine.length === 0) {
+      return 'In read_mode="regex", end_line must be a non-empty regex pattern string.';
     }
   }
+
   if (
+    readMode === 'line' &&
     args.start_line !== undefined &&
     args.end_line !== undefined &&
     (args.start_line as number) > (args.end_line as number)
   ) {
     return 'start_line cannot be greater than end_line';
   }
+
+  if (readMode === 'regex') {
+    for (const paramName of ['start_line', 'end_line'] as const) {
+      const pattern = args[paramName];
+      if (pattern === undefined) continue;
+      try {
+        new RegExp(pattern as string);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Invalid ${paramName} regex pattern: ${message}. Check the pattern syntax and escape special characters when needed.`;
+      }
+    }
+  }
+
   if (
     args.show_line_numbers !== undefined &&
     typeof args.show_line_numbers !== 'boolean'
@@ -102,6 +149,63 @@ function validateParams(args: Record<string, unknown>): string | null {
     return "The 'show_line_numbers' parameter must be a boolean.";
   }
   return null;
+}
+
+async function resolveRegexRange(
+  filePath: string,
+  args: Record<string, unknown>,
+): Promise<LineRange | string> {
+  const fullFile = await readTextFile(filePath, {
+    maxLines: null,
+    maxLineLength: null,
+  });
+
+  if (!fullFile.ok) {
+    return fullFile.reason;
+  }
+
+  const lines = fullFile.content.split('\n');
+  let startIndex = 0;
+
+  if (args.start_line !== undefined) {
+    const startPattern = new RegExp(args.start_line as string);
+    startIndex = lines.findIndex((line) => startPattern.test(line));
+    if (startIndex === -1) {
+      return 'start_line regex pattern did not match any line. Check the pattern and choose text that appears on the intended start line.';
+    }
+  }
+
+  let endLine: number | undefined;
+  if (args.end_line !== undefined) {
+    const endPattern = new RegExp(args.end_line as string);
+    const relativeEndIndex = lines
+      .slice(startIndex)
+      .findIndex((line) => endPattern.test(line));
+    if (relativeEndIndex === -1) {
+      return 'end_line regex pattern did not match any line at or after the resolved start line. Check the pattern and choose text that appears on the intended end line.';
+    }
+    endLine = startIndex + relativeEndIndex + 1;
+  }
+
+  return {
+    startLine: args.start_line !== undefined ? startIndex + 1 : undefined,
+    endLine,
+  };
+}
+
+async function resolveLineRange(
+  readMode: ReadMode,
+  resolvedPath: string,
+  args: Record<string, unknown>,
+): Promise<LineRange | string> {
+  if (readMode === 'line') {
+    return {
+      startLine: args.start_line as number | undefined,
+      endLine: args.end_line as number | undefined,
+    };
+  }
+
+  return resolveRegexRange(resolvedPath, args);
 }
 
 // ================
@@ -114,6 +218,7 @@ async function handleReadFile(
 ): Promise<ToolCallResult> {
   const validationError = validateParams(args);
   if (validationError) return errorResult(validationError);
+  const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
   const resolvedPath = resolvePath(filePath, config.rootDir);
@@ -144,10 +249,19 @@ async function handleReadFile(
     );
   }
 
+  const lineRange = await resolveLineRange(readMode, resolvedPath, args);
+  if (typeof lineRange === 'string') {
+    return errorResult(
+      `Could not read file ${filePath}: ${lineRange}`,
+    );
+  }
+
   const result = await readTextFile(resolvedPath, {
-    startLine: args.start_line as number | undefined,
-    endLine: args.end_line as number | undefined,
+    startLine: lineRange.startLine,
+    endLine: lineRange.endLine,
     showLineNumbers: (args.show_line_numbers as boolean | undefined) ?? false,
+    maxLines: null,
+    maxLineLength: null,
   });
 
   if (!result.ok) {
@@ -163,20 +277,9 @@ async function handleReadFile(
     `Read ${result.linesRead} of ${result.originalLineCount} line(s) from ${displayPath}.`,
   ];
 
-  if (result.isTruncated) {
-    const truncationDetails: string[] = [];
-    if (result.lineCountTruncated) {
-      truncationDetails.push(
-        `Showing lines ${result.startLine}-${result.endLine} of ${result.originalLineCount} total lines. Use start_line and end_line in a subsequent read_file call to read more.`,
-      );
-    }
-    if (result.lineLengthTruncated) {
-      truncationDetails.push(
-        `Some returned lines were shortened to ${MAX_LINE_LENGTH} characters; line-range reads cannot recover truncated line tails.`,
-      );
-    }
+  if (result.isPartialRead) {
     summaryParts.push(
-      `IMPORTANT: The file content has been truncated. ${truncationDetails.join(' ')}`,
+      `Partial read: showing lines ${result.startLine}-${result.endLine} of ${result.originalLineCount} total lines.`,
     );
   } else {
     summaryParts.push('No truncation: all returned file content is complete.');

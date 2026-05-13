@@ -88,9 +88,13 @@ export const BINARY_EXTENSIONS = new Set([
 export interface TextFileContent {
   /** File content (after truncation if applicable). */
   content: string;
-  /** Whether content was truncated by line count or line length limits. */
+  /** Whether content was truncated by line-count or line-length limits. */
   isTruncated: boolean;
-  /** Whether the selected line range excludes part of the file. */
+  /** Whether the selected line range intentionally excludes part of the file. */
+  isPartialRead: boolean;
+  /** Whether content was truncated by the configured line-count limit. */
+  lineLimitTruncated: boolean;
+  /** Backward-compatible alias for line-count limit truncation. */
   lineCountTruncated: boolean;
   /** Whether any returned line was shortened due to line length limits. */
   lineLengthTruncated: boolean;
@@ -111,6 +115,10 @@ export interface ReadTextFileOptions {
   endLine?: number;
   /** Prefix each returned line with its original 1-based line number. */
   showLineNumbers?: boolean;
+  /** Maximum number of lines to return. Use null to disable this limit. */
+  maxLines?: number | null;
+  /** Maximum characters per returned line. Use null to disable this limit. */
+  maxLineLength?: number | null;
 }
 
 export type TextFileResult =
@@ -176,11 +184,11 @@ export async function isBinaryFile(filePath: string): Promise<boolean> {
 // ================
 
 /**
- * Reads a text file with automatic truncation for large content.
+ * Reads a text file with optional automatic truncation for large content.
  *
  * - Files exceeding {@link MAX_FILE_SIZE_MB} are rejected.
- * - Lines beyond {@link MAX_LINES_PER_FILE} are dropped.
- * - Individual lines longer than {@link MAX_LINE_LENGTH} are truncated with a marker.
+ * - Lines beyond the configured line limit are dropped.
+ * - Individual lines longer than the configured line length are truncated with a marker.
  *
  * The caller should check {@link isBinaryFile} before calling this function.
  */
@@ -206,6 +214,12 @@ export async function readTextFile(
     const raw = await fs.readFile(filePath, 'utf-8');
     const lines = raw.split(/\r?\n/);
     const originalLineCount = lines.length;
+    const maxLines = options.maxLines === undefined
+      ? MAX_LINES_PER_FILE
+      : options.maxLines;
+    const maxLineLength = options.maxLineLength === undefined
+      ? MAX_LINE_LENGTH
+      : options.maxLineLength;
 
     if (
       options.startLine !== undefined &&
@@ -224,21 +238,21 @@ export async function readTextFile(
       sliceStart = options.startLine !== undefined ? options.startLine - 1 : 0;
       sliceEnd = options.endLine !== undefined
         ? Math.min(options.endLine, originalLineCount)
-        : Math.min(sliceStart + MAX_LINES_PER_FILE, originalLineCount);
-    } else {
-      sliceEnd = Math.min(MAX_LINES_PER_FILE, originalLineCount);
+        : originalLineCount;
     }
 
     const actualStart = Math.min(sliceStart, originalLineCount);
     const requestedEnd = Math.max(actualStart, sliceEnd);
+    const lineLimitEnd = maxLines === null
+      ? requestedEnd
+      : Math.min(actualStart + maxLines, requestedEnd);
     const actualEnd = Math.min(
-      requestedEnd,
-      actualStart + MAX_LINES_PER_FILE,
+      lineLimitEnd,
       originalLineCount,
     );
     const selectedLines = lines.slice(actualStart, actualEnd);
-    const lineCountTruncated =
-      actualStart > 0 || actualEnd < originalLineCount || actualEnd < requestedEnd;
+    const isPartialRead = actualStart > 0 || actualEnd < originalLineCount;
+    const lineLimitTruncated = actualEnd < requestedEnd;
 
     // Truncate long lines
     const truncationSuffix = '... [truncated]';
@@ -247,13 +261,16 @@ export async function readTextFile(
       const lineNumberPrefix = options.showLineNumbers === true
         ? `${actualStart + index + 1}: `
         : '';
-      const contentLengthLimit = Math.max(
-        0,
-        MAX_LINE_LENGTH - lineNumberPrefix.length,
-      );
 
-      if (line.length > contentLengthLimit) {
+      if (
+        maxLineLength !== null &&
+        line.length + lineNumberPrefix.length > maxLineLength
+      ) {
         lineLengthTruncated = true;
+        const contentLengthLimit = Math.max(
+          0,
+          maxLineLength - lineNumberPrefix.length,
+        );
         const prefixLength = Math.max(
           0,
           contentLengthLimit - truncationSuffix.length,
@@ -274,8 +291,10 @@ export async function readTextFile(
     return {
       ok: true,
       content: formattedLines.join('\n'),
-      isTruncated: lineCountTruncated || lineLengthTruncated,
-      lineCountTruncated,
+      isTruncated: lineLimitTruncated || lineLengthTruncated,
+      isPartialRead,
+      lineLimitTruncated,
+      lineCountTruncated: lineLimitTruncated,
       lineLengthTruncated,
       originalLineCount,
       linesRead,
