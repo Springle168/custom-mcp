@@ -46,6 +46,21 @@ function getResultText(result: ToolCallResult): string {
   return result.content[0]?.text ?? '';
 }
 
+function getReturnedContent(text: string): string {
+  const separatorMatch = text.match(/\n\n--- .+ ---\n\n/);
+  if (separatorMatch?.index === undefined) {
+    throw new Error('Could not find read_file content separator');
+  }
+
+  const contentStart = separatorMatch.index + separatorMatch[0].length;
+  const contentEnd = text.lastIndexOf('\n\n--- End of content ---');
+  if (contentEnd < contentStart) {
+    throw new Error('Could not find read_file content terminator');
+  }
+
+  return text.slice(contentStart, contentEnd);
+}
+
 async function withTempTextFile(
   fileName: string,
   content: string,
@@ -74,6 +89,8 @@ async function testReadFullFile() {
 
   assertIncludes(text, 'Read 15 of 15 line(s) from src\\Foo.kt.', 'Should report line count');
   assertIncludes(text, 'No truncation: all returned file content is complete.', 'Should report no truncation');
+  assertIncludes(text, '--- src\\Foo.kt ---', 'Should separate summary from content');
+  assertIncludes(text, '--- End of content ---', 'Should terminate content block');
   assertIncludes(text, 'data class Foo', 'Should include file content');
   assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report truncation');
 
@@ -173,7 +190,7 @@ async function testLongLineIsNotShortened() {
 
     assert(result.isError !== true, 'Should succeed');
     const text = getResultText(result);
-    const contentLine = text.split('\n').at(-1) ?? '';
+    const contentLine = getReturnedContent(text);
 
     assertEquals(contentLine.length, 2010, 'Returned content line should not be shortened');
     assertEquals(contentLine, longLine, 'Returned content line should be complete');
@@ -297,8 +314,20 @@ async function testModeSpecificRangeTypes() {
   assert(lineModeResult.isError === true, 'Line mode should reject string start_line');
   assertIncludes(
     getResultText(lineModeResult),
-    'In read_mode="line", start_line must be a positive integer.',
-    'Should explain line mode type requirement',
+    'In read_mode="line", start_line must be a positive integer (JSON number).',
+    'Should explain line mode start_line type requirement',
+  );
+
+  const lineModeEndResult = await readFileTool.handler(
+    { file_path: 'src/Foo.kt', read_mode: 'line', end_line: '8' },
+    testConfig,
+  );
+
+  assert(lineModeEndResult.isError === true, 'Line mode should reject string end_line');
+  assertIncludes(
+    getResultText(lineModeEndResult),
+    'In read_mode="line", end_line must be a positive integer (JSON number).',
+    'Should explain line mode end_line type requirement',
   );
 
   const regexModeResult = await readFileTool.handler(
@@ -339,7 +368,11 @@ async function testInvalidRange() {
   );
 
   assert(result.isError === true, 'Should fail');
-  assertIncludes(getResultText(result), 'start_line cannot be greater than end_line', 'Should explain invalid range');
+  assertIncludes(
+    getResultText(result),
+    'start_line 10 cannot be greater than end_line 5.',
+    'Should explain invalid range with actual values',
+  );
 
   console.log('  ✓ Passed\n');
 }

@@ -16,6 +16,9 @@ interface LineRange {
   endLine?: number;
 }
 
+const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
+const OUTPUT_TERMINATOR = '--- End of content ---';
+
 // ================
 // Tool Schema
 // ================
@@ -27,6 +30,7 @@ const READ_FILE_TOOL_DEFINITION = {
 Use read_mode="line" to interpret start_line and end_line as 1-based line numbers; end_line is inclusive.
 Use read_mode="regex" to interpret start_line and end_line as JavaScript RegExp patterns matched line-by-line; returned content is still one continuous line range.
 For context efficiency, always retrieve only the minimum content necessary for your next step.
+Successful responses always start with two summary lines, then a blank line, then a '${OUTPUT_SEPARATOR_FORMAT}' separator before the file content, and end with '${OUTPUT_TERMINATOR}'.
 Text files only. Binary files (images, archives, compiled output, etc.) are rejected.
 Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not apply line-count or line-length truncation.
 Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".`,
@@ -102,7 +106,7 @@ function validateParams(args: Record<string, unknown>): string | null {
     const startLine = args.start_line;
     if (readMode === 'line') {
       if (!Number.isInteger(startLine) || (startLine as number) < 1) {
-        return 'In read_mode="line", start_line must be a positive integer.';
+        return 'In read_mode="line", start_line must be a positive integer (JSON number).';
       }
     } else if (typeof startLine !== 'string' || startLine.length === 0) {
       return 'In read_mode="regex", start_line must be a non-empty regex pattern string.';
@@ -113,7 +117,7 @@ function validateParams(args: Record<string, unknown>): string | null {
     const endLine = args.end_line;
     if (readMode === 'line') {
       if (!Number.isInteger(endLine) || (endLine as number) < 1) {
-        return 'In read_mode="line", end_line must be a positive integer.';
+        return 'In read_mode="line", end_line must be a positive integer (JSON number).';
       }
     } else if (typeof endLine !== 'string' || endLine.length === 0) {
       return 'In read_mode="regex", end_line must be a non-empty regex pattern string.';
@@ -126,7 +130,7 @@ function validateParams(args: Record<string, unknown>): string | null {
     args.end_line !== undefined &&
     (args.start_line as number) > (args.end_line as number)
   ) {
-    return 'start_line cannot be greater than end_line';
+    return `start_line ${args.start_line as number} cannot be greater than end_line ${args.end_line as number}.`;
   }
 
   if (readMode === 'regex') {
@@ -273,6 +277,7 @@ async function handleReadFile(
   const displayPath = path.isAbsolute(filePath)
     ? resolvedPath
     : path.relative(config.rootDir, resolvedPath);
+  const separator = OUTPUT_SEPARATOR_FORMAT.replace('{filePath}', displayPath);
   const summaryParts = [
     `Read ${result.linesRead} of ${result.originalLineCount} line(s) from ${displayPath}.`,
   ];
@@ -285,7 +290,9 @@ async function handleReadFile(
     summaryParts.push('No truncation: all returned file content is complete.');
   }
 
-  return successResult(`${summaryParts.join('\n')}\n\n${result.content}`);
+  return successResult(
+    `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${OUTPUT_TERMINATOR}`,
+  );
 }
 
 // ================
