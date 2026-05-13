@@ -33,6 +33,7 @@ custom-mcp/
 │   ├── test-config.ts           # 通用配置加载测试
 │   ├── test-logger.ts           # 日志系统测试
 │   ├── test-read-file.ts        # read_file 工具测试
+│   ├── test-replace-text.ts     # replace_text 工具测试
 │   ├── test-write-file.ts       # write_file 工具测试
 │   └── test-read-many-files.ts  # read_many_files 工具测试
 ├── docs/

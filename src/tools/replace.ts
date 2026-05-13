@@ -28,7 +28,7 @@ Use a non-existent path and an empty \`old_string\` for new file creation. But i
 Rules for \`new_string\`:
 - Must be EXACT literal replacement text.
 - Ensure the resulting code is correct and idiomatic.
-- Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'.
+- Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. If possible placeholders are detected, the tool may still write the file and return a warning.
 - Must be different from \`old_string\`.
 
 Rules for \`old_string\`:
@@ -81,9 +81,101 @@ function errorResult(text: string) {
   return { content: [{ type: 'text' as const, text }], isError: true };
 }
 
+function appendWarning(text: string, warning: string | null): string {
+  if (!warning) return text;
+  return `${text}\nWarning: ${warning}`;
+}
+
 // ================
 // Parameter Validation
 // ================
+
+function isDotsOnly(text: string): boolean {
+  if (text.length < 3) return false;
+  return [...text].every((char) => char === '.');
+}
+
+function stripPlaceholderLineDecorators(line: string): string {
+  let text = line.trim();
+  const prefixes = ['//', '#', '--', '*', '/*', '<!--'];
+  const suffixes = ['*/', '-->'];
+
+  for (const prefix of prefixes) {
+    if (text.startsWith(prefix)) {
+      text = text.slice(prefix.length).trim();
+      break;
+    }
+  }
+
+  for (const suffix of suffixes) {
+    if (text.endsWith(suffix)) {
+      text = text.slice(0, -suffix.length).trim();
+      break;
+    }
+  }
+
+  if (text.startsWith('(') && text.endsWith(')')) {
+    text = text.slice(1, -1).trim();
+  }
+
+  return text;
+}
+
+function normalizeStandaloneOmissionPhrase(text: string): string | null {
+  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  const phrase = normalized.replace(/\s*\.{3,}\s*$/, '').trim();
+
+  const patterns = [
+    /^rest of(?: the)?(?: code| file| method| methods| implementation)?$/,
+    /^unchanged(?: code| file| method| methods| implementation)?$/,
+    /^existing(?: code| implementation)?$/,
+    /^same as (?:above|before)$/,
+  ];
+
+  if (patterns.some((pattern) => pattern.test(phrase))) {
+    return `${phrase} ...`;
+  }
+  return null;
+}
+
+function detectPotentialOmissionPlaceholders(text: string): string[] {
+  const placeholders = new Set(detectOmissionPlaceholders(text));
+
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const stripped = stripPlaceholderLineDecorators(line);
+    if (isDotsOnly(stripped)) {
+      placeholders.add('...');
+      continue;
+    }
+
+    const standalonePhrase = normalizeStandaloneOmissionPhrase(stripped);
+    if (standalonePhrase) {
+      placeholders.add(standalonePhrase);
+    }
+  }
+
+  return [...placeholders];
+}
+
+function getOmissionPlaceholderWarning(
+  oldString: string,
+  newString: string,
+): string | null {
+  const oldPlaceholders = new Set(detectPotentialOmissionPlaceholders(oldString));
+  const newPlaceholders = detectPotentialOmissionPlaceholders(newString).filter(
+    (placeholder) => !oldPlaceholders.has(placeholder),
+  );
+
+  if (newPlaceholders.length === 0) return null;
+
+  const shownPlaceholders = [...new Set(newPlaceholders)]
+    .slice(0, 3)
+    .map((placeholder) => `'${placeholder}'`)
+    .join(', ');
+  const more = newPlaceholders.length > 3 ? ' and more' : '';
+
+  return `new_string contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete replacement text.`;
+}
 
 function validateParams(args: Record<string, unknown>): string | null {
   if (typeof args.file_path !== 'string' || !args.file_path) {
@@ -95,18 +187,11 @@ function validateParams(args: Record<string, unknown>): string | null {
   if (typeof args.old_string !== 'string') {
     return "The 'old_string' parameter must be a string.";
   }
-
-  // 省略占位符检测
-  const newPlaceholders = detectOmissionPlaceholders(args.new_string);
-  if (newPlaceholders.length > 0) {
-    const oldPlaceholders = new Set(
-      detectOmissionPlaceholders(args.old_string),
-    );
-    for (const placeholder of newPlaceholders) {
-      if (!oldPlaceholders.has(placeholder)) {
-        return "`new_string` contains an omission placeholder (e.g. 'rest of methods ...'). Provide exact literal replacement text.";
-      }
-    }
+  if (
+    args.allow_multiple !== undefined &&
+    typeof args.allow_multiple !== 'boolean'
+  ) {
+    return "The 'allow_multiple' parameter must be a boolean when provided.";
   }
 
   return null;
@@ -127,7 +212,8 @@ export async function handleReplace(
   const filePath = String(args.file_path);
   const newString = String(args.new_string);
   const oldString = String(args.old_string);
-  const allowMultiple = Boolean(args.allow_multiple ?? false);
+  const allowMultiple = args.allow_multiple === true;
+  const placeholderWarning = getOmissionPlaceholderWarning(oldString, newString);
 
   // 2. 路径解析 + 安全校验
   const resolved = resolvePath(filePath, config.rootDir);
@@ -164,7 +250,9 @@ export async function handleReplace(
       }
       await fs.mkdir(path.dirname(resolved), { recursive: true });
       await fs.writeFile(resolved, content, 'utf-8');
-      return successResult(`Created new file: ${filePath}`);
+      return successResult(
+        appendWarning(`Created new file: ${filePath}`, placeholderWarning),
+      );
     }
 
     // 6. 错误分支
@@ -227,7 +315,7 @@ export async function handleReplace(
       );
     }
 
-    return successResult(parts.join(' '));
+    return successResult(appendWarning(parts.join(' '), placeholderWarning));
   });
 }
 
