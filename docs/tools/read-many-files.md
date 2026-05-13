@@ -96,21 +96,23 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 ### 输出格式
 
+返回中的文件显示路径会跟随 `include` 条目的来源：直接传入绝对文件路径时显示绝对路径；通过相对路径或 glob 命中的文件显示相对 `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
+
 ```
 Read 3 file(s), skipped 1.
 Files without a truncation warning are returned completely.
 Skipped:
 - /path/to/logo.png (binary file)
 
---- /absolute/path/to/src/Foo.kt ---
+--- src/Foo.kt ---
 
 <文件内容>
 
---- /absolute/path/to/src/Bar.kt ---
+--- src/Bar.kt ---
 
 <文件内容>
 
---- /absolute/path/to/src/Baz.kt ---
+--- src/Baz.kt ---
 
 [WARNING: Truncated. showing lines 1-2000 of 5432. Use read_file or a similar file-reading tool for full content.]
 
@@ -136,7 +138,7 @@ Files:
 - src/Large.kt: 80 line(s), would be truncated: no.
 ```
 
-分隔符使用绝对路径，与 Android Studio 内置 `read_file` 的路径格式一致，AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容。
+AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容。
 
 ### 默认排除列表
 
