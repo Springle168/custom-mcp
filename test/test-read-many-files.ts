@@ -4,6 +4,13 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
 import readManyFilesTool from '../src/tools/read-many-files.js';
+import {
+  assert,
+  assertIncludes,
+  assertNotIncludes,
+  getResultText,
+  runTestSuite,
+} from './test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,37 +26,10 @@ const testConfig: Config = {
 };
 
 // ================
-// Helper Functions
-// ================
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-function assertIncludes(text: string, substring: string, message: string): void {
-  if (!text.includes(substring)) {
-    throw new Error(`Assertion failed: ${message}\nExpected to find: "${substring}"\nIn text: ${text.substring(0, 200)}...`);
-  }
-}
-
-function assertNotIncludes(text: string, substring: string, message: string): void {
-  if (text.includes(substring)) {
-    throw new Error(`Assertion failed: ${message}\nDid not expect to find: "${substring}"`);
-  }
-}
-
-function getResultText(result: any): string {
-  return result.content[0].text;
-}
-
-// ================
 // Test Cases
 // ================
 
 async function testSingleFileAbsolutePath() {
-  console.log('Test: Single file with absolute path');
   
   const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
   const result = await readManyFilesTool.handler(
@@ -65,11 +45,9 @@ async function testSingleFileAbsolutePath() {
   assertIncludes(text, 'data class Foo', 'Should include file content');
   assertIncludes(text, '--- End of content ---', 'Should include terminator');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testGlobPattern() {
-  console.log('Test: Glob pattern matching multiple files');
   
   const result = await readManyFilesTool.handler(
     { include: ['src/**/*.kt'] },
@@ -87,11 +65,9 @@ async function testGlobPattern() {
   assertIncludes(text, 'class Bar', 'Should include Bar content');
   assertIncludes(text, 'object Deep', 'Should include Deep content');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testMixedPathsAndGlobs() {
-  console.log('Test: Mixed absolute paths and glob patterns');
   
   const readmePath = path.join(FIXTURES_DIR, 'docs', 'README.md');
   const result = await readManyFilesTool.handler(
@@ -110,11 +86,9 @@ async function testMixedPathsAndGlobs() {
   assertNotIncludes(text, 'Deep.kt', 'Should not include nested Deep.kt');
   assertIncludes(text, '# Demo Project', 'Should include README content');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testGlobStartingWithSlash() {
-  console.log('Test: Glob pattern starting with / (should work as relative glob)');
   
   const result = await readManyFilesTool.handler(
     { include: ['/**/Foo.kt'] },  // 以 / 开头但包含 glob 元字符
@@ -126,11 +100,9 @@ async function testGlobStartingWithSlash() {
   
   assertIncludes(text, 'Foo.kt', 'Should find Foo.kt');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testDefaultExcludes() {
-  console.log('Test: Default excludes (node_modules, build)');
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt', '**/*.kt', '**/*.md'] },
@@ -147,11 +119,9 @@ async function testDefaultExcludes() {
   assertNotIncludes(text, 'build', 'Should not include build files');
   assertNotIncludes(text, 'excluded.txt', 'Should not include excluded.txt');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testDefaultExcludesDisabled() {
-  console.log('Test: Default excludes disabled');
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useDefaultExcludes: false },
@@ -165,11 +135,9 @@ async function testDefaultExcludesDisabled() {
   assertIncludes(text, 'Read 2 file(s)', 'Should read 2 txt files');
   assertIncludes(text, 'excluded.txt', 'Should include excluded.txt files');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testAbsolutePathBypassesExcludes() {
-  console.log('Test: Absolute path bypasses exclude patterns');
   
   const excludedPath = path.join(FIXTURES_DIR, 'node_modules', 'excluded.txt');
   const result = await readManyFilesTool.handler(
@@ -187,11 +155,9 @@ async function testAbsolutePathBypassesExcludes() {
   assertIncludes(text, 'excluded.txt', 'Should include excluded.txt');
   assertIncludes(text, 'This file should be excluded by default', 'Should include file content');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testFileNotFound() {
-  console.log('Test: File not found');
   
   const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
   const result = await readManyFilesTool.handler(
@@ -207,11 +173,9 @@ async function testFileNotFound() {
   assertIncludes(text, 'nonexistent.kt', 'Should mention the file');
   assertIncludes(text, 'file not found', 'Should explain the reason');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testNoMatches() {
-  console.log('Test: Glob pattern with no matches');
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.xyz'] },
@@ -224,11 +188,9 @@ async function testNoMatches() {
   assertIncludes(text, 'No files matched', 'Should report no matches');
   assertIncludes(text, 'Verify the paths/patterns', 'Should provide guidance');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testPathOutsideRoot() {
-  console.log('Test: Path outside rootDir (security check)');
   
   const outsidePath = path.join(FIXTURES_DIR, '..', '..', '..', 'etc', 'passwd');
   const result = await readManyFilesTool.handler(
@@ -242,11 +204,9 @@ async function testPathOutsideRoot() {
   assertIncludes(text, 'skipped', 'Should report file skipped');
   assertIncludes(text, 'outside workspace', 'Should explain security reason');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testEmptyInclude() {
-  console.log('Test: Empty include array');
   
   const result = await readManyFilesTool.handler(
     { include: [] },
@@ -258,11 +218,9 @@ async function testEmptyInclude() {
   
   assertIncludes(text, 'non-empty array', 'Should report validation error');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testInvalidIncludeType() {
-  console.log('Test: Invalid include parameter type');
   
   const result = await readManyFilesTool.handler(
     { include: 'not-an-array' },
@@ -274,11 +232,9 @@ async function testInvalidIncludeType() {
   
   assertIncludes(text, 'non-empty array', 'Should report validation error');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testCustomExclude() {
-  console.log('Test: Custom exclude pattern');
   
   const result = await readManyFilesTool.handler(
     { 
@@ -296,11 +252,9 @@ async function testCustomExclude() {
   assertIncludes(text, 'Bar.kt', 'Should include Bar.kt');
   assertNotIncludes(text, 'Deep.kt', 'Should not include Deep.kt (excluded by pattern)');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testPartialSuccess() {
-  console.log('Test: Partial success (some files read, some skipped)');
   
   const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
   const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
@@ -316,11 +270,9 @@ async function testPartialSuccess() {
   assertIncludes(text, 'Foo.kt', 'Should include successful file');
   assertIncludes(text, 'nonexistent.kt', 'Should mention skipped file');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testRelativePathWithGlobChars() {
-  console.log('Test: Relative path with glob metacharacters (escape logic)');
   
   // 使用相对路径读取文件名含 [ ] 的文件
   const result = await readManyFilesTool.handler(
@@ -335,11 +287,9 @@ async function testRelativePathWithGlobChars() {
   assertIncludes(text, 'file[test].kt', 'Should include the file with brackets');
   assertIncludes(text, 'class FileWithBrackets', 'Should include file content');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testRelativePathWithBraces() {
-  console.log('Test: Relative path with braces in filename');
   
   const result = await readManyFilesTool.handler(
     { include: ['special-names/file{brace}.kt'] },
@@ -353,11 +303,9 @@ async function testRelativePathWithBraces() {
   assertIncludes(text, 'file{brace}.kt', 'Should include the file with braces');
   assertIncludes(text, 'class FileWithBraces', 'Should include file content');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testPathIsDirectory() {
-  console.log('Test: Path pointing to a directory');
   
   const dirPath = path.join(FIXTURES_DIR, 'src');
   const result = await readManyFilesTool.handler(
@@ -371,11 +319,9 @@ async function testPathIsDirectory() {
   assertIncludes(text, 'skipped 1', 'Should report 1 item skipped');
   assertIncludes(text, 'not a file', 'Should explain it is a directory');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testBinaryFileSkipped() {
-  console.log('Test: Binary file is skipped (extension-based detection)');
   
   // 使用绝对路径绕过 exclude，或者关闭 useDefaultExcludes
   const pngPath = path.join(FIXTURES_DIR, 'binary', 'fake.png');
@@ -391,11 +337,9 @@ async function testBinaryFileSkipped() {
   assertIncludes(text, 'fake.png', 'Should mention the PNG file');
   assertIncludes(text, 'binary file', 'Should explain it is binary');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testBinaryFileInGlob() {
-  console.log('Test: Binary files are filtered out in glob results');
   
   const result = await readManyFilesTool.handler(
     { 
@@ -414,11 +358,9 @@ async function testBinaryFileInGlob() {
   assertIncludes(text, 'fake.png', 'Should mention the PNG file');
   assertIncludes(text, 'binary file', 'Should explain skip reason');
   
-  console.log('  ✓ Passed\n');
 }
 
 async function testShallowRead() {
-  console.log('Test: Shallow read returns file list and line counts');
 
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt', 'docs/README.md'], shallow_read: true },
@@ -436,11 +378,9 @@ async function testShallowRead() {
   assertNotIncludes(text, 'data class Foo', 'Should not include file content');
   assertNotIncludes(text, '--- End of content ---', 'Should not include content terminator');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testShowLineNumbers() {
-  console.log('Test: show_line_numbers prefixes returned content lines');
 
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt'], show_line_numbers: true },
@@ -454,63 +394,40 @@ async function testShowLineNumbers() {
   assertIncludes(text, '1: package com.example.demo', 'Should prefix first line');
   assertIncludes(text, '6: data class Foo(', 'Should preserve original line numbers');
 
-  console.log('  ✓ Passed\n');
 }
 
 // ================
 // Main Test Runner
 // ================
 
-async function main() {
-  console.log('='.repeat(24));
-  console.log('Testing read_many_files tool');
-  console.log('='.repeat(24));
-  console.log(`Fixtures directory: ${FIXTURES_DIR}\n`);
-
-  const tests = [
-    testSingleFileAbsolutePath,
-    testGlobPattern,
-    testMixedPathsAndGlobs,
-    testGlobStartingWithSlash,
-    testDefaultExcludes,
-    testDefaultExcludesDisabled,
-    testAbsolutePathBypassesExcludes,
-    testFileNotFound,
-    testNoMatches,
-    testPathOutsideRoot,
-    testEmptyInclude,
-    testInvalidIncludeType,
-    testCustomExclude,
-    testPartialSuccess,
-    testRelativePathWithGlobChars,
-    testRelativePathWithBraces,
-    testPathIsDirectory,
-    testBinaryFileSkipped,
-    testBinaryFileInGlob,
-    testShallowRead,
-    testShowLineNumbers,
-  ];
-
-  let passed = 0;
-  let failed = 0;
-
-  for (const test of tests) {
-    try {
-      await test();
-      passed++;
-    } catch (error) {
-      failed++;
-      console.error(`  ✗ Failed: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-  }
-
-  console.log('='.repeat(24));
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(24));
-
-  if (failed > 0) {
-    process.exit(1);
-  }
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing read_many_files tool',
+    details: `Fixtures directory: ${FIXTURES_DIR}`,
+    tests: [
+      { name: 'Single file with absolute path', run: testSingleFileAbsolutePath },
+      { name: 'Glob pattern matching multiple files', run: testGlobPattern },
+      { name: 'Mixed absolute paths and glob patterns', run: testMixedPathsAndGlobs },
+      { name: 'Glob pattern starting with / (should work as relative glob)', run: testGlobStartingWithSlash },
+      { name: 'Default excludes (node_modules, build)', run: testDefaultExcludes },
+      { name: 'Default excludes disabled', run: testDefaultExcludesDisabled },
+      { name: 'Absolute path bypasses default excludes', run: testAbsolutePathBypassesExcludes },
+      { name: 'File not found', run: testFileNotFound },
+      { name: 'No matches for glob', run: testNoMatches },
+      { name: 'Path outside root', run: testPathOutsideRoot },
+      { name: 'Empty include array', run: testEmptyInclude },
+      { name: 'Invalid include type', run: testInvalidIncludeType },
+      { name: 'Custom exclude patterns', run: testCustomExclude },
+      { name: 'Partial success with skipped file', run: testPartialSuccess },
+      { name: 'Relative path with glob chars in filename', run: testRelativePathWithGlobChars },
+      { name: 'Relative path with braces in filename', run: testRelativePathWithBraces },
+      { name: 'Path pointing to a directory', run: testPathIsDirectory },
+      { name: 'Binary file is skipped (extension-based detection)', run: testBinaryFileSkipped },
+      { name: 'Binary files are filtered out in glob results', run: testBinaryFileInGlob },
+      { name: 'Shallow read returns file list and line counts', run: testShallowRead },
+      { name: 'show_line_numbers prefixes returned content lines', run: testShowLineNumbers },
+    ],
+  });
 }
 
 main().catch((error) => {

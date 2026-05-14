@@ -4,8 +4,15 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
-import type { ToolCallResult } from '../src/tools/types.js';
 import readFileTool from '../src/tools/read-file.js';
+import {
+  assert,
+  assertEqual,
+  assertIncludes,
+  assertNotIncludes,
+  getResultText,
+  runTestSuite,
+} from './test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,33 +25,6 @@ const testConfig: Config = {
   port: 3100,
 };
 
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-function assertIncludes(text: string, substring: string, message: string): void {
-  if (!text.includes(substring)) {
-    throw new Error(`Assertion failed: ${message}\nExpected to find: "${substring}"\nIn text: ${text.substring(0, 200)}...`);
-  }
-}
-
-function assertNotIncludes(text: string, substring: string, message: string): void {
-  if (text.includes(substring)) {
-    throw new Error(`Assertion failed: ${message}\nDid not expect to find: "${substring}"`);
-  }
-}
-
-function assertEquals<T>(actual: T, expected: T, message: string): void {
-  if (actual !== expected) {
-    throw new Error(`Assertion failed: ${message}\nExpected: ${expected}\nActual: ${actual}`);
-  }
-}
-
-function getResultText(result: ToolCallResult): string {
-  return result.content[0]?.text ?? '';
-}
 
 function getReturnedContent(text: string): string {
   const separatorMatch = text.match(/\n\n--- .+ ---\n\n/);
@@ -77,7 +57,6 @@ async function withTempTextFile(
 }
 
 async function testReadFullFile() {
-  console.log('Test: line mode reads full text file');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt' },
@@ -94,11 +73,9 @@ async function testReadFullFile() {
   assertIncludes(text, 'data class Foo', 'Should include file content');
   assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report truncation');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testReadLineRange() {
-  console.log('Test: line mode reads targeted line range');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8 },
@@ -115,11 +92,9 @@ async function testReadLineRange() {
   assertIncludes(text, '    val name: String', 'Should include end line');
   assertNotIncludes(text, 'package com.example.demo', 'Should omit lines before range');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testEndLineBeyondEofClipsToEof() {
-  console.log('Test: line mode clips end_line beyond EOF');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 13, end_line: 999 },
@@ -134,11 +109,9 @@ async function testEndLineBeyondEofClipsToEof() {
   assertIncludes(text, '}', 'Should include EOF content');
   assertNotIncludes(text, 'truncated', 'Should not call clipped end_line truncation');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testShowLineNumbers() {
-  console.log('Test: show_line_numbers prefixes original line numbers');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8, show_line_numbers: true },
@@ -151,11 +124,9 @@ async function testShowLineNumbers() {
   assertIncludes(text, '6: data class Foo(', 'Should prefix first selected line');
   assertIncludes(text, '8:     val name: String', 'Should preserve original line numbers');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testLargeFileReadsAllLines() {
-  console.log('Test: line mode reads more than 2000 lines');
 
   const content = Array.from({ length: 2105 }, (_, index) => `line-${index + 1}`).join('\n');
 
@@ -174,11 +145,9 @@ async function testLargeFileReadsAllLines() {
     assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report line truncation');
   });
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testLongLineIsNotShortened() {
-  console.log('Test: line mode reads more than 2000 characters in one line');
 
   const longLine = 'x'.repeat(2010);
 
@@ -192,17 +161,15 @@ async function testLongLineIsNotShortened() {
     const text = getResultText(result);
     const contentLine = getReturnedContent(text);
 
-    assertEquals(contentLine.length, 2010, 'Returned content line should not be shortened');
-    assertEquals(contentLine, longLine, 'Returned content line should be complete');
+    assertEqual(contentLine.length, 2010, 'Returned content line should not be shortened');
+    assertEqual(contentLine, longLine, 'Returned content line should be complete');
     assertNotIncludes(text, '[truncated]', 'Should not add long-line truncation marker');
     assertNotIncludes(text, 'Some returned lines were shortened', 'Should not explain long-line truncation');
   });
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testRegexRange() {
-  console.log('Test: regex mode locates start and end lines');
 
   const result = await readFileTool.handler(
     {
@@ -225,11 +192,9 @@ async function testRegexRange() {
   assertNotIncludes(text, '11:     fun isValid()', 'Should stop at regex end line');
   assertNotIncludes(text, 'truncated', 'Should not call regex range truncation');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testRegexStartOnlyReadsToEof() {
-  console.log('Test: regex mode start_line reads to EOF');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'fun isValid' },
@@ -244,11 +209,9 @@ async function testRegexStartOnlyReadsToEof() {
   assertIncludes(text, 'fun isValid(): Boolean', 'Should include matched start line');
   assertNotIncludes(text, 'data class Foo(', 'Should omit lines before regex start');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testRegexInvalidPattern() {
-  console.log('Test: regex mode rejects invalid pattern');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: '[' },
@@ -261,11 +224,9 @@ async function testRegexInvalidPattern() {
   assertIncludes(text, 'Invalid start_line regex pattern:', 'Should explain invalid regex');
   assertIncludes(text, 'Check the pattern syntax', 'Should suggest a corrective action');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testRegexStartNoMatch() {
-  console.log('Test: regex mode reports unmatched start pattern');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'NoSuchSymbol' },
@@ -278,11 +239,9 @@ async function testRegexStartNoMatch() {
   assertIncludes(text, 'start_line regex pattern did not match any line', 'Should explain unmatched start pattern');
   assertIncludes(text, 'Check the pattern', 'Should suggest checking the pattern');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testRegexEndNoMatch() {
-  console.log('Test: regex mode reports unmatched end pattern');
 
   const result = await readFileTool.handler(
     {
@@ -300,11 +259,9 @@ async function testRegexEndNoMatch() {
   assertIncludes(text, 'end_line regex pattern did not match any line at or after the resolved start line', 'Should explain unmatched end pattern');
   assertIncludes(text, 'Check the pattern', 'Should suggest checking the pattern');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testModeSpecificRangeTypes() {
-  console.log('Test: read modes reject wrong range value types');
 
   const lineModeResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'line', start_line: '6' },
@@ -342,11 +299,9 @@ async function testModeSpecificRangeTypes() {
     'Should explain regex mode type requirement',
   );
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testInvalidReadMode() {
-  console.log('Test: Reject invalid read_mode');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'keyword' },
@@ -356,11 +311,9 @@ async function testInvalidReadMode() {
   assert(result.isError === true, 'Should fail');
   assertIncludes(getResultText(result), "The 'read_mode' parameter must be either 'line' or 'regex'.", 'Should explain valid modes');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testInvalidRange() {
-  console.log('Test: Reject invalid line range');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 10, end_line: 5 },
@@ -374,11 +327,9 @@ async function testInvalidRange() {
     'Should explain invalid range with actual values',
   );
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testStartLineBeyondEof() {
-  console.log('Test: Reject start_line beyond EOF');
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 999 },
@@ -388,11 +339,9 @@ async function testStartLineBeyondEof() {
   assert(result.isError === true, 'Should fail');
   assertIncludes(getResultText(result), 'start_line 999 exceeds file line count (15)', 'Should explain EOF range');
 
-  console.log('  ✓ Passed\n');
 }
 
 async function testBinaryFileRejected() {
-  console.log('Test: Reject binary file');
 
   const result = await readFileTool.handler(
     { file_path: 'binary/fake.png' },
@@ -402,54 +351,31 @@ async function testBinaryFileRejected() {
   assert(result.isError === true, 'Should fail');
   assertIncludes(getResultText(result), 'Cannot display content of binary file', 'Should explain binary rejection');
 
-  console.log('  ✓ Passed\n');
 }
 
-async function main() {
-  console.log('='.repeat(24));
-  console.log('Testing read_file tool');
-  console.log('='.repeat(24));
-  console.log(`Fixtures directory: ${FIXTURES_DIR}\n`);
-
-  const tests = [
-    testReadFullFile,
-    testReadLineRange,
-    testEndLineBeyondEofClipsToEof,
-    testShowLineNumbers,
-    testLargeFileReadsAllLines,
-    testLongLineIsNotShortened,
-    testRegexRange,
-    testRegexStartOnlyReadsToEof,
-    testRegexInvalidPattern,
-    testRegexStartNoMatch,
-    testRegexEndNoMatch,
-    testModeSpecificRangeTypes,
-    testInvalidReadMode,
-    testInvalidRange,
-    testStartLineBeyondEof,
-    testBinaryFileRejected,
-  ];
-
-  let passed = 0;
-  let failed = 0;
-
-  for (const test of tests) {
-    try {
-      await test();
-      passed++;
-    } catch (error) {
-      failed++;
-      console.error(`  ✗ Failed: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-  }
-
-  console.log('='.repeat(24));
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(24));
-
-  if (failed > 0) {
-    process.exit(1);
-  }
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing read_file tool',
+    details: `Fixtures directory: ${FIXTURES_DIR}`,
+    tests: [
+      { name: 'line mode reads full text file', run: testReadFullFile },
+      { name: 'line mode reads targeted line range', run: testReadLineRange },
+      { name: 'line mode clips end_line beyond EOF', run: testEndLineBeyondEofClipsToEof },
+      { name: 'show_line_numbers prefixes original line numbers', run: testShowLineNumbers },
+      { name: 'line mode reads more than 2000 lines', run: testLargeFileReadsAllLines },
+      { name: 'long lines are returned without shortening', run: testLongLineIsNotShortened },
+      { name: 'regex mode reads matched range', run: testRegexRange },
+      { name: 'regex mode with start only reads to EOF', run: testRegexStartOnlyReadsToEof },
+      { name: 'regex mode reports invalid pattern', run: testRegexInvalidPattern },
+      { name: 'regex mode reports unmatched start pattern', run: testRegexStartNoMatch },
+      { name: 'regex mode reports unmatched end pattern', run: testRegexEndNoMatch },
+      { name: 'read modes reject wrong range value types', run: testModeSpecificRangeTypes },
+      { name: 'Reject invalid read_mode', run: testInvalidReadMode },
+      { name: 'Reject invalid line range', run: testInvalidRange },
+      { name: 'Reject start_line beyond EOF', run: testStartLineBeyondEof },
+      { name: 'Reject binary file', run: testBinaryFileRejected },
+    ],
+  });
 }
 
 main().catch((error) => {

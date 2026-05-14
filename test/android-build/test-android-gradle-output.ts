@@ -1,30 +1,12 @@
 import { parseAndroidGradleOutput } from '../../src/engine/android-gradle-output.js';
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-function assertEqual<T>(actual: T, expected: T, message: string): void {
-  if (actual !== expected) {
-    throw new Error(
-      `Assertion failed: ${message}\nExpected: ${String(expected)}\nActual: ${String(actual)}`,
-    );
-  }
-}
-
-function assertIncludes(text: string | null, substring: string, message: string): void {
-  if (!text || !text.includes(substring)) {
-    throw new Error(
-      `Assertion failed: ${message}\nExpected to find: "${substring}"\nIn text: ${text ?? 'null'}`,
-    );
-  }
-}
+import {
+  assert,
+  assertEqual,
+  assertIncludes,
+  runTestSuite,
+} from '../test-utils.js';
 
 function testSuccessResult() {
-  console.log('Test: success result');
-
   const result = parseAndroidGradleOutput({
     exitCode: 0,
     stdout: 'BUILD SUCCESSFUL',
@@ -37,13 +19,9 @@ function testSuccessResult() {
   assertEqual(result.summary, 'BUILD SUCCESSFUL', 'Should keep success summary');
   assertEqual(result.firstErrorBlock, null, 'Should not return firstErrorBlock');
   assertEqual(result.logTail, null, 'Should not return logTail');
-
-  console.log('  ✓ Passed\n');
 }
 
 function testCompilerErrorExtraction() {
-  console.log('Test: compiler error extraction');
-
   const result = parseAndroidGradleOutput({
     exitCode: 1,
     stdout: '',
@@ -66,13 +44,9 @@ function testCompilerErrorExtraction() {
     'Should capture first compiler error block',
   );
   assertIncludes(result.logTail, 'BUILD FAILED in 4s', 'Should keep log tail');
-
-  console.log('  ✓ Passed\n');
 }
 
 function testWhatWentWrongExtraction() {
-  console.log('Test: what went wrong extraction');
-
   const result = parseAndroidGradleOutput({
     exitCode: 1,
     stdout: '',
@@ -92,13 +66,9 @@ function testWhatWentWrongExtraction() {
     "Execution failed for task ':app:compileDebugKotlin'.",
     'Should capture the What went wrong block',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 function testAnsiRemovalAndTailTruncation() {
-  console.log('Test: ANSI removal and tail truncation');
-
   const longTail = `prefix-${'x'.repeat(80)}-suffix`;
   const result = parseAndroidGradleOutput({
     exitCode: 1,
@@ -114,13 +84,9 @@ function testAnsiRemovalAndTailTruncation() {
     !result.logTail?.includes('\u001B[31m'),
     'Should not keep raw ANSI sequences',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 function testCombinedOutputPreservesArrivalOrder() {
-  console.log('Test: combined output preserves arrival order');
-
   const result = parseAndroidGradleOutput({
     exitCode: 1,
     stdout: ['stdout-1', 'stdout-2'].join('\n'),
@@ -135,24 +101,22 @@ function testCombinedOutputPreservesArrivalOrder() {
     ['stdout-1', 'stderr-1', 'stdout-2'].join('\n'),
     'Should prefer the merged arrival-order stream for logTail',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
-function main() {
-  console.log('='.repeat(24));
-  console.log('Testing android gradle output parser');
-  console.log('='.repeat(24));
-
-  testSuccessResult();
-  testCompilerErrorExtraction();
-  testWhatWentWrongExtraction();
-  testAnsiRemovalAndTailTruncation();
-  testCombinedOutputPreservesArrivalOrder();
-
-  console.log('='.repeat(24));
-  console.log('All parser tests passed');
-  console.log('='.repeat(24));
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing android gradle output parser',
+    tests: [
+      { name: 'success result', run: testSuccessResult },
+      { name: 'compiler error extraction', run: testCompilerErrorExtraction },
+      { name: 'what went wrong extraction', run: testWhatWentWrongExtraction },
+      { name: 'ANSI removal and tail truncation', run: testAnsiRemovalAndTailTruncation },
+      { name: 'combined output preserves arrival order', run: testCombinedOutputPreservesArrivalOrder },
+    ],
+  });
 }
 
-main();
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});

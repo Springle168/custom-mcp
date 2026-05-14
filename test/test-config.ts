@@ -3,24 +3,9 @@ import {
   buildConfig,
   type ConfigSource,
 } from '../src/config.js';
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-function assertEqual<T>(actual: T, expected: T, message: string): void {
-  if (actual !== expected) {
-    throw new Error(
-      `Assertion failed: ${message}\nExpected: ${String(expected)}\nActual: ${String(actual)}`,
-    );
-  }
-}
+import { assert, assertEqual, runTestSuite } from './test-utils.js';
 
 function testBlankMcpEnvFallsBackToFileConfig() {
-  console.log('Test: blank MCP env falls back to file config');
-
   const fileConfig: ConfigSource = {
     rootDir: 'E:/Workspace/Project',
     lineEnding: 'crlf',
@@ -36,13 +21,9 @@ function testBlankMcpEnvFallsBackToFileConfig() {
   assertEqual(config.rootDir, 'E:/Workspace/Project', 'Should keep file rootDir');
   assertEqual(config.lineEnding, 'crlf', 'Should keep file lineEnding');
   assertEqual(config.port, 3200, 'Should keep file port');
-
-  console.log('  ✓ Passed\n');
 }
 
 function testBlankAndroidEnvFallsBackToFileConfig() {
-  console.log('Test: blank Android env falls back to file config');
-
   const fileConfig: ConfigSource = {
     rootDir: 'E:/Workspace/Project',
     lineEnding: 'auto',
@@ -90,13 +71,9 @@ function testBlankAndroidEnvFallsBackToFileConfig() {
     4444,
     'Should keep file Android maxLogTailChars',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 function testNonBlankEnvStillOverridesFileConfig() {
-  console.log('Test: non-blank env still overrides file config');
-
   const fileConfig: ConfigSource = {
     rootDir: 'E:/Workspace/Project',
     lineEnding: 'lf',
@@ -131,22 +108,20 @@ function testNonBlankEnvStillOverridesFileConfig() {
     180000,
     'Should override Android timeout',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
-function main() {
-  console.log('='.repeat(24));
-  console.log('Testing config loading');
-  console.log('='.repeat(24));
-
-  testBlankMcpEnvFallsBackToFileConfig();
-  testBlankAndroidEnvFallsBackToFileConfig();
-  testNonBlankEnvStillOverridesFileConfig();
-
-  console.log('='.repeat(24));
-  console.log('All config tests passed');
-  console.log('='.repeat(24));
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing config loading',
+    tests: [
+      { name: 'blank MCP env falls back to file config', run: testBlankMcpEnvFallsBackToFileConfig },
+      { name: 'blank Android env falls back to file config', run: testBlankAndroidEnvFallsBackToFileConfig },
+      { name: 'non-blank env still overrides file config', run: testNonBlankEnvStillOverridesFileConfig },
+    ],
+  });
 }
 
-main();
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});

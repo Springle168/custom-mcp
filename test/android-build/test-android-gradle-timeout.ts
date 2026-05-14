@@ -2,13 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm, writeFile, access } from 'node:fs/promises';
 import { runAndroidGradle } from '../../src/utils/android-gradle.js';
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
+import { assert, runTestSuite } from '../test-utils.js';
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -22,9 +16,22 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function testTimeoutKillsProcessTree() {
-  console.log('Test: timeout kills the full Gradle process tree');
+async function removeTempDirWithRetry(tempDir: string): Promise<void> {
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    try {
+      await rm(tempDir, { recursive: true, force: true });
+      return;
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (attempt === 10 || (error.code !== 'EBUSY' && error.code !== 'ENOTEMPTY')) {
+        throw error;
+      }
+      await sleep(500 * attempt);
+    }
+  }
+}
 
+async function testTimeoutKillsProcessTree() {
   if (process.platform !== 'win32') {
     console.log('  - Skipped on non-Windows platform\n');
     return;
@@ -66,23 +73,18 @@ async function testTimeoutKillsProcessTree() {
       markerExists === false,
       'Timed-out child process should not survive long enough to create the marker file',
     );
-
-    console.log('  ✓ Passed\n');
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    await removeTempDirWithRetry(tempDir);
   }
 }
 
-async function main() {
-  console.log('='.repeat(24));
-  console.log('Testing Android Gradle timeout handling');
-  console.log('='.repeat(24));
-
-  await testTimeoutKillsProcessTree();
-
-  console.log('='.repeat(24));
-  console.log('All timeout tests passed');
-  console.log('='.repeat(24));
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing Android Gradle timeout handling',
+    tests: [
+      { name: 'timeout kills the full Gradle process tree', run: testTimeoutKillsProcessTree },
+    ],
+  });
 }
 
 main().catch((error) => {
