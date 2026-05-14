@@ -33,7 +33,6 @@ Rules for \`new_string\`:
 
 Rules for \`old_string\`:
 - Must be EXACT literal text including all whitespace, indentation, and newlines.
-- Include at least 3 lines of context BEFORE and AFTER the target text for unique matching.
 - NEVER escape the string content.
 - If multiple locations match and \`allow_multiple\` is not true, the tool will fail.
 
