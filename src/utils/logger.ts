@@ -6,8 +6,24 @@ import type { ToolCallResult } from '../tools/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function pad(value: number, length = 2): string {
+  return String(value).padStart(length, '0');
+}
+
+function timezoneOffset(date: Date): string {
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absoluteMinutes = Math.abs(offsetMinutes);
+  const hours = Math.floor(absoluteMinutes / 60);
+  const minutes = absoluteMinutes % 60;
+
+  return `${sign}${pad(hours)}:${pad(minutes)}`;
+}
+
 function ts(): string {
-  return new Date().toISOString();
+  const now = new Date();
+
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${pad(now.getMilliseconds(), 3)}${timezoneOffset(now)}`;
 }
 
 export class Logger {

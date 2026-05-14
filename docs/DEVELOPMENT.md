@@ -323,20 +323,20 @@ return {
 ### 输出位置
 
 - **终端（stdout）**：实时查看，带颜色高亮
-- **日志文件**：`logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动生成新文件，纯文本格式
+- **日志文件**：`logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式
 
 ### 日志格式
 
 ```
 ────────────────────────────────
-[2025-01-15T14:30:00.000Z] ← CALL replace_text
+[2025-01-15T22:30:00.000+08:00] ← CALL replace_text
   {
     "file_path": "src/index.ts",
     "old_string": "...",
     "new_string": "...",
     "allow_multiple": false
   }
-[2025-01-15T14:30:00.050Z] → OK replace_text (50ms)
+[2025-01-15T22:30:00.050+08:00] → OK replace_text (50ms)
   Modified src/index.ts:1 replacement(s) via exact match.
 ```
 
