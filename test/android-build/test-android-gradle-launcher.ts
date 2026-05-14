@@ -2,12 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { runAndroidGradle } from '../../src/utils/android-gradle.js';
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
+import { assert, runTestSuite } from '../test-utils.js';
 
 async function createFakeWorkspace(dirName: string): Promise<string> {
   const base = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-launcher-'));
@@ -25,8 +20,6 @@ async function createFakeWorkspace(dirName: string): Promise<string> {
 }
 
 async function testWorkspacePathWithAmpersand() {
-  console.log('Test: workspace path with ampersand');
-
   const workspaceRoot = await createFakeWorkspace('R&D Project');
 
   try {
@@ -44,16 +37,12 @@ async function testWorkspacePathWithAmpersand() {
 
     assert(result.success === true, 'Should successfully start gradlew.bat');
     assert(result.summary === 'BUILD SUCCESSFUL', 'Should report build success');
-
-    console.log('  ✓ Passed\n');
   } finally {
     await rm(path.dirname(workspaceRoot), { recursive: true, force: true });
   }
 }
 
 async function testWorkspacePathWithPercentExpansionSyntax() {
-  console.log('Test: workspace path with percent expansion syntax');
-
   const workspaceRoot = await createFakeWorkspace('x%TEMP%y');
 
   try {
@@ -71,29 +60,24 @@ async function testWorkspacePathWithPercentExpansionSyntax() {
 
     assert(result.success === true, 'Should successfully start gradlew.bat');
     assert(result.summary === 'BUILD SUCCESSFUL', 'Should report build success');
-
-    console.log('  ✓ Passed\n');
   } finally {
     await rm(path.dirname(workspaceRoot), { recursive: true, force: true });
   }
 }
 
-async function main() {
-  console.log('='.repeat(24));
-  console.log('Testing Android Gradle launcher');
-  console.log('='.repeat(24));
-
+async function main(): Promise<void> {
   if (process.platform !== 'win32') {
     console.log('Skipped on non-Windows platform');
     return;
   }
 
-  await testWorkspacePathWithAmpersand();
-  await testWorkspacePathWithPercentExpansionSyntax();
-
-  console.log('='.repeat(24));
-  console.log('All launcher tests passed');
-  console.log('='.repeat(24));
+  await runTestSuite({
+    title: 'Testing Android Gradle launcher',
+    tests: [
+      { name: 'workspace path with ampersand', run: testWorkspacePathWithAmpersand },
+      { name: 'workspace path with percent expansion syntax', run: testWorkspacePathWithPercentExpansionSyntax },
+    ],
+  });
 }
 
 main().catch((error) => {

@@ -3,28 +3,16 @@ import { fileURLToPath } from 'node:url';
 import type { Config } from '../../src/config.js';
 import androidAssembleDebugTool from '../../src/tools/android-assemble-debug.js';
 import androidTestDebugUnitTestTool from '../../src/tools/android-test-debug-unit-test.js';
+import {
+  assert,
+  assertIncludes,
+  getResultText,
+  runTestSuite,
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-function assertIncludes(text: string, substring: string, message: string): void {
-  if (!text.includes(substring)) {
-    throw new Error(
-      `Assertion failed: ${message}\nExpected to find: "${substring}"\nIn text: ${text}`,
-    );
-  }
-}
-
-function getResultText(result: { content: Array<{ text: string }> }): string {
-  return result.content[0]?.text ?? '';
-}
 
 const baseConfig: Config = {
   rootDir: PROJECT_ROOT,
@@ -33,8 +21,6 @@ const baseConfig: Config = {
 };
 
 async function testValidationErrorForUnknownField() {
-  console.log('Test: unknown field validation');
-
   const result = await androidAssembleDebugTool.handler(
     { quiet: true, profile: true },
     baseConfig,
@@ -46,13 +32,9 @@ async function testValidationErrorForUnknownField() {
     'Unknown parameter: profile',
     'Should explain the unknown field',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 async function testValidationErrorForNonBoolean() {
-  console.log('Test: non-boolean validation');
-
   const result = await androidTestDebugUnitTestTool.handler(
     { stacktrace: 'yes' },
     baseConfig,
@@ -64,13 +46,9 @@ async function testValidationErrorForNonBoolean() {
     "The 'stacktrace' parameter must be a boolean.",
     'Should explain the invalid parameter type',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 async function testMissingAndroidConfig() {
-  console.log('Test: missing Android config');
-
   const result = await androidAssembleDebugTool.handler({}, baseConfig);
 
   assert(result.isError === true, 'Should fail when Android config is missing');
@@ -79,13 +57,9 @@ async function testMissingAndroidConfig() {
     'android.workspaceRoot and android.javaHome',
     'Should explain required Android config keys',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 async function testMissingGradleWrapper() {
-  console.log('Test: missing gradle wrapper');
-
   const config: Config = {
     ...baseConfig,
     android: {
@@ -110,23 +84,18 @@ async function testMissingGradleWrapper() {
     'BUILD FAILED',
     'Should keep failure summary in JSON output',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
-async function main() {
-  console.log('='.repeat(24));
-  console.log('Testing Android build tools');
-  console.log('='.repeat(24));
-
-  await testValidationErrorForUnknownField();
-  await testValidationErrorForNonBoolean();
-  await testMissingAndroidConfig();
-  await testMissingGradleWrapper();
-
-  console.log('='.repeat(24));
-  console.log('All Android tool tests passed');
-  console.log('='.repeat(24));
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing Android build tools',
+    tests: [
+      { name: 'unknown field validation', run: testValidationErrorForUnknownField },
+      { name: 'non-boolean validation', run: testValidationErrorForNonBoolean },
+      { name: 'missing Android config', run: testMissingAndroidConfig },
+      { name: 'missing gradle wrapper', run: testMissingGradleWrapper },
+    ],
+  });
 }
 
 main().catch((error) => {

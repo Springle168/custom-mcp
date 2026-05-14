@@ -5,6 +5,13 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
 import writeFileTool from '../src/tools/write-file.js';
+import {
+  assert,
+  assertEqual,
+  assertIncludes,
+  getResultText,
+  runTestSuite,
+} from './test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,32 +23,6 @@ const testConfig: Config = {
   lineEnding: 'auto',
   port: 3100,
 };
-
-function assert(condition: boolean, message: string): void {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-function assertIncludes(text: string, substring: string, message: string): void {
-  if (!text.includes(substring)) {
-    throw new Error(
-      `Assertion failed: ${message}\nExpected to find: "${substring}"\nIn text: ${text.substring(0, 200)}...`,
-    );
-  }
-}
-
-function assertEquals(actual: string, expected: string, message: string): void {
-  if (actual !== expected) {
-    throw new Error(
-      `Assertion failed: ${message}\nExpected: ${JSON.stringify(expected)}\nActual: ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function getResultText(result: any): string {
-  return result.content[0].text;
-}
 
 async function prepareFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
@@ -73,8 +54,6 @@ async function removeLinkIfExists(linkPath: string): Promise<void> {
 }
 
 async function testCreateNestedFile() {
-  console.log('Test: Create nested file');
-
   const result = await writeFileTool.handler(
     { file_path: 'nested/example.txt', content: 'alpha\nbeta' },
     testConfig,
@@ -89,14 +68,10 @@ async function testCreateNestedFile() {
 
   const writtenPath = path.join(FIXTURES_DIR, 'nested', 'example.txt');
   const raw = await fs.readFile(writtenPath, 'utf-8');
-  assertEquals(raw, 'alpha\nbeta', 'Should write the provided text exactly for new files');
-
-  console.log('  ✓ Passed\n');
+  assertEqual(raw, 'alpha\nbeta', 'Should write the provided text exactly for new files');
 }
 
 async function testOverwriteExistingFilePreservesLineEnding() {
-  console.log('Test: Overwrite existing file and keep CRLF');
-
   const targetPath = path.join(FIXTURES_DIR, 'existing.txt');
   await fs.writeFile(targetPath, 'old1\r\nold2\r\n', 'utf-8');
 
@@ -112,14 +87,10 @@ async function testOverwriteExistingFilePreservesLineEnding() {
   assertIncludes(text, 'Total lines: 2.', 'Should report line count');
 
   const raw = await fs.readFile(targetPath, 'utf-8');
-  assertEquals(raw, 'new1\r\nnew2', 'Should preserve the original CRLF line endings');
-
-  console.log('  ✓ Passed\n');
+  assertEqual(raw, 'new1\r\nnew2', 'Should preserve the original CRLF line endings');
 }
 
 async function testRejectOutsideWorkspace() {
-  console.log('Test: Reject path outside workspace');
-
   const outsidePath = path.join(__dirname, 'write-file-outside.txt');
   const result = await writeFileTool.handler(
     { file_path: outsidePath, content: 'nope' },
@@ -134,13 +105,9 @@ async function testRejectOutsideWorkspace() {
   );
 
   await fs.rm(outsidePath, { force: true });
-
-  console.log('  ✓ Passed\n');
 }
 
 async function testRejectBinaryTarget() {
-  console.log('Test: Reject binary target');
-
   const result = await writeFileTool.handler(
     { file_path: 'binary/fake.png', content: 'nope' },
     testConfig,
@@ -152,13 +119,9 @@ async function testRejectBinaryTarget() {
     'Cannot write text content to binary file',
     'Should reject binary files',
   );
-
-  console.log('  ✓ Passed\n');
 }
 
 async function testRejectPlaceholderContent() {
-  console.log('Test: Reject placeholder content');
-
   const cases = ['// rest of code ...', '...', '...\ractual code'];
   for (const content of cases) {
     const result = await writeFileTool.handler(
@@ -173,13 +136,9 @@ async function testRejectPlaceholderContent() {
       'Should reject incomplete content',
     );
   }
-
-  console.log('  ✓ Passed\n');
 }
 
 async function testRejectSymlinkEscapingWorkspace() {
-  console.log('Test: Reject symlink escaping workspace');
-
   const outsideDir = path.join(__dirname, 'fixtures', 'write-file-outside');
   const linkPath = path.join(FIXTURES_DIR, 'escape-link');
   await fs.mkdir(outsideDir, { recursive: true });
@@ -219,53 +178,23 @@ async function testRejectSymlinkEscapingWorkspace() {
   } finally {
     await removeLinkIfExists(linkPath);
   }
-
-  console.log('  ✓ Passed\n');
 }
 
-async function main() {
-  console.log('='.repeat(24));
-  console.log('Testing write_file tool');
-  console.log('='.repeat(24));
-  console.log(`Fixtures directory: ${FIXTURES_DIR}\n`);
-
-  await prepareFixtures();
-
-  const tests = [
-    testCreateNestedFile,
-    testOverwriteExistingFilePreservesLineEnding,
-    testRejectOutsideWorkspace,
-    testRejectBinaryTarget,
-    testRejectPlaceholderContent,
-    testRejectSymlinkEscapingWorkspace,
-  ];
-
-  let passed = 0;
-  let failed = 0;
-
-  try {
-    for (const test of tests) {
-      try {
-        await test();
-        passed++;
-      } catch (error) {
-        failed++;
-        console.error(
-          `  ✗ Failed: ${error instanceof Error ? error.message : String(error)}\n`,
-        );
-      }
-    }
-  } finally {
-    await cleanupFixtures();
-  }
-
-  console.log('='.repeat(24));
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(24));
-
-  if (failed > 0) {
-    process.exit(1);
-  }
+async function main(): Promise<void> {
+  await runTestSuite({
+    title: 'Testing write_file tool',
+    details: `Fixtures directory: ${FIXTURES_DIR}`,
+    beforeAll: prepareFixtures,
+    afterAll: cleanupFixtures,
+    tests: [
+      { name: 'Create nested file', run: testCreateNestedFile },
+      { name: 'Overwrite existing file and keep CRLF', run: testOverwriteExistingFilePreservesLineEnding },
+      { name: 'Reject path outside workspace', run: testRejectOutsideWorkspace },
+      { name: 'Reject binary target', run: testRejectBinaryTarget },
+      { name: 'Reject placeholder content', run: testRejectPlaceholderContent },
+      { name: 'Reject symlink escaping workspace', run: testRejectSymlinkEscapingWorkspace },
+    ],
+  });
 }
 
 main().catch((error) => {
