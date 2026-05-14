@@ -20,8 +20,8 @@
 ## 协作与澄清
 
 - 优先通过只读探查解决事实性问题；只有当偏好、取舍或高影响不确定性无法从仓库确认时，才向用户提问。
-- 需要向用户提问时，优先使用当前宿主或环境提供的内置提问能力；不适用或不可用时，再使用普通提问工具（如 MCP `ask_user`）或直接提问。
-- 只有用户明确表示可以使用 sub-agent 时才创建；创建前说明任务目标、只读或可写边界、输出要求，默认使用 `fork_context:false`。
+- 需要向用户提问时，优先使用当前宿主或环境提供的内置提问能力；不适用或不可用时，再使用普通提问工具（如 `ask_user`）或直接提问。
+- 只有用户明确表示可以使用 sub-agent 时才创建；创建前说明任务目标、只读或可写边界、输出要求，默认使用 `fork_context:false`，不未经要求指定特定模型或者思考深度。
 - sub-agent 适合独立、可并行的调查、验证或小范围修改；不要把阻塞主线、高耦合或需要关键判断的任务外包。
 - 若授权 sub-agent 修改文件，必须指定明确且互不重叠的写入范围，并在汇总时说明其产出和未采纳建议。
 
@@ -55,18 +55,20 @@
 
 - TypeScript 编译：`npm run build`。
 - 单个脚本测试：`npx tsx test/<file>.ts`。
-- 在 Windows / PowerShell 下执行 `npx tsx test/<file>.ts` 时，需要显式加 `powershell.exe -ExecutionPolicy Bypass -Command ...`，或者改用 `cmd /c npx tsx test/<file>.ts`。`require_escalated` 无法绕过 `ExecutionPolicy`。
-- Android 构建相关测试集中在 `test/android-build/`。
+- 在 Windows / PowerShell 下执行 `npx tsx test/<file>.ts` 时，需要显式加 `powershell.exe -ExecutionPolicy Bypass -Command ...`，或者改用 `cmd /c npx tsx test/<file>.ts`。`require_escalated` 提权无法绕过 `ExecutionPolicy`。
+- Android 构建相关测试集中在 `test/android-build/`。其中 timeout / launcher 测试依赖 Windows 进程树和 `gradlew.bat` 启动行为，需要提权跑测试验证。
 - 不要运行会改写源码、文档或快照的格式化/生成命令，除非用户明确要求或当前任务必须如此。
 
 ## 工具调用指导
 
 - 当一次性读取大量文件时，优先使用 `read_many_files` 工具的 `shallow_read` 功能，预防可能发生的截断问题。
 - 遇到行数过长的文件时，分多次读取完整文件。
+- 鼓励并行调用工具。
 
 ## Git 使用规则
 
 - 默认允许只读 Git 操作：`git status`、`git diff`、`git log`、`git blame`。
+- 除非用户特殊要求，否则 Git 操作不得输出带 作者名 或者 作者邮箱 的内容。
 - 未经用户明确同意和授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
 - 如果用户明确要求创建提交，先阅读并遵循 `docs/commit-guidelines.md`，再基于实际 diff 生成提交信息。
 - 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式提权流程运行 `git commit`，因为提交需要写入 `.git/`（如 `.git/index.lock`）。
