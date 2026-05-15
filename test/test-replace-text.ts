@@ -7,7 +7,6 @@ import {
   assert,
   assertEqual,
   assertIncludes,
-  assertNotIncludes,
   getResultText,
   runTestSuite,
 } from './test-utils.js';
@@ -22,6 +21,16 @@ const testConfig: Config = {
   port: 3100,
 };
 
+interface ReplaceJsonPayload {
+  success: boolean;
+  note?: string;
+  allow_multiple: boolean;
+  matched_targets: number;
+  replacement_count: number;
+  matched_span: { start_line: number; end_line: number } | null;
+  file_line_count: { previous: number; current: number };
+}
+
 async function prepareFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
   await fs.mkdir(FIXTURES_DIR, { recursive: true });
@@ -31,6 +40,10 @@ async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
 }
 
+function parsePayload(result: { content?: Array<{ text?: string }> }): ReplaceJsonPayload {
+  return JSON.parse(getResultText(result)) as ReplaceJsonPayload;
+}
+
 async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
   const targetPath = path.join(FIXTURES_DIR, 'warns.ts');
   await fs.writeFile(targetPath, 'function demo() {\n  return 1;\n}\n', 'utf-8');
@@ -38,16 +51,24 @@ async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
   const result = await replaceTool.handler(
     {
       file_path: 'warns.ts',
-      old_string: '  return 1;',
-      new_string: '  // ...\n  return 2;',
+      target: '  return 1;',
+      replacement: '  // ...\n  return 2;',
     },
     testConfig,
   );
 
   assert(result.isError !== true, 'Should succeed');
-  const text = getResultText(result);
-  assertIncludes(text, 'Warning:', 'Should include a warning');
-  assertIncludes(text, "'...'", 'Should name the placeholder');
+  const payload = parsePayload(result);
+  assert(payload.success, 'Payload should report success');
+  assertIncludes(payload.note, 'Warning:', 'Should include a warning');
+  assertIncludes(payload.note, "'...'", 'Should name the placeholder');
+  assertEqual(payload.matched_targets, 1, 'Should report one matched target');
+  assertEqual(payload.replacement_count, 1, 'Should report one replacement');
+  assertEqual(
+    payload.matched_span?.start_line,
+    2,
+    'Should report matched start line',
+  );
 
   const raw = await fs.readFile(targetPath, 'utf-8');
   assertEqual(
@@ -64,18 +85,16 @@ async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
   const result = await replaceTool.handler(
     {
       file_path: 'existing-placeholder.txt',
-      old_string: '// ...',
-      new_string: '// ...\nactual content',
+      target: '// ...',
+      replacement: '// ...\nactual content',
     },
     testConfig,
   );
 
   assert(result.isError !== true, 'Should succeed');
-  assertNotIncludes(
-    getResultText(result),
-    'Warning:',
-    'Should not warn when the same placeholder already existed',
-  );
+  const payload = parsePayload(result);
+  assert(payload.success, 'Payload should report success');
+  assertEqual(payload.note, undefined, 'Should not warn for existing placeholder');
 
   const raw = await fs.readFile(targetPath, 'utf-8');
   assertEqual(
@@ -89,19 +108,39 @@ async function testRejectsNonBooleanAllowMultiple(): Promise<void> {
   const result = await replaceTool.handler(
     {
       file_path: 'unused.txt',
-      old_string: 'old',
-      new_string: 'new',
+      target: 'old',
+      replacement: 'new',
       allow_multiple: 'false',
     },
     testConfig,
   );
 
   assert(result.isError === true, 'Should fail');
-  assertIncludes(
-    getResultText(result),
-    "The 'allow_multiple' parameter must be a boolean when provided.",
-    'Should explain boolean requirement',
+  const payload = parsePayload(result);
+  assert(!payload.success, 'Payload should report failure');
+  assertEqual(payload.allow_multiple, false, 'Invalid allow_multiple should normalize to false');
+}
+
+async function testRejectsOldFieldAliases(): Promise<void> {
+  const targetPath = path.join(FIXTURES_DIR, 'old-fields.txt');
+  await fs.writeFile(targetPath, 'old\n', 'utf-8');
+
+  const result = await replaceTool.handler(
+    {
+      file_path: 'old-fields.txt',
+      old_string: 'old',
+      new_string: 'new',
+    },
+    testConfig,
   );
+
+  assert(result.isError === true, 'Should fail');
+  const text = getResultText(result);
+  assertIncludes(text, 'old_string', 'Should mention rejected old field');
+  assertIncludes(text, 'target/replacement', 'Should suggest v2 parameter names');
+
+  const raw = await fs.readFile(targetPath, 'utf-8');
+  assertEqual(raw, 'old\n', 'Should not modify the file');
 }
 
 async function main(): Promise<void> {
@@ -116,12 +155,16 @@ async function main(): Promise<void> {
         run: testWarnsButWritesPlaceholderReplacement,
       },
       {
-        name: 'Does not warn for placeholder already in old_string',
+        name: 'Does not warn for placeholder already in target',
         run: testDoesNotWarnForExistingPlaceholder,
       },
       {
         name: 'Rejects non-boolean allow_multiple',
         run: testRejectsNonBooleanAllowMultiple,
+      },
+      {
+        name: 'Rejects old field aliases',
+        run: testRejectsOldFieldAliases,
       },
     ],
   });

@@ -2,18 +2,49 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Config } from '../config.js';
 import {
+  calculateMatchedSpan,
+  calculateRegexReplacement,
   calculateReplacement,
-  getErrorReplaceResult,
+  type MatchedSpan,
   type ReplaceParams,
+  type ReplacementResult,
 } from '../engine/replacement.js';
 import {
   detectLineEnding,
   resolveLineEnding,
   detectOmissionPlaceholders,
 } from '../engine/text-utils.js';
+import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
 import { resolvePath, validatePathAccess } from '../utils/paths.js';
 import { withFileLock } from '../utils/file-lock.js';
-import type { MCPTool } from './types.js';
+import type { MCPTool, ToolCallResult } from './types.js';
+
+// ================
+// Types
+// ================
+
+type MatchMode = 'default' | 'regex';
+
+interface ReplaceTextPayload {
+  success: boolean;
+  file_path: string;
+  match_mode: MatchMode;
+  allow_multiple: boolean;
+  matched_targets: number;
+  replacement_count: number;
+  matched_span: MatchedSpan | null;
+  replacement_line_count: number;
+  file_line_count: {
+    previous: number;
+    current: number;
+  };
+  note?: string;
+}
+
+interface ValidationResult {
+  ok: boolean;
+  note?: string;
+}
 
 // ================
 // Tool Schema（MCP tools/list 返回给宿主的）
@@ -21,50 +52,54 @@ import type { MCPTool } from './types.js';
 
 export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text',
-  description: `Replaces text within a file. By default expects exactly ONE occurrence of \`old_string\`. Set \`allow_multiple\` to true to replace all occurrences.
+  description: `Replaces text within a file and returns a machine-readable JSON payload in content[0].text.
 
-Use a non-existent path and an empty \`old_string\` for new file creation. But it is recommended to use \`write_file\` as much as possible to create new files.
+By default expects exactly ONE match. Set allow_multiple=true to replace all matches.
 
-Rules for \`new_string\`:
-- Must be EXACT literal replacement text.
-- Ensure the resulting code is correct and idiomatic.
-- Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. If possible placeholders are detected, the tool may still write the file and return a warning.
-- Must be different from \`old_string\`.
+Parameters:
+- file_path: Path of the file to modify. Relative paths resolve from the configured workspace root; the result JSON returns the original string you provided.
+- target: Content to locate. In default mode this is literal text handled by the tolerant Exact → Flexible → Tokenized → Fuzzy pipeline. In regex mode this is a bare JavaScript RegExp pattern compiled as new RegExp(target, 'gms').
+- replacement: Complete replacement text. Do not use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. Possible placeholders are written but reported as warnings in note.
+- allow_multiple: If true, replace all matches. If false or omitted, exactly one match is required.
+- match_mode: 'default' or 'regex'. Defaults to 'default'.
 
-Rules for \`old_string\`:
-- Must be EXACT literal text including all whitespace, indentation, and newlines.
-- NEVER escape the string content.
-- If multiple locations match and \`allow_multiple\` is not true, the tool will fail.
-
-Best practices:
-- Always use read_file to examine file content before making replacements.
-- Prefer multiple small, atomic replacements over one large replacement.
-- If the target file requires extensive refactoring, it is recommended to first perform a full overwrite of the file using \`write_file\`, and then perform partial replacements based on needs and subsequent plan adjustments.
-- Verify file content after changes.`,
+Mode boundaries:
+- default mode treats target and replacement as literal text. It does not interpret $!n, $1, $&, $$, or any regex replacement syntax.
+- regex mode does not use default fallback. It interprets only $!n capture references and $$ dollar escaping in replacement; JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
+- Empty target is allowed only in default mode when the file does not exist, to create a new file. Prefer write_file for new file creation.
+- old_string/new_string compatibility aliases have been removed. Passing old_string, new_string, or any unknown field is rejected.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
       file_path: {
         type: 'string',
-        description: 'The path to the file to modify.',
+        description:
+          'Path of the file to modify. Returned unchanged in the result JSON when it is a string.',
       },
-      new_string: {
+      target: {
         type: 'string',
         description:
-          'The exact literal replacement text. Must be complete code, no placeholders.',
+          'Content to locate. In default mode this is literal text; in regex mode this is a bare JavaScript RegExp pattern. Empty target is allowed only in default mode for creating a missing file.',
       },
-      old_string: {
+      replacement: {
         type: 'string',
         description:
-          'The exact literal text to find. Include surrounding context lines for precise matching.',
+          'Complete replacement text. In default mode it is literal text. In regex mode only $!n capture references and $$ dollar escaping are interpreted.',
       },
       allow_multiple: {
         type: 'boolean',
         description:
-          'If true, replace ALL occurrences. If false (default), succeeds only if exactly one occurrence is found.',
+          'If true, replace all matches. If false or omitted, exactly one match is required for replacement.',
+      },
+      match_mode: {
+        type: 'string',
+        enum: ['default', 'regex'],
+        description:
+          "Matching mode. default uses the tolerant text pipeline. regex uses new RegExp(target, 'gms') and does not fall back.",
       },
     },
-    required: ['file_path', 'new_string', 'old_string'],
+    required: ['file_path', 'target', 'replacement'],
+    additionalProperties: false,
   },
 };
 
@@ -72,21 +107,176 @@ Best practices:
 // Response Helpers
 // ================
 
-function successResult(text: string) {
-  return { content: [{ type: 'text' as const, text }] };
+function successResult(payload: ReplaceTextPayload): ToolCallResult {
+  return { content: [{ type: 'text', text: JSON.stringify(payload) }] };
 }
 
-function errorResult(text: string) {
-  return { content: [{ type: 'text' as const, text }], isError: true };
+function errorResult(payload: ReplaceTextPayload): ToolCallResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(payload) }],
+    isError: true,
+  };
 }
 
-function appendWarning(text: string, warning: string | null): string {
-  if (!warning) return text;
-  return `${text}\nWarning: ${warning}`;
+function normalizeMatchMode(value: unknown): MatchMode {
+  return value === 'default' || value === 'regex' ? value : 'default';
+}
+
+function normalizeAllowMultiple(value: unknown): boolean {
+  return value === true;
+}
+
+function normalizeTextLineEndings(text: string): string {
+  return text.replace(/\r\n|\r/g, '\n');
+}
+
+function applyLineEnding(
+  content: string,
+  lineEnding: '\r\n' | '\n',
+): string {
+  if (lineEnding === '\r\n') {
+    return content.replace(/\r\n|\r|\n/g, '\r\n');
+  }
+  return content.replace(/\r\n|\r/g, '\n');
+}
+
+function countLines(text: string): number {
+  return text === '' ? 0 : normalizeTextLineEndings(text).split('\n').length;
+}
+
+function payloadFromArgs(
+  args: Record<string, unknown>,
+  success: boolean,
+  note: string | undefined,
+  overrides: Partial<ReplaceTextPayload> = {},
+): ReplaceTextPayload {
+  const previousLineCount = overrides.file_line_count?.previous ?? 0;
+  const payload: ReplaceTextPayload = {
+    success,
+    file_path: typeof args.file_path === 'string' ? args.file_path : '',
+    match_mode: normalizeMatchMode(args.match_mode),
+    allow_multiple: normalizeAllowMultiple(args.allow_multiple),
+    matched_targets: 0,
+    replacement_count: 0,
+    matched_span: null,
+    replacement_line_count:
+      typeof args.replacement === 'string' ? countLines(args.replacement) : 0,
+    file_line_count: {
+      previous: previousLineCount,
+      current: previousLineCount,
+    },
+    ...overrides,
+  };
+
+  if (note !== undefined && note.length > 0) {
+    payload.note = note;
+  }
+
+  return payload;
+}
+
+function joinNotes(...notes: Array<string | null | undefined>): string | undefined {
+  const filteredNotes = notes.filter(
+    (note): note is string => typeof note === 'string' && note.length > 0,
+  );
+  return filteredNotes.length > 0 ? filteredNotes.join(' ') : undefined;
+}
+
+function formatFileReadinessError(
+  filePath: string,
+  reason: string,
+): string {
+  return `Could not prepare ${filePath}: ${reason}. Check the path, permissions, and file type before retrying.`;
 }
 
 // ================
 // Parameter Validation
+// ================
+
+const ALLOWED_KEYS = new Set([
+  'file_path',
+  'target',
+  'replacement',
+  'allow_multiple',
+  'match_mode',
+]);
+
+function hasOwn(args: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(args, key);
+}
+
+function validateParams(args: Record<string, unknown>): ValidationResult {
+  const unknownKeys = Object.keys(args).filter((key) => !ALLOWED_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    return {
+      ok: false,
+      note:
+        `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
+        'replace_text v2 accepts only file_path, target, replacement, allow_multiple, and match_mode. Use target/replacement instead of old_string/new_string.',
+    };
+  }
+
+  if (!hasOwn(args, 'file_path')) {
+    return { ok: false, note: "Missing required parameter 'file_path'." };
+  }
+  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+    return {
+      ok: false,
+      note: "The 'file_path' parameter must be a non-empty string.",
+    };
+  }
+
+  if (!hasOwn(args, 'target')) {
+    return { ok: false, note: "Missing required parameter 'target'." };
+  }
+  if (typeof args.target !== 'string') {
+    return { ok: false, note: "The 'target' parameter must be a string." };
+  }
+
+  if (!hasOwn(args, 'replacement')) {
+    return { ok: false, note: "Missing required parameter 'replacement'." };
+  }
+  if (typeof args.replacement !== 'string') {
+    return {
+      ok: false,
+      note: "The 'replacement' parameter must be a string.",
+    };
+  }
+
+  if (
+    hasOwn(args, 'allow_multiple') &&
+    typeof args.allow_multiple !== 'boolean'
+  ) {
+    return {
+      ok: false,
+      note: "The 'allow_multiple' parameter must be a boolean when provided.",
+    };
+  }
+
+  if (
+    hasOwn(args, 'match_mode') &&
+    args.match_mode !== 'default' &&
+    args.match_mode !== 'regex'
+  ) {
+    return {
+      ok: false,
+      note: "The 'match_mode' parameter must be either 'default' or 'regex'.",
+    };
+  }
+
+  if (args.match_mode === 'regex' && args.target === '') {
+    return {
+      ok: false,
+      note:
+        "The 'target' parameter must be non-empty when match_mode is 'regex'. Provide a regex pattern that consumes text.",
+    };
+  }
+
+  return { ok: true };
+}
+
+// ================
+// Omission Placeholder Warning
 // ================
 
 function isDotsOnly(text: string): boolean {
@@ -157,43 +347,197 @@ function detectPotentialOmissionPlaceholders(text: string): string[] {
 }
 
 function getOmissionPlaceholderWarning(
-  oldString: string,
-  newString: string,
+  target: string,
+  replacement: string,
 ): string | null {
-  const oldPlaceholders = new Set(detectPotentialOmissionPlaceholders(oldString));
-  const newPlaceholders = detectPotentialOmissionPlaceholders(newString).filter(
-    (placeholder) => !oldPlaceholders.has(placeholder),
-  );
+  const targetPlaceholders = new Set(detectPotentialOmissionPlaceholders(target));
+  const replacementPlaceholders = detectPotentialOmissionPlaceholders(
+    replacement,
+  ).filter((placeholder) => !targetPlaceholders.has(placeholder));
 
-  if (newPlaceholders.length === 0) return null;
+  if (replacementPlaceholders.length === 0) return null;
 
-  const shownPlaceholders = [...new Set(newPlaceholders)]
+  const shownPlaceholders = [...new Set(replacementPlaceholders)]
     .slice(0, 3)
     .map((placeholder) => `'${placeholder}'`)
     .join(', ');
-  const more = newPlaceholders.length > 3 ? ' and more' : '';
+  const more = replacementPlaceholders.length > 3 ? ' and more' : '';
 
-  return `new_string contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete replacement text.`;
+  return `Warning: replacement contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete replacement text.`;
 }
 
-function validateParams(args: Record<string, unknown>): string | null {
-  if (typeof args.file_path !== 'string' || !args.file_path) {
-    return "The 'file_path' parameter must be a non-empty string.";
+function getInvalidRegexReplacementWarning(
+  matchMode: MatchMode,
+  invalidReplacementSyntax: boolean,
+): string | null {
+  if (matchMode !== 'regex' || !invalidReplacementSyntax) return null;
+  return "Warning: replacement contains '$!' not followed by digits. In regex mode only $!n capture references are expanded; the suspicious syntax was written literally. Verify the result with read_file.";
+}
+
+// ================
+// Path Safety
+// ================
+
+async function findExistingAncestor(directoryPath: string): Promise<string> {
+  let current = directoryPath;
+
+  while (true) {
+    try {
+      await fs.lstat(current);
+      return current;
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+
+      const parent = path.dirname(current);
+      if (parent === current) {
+        throw error;
+      }
+      current = parent;
+    }
   }
-  if (typeof args.new_string !== 'string') {
-    return "The 'new_string' parameter must be a string.";
+}
+
+async function validateSafeWriteTarget(
+  resolved: string,
+  rootDir: string,
+  filePath: string,
+): Promise<string | null> {
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(rootDir);
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return `Could not resolve workspace root: ${error.message}. Check the server configuration.`;
   }
-  if (typeof args.old_string !== 'string') {
-    return "The 'old_string' parameter must be a string.";
+
+  try {
+    const existingAncestor = await findExistingAncestor(path.dirname(resolved));
+    const realAncestor = await fs.realpath(existingAncestor);
+    if (validatePathAccess(realAncestor, realRoot)) {
+      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return `Could not validate write path ${filePath}: ${error.message}. Check the path and permissions.`;
   }
-  if (
-    args.allow_multiple !== undefined &&
-    typeof args.allow_multiple !== 'boolean'
-  ) {
-    return "The 'allow_multiple' parameter must be a boolean when provided.";
+
+  try {
+    const stat = await fs.lstat(resolved);
+    if (stat.isSymbolicLink()) {
+      return `Cannot modify file ${filePath}: target path is a symbolic link. Provide a regular file path inside the workspace.`;
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      return `Could not validate write target ${filePath}: ${error.message}. Check the path and permissions.`;
+    }
   }
 
   return null;
+}
+
+// ================
+// File Preparation
+// ================
+
+async function readExistingTextFile(
+  resolved: string,
+  filePath: string,
+): Promise<
+  | {
+      exists: true;
+      content: string;
+      detectedLineEnding: '\r\n' | '\n';
+      lineCount: number;
+    }
+  | { exists: false }
+  | { exists: null; error: string }
+> {
+  try {
+    const stats = await fs.stat(resolved);
+
+    if (stats.isDirectory()) {
+      return {
+        exists: null,
+        error: `Path ${filePath} is a directory. Provide a text file path instead.`,
+      };
+    }
+
+    const sizeMB = stats.size / (1024 * 1024);
+    if (sizeMB > MAX_FILE_SIZE_MB) {
+      return {
+        exists: null,
+        error: `File ${filePath} exceeds ${MAX_FILE_SIZE_MB}MB size limit (${sizeMB.toFixed(1)}MB). Use a smaller text file.`,
+      };
+    }
+
+    if (await isBinaryFile(resolved)) {
+      return {
+        exists: null,
+        error: `Cannot modify binary file: ${filePath}. Provide a text file path instead.`,
+      };
+    }
+
+    const raw = await fs.readFile(resolved, 'utf-8');
+    const content = normalizeTextLineEndings(raw);
+    return {
+      exists: true,
+      content,
+      detectedLineEnding: detectLineEnding(raw),
+      lineCount: countLines(content),
+    };
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') {
+      return { exists: false };
+    }
+    return {
+      exists: null,
+      error: formatFileReadinessError(filePath, error.message),
+    };
+  }
+}
+
+async function writeTextContent(
+  resolved: string,
+  content: string,
+  lineEnding: '\r\n' | '\n',
+): Promise<string | null> {
+  try {
+    await fs.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.writeFile(resolved, applyLineEnding(content, lineEnding), 'utf-8');
+    return null;
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return `Could not write file: ${error.message}. Check the path and permissions before retrying.`;
+  }
+}
+
+// ================
+// Replacement Results
+// ================
+
+function buildMatchedFailure(
+  args: Record<string, unknown>,
+  note: string,
+  previousLineCount: number,
+  calculation: ReplacementResult,
+  currentContent: string,
+): ToolCallResult {
+  return errorResult(
+    payloadFromArgs(args, false, note, {
+      matched_targets: calculation.matchedTargets,
+      replacement_count: 0,
+      matched_span: calculateMatchedSpan(currentContent, calculation.matchRanges),
+      file_line_count: {
+        previous: previousLineCount,
+        current: previousLineCount,
+      },
+    }),
+  );
 }
 
 // ================
@@ -203,118 +547,246 @@ function validateParams(args: Record<string, unknown>): string | null {
 export async function handleReplace(
   args: Record<string, unknown>,
   config: Config,
-) {
-  // 1. 参数校验
-  const validationError = validateParams(args);
-  if (validationError) return errorResult(validationError);
+): Promise<ToolCallResult> {
+  const validation = validateParams(args);
+  if (!validation.ok) {
+    return errorResult(payloadFromArgs(args, false, validation.note));
+  }
 
-  const filePath = String(args.file_path);
-  const newString = String(args.new_string);
-  const oldString = String(args.old_string);
-  const allowMultiple = args.allow_multiple === true;
-  const placeholderWarning = getOmissionPlaceholderWarning(oldString, newString);
+  const filePath = args.file_path as string;
+  const target = args.target as string;
+  const replacement = args.replacement as string;
+  const matchMode = normalizeMatchMode(args.match_mode);
+  const allowMultiple = normalizeAllowMultiple(args.allow_multiple);
+  const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
-  // 2. 路径解析 + 安全校验
   const resolved = resolvePath(filePath, config.rootDir);
   const pathError = validatePathAccess(resolved, config.rootDir);
-  if (pathError) return errorResult(pathError);
+  if (pathError) {
+    return errorResult(
+      payloadFromArgs(
+        args,
+        false,
+        `${pathError} Provide a file path inside the configured workspace root.`,
+      ),
+    );
+  }
 
-  // 3. 文件锁内执行
   return withFileLock(resolved, async () => {
-    // 4. 读取文件
-    let currentContent: string | null = null;
-    let fileExists = false;
-    let detectedLineEnding: '\r\n' | '\n' | null = null;
+    const safetyError = await validateSafeWriteTarget(
+      resolved,
+      config.rootDir,
+      filePath,
+    );
+    if (safetyError) {
+      return errorResult(payloadFromArgs(args, false, safetyError));
+    }
 
-    try {
-      const raw = await fs.readFile(resolved, 'utf-8');
-      detectedLineEnding = detectLineEnding(raw);
-      currentContent = raw.replace(/\r\n/g, '\n');
-      fileExists = true;
-    } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        return errorResult(`Failed to read file: ${error.message}`);
+    const existingFile = await readExistingTextFile(resolved, filePath);
+    if (existingFile.exists === null) {
+      return errorResult(payloadFromArgs(args, false, existingFile.error));
+    }
+
+    if (!existingFile.exists) {
+      if (matchMode === 'default' && target === '') {
+        if (await isBinaryFile(resolved)) {
+          return errorResult(
+            payloadFromArgs(
+              args,
+              false,
+              `Cannot create text content at binary-looking path: ${filePath}. Provide a text file path instead.`,
+            ),
+          );
+        }
+
+        const normalizedReplacement = normalizeTextLineEndings(replacement);
+        const lineEnding = resolveLineEnding(config.lineEnding, null);
+        try {
+          await fs.mkdir(path.dirname(resolved), { recursive: true });
+        } catch (err: unknown) {
+          const error = err as NodeJS.ErrnoException;
+          return errorResult(
+            payloadFromArgs(
+              args,
+              false,
+              `Could not create parent directory for ${filePath}: ${error.message}. Check the path and permissions before retrying.`,
+            ),
+          );
+        }
+        const postMkdirSafetyError = await validateSafeWriteTarget(
+          resolved,
+          config.rootDir,
+          filePath,
+        );
+        if (postMkdirSafetyError) {
+          return errorResult(payloadFromArgs(args, false, postMkdirSafetyError));
+        }
+
+        const writeError = await writeTextContent(
+          resolved,
+          normalizedReplacement,
+          lineEnding,
+        );
+        if (writeError) {
+          return errorResult(payloadFromArgs(args, false, writeError));
+        }
+
+        return successResult(
+          payloadFromArgs(
+            args,
+            true,
+            joinNotes(`File created at ${filePath}.`, placeholderWarning),
+            {
+              matched_targets: 0,
+              replacement_count: 0,
+              matched_span: null,
+              file_line_count: {
+                previous: 0,
+                current: countLines(normalizedReplacement),
+              },
+            },
+          ),
+        );
       }
-    }
 
-    const isNewFile = oldString === '' && !fileExists;
-
-    // 5. 新建文件
-    if (isNewFile) {
-      const lineEnding = resolveLineEnding(config.lineEnding, null);
-      let content = newString;
-      if (lineEnding === '\r\n') {
-        content = content.replace(/\r?\n/g, '\r\n');
-      }
-      await fs.mkdir(path.dirname(resolved), { recursive: true });
-      await fs.writeFile(resolved, content, 'utf-8');
-      return successResult(
-        appendWarning(`Created new file: ${filePath}`, placeholderWarning),
-      );
-    }
-
-    // 6. 错误分支
-    if (!fileExists) {
       return errorResult(
-        `File not found: ${filePath}. Use empty old_string to create a new file.`,
+        payloadFromArgs(
+          args,
+          false,
+          `File not found: ${filePath}. Verify the path with read_file, or in default mode use an empty target only when you intend to create a missing file.`,
+        ),
       );
     }
 
-    if (oldString === '' && fileExists) {
+    const currentContent = existingFile.content;
+    const previousLineCount = existingFile.lineCount;
+
+    if (matchMode === 'default' && target === '') {
       return errorResult(
-        `File already exists: ${filePath}. Cannot create. Provide old_string to modify existing file.`,
+        payloadFromArgs(
+          args,
+          false,
+          `File already exists: ${filePath}. Empty target is only allowed for creating a missing file; provide a non-empty target to modify an existing file.`,
+          {
+            file_line_count: {
+              previous: previousLineCount,
+              current: previousLineCount,
+            },
+          },
+        ),
       );
     }
 
-    // 7. 计算替换
     const params: ReplaceParams = {
       file_path: filePath,
-      new_string: newString,
-      old_string: oldString,
+      target,
+      replacement,
       allow_multiple: allowMultiple,
     };
 
-    const result = calculateReplacement(currentContent!, params);
+    let calculation: ReplacementResult;
+    let invalidReplacementSyntax = false;
 
-    // 8. 检查替换结果
-    const replaceError = getErrorReplaceResult(
-      params,
-      result.occurrences,
-      result.finalOldString,
-      result.finalNewString,
-    );
-    if (replaceError) return errorResult(replaceError.raw);
-
-    // 9. 写入文件（恢复行尾符）
-    const lineEnding = resolveLineEnding(config.lineEnding, detectedLineEnding);
-    let finalContent = result.newContent;
-    if (lineEnding === '\r\n') {
-      finalContent = finalContent.replace(/\r?\n/g, '\r\n');
+    if (matchMode === 'regex') {
+      const regexResult = calculateRegexReplacement(currentContent, params);
+      if (!regexResult.ok) {
+        const note = regexResult.reason === 'invalid_regex'
+          ? `Invalid regex target: ${regexResult.message}. Provide a bare JavaScript RegExp pattern without slash delimiters or flags.`
+          : regexResult.message;
+        return errorResult(
+          payloadFromArgs(args, false, note, {
+            matched_targets: 0,
+            replacement_count: 0,
+            matched_span: null,
+            file_line_count: {
+              previous: previousLineCount,
+              current: previousLineCount,
+            },
+          }),
+        );
+      }
+      calculation = regexResult;
+      invalidReplacementSyntax = regexResult.invalidReplacementSyntax;
+    } else {
+      calculation = calculateReplacement(currentContent, params);
     }
-    await fs.writeFile(resolved, finalContent, 'utf-8');
 
-    // 10. 构造成功消息
-    const parts = [
-      `Modified ${filePath}: ${result.occurrences} replacement(s) via ${result.strategy} match.`,
-    ];
-
-    if (
-      result.strategy === 'fuzzy' &&
-      result.matchRanges &&
-      result.matchRanges.length > 0
-    ) {
-      const ranges = result.matchRanges
-        .map((r) =>
-          r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`,
-        )
-        .join(', ');
-      parts.push(
-        `Applied fuzzy match at line${result.matchRanges.length > 1 ? 's' : ''} ${ranges}.`,
+    if (calculation.matchedTargets === 0) {
+      const note = matchMode === 'regex'
+        ? `No regex matches found for target in ${filePath}. Verify the JavaScript RegExp pattern against the file content.`
+        : `No matches found for target in ${filePath}. Use read_file to verify exact content, whitespace, indentation, and context.`;
+      return buildMatchedFailure(
+        args,
+        note,
+        previousLineCount,
+        calculation,
+        currentContent,
       );
     }
 
-    return successResult(appendWarning(parts.join(' '), placeholderWarning));
+    if (!allowMultiple && calculation.matchedTargets !== 1) {
+      return buildMatchedFailure(
+        args,
+        `Expected exactly 1 match but found ${calculation.matchedTargets} in ${filePath}. If you intended to replace multiple matches, set allow_multiple=true.`,
+        previousLineCount,
+        calculation,
+        currentContent,
+      );
+    }
+
+    if (calculation.newContent === currentContent) {
+      return buildMatchedFailure(
+        args,
+        'No changes to apply. The computed replacement is identical to the current file content; check whether target and replacement are the same.',
+        previousLineCount,
+        calculation,
+        currentContent,
+      );
+    }
+
+    const currentLineCount = countLines(calculation.newContent);
+    const lineEnding = resolveLineEnding(
+      config.lineEnding,
+      existingFile.detectedLineEnding,
+    );
+    const writeError = await writeTextContent(
+      resolved,
+      calculation.newContent,
+      lineEnding,
+    );
+    if (writeError) {
+      return errorResult(
+        payloadFromArgs(args, false, writeError, {
+          file_line_count: {
+            previous: previousLineCount,
+            current: previousLineCount,
+          },
+        }),
+      );
+    }
+
+    return successResult(
+      payloadFromArgs(
+        args,
+        true,
+        joinNotes(
+          placeholderWarning,
+          getInvalidRegexReplacementWarning(matchMode, invalidReplacementSyntax),
+        ),
+        {
+          matched_targets: calculation.matchedTargets,
+          replacement_count: calculation.replacementCount,
+          matched_span: calculateMatchedSpan(
+            currentContent,
+            calculation.matchRanges,
+          ),
+          file_line_count: {
+            previous: previousLineCount,
+            current: currentLineCount,
+          },
+        },
+      ),
+    );
   });
 }
 

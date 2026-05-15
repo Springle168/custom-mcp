@@ -1,6 +1,5 @@
 import levenshtein from 'fast-levenshtein';
 import {
-  safeLiteralReplace,
   restoreTrailingNewline,
   escapeRegex,
   stripWhitespace,
@@ -15,145 +14,318 @@ const FUZZY_MATCH_THRESHOLD = 0.1;
 const WHITESPACE_PENALTY_FACTOR = 0.1;
 
 // ================
-// Interfaces
+// Types
 // ================
+
+export type MatchStrategy = 'exact' | 'flexible' | 'tokenized' | 'fuzzy';
 
 export interface ReplaceParams {
   file_path: string;
-  new_string: string;
-  old_string: string;
+  target: string;
+  replacement: string;
   allow_multiple?: boolean;
+}
+
+export interface MatchRange {
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface MatchedSpan {
+  start_line: number;
+  end_line: number;
 }
 
 export interface ReplacementResult {
   newContent: string;
-  occurrences: number;
-  finalOldString: string;
-  finalNewString: string;
-  strategy?: 'exact' | 'flexible' | 'regex' | 'fuzzy';
-  matchRanges?: Array<{ start: number; end: number }>;
+  matchedTargets: number;
+  replacementCount: number;
+  matchRanges: MatchRange[];
+  strategy?: MatchStrategy;
+}
+
+export type RegexReplacementResult =
+  | ({ ok: true; invalidReplacementSyntax: boolean } & ReplacementResult)
+  | { ok: false; reason: 'invalid_regex' | 'zero_length_match'; message: string };
+
+interface LineSegment {
+  text: string;
+  startOffset: number;
+}
+
+// ================
+// Shared helpers
+// ================
+
+function normalizeInput(text: string): string {
+  return text.replace(/\r\n|\r/g, '\n');
+}
+
+function findLiteralRanges(content: string, target: string): MatchRange[] {
+  if (target === '') return [];
+
+  const ranges: MatchRange[] = [];
+  let index = 0;
+
+  while (index <= content.length) {
+    const startOffset = content.indexOf(target, index);
+    if (startOffset < 0) break;
+
+    const endOffset = startOffset + target.length;
+    ranges.push({ startOffset, endOffset });
+    index = endOffset;
+  }
+
+  return ranges;
+}
+
+function replaceLiteralRanges(
+  content: string,
+  ranges: MatchRange[],
+  replacement: string,
+): string {
+  let result = '';
+  let cursor = 0;
+
+  for (const range of ranges) {
+    result += content.slice(cursor, range.startOffset);
+    result += replacement;
+    cursor = range.endOffset;
+  }
+
+  return result + content.slice(cursor);
+}
+
+function splitLineSegments(content: string): LineSegment[] {
+  const matches = content.match(/.*(?:\n|$)/g)?.slice(0, -1) ?? [];
+  const segments: LineSegment[] = [];
+  let startOffset = 0;
+
+  for (const text of matches) {
+    segments.push({ text, startOffset });
+    startOffset += text.length;
+  }
+
+  return segments;
+}
+
+function rangeForLineWindow(
+  lines: LineSegment[],
+  startIndex: number,
+  lineCount: number,
+): MatchRange {
+  const firstLine = lines[startIndex];
+  const lastLine = lines[startIndex + lineCount - 1];
+
+  return {
+    startOffset: firstLine.startOffset,
+    endOffset: lastLine.startOffset + lastLine.text.length,
+  };
+}
+
+function buildIndentedReplacement(
+  replacement: string,
+  indentation: string,
+  preserveTrailingNewline: boolean,
+): string {
+  const replacementLines = replacement.split('\n');
+  let replacementText = applyIndentation(replacementLines, indentation).join('\n');
+
+  if (preserveTrailingNewline && !replacementText.endsWith('\n')) {
+    replacementText += '\n';
+  }
+
+  return replacementText;
+}
+
+function replaceLineWindows(
+  content: string,
+  replacements: Array<{ range: MatchRange; text: string }>,
+): string {
+  const sortedReplacements = [...replacements].sort(
+    (a, b) => a.range.startOffset - b.range.startOffset,
+  );
+  let result = '';
+  let cursor = 0;
+
+  for (const replacement of sortedReplacements) {
+    result += content.slice(cursor, replacement.range.startOffset);
+    result += replacement.text;
+    cursor = replacement.range.endOffset;
+  }
+
+  return result + content.slice(cursor);
+}
+
+function shouldApplyReplacement(
+  matchedTargets: number,
+  allowMultiple: boolean | undefined,
+): boolean {
+  if (matchedTargets === 0) return false;
+  return allowMultiple === true || matchedTargets === 1;
+}
+
+function countNewlinesBefore(content: string, offset: number): number {
+  let count = 0;
+  for (let index = 0; index < offset; index++) {
+    if (content[index] === '\n') count++;
+  }
+  return count;
+}
+
+function lineForOffset(content: string, offset: number): number {
+  return countNewlinesBefore(content, offset) + 1;
+}
+
+function lineForRangeEnd(content: string, endOffset: number): number {
+  if (endOffset <= 0) return 1;
+  return lineForOffset(content, endOffset - 1);
+}
+
+export function calculateMatchedSpan(
+  content: string,
+  ranges: MatchRange[],
+): MatchedSpan | null {
+  if (ranges.length === 0) return null;
+
+  const sortedRanges = [...ranges].sort(
+    (a, b) => a.startOffset - b.startOffset,
+  );
+  const firstRange = sortedRanges[0];
+  const lastRange = sortedRanges[sortedRanges.length - 1];
+
+  return {
+    start_line: lineForOffset(content, firstRange.startOffset),
+    end_line: lineForRangeEnd(content, lastRange.endOffset),
+  };
 }
 
 // ================
 // Strategy 1: Exact Match
-// 直接字面匹配，最快最精确
 // ================
 
 function exactMatch(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult | null {
-  const normalizedCode = currentContent;
-  const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
+  const normalizedReplace = normalizeInput(params.replacement);
+  const normalizedSearch = normalizeInput(params.target);
+  const matchRanges = findLiteralRanges(currentContent, normalizedSearch);
+  const matchedTargets = matchRanges.length;
 
-  const exactOccurrences = normalizedCode.split(normalizedSearch).length - 1;
+  if (matchedTargets === 0) return null;
 
-  // 多匹配但未允许 → 返回结果（occurrences > 1 会被上层判定为错误）
-  if (!params.allow_multiple && exactOccurrences > 1) {
-    return {
-      newContent: currentContent,
-      occurrences: exactOccurrences,
-      finalOldString: normalizedSearch,
-      finalNewString: normalizedReplace,
-    };
-  }
+  let newContent = currentContent;
+  let replacementCount = 0;
 
-  if (exactOccurrences > 0) {
-    let modifiedCode = safeLiteralReplace(
-      normalizedCode,
-      normalizedSearch,
+  if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
+    newContent = replaceLiteralRanges(
+      currentContent,
+      matchRanges,
       normalizedReplace,
     );
-    modifiedCode = restoreTrailingNewline(currentContent, modifiedCode);
-    return {
-      newContent: modifiedCode,
-      occurrences: exactOccurrences,
-      finalOldString: normalizedSearch,
-      finalNewString: normalizedReplace,
-    };
+    newContent = restoreTrailingNewline(currentContent, newContent);
+    replacementCount = matchedTargets;
   }
 
-  return null;
+  return {
+    newContent,
+    matchedTargets,
+    replacementCount,
+    matchRanges,
+    strategy: 'exact',
+  };
 }
 
 // ================
 // Strategy 2: Flexible Match
-// 逐行 trim 后比较，忽略缩进差异，替换时自动对齐缩进
 // ================
 
 function flexibleMatch(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult | null {
-  const normalizedCode = currentContent;
-  const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
-
-  // 按行分割，保留每行的尾部换行符
-  const sourceLines = normalizedCode.match(/.*(?:\n|$)/g)?.slice(0, -1) ?? [];
+  const normalizedReplace = normalizeInput(params.replacement);
+  const normalizedSearch = normalizeInput(params.target);
+  const sourceLines = splitLineSegments(currentContent);
   const searchLinesStripped = normalizedSearch
     .split('\n')
     .map((line: string) => line.trim());
-  const replaceLines = normalizedReplace.split('\n');
 
-  let flexibleOccurrences = 0;
-  let i = 0;
-  while (i <= sourceLines.length - searchLinesStripped.length) {
-    const window = sourceLines.slice(i, i + searchLinesStripped.length);
-    const windowStripped = window.map((line: string) => line.trim());
+  if (searchLinesStripped.length === 0) return null;
+
+  const matches: Array<{ range: MatchRange; replacementText: string }> = [];
+  let index = 0;
+
+  while (index <= sourceLines.length - searchLinesStripped.length) {
+    const window = sourceLines.slice(index, index + searchLinesStripped.length);
+    const windowStripped = window.map((line: LineSegment) => line.text.trim());
     const isMatch = windowStripped.every(
-      (line: string, index: number) => line === searchLinesStripped[index],
+      (line: string, lineIndex: number) => line === searchLinesStripped[lineIndex],
     );
 
     if (isMatch) {
-      flexibleOccurrences++;
-      const firstLineInMatch = window[0];
+      const firstLineInMatch = window[0].text;
       const indentationMatch = firstLineInMatch.match(/^([ \t]*)/);
       const indentation = indentationMatch ? indentationMatch[1] : '';
-      const newBlockWithIndent = applyIndentation(replaceLines, indentation);
-      sourceLines.splice(
-        i,
+      const range = rangeForLineWindow(
+        sourceLines,
+        index,
         searchLinesStripped.length,
-        newBlockWithIndent.join('\n'),
       );
-      i += replaceLines.length;
+      const replacementText = buildIndentedReplacement(
+        normalizedReplace,
+        indentation,
+        window[window.length - 1].text.endsWith('\n'),
+      );
+
+      matches.push({ range, replacementText });
+      index += searchLinesStripped.length;
     } else {
-      i++;
+      index++;
     }
   }
 
-  if (flexibleOccurrences > 0) {
-    let modifiedCode = sourceLines.join('');
-    modifiedCode = restoreTrailingNewline(currentContent, modifiedCode);
-    return {
-      newContent: modifiedCode,
-      occurrences: flexibleOccurrences,
-      finalOldString: normalizedSearch,
-      finalNewString: normalizedReplace,
-    };
+  if (matches.length === 0) return null;
+
+  const matchRanges = matches.map((match) => match.range);
+  const matchedTargets = matches.length;
+  let newContent = currentContent;
+  let replacementCount = 0;
+
+  if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
+    newContent = replaceLineWindows(
+      currentContent,
+      matches.map((match) => ({ range: match.range, text: match.replacementText })),
+    );
+    newContent = restoreTrailingNewline(currentContent, newContent);
+    replacementCount = matchedTargets;
   }
 
-  return null;
+  return {
+    newContent,
+    matchedTargets,
+    replacementCount,
+    matchRanges,
+    strategy: 'flexible',
+  };
 }
 
 // ================
-// Strategy 3: Regex Match
-// 将 old_string 拆分为 token，用 \s* 连接，容忍任意空白变化
+// Strategy 3: Tokenized Match
 // ================
 
-function regexMatch(
+function tokenizedMatch(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult | null {
-  const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
-
+  const normalizedReplace = normalizeInput(params.replacement);
+  const normalizedSearch = normalizeInput(params.target);
   const delimiters = ['(', ')', ':', '[', ']', '{', '}', '>', '<', '='];
 
   let processedString = normalizedSearch;
-  for (const delim of delimiters) {
-    processedString = processedString.split(delim).join(` ${delim} `);
+  for (const delimiter of delimiters) {
+    processedString = processedString.split(delimiter).join(` ${delimiter} `);
   }
 
   const tokens = processedString.split(/\s+/).filter(Boolean);
@@ -162,75 +334,88 @@ function regexMatch(
   const escapedTokens = tokens.map(escapeRegex);
   const pattern = escapedTokens.join('\\s*');
   const finalPattern = `^([ \t]*)${pattern}`;
-
   const globalRegex = new RegExp(finalPattern, 'gm');
-  const matches = currentContent.match(globalRegex);
-  if (!matches) return null;
+  const matches: Array<{ range: MatchRange; replacementText: string }> = [];
 
-  const occurrences = matches.length;
-  const newLines = normalizedReplace.split('\n');
+  for (const match of currentContent.matchAll(globalRegex)) {
+    if (match.index === undefined) continue;
 
-  const replaceRegex = new RegExp(
-    finalPattern,
-    params.allow_multiple ? 'gm' : 'm',
-  );
+    const indentation = match[1] ?? '';
+    const matchedText = match[0];
+    const range = {
+      startOffset: match.index,
+      endOffset: match.index + matchedText.length,
+    };
+    const replacementText = buildIndentedReplacement(
+      normalizedReplace,
+      indentation,
+      matchedText.endsWith('\n'),
+    );
 
-  const modifiedCode = currentContent.replace(
-    replaceRegex,
-    (_match: string, indentation: string) =>
-      applyIndentation(newLines, indentation || '').join('\n'),
-  );
+    matches.push({ range, replacementText });
+  }
+
+  if (matches.length === 0) return null;
+
+  const matchRanges = matches.map((match) => match.range);
+  const matchedTargets = matches.length;
+  let newContent = currentContent;
+  let replacementCount = 0;
+
+  if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
+    newContent = replaceLineWindows(
+      currentContent,
+      matches.map((match) => ({ range: match.range, text: match.replacementText })),
+    );
+    newContent = restoreTrailingNewline(currentContent, newContent);
+    replacementCount = matchedTargets;
+  }
 
   return {
-    newContent: restoreTrailingNewline(currentContent, modifiedCode),
-    occurrences,
-    finalOldString: normalizedSearch,
-    finalNewString: normalizedReplace,
+    newContent,
+    matchedTargets,
+    replacementCount,
+    matchRanges,
+    strategy: 'tokenized',
   };
 }
 
 // ================
 // Strategy 4: Fuzzy Match
-// 滑动窗口 + Levenshtein 距离，容忍小幅文本差异
 // ================
 
 function fuzzyMatch(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult | null {
-  const { new_string, old_string } = params;
+  const normalizedReplace = normalizeInput(params.replacement);
+  const normalizedSearch = normalizeInput(params.target);
 
-  // 太短的搜索串容易误匹配
-  if (old_string.length < 10) return null;
+  if (normalizedSearch.length < 10) return null;
 
-  const normalizedCode = currentContent.replace(/\r\n/g, '\n');
-  const normalizedReplace = new_string.replace(/\r\n/g, '\n');
-  const normalizedSearch = old_string.replace(/\r\n/g, '\n');
-
-  const sourceLines = normalizedCode.match(/.*(?:\n|$)/g)?.slice(0, -1) ?? [];
+  const sourceLines = splitLineSegments(currentContent);
   const searchLines = normalizedSearch
     .match(/.*(?:\n|$)/g)
     ?.slice(0, -1)
-    .map((l: string) => l.trimEnd());
-
-  // 复杂度保护：O(sourceLines * old_string²) < 4e8
-  if (sourceLines.length * Math.pow(old_string.length, 2) > 400_000_000) {
-    return null;
-  }
+    .map((line: string) => line.trimEnd());
 
   if (!searchLines || searchLines.length === 0) return null;
 
-  const N = searchLines.length;
-  const candidates: Array<{ index: number; score: number }> = [];
+  if (sourceLines.length * Math.pow(normalizedSearch.length, 2) > 400_000_000) {
+    return null;
+  }
+
+  const lineCount = searchLines.length;
   const searchBlock = searchLines.join('\n');
+  const candidates: Array<{ index: number; score: number }> = [];
 
-  // 滑动窗口扫描
-  for (let i = 0; i <= sourceLines.length - N; i++) {
-    const windowLines = sourceLines.slice(i, i + N);
-    const windowText = windowLines.map((l: string) => l.trimEnd()).join('\n');
-
-    // 长度启发式剪枝
+  for (let index = 0; index <= sourceLines.length - lineCount; index++) {
+    const windowLines = sourceLines.slice(index, index + lineCount);
+    const windowText = windowLines
+      .map((line: LineSegment) => line.text.trimEnd())
+      .join('\n');
     const lengthDiff = Math.abs(windowText.length - searchBlock.length);
+
     if (
       lengthDiff / searchBlock.length >
       FUZZY_MATCH_THRESHOLD / WHITESPACE_PENALTY_FACTOR
@@ -238,30 +423,29 @@ function fuzzyMatch(
       continue;
     }
 
-    // 双重评分：空白差异只算 10% 权重
-    const d_raw = levenshtein.get(windowText, searchBlock);
-    const d_norm = levenshtein.get(
+    const rawDistance = levenshtein.get(windowText, searchBlock);
+    const normalizedDistance = levenshtein.get(
       stripWhitespace(windowText),
       stripWhitespace(searchBlock),
     );
-
-    const weightedDist = d_norm + (d_raw - d_norm) * WHITESPACE_PENALTY_FACTOR;
-    const score = weightedDist / searchBlock.length;
+    const weightedDistance =
+      normalizedDistance +
+      (rawDistance - normalizedDistance) * WHITESPACE_PENALTY_FACTOR;
+    const score = weightedDistance / searchBlock.length;
 
     if (score <= FUZZY_MATCH_THRESHOLD) {
-      candidates.push({ index: i, score });
+      candidates.push({ index, score });
     }
   }
 
   if (candidates.length === 0) return null;
 
-  // 按分数升序，选择最佳非重叠匹配
   candidates.sort((a, b) => a.score - b.score || a.index - b.index);
 
   const selectedMatches: Array<{ index: number; score: number }> = [];
   for (const candidate of candidates) {
     const overlaps = selectedMatches.some(
-      (m) => Math.abs(m.index - candidate.index) < N,
+      (match) => Math.abs(match.index - candidate.index) < lineCount,
     );
     if (!overlaps) {
       selectedMatches.push(candidate);
@@ -270,121 +454,213 @@ function fuzzyMatch(
 
   if (selectedMatches.length === 0) return null;
 
-  // 记录匹配行号范围（1-based）
-  const matchRanges = selectedMatches
-    .map((m) => ({ start: m.index + 1, end: m.index + N }))
-    .sort((a, b) => a.start - b.start);
+  selectedMatches.sort((a, b) => a.index - b.index);
 
-  // 从下往上替换，避免索引偏移
-  selectedMatches.sort((a, b) => b.index - a.index);
-
-  const newLines = normalizedReplace.split('\n');
-
-  for (const match of selectedMatches) {
-    const firstLineMatch = sourceLines[match.index];
+  const matches = selectedMatches.map((match) => {
+    const window = sourceLines.slice(match.index, match.index + lineCount);
+    const firstLineMatch = window[0].text;
     const indentationMatch = firstLineMatch.match(/^([ \t]*)/);
     const indentation = indentationMatch ? indentationMatch[1] : '';
+    const range = rangeForLineWindow(sourceLines, match.index, lineCount);
+    const replacementText = buildIndentedReplacement(
+      normalizedReplace,
+      indentation,
+      window[window.length - 1].text.endsWith('\n'),
+    );
 
-    const indentedReplaceLines = applyIndentation(newLines, indentation);
+    return { range, replacementText };
+  });
 
-    let replacementText = indentedReplaceLines.join('\n');
-    if (sourceLines[match.index + N - 1].endsWith('\n')) {
-      replacementText += '\n';
-    }
+  const matchRanges = matches.map((match) => match.range);
+  const matchedTargets = matches.length;
+  let newContent = currentContent;
+  let replacementCount = 0;
 
-    sourceLines.splice(match.index, N, replacementText);
+  if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
+    newContent = replaceLineWindows(
+      currentContent,
+      matches.map((match) => ({ range: match.range, text: match.replacementText })),
+    );
+    newContent = restoreTrailingNewline(currentContent, newContent);
+    replacementCount = matchedTargets;
   }
 
-  let modifiedCode = sourceLines.join('');
-  modifiedCode = restoreTrailingNewline(currentContent, modifiedCode);
-
   return {
-    newContent: modifiedCode,
-    occurrences: selectedMatches.length,
-    finalOldString: normalizedSearch,
-    finalNewString: normalizedReplace,
-    strategy: 'fuzzy',
+    newContent,
+    matchedTargets,
+    replacementCount,
     matchRanges,
+    strategy: 'fuzzy',
   };
 }
 
 // ================
-// Main Orchestrator
-// 按优先级依次尝试：exact → flexible → regex → fuzzy
+// Explicit Regex Mode
+// ================
+
+function expandRegexReplacement(
+  replacement: string,
+  match: RegExpExecArray,
+): { text: string; invalidReplacementSyntax: boolean } {
+  let text = '';
+  let invalidReplacementSyntax = false;
+  let index = 0;
+
+  while (index < replacement.length) {
+    const char = replacement[index];
+    const nextChar = replacement[index + 1];
+
+    if (char === '$' && nextChar === '$') {
+      text += '$';
+      index += 2;
+      continue;
+    }
+
+    if (char === '$' && nextChar === '!') {
+      let digitIndex = index + 2;
+      while (digitIndex < replacement.length && /\d/.test(replacement[digitIndex])) {
+        digitIndex++;
+      }
+
+      if (digitIndex === index + 2) {
+        invalidReplacementSyntax = true;
+        text += '$!';
+        index += 2;
+        continue;
+      }
+
+      const groupNumber = Number.parseInt(
+        replacement.slice(index + 2, digitIndex),
+        10,
+      );
+      text += match[groupNumber] ?? '';
+      index = digitIndex;
+      continue;
+    }
+
+    text += char;
+    index++;
+  }
+
+  return { text, invalidReplacementSyntax };
+}
+
+export function calculateRegexReplacement(
+  currentContent: string,
+  params: ReplaceParams,
+): RegexReplacementResult {
+  let regex: RegExp;
+
+  try {
+    regex = new RegExp(params.target, 'gms');
+  } catch (err: unknown) {
+    const error = err as Error;
+    return {
+      ok: false,
+      reason: 'invalid_regex',
+      message: error.message || String(err),
+    };
+  }
+
+  const normalizedReplace = normalizeInput(params.replacement);
+  const matches: RegExpExecArray[] = [];
+
+  while (true) {
+    const match = regex.exec(currentContent);
+    if (!match) break;
+
+    if (match[0].length === 0) {
+      return {
+        ok: false,
+        reason: 'zero_length_match',
+        message:
+          'Regex target produced a zero-length match. Refine the pattern so every match consumes at least one character.',
+      };
+    }
+
+    matches.push(match);
+  }
+
+  const matchRanges = matches.map((match) => ({
+    startOffset: match.index,
+    endOffset: match.index + match[0].length,
+  }));
+  const matchedTargets = matches.length;
+  let newContent = currentContent;
+  let replacementCount = 0;
+  let invalidReplacementSyntax = false;
+
+  if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
+    let cursor = 0;
+    let result = '';
+
+    for (const match of matches) {
+      const expandedReplacement = expandRegexReplacement(
+        normalizedReplace,
+        match,
+      );
+      invalidReplacementSyntax ||= expandedReplacement.invalidReplacementSyntax;
+      result += currentContent.slice(cursor, match.index);
+      result += expandedReplacement.text;
+      cursor = match.index + match[0].length;
+    }
+
+    newContent = result + currentContent.slice(cursor);
+    replacementCount = matchedTargets;
+  }
+
+  return {
+    ok: true,
+    newContent,
+    matchedTargets,
+    replacementCount,
+    matchRanges,
+    invalidReplacementSyntax,
+  };
+}
+
+// ================
+// Main Default Orchestrator
 // ================
 
 export function calculateReplacement(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult {
-  const normalizedReplace = params.new_string.replace(/\r\n/g, '\n');
-  const normalizedSearch = params.old_string.replace(/\r\n/g, '\n');
+  const normalizedReplace = normalizeInput(params.replacement);
+  const normalizedSearch = normalizeInput(params.target);
 
   if (normalizedSearch === '') {
     return {
       newContent: currentContent,
-      occurrences: 0,
-      finalOldString: normalizedSearch,
-      finalNewString: normalizedReplace,
+      matchedTargets: 0,
+      replacementCount: 0,
+      matchRanges: [],
     };
   }
 
-  const exactResult = exactMatch(currentContent, params);
-  if (exactResult) return { ...exactResult, strategy: 'exact' };
+  const normalizedParams: ReplaceParams = {
+    ...params,
+    target: normalizedSearch,
+    replacement: normalizedReplace,
+  };
 
-  const flexibleResult = flexibleMatch(currentContent, params);
-  if (flexibleResult) return { ...flexibleResult, strategy: 'flexible' };
+  const exactResult = exactMatch(currentContent, normalizedParams);
+  if (exactResult) return exactResult;
 
-  const regexResult = regexMatch(currentContent, params);
-  if (regexResult) return { ...regexResult, strategy: 'regex' };
+  const flexibleResult = flexibleMatch(currentContent, normalizedParams);
+  if (flexibleResult) return flexibleResult;
 
-  const fuzzyResult = fuzzyMatch(currentContent, params);
-  if (fuzzyResult) return fuzzyResult; // strategy 已在内部设置为 'fuzzy'
+  const tokenizedResult = tokenizedMatch(currentContent, normalizedParams);
+  if (tokenizedResult) return tokenizedResult;
+
+  const fuzzyResult = fuzzyMatch(currentContent, normalizedParams);
+  if (fuzzyResult) return fuzzyResult;
 
   return {
     newContent: currentContent,
-    occurrences: 0,
-    finalOldString: normalizedSearch,
-    finalNewString: normalizedReplace,
+    matchedTargets: 0,
+    replacementCount: 0,
+    matchRanges: [],
   };
-}
-
-// ================
-// Error Checking
-// ================
-
-export function getErrorReplaceResult(
-  params: ReplaceParams,
-  occurrences: number,
-  finalOldString: string,
-  finalNewString: string,
-): { display: string; raw: string } | null {
-  if (occurrences === 0) {
-    return {
-      display: 'Failed to edit, could not find the string to replace.',
-      raw:
-        `Failed to edit, 0 occurrences found for old_string in ${params.file_path}. ` +
-        `Ensure you're not escaping content incorrectly and check whitespace, ` +
-        `indentation, and context. Use read_file tool to verify.`,
-    };
-  }
-
-  if (!params.allow_multiple && occurrences !== 1) {
-    return {
-      display: `Failed to edit, expected 1 occurrence but found ${occurrences}.`,
-      raw:
-        `Failed to edit, expected 1 occurrence but found ${occurrences} for ` +
-        `old_string in file: ${params.file_path}. If you intended to replace ` +
-        `multiple occurrences, set 'allow_multiple' to true.`,
-    };
-  }
-
-  if (finalOldString === finalNewString) {
-    return {
-      display: 'No changes to apply. The new_string and old_string are identical.',
-      raw: `No changes to apply. The new_string and old_string are identical in file: ${params.file_path}`,
-    };
-  }
-
-  return null;
 }

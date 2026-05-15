@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，当前提供三类能力：精准的文件局部替换、文件读取（单文件与批量），以及固定环境下的 Android Gradle 构建能力。
+基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，当前提供三类能力：精准的文件局部替换（含 default 容错文本匹配与显式 regex 模式）、文件读取（单文件与批量），以及固定环境下的 Android Gradle 构建能力。
 
 ---
 
@@ -88,7 +88,7 @@ custom-mcp/
 
 | 工具名| 功能 | 文档 |
 |-|-|-|
-| `replace_text` | 文件局部替换，四级匹配策略（Exact → Flexible → Regex → Fuzzy） | [docs/tools/replace-text.md](tools/replace-text.md) |
+| `replace_text` | 文件局部替换，default 模式使用 Exact → Flexible → Tokenized → Fuzzy，regex 模式使用显式 JavaScript 正则 | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持绝对路径和glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
@@ -333,12 +333,13 @@ return {
 [2025-01-15T22:30:00.000+08:00] ← CALL replace_text
   {
     "file_path": "src/index.ts",
-    "old_string": "...",
-    "new_string": "...",
-    "allow_multiple": false
+    "target": "...",
+    "replacement": "...",
+    "allow_multiple": false,
+    "match_mode": "default"
   }
 [2025-01-15T22:30:00.050+08:00] → OK replace_text (50ms)
-  Modified src/index.ts:1 replacement(s) via exact match.
+  {"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":10,"end_line":10},"replacement_line_count":1,"file_line_count":{"previous":120,"current":120}}
 ```
 
 ### 颜色高亮
@@ -528,7 +529,7 @@ npm install -D <package>    # 仅开发依赖
 | 启动报"rootDir is not configured" | config.json 中 rootDir 为空 | 填入项目绝对路径 |
 | Android Studio 连接失败 | 服务器未启动 / 端口不对 | 确认 `npm start` 正常运行，端口与 AS 配置一致 |
 | 工具调用返回 "Path outside workspace" | AI 传了rootDir 范围外的路径 | 检查 config.json 的 rootDir 是否覆盖目标项目 |
-| 替换失败 "0 occurrences found" | AI 给的 old_string 与文件实际内容不匹配 | 四级策略都未命中，AI 需要先read_file 确认内容 |
-| 替换失败 "expected 1 but found N" | old_string 匹配了多处 | AI 需要提供更多上下文，或设置 allow_multiple |
+| 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read_file` 确认内容；regex 模式检查 JavaScript 正则 pattern |
+| 替换失败 "expected 1" 或 `matched_targets=N` | `target` 匹配了多处但未允许多匹配 | AI 需要提供更多上下文，或设置 `allow_multiple=true` |
 | 批量读取返回空| include 模式未匹配任何文件 | 检查路径/glob 是否正确，确认文件在 rootDir 范围内 |
 | 编译报类型错误 | SDK 版本更新导致接口变化 | 检查 `ToolCallResult` 是否需要补充字段 |
