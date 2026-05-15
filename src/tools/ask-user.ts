@@ -190,6 +190,9 @@ async function handleAskUser(
   const sessionId = crypto.randomUUID();
   const url = `http://localhost:${config.port}/ask/${sessionId}`;
 
+  // 终端响铃提醒
+  process.stdout.write('\u0007')
+
   // 输出 URL（用户需要手动打开浏览器）
   console.log(`\nUser input required: ${url}\n`);
 
