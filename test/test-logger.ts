@@ -12,10 +12,11 @@ logger.info('Server started on port 3100');
 
 // 测试 2: 小 JSON 参数（各种数据类型）
 logger.logToolCall('replace_text', {
-  filepath: 'src/index.ts',
-  new_string: 'const port = 3100;',
-  old_string: 'const port = 3000;',
+  file_path: 'src/index.ts',
+  target: 'const port = 3000;',
+  replacement: 'const port = 3100;',
   allow_multiple: false,
+  match_mode: 'default',
   max_count: 10,
   metadata: null,
 });
@@ -26,7 +27,7 @@ logger.logToolResult(
     content: [
       {
         type: 'text',
-        text: 'Modified src/index.ts: 1 replacement(s) via exact match.',
+        text: '{"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":1,"end_line":1},"replacement_line_count":1,"file_line_count":{"previous":10,"current":10}}',
       },
     ],
   },
