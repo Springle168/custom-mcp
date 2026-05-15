@@ -4,8 +4,6 @@
 
 `replace_text` 对单个文本文件执行局部替换，并在 MCP 标准 `content[0].text` 中返回可解析的 JSON 字符串。
 
-v2 参数使用 `target` / `replacement`，旧字段 `old_string` / `new_string` 已移除；传入旧字段或任何未知字段都会被拒绝。
-
 ---
 
 ## Schema
@@ -38,7 +36,7 @@ v2 参数使用 `target` / `replacement`，旧字段 `old_string` / `new_string`
 
 1. **Exact**：规范化 LF 后进行字面匹配。
 2. **Flexible**：逐行 `trim()` 后比较，忽略缩进差异，并把目标缩进应用到 `replacement`。
-3. **Tokenized**：v1 第三级 Regex 策略的新名称；把 token 转义后用 `\s*` 连接，容忍 token 间空白变化。
+3. **Tokenized**：将 `target` 按分隔符 `( ) : [ ] { } > < =` 拆分为token，把 token 转义后用 `\s*` 连接，容忍 token 间空白变化。
 4. **Fuzzy**：滑动窗口 + Levenshtein 距离，容忍小幅文本差异。
 
 空 `target` 只在 `default` 模式且目标文件不存在时表示创建新文件；目标文件已存在时会失败。创建新文件仍建议优先使用 `write_file`。
