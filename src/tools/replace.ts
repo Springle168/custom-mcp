@@ -52,50 +52,58 @@ interface ValidationResult {
 
 export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text',
-  description: `Replaces text within a file and returns a machine-readable JSON payload in content[0].text.
+  description: `Replaces text within a file and returns a JSON payload in content[0].text.
 
-By default expects exactly ONE match. Set allow_multiple=true to replace all matches.
-
-Parameters:
-- file_path: Path of the file to modify. Relative paths resolve from the configured workspace root; the result JSON returns the original string you provided.
-- target: Content to locate. In default mode this is literal text handled by the tolerant Exact → Flexible → Tokenized → Fuzzy pipeline. In regex mode this is a bare JavaScript RegExp pattern compiled as new RegExp(target, 'gms').
-- replacement: Complete replacement text. Do not use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. Possible placeholders are written but reported as warnings in note.
+- Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. Possible placeholders are written but reported as warnings in note.
 - allow_multiple: If true, replace all matches. If false or omitted, exactly one match is required.
 - match_mode: 'default' or 'regex'. Defaults to 'default'.
 
+target:
+- In default mode this must be EXACT literal text including all whitespace, indentation, and newlines. NEVER escape the string content.
+- In regex mode this is a bare JavaScript RegExp pattern compiled as new RegExp(target, 'gms').
+
+replacement:
+- Must be EXACT literal replacement text and ensure the resulting is correct and idiomatic.
+
 Mode boundaries:
 - default mode treats target and replacement as literal text. It does not interpret $!n, $1, $&, $$, or any regex replacement syntax.
-- regex mode does not use default fallback. It interprets only $!n capture references and $$ dollar escaping in replacement; JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
+- regex mode interprets only $!n capture references and $$ dollar escaping in replacement; JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
 - Empty target is allowed only in default mode when the file does not exist, to create a new file. Prefer write_file for new file creation.
-- old_string/new_string compatibility aliases have been removed. Passing old_string, new_string, or any unknown field is rejected.`,
+- Any unknown field is rejected.
+
+Best practices:
+- Always use read_file to examine file content before making replacements.
+- Prefer multiple small, atomic replacements over one large replacement.
+- If the target file requires extensive refactoring, it is recommended to first perform a full overwrite of the file using \`write_file\` or a similar file-writing tool, and then perform partial replacements based on needs and subsequent plan adjustments.
+- Verify file content after changes.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
       file_path: {
         type: 'string',
         description:
-          'Path of the file to modify. Returned unchanged in the result JSON when it is a string.',
+          'Path of the file to modify.',
       },
       target: {
         type: 'string',
         description:
-          'Content to locate. In default mode this is literal text; in regex mode this is a bare JavaScript RegExp pattern. Empty target is allowed only in default mode for creating a missing file.',
+          "Content to locate. In default mode this is EXACT literal text; in regex mode this is a bare JavaScript RegExp pattern. Empty target is allowed only in default mode for creating a missing file.",
       },
       replacement: {
         type: 'string',
         description:
-          'Complete replacement text. In default mode it is literal text. In regex mode only $!n capture references and $$ dollar escaping are interpreted.',
+          "The exact literal replacement text. Must be complete content with no placeholders. In regex mode only $!n capture references and $$ dollar escaping are interpreted.",
       },
       allow_multiple: {
         type: 'boolean',
         description:
-          'If true, replace all matches. If false or omitted, exactly one match is required for replacement.',
+          "Defaults to 'false'. If 'true', replace all matches. If false or omitted, exactly one match is required for replacement.",
       },
       match_mode: {
         type: 'string',
         enum: ['default', 'regex'],
         description:
-          "Matching mode. default uses the tolerant text pipeline. regex uses new RegExp(target, 'gms') and does not fall back.",
+          "Matching mode. Defaults to 'default'. 'regex' uses new RegExp(target, 'gms')",
       },
     },
     required: ['file_path', 'target', 'replacement'],
@@ -212,7 +220,7 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
       ok: false,
       note:
         `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
-        'replace_text v2 accepts only file_path, target, replacement, allow_multiple, and match_mode. Use target/replacement instead of old_string/new_string.',
+        'replace_text accepts only file_path, target, replacement, allow_multiple, and match_mode.',
     };
   }
 
