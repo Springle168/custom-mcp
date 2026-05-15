@@ -563,7 +563,9 @@ export function calculateRegexReplacement(
   }
 
   const normalizedReplace = normalizeInput(params.replacement);
-  const matches: RegExpExecArray[] = [];
+  let matchedTargets = 0;
+  let firstRange: MatchRange | null = null;
+  let lastRange: MatchRange | null = null;
 
   while (true) {
     const match = regex.exec(currentContent);
@@ -578,23 +580,35 @@ export function calculateRegexReplacement(
       };
     }
 
-    matches.push(match);
+    const range = {
+      startOffset: match.index,
+      endOffset: match.index + match[0].length,
+    };
+    firstRange ??= range;
+    lastRange = range;
+    matchedTargets++;
   }
 
-  const matchRanges = matches.map((match) => ({
-    startOffset: match.index,
-    endOffset: match.index + match[0].length,
-  }));
-  const matchedTargets = matches.length;
+  const matchRanges: MatchRange[] = [];
+  if (firstRange !== null) {
+    matchRanges.push(firstRange);
+    if (lastRange !== null && lastRange !== firstRange) {
+      matchRanges.push(lastRange);
+    }
+  }
   let newContent = currentContent;
   let replacementCount = 0;
   let invalidReplacementSyntax = false;
 
   if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
+    regex.lastIndex = 0;
     let cursor = 0;
     let result = '';
 
-    for (const match of matches) {
+    while (true) {
+      const match = regex.exec(currentContent);
+      if (!match) break;
+
       const expandedReplacement = expandRegexReplacement(
         normalizedReplace,
         match,
