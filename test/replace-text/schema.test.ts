@@ -8,6 +8,7 @@ import {
 import {
   assertDeepEqual,
   callReplace,
+  cleanupFixtures,
   createTestConfig,
   parseResultJson,
   resetFixtures,
@@ -157,6 +158,7 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 schema tests',
     details: 'Covers tools/list schema, prompt descriptions, and output transport shape.',
+    afterAll: cleanupFixtures,
     tests: [
       {
         name: 'Input schema exposes v2 fields only',
