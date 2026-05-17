@@ -1,8 +1,28 @@
 # replace_text 工具文档
 
+版本：v2
+
 ## 概述
 
 `replace_text` 对单个文本文件执行局部替换，并在 MCP 标准 `content[0].text` 中返回可解析的 JSON 字符串。
+
+---
+
+## 测试文件
+
+```text
+test/
+├── test-replace-text.ts                 # replace_text 轻量回归入口
+└── replace-text/
+    ├── helpers.ts                       # fixture、调用封装和结果 JSON 断言
+    ├── schema.test.ts                   # Schema、description 和输出外壳
+    ├── runtime-validation.test.ts       # 参数校验、未知字段和失败默认值
+    ├── default-mode.test.ts             # default 匹配、创建文件、行数与 no-op
+    ├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
+    ├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
+    ├── output-safety.test.ts            # JSON 失败形状、sandbox 和安全写入
+    └── line-ending-concurrency.test.ts  # CRLF/LF 规范化与并发回归
+```
 
 ---
 
@@ -96,11 +116,36 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ---
 
+## 失败与 no-op 行为
+
+- 参数校验、未知字段、路径越界、目录路径、二进制文件、超限文件、读写失败都会返回 `isError: true`，且不会写入文件。
+- 无匹配时 `matched_targets=0`、`replacement_count=0`、`matched_span=null`，并在 `note` 中提示检查 `target` 或 regex pattern。
+- 多匹配但未设置 `allow_multiple=true` 时不会写入；`matched_targets` 和 `matched_span` 仍反映扫描到的匹配结果。
+- 计算后的最终内容与原文件完全一致时视为 no-op：返回失败、不写入、`replacement_count=0`，并提示检查 `target` 与 `replacement` 是否相同。
+- regex 模式下非法正则和零长度匹配都会失败且不写入；零长度匹配不返回部分匹配结果。
+
+前置失败无法自然获得字段值时，结果 JSON 使用以下默认值：
+
+| 字段 | 失败默认值 |
+|-|-|
+| `file_path` | 传入值是字符串则原样返回，否则为 `""` |
+| `match_mode` | 传入值为 `"default"` 或 `"regex"` 时原样返回，否则为 `"default"` |
+| `allow_multiple` | 仅传入值严格为 `true` 时为 `true`，否则为 `false` |
+| `matched_targets` / `replacement_count` | `0` |
+| `matched_span` | `null` |
+| `replacement_line_count` | `replacement` 是字符串时按行数口径计算，否则为 `0` |
+| `file_line_count.previous` / `current` | 默认均为 `0`；若失败发生在成功读取已有文件后，则均为修改前行数 |
+| `note` | 必填，说明失败原因和可执行的修正建议 |
+
+---
+
 ## 安全与写入规则
 
 - 路径先经过 `resolvePath()` 和 `validatePathAccess()`，必须位于 `rootDir` 内。
-- 写入流程使用 `withFileLock()`，同一文件并发替换会串行化。
-- 已有目录路径、超过 `20MB` 的文件、二进制文件会被拒绝。
+- 创建缺失父目录前后都会校验现有父目录的 realpath，避免路径穿越或符号链接绕过 `rootDir`。
+- 目标路径若已存在且是符号链接会被拒绝；目录路径也会被拒绝。
+- 写入流程使用 `withFileLock()`，同一文件并发替换会串行化，不同文件互不阻塞。
+- 已有文件超过 `20MB`、被判定为二进制，或新建路径看起来是二进制文件时会被拒绝。
 - 写回行尾符由 `config.lineEnding` 控制：`auto` 保留已有主要行尾符，新文件默认 LF。
 - 无匹配、多匹配但未设置 `allow_multiple=true`、no-op、非法正则和零长度正则匹配都不会写入文件。
 - `replacement` 中新增疑似省略占位符会成功写入，但 `note` 会提示自检。
