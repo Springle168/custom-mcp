@@ -1,0 +1,188 @@
+# 工具开发说明
+
+本文记录 `custom-mcp` 的工具注册流程、工具设计约定、并发模型，以及已实现工具索引。单个工具的参数契约和实现细节优先参考 `docs/tools/` 下对应文档。
+
+---
+
+## 单工具文档目录
+
+```text
+docs/tools/
+├── replace-text.md      # replace_text 工具文档
+├── read-file.md         # read_file 工具文档
+├── write-file.md        # write_file 工具文档
+├── read-many-files.md   # read_many_files 工具文档
+├── ask-user.md          # ask_user 工具文档
+└── android-build.md     # Android 构建工具文档
+```
+
+---
+
+## 已实现工具
+
+| 工具名 | 功能 | 文档 |
+|-|-|-|
+| `replace_text` | 文件局部替换，default 模式使用 Exact → Flexible → Tokenized → Fuzzy，regex 模式使用显式 JavaScript 正则 | [docs/tools/replace-text.md](tools/replace-text.md) |
+| `read_many_files` | 批量读取多个文本文件，支持绝对路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
+| `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
+| `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
+| `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
+| `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
+
+---
+
+## 添加新工具
+
+### 步骤 1：创建工具文件
+
+在 `src/tools/` 下新建文件，例如 `src/tools/read-file.ts`：
+
+```typescript
+import type { Config } from '../config.js';
+import type { MCPTool, ToolCallResult } from './types.js';
+
+// 1. 定义 Schema（MCP tools/list 返回给宿主）
+const READ_FILE_TOOL_DEFINITION = {
+  name: 'read_file',
+  description: '工具描述，这段文字会直接进入 AI 的上下文，是 prompt engineering 的一部分。',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      file_path: {
+        type: 'string',
+        description: '参数描述，同样会被 AI 看到。',
+      },
+      // ... 其他参数
+    },
+    required: ['file_path'],
+  },
+};
+
+// 2. 实现 Handler
+async function handleReadFile(
+  args: Record<string, unknown>,
+  config: Config,
+): Promise<ToolCallResult> {
+  // 参数校验
+  // 业务逻辑
+  // 返回结果
+  return {
+    content: [{ type: 'text', text: '结果文本' }],
+  };
+}
+
+// 3. 默认导出 MCPTool 对象
+const readFileTool: MCPTool = {
+  definition: READ_FILE_TOOL_DEFINITION,
+  handler: handleReadFile,
+};
+
+export default readFileTool;
+```
+
+### 步骤 2：注册工具
+
+编辑 `src/tools/index.ts`，加两行：
+
+```typescript
+import replaceTool from './replace.js';
+import readManyFilesTool from './read-many-files.js';
+import readFileTool from './read-file.js';  // ← 加这行
+
+const registry: MCPTool[] = [
+  replaceTool,
+  readManyFilesTool,
+  readFileTool,  // ← 加这行
+];
+```
+
+完成。`index.ts` 入口文件、日志系统、路由逻辑都不需要改动。
+
+### 步骤 3：编译测试
+
+```bash
+npm run build
+npm run start
+```
+
+### 步骤 4：编写工具文档
+
+在 `docs/tools/` 下新建对应的 markdown 文件，记录 Schema 设计意图、实现细节、涉及文件和移植来源。然后在本文的“已实现工具”表格中添加条目。
+
+---
+
+## 编写工具时的注意事项
+
+### Schema 设计
+
+Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 prompt**。这是从 Gemini CLI 学到的核心设计理念。
+
+**应该包含的内容：**
+
+- 工具的功能边界（能做什么、不能做什么）。
+- 参数的格式要求和约束。
+- 常见错误的预防提示。
+- 与其他工具的配合建议（如“先用 `read_file` 查看内容”）。
+
+**应该避免的内容：**
+
+- 内部实现细节（AI 不需要知道你用了什么算法）。
+- 过长的描述（增加 token 消耗，降低 AI 注意力）。
+
+参考已实现工具的 description，它们在简洁和完整之间做了平衡。
+
+### Android Studio 嵌套 Schema 限制
+
+Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为 Gemini Function Calling 格式时，会丢失嵌套对象数组内部字段的 `description`。若新增工具 schema 含有 `array` of `object`，必须将嵌套字段的语义、类型、取值范围和使用条件上提到顶层 `description`。
+
+详细背景和验证方式见 [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md)。
+
+### 返回值设计
+
+```typescript
+// 成功
+return {
+  content: [{ type: 'text', text: '给 AI 看的结果描述' }],
+};
+
+// 失败
+return {
+  content: [{ type: 'text', text: '错误描述 + 引导 AI 下一步怎么做' }],
+  isError: true,
+};
+```
+
+**关键原则：错误消息应该引导 AI 自我纠正。** 不只是说“失败了”，要告诉 AI 为什么失败、怎么修复。
+
+### 文件操作类工具的通用考虑
+
+1. **路径安全**：所有文件操作必须调用 `validatePathAccess()` 校验路径在 `rootDir` 范围内。
+2. **并发安全**：涉及文件写入的操作应使用 `withFileLock()` 包裹。只读工具不需要加锁。
+3. **行尾符**：读取时统一转为 `\n` 处理，写入时用 `resolveLineEnding()` 恢复。
+4. **错误处理**：区分 `ENOENT`（文件不存在）和其他文件系统错误，给出不同的错误消息。
+5. **二进制检测**：读取文件内容前应使用 `isBinaryFile()` 检查，避免处理二进制文件。
+
+---
+
+## 并发模型
+
+MCP 客户端可能并发发送多个 `tools/call` 请求。当前的并发策略：
+
+- **不同文件**：完全并行，互不阻塞。
+- **同一文件**：通过 `withFileLock()` 串行化，FIFO 顺序。
+
+锁的实现基于 Promise 链（`src/utils/file-lock.ts`），不依赖外部库。文件操作完成后自动释放，Map 中不会积累已完成的锁。
+
+**重要：** 只有涉及文件写入的工具需要使用 `withFileLock()`。只读工具（如 `read_many_files`）不需要加锁。
+
+---
+
+## 故障排查
+
+| 现象 | 可能原因 | 解决方案 |
+|-|-|-|
+| 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read_file` 确认内容；regex 模式检查 JavaScript 正则 pattern |
+| 替换失败 `expected 1` 或 `matched_targets=N` | `target` 匹配了多处但未允许多匹配 | AI 需要提供更多上下文，或设置 `allow_multiple=true` |
+| 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确，确认文件在 `rootDir` 范围内 |
+| 编译报类型错误 | SDK 版本更新导致接口变化 | 检查 `ToolCallResult` 是否需要补充字段 |
