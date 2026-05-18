@@ -6,6 +6,7 @@ import {
   assertErrorResult,
   assertFixtureContent,
   assertJsonDefaults,
+  assertJsonNoteIncludes,
   assertNoSpan,
   assertSuccessResult,
   callReplace,
@@ -203,6 +204,93 @@ async function testInvalidMatchModeRejected(): Promise<void> {
   );
 }
 
+async function testNonStringRegexFlagsRejected(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('bad-regex-flags-type.txt', 'alpha\n');
+
+  const result = await callReplace({
+    file_path: 'bad-regex-flags-type.txt',
+    target: 'alpha',
+    replacement: 'beta',
+    match_mode: 'regex',
+    regex_flags: ['m'],
+  });
+
+  const json = assertErrorResult(result);
+  assertJsonNoteIncludes(json, 'regex_flags', 'Invalid regex_flags type note');
+  assertJsonDefaults(json);
+  await assertFixtureContent(
+    'bad-regex-flags-type.txt',
+    'alpha\n',
+    'Non-string regex_flags should not modify the file',
+  );
+}
+
+async function testRegexFlagsWithoutRegexModeRejected(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('regex-flags-default-mode.txt', 'alpha\n');
+
+  const result = await callReplace({
+    file_path: 'regex-flags-default-mode.txt',
+    target: 'alpha',
+    replacement: 'beta',
+    regex_flags: 'm',
+  });
+
+  const json = assertErrorResult(result);
+  assertJsonNoteIncludes(json, "match_mode is 'regex'", 'regex_flags mode note');
+  assertJsonDefaults(json);
+  await assertFixtureContent(
+    'regex-flags-default-mode.txt',
+    'alpha\n',
+    'regex_flags without regex mode should not modify the file',
+  );
+}
+
+async function testRegexFlagsInvalidCharacterRejected(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('bad-regex-flags-char.txt', 'alpha\n');
+
+  const result = await callReplace({
+    file_path: 'bad-regex-flags-char.txt',
+    target: 'alpha',
+    replacement: 'beta',
+    match_mode: 'regex',
+    regex_flags: 'mi',
+  });
+
+  const json = assertErrorResult(result);
+  assertJsonNoteIncludes(json, "'g', 'm', and 's'", 'regex_flags character note');
+  assertJsonDefaults(json);
+  await assertFixtureContent(
+    'bad-regex-flags-char.txt',
+    'alpha\n',
+    'Invalid regex_flags character should not modify the file',
+  );
+}
+
+async function testRegexFlagsDuplicateCharacterRejected(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('bad-regex-flags-repeat.txt', 'alpha\n');
+
+  const result = await callReplace({
+    file_path: 'bad-regex-flags-repeat.txt',
+    target: 'alpha',
+    replacement: 'beta',
+    match_mode: 'regex',
+    regex_flags: 'msm',
+  });
+
+  const json = assertErrorResult(result);
+  assertJsonNoteIncludes(json, 'must not repeat flags', 'regex_flags duplicate note');
+  assertJsonDefaults(json);
+  await assertFixtureContent(
+    'bad-regex-flags-repeat.txt',
+    'alpha\n',
+    'Duplicate regex_flags character should not modify the file',
+  );
+}
+
 async function testUnknownFieldRejected(): Promise<void> {
   await resetFixtures();
   await writeFixture('unknown-field.txt', 'alpha\n');
@@ -366,6 +454,22 @@ async function main(): Promise<void> {
       {
         name: 'Invalid match_mode is rejected',
         run: testInvalidMatchModeRejected,
+      },
+      {
+        name: 'Non-string regex_flags is rejected',
+        run: testNonStringRegexFlagsRejected,
+      },
+      {
+        name: 'regex_flags without regex mode is rejected',
+        run: testRegexFlagsWithoutRegexModeRejected,
+      },
+      {
+        name: 'regex_flags invalid character is rejected',
+        run: testRegexFlagsInvalidCharacterRejected,
+      },
+      {
+        name: 'regex_flags duplicate character is rejected',
+        run: testRegexFlagsDuplicateCharacterRejected,
       },
       { name: 'Unknown field is rejected', run: testUnknownFieldRejected },
       {

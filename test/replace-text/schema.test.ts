@@ -36,8 +36,15 @@ function testInputSchemaUsesV2FieldsOnly(): void {
 
   assertDeepEqual(
     Object.keys(properties).sort(),
-    ['allow_multiple', 'file_path', 'match_mode', 'replacement', 'target'],
-    'replace_text schema should expose only v2 input fields',
+    [
+      'allow_multiple',
+      'file_path',
+      'match_mode',
+      'regex_flags',
+      'replacement',
+      'target',
+    ],
+    'replace_text schema should expose only v2.1 input fields',
   );
   assert(!('old_string' in properties), 'old_string should not be a schema property');
   assert(!('new_string' in properties), 'new_string should not be a schema property');
@@ -92,6 +99,12 @@ function testDescriptionsDocumentV2Boundaries(): void {
   assertIncludes(description, 'regex', 'Tool description should mention regex mode');
   assertIncludes(
     description,
+    'regex_flags',
+    'Tool description should mention regex_flags',
+  );
+  assertIncludes(description, 'dotall', 'Tool description should mention dotAll');
+  assertIncludes(
+    description,
     'old_string',
     'Tool description should mention rejected legacy old_string field',
   );
@@ -123,6 +136,20 @@ function testDescriptionsDocumentV2Boundaries(): void {
     ),
     '$!n',
     'replacement description should document regex capture syntax',
+  );
+  const regexFlagsDescription = String(
+    asRecord(properties.regex_flags, 'regex_flags schema should be object')
+      .description,
+  );
+  assertIncludes(
+    regexFlagsDescription,
+    'g is always enabled',
+    'regex_flags description should document forced global matching',
+  );
+  assertIncludes(
+    regexFlagsDescription,
+    "'.' must not match newlines",
+    'regex_flags description should document disabling dotAll',
   );
 }
 

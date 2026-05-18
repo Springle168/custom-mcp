@@ -1,6 +1,6 @@
 # replace_text 工具文档
 
-版本：v2
+版本：v2.1
 
 ## 概述
 
@@ -40,7 +40,8 @@ test/
 | `target` | `string` | ✅ | — | 要定位的内容；`default` 模式为普通文本，`regex` 模式为裸 JavaScript `RegExp` pattern |
 | `replacement` | `string` | ✅ | — | 完整替换内容；`default` 模式为普通文本，`regex` 模式仅解释 `$!n` 捕获组和 `$$` |
 | `allow_multiple` | `boolean` | ❌ | `false` | 是否允许替换全部匹配；默认要求恰好一个匹配 |
-| `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用容错文本流程，`regex` 使用 `new RegExp(target, 'gms')` |
+| `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用容错文本流程，`regex` 使用显式 JavaScript 正则流程 |
+| `regex_flags` | `string` | ❌ | `"ms"` | 仅 `regex` 模式可用；可控制 `m` / `s`，`g` 始终由工具强制启用 |
 
 `inputSchema` 设置 `additionalProperties=false`，handler 也会主动校验必填字段、字段类型、枚举值和未知字段。
 
@@ -63,12 +64,17 @@ test/
 
 ### regex
 
-`regex` 模式把 `target` 编译为裸 JavaScript pattern：`new RegExp(target, 'gms')`。
+`regex` 模式把 `target` 编译为裸 JavaScript pattern。工具始终强制启用全局扫描 `g`，默认 `regex_flags="ms"`，等价于 `new RegExp(target, 'gms')`。
 
-- 不支持 `/pattern/flags` 形式，也不提供 `regex_flags` 参数。
+- 不支持 `/pattern/flags` 形式；如需调整 flags，使用 `regex_flags`。
+- `regex_flags` 只允许字符 `g`、`m`、`s`，每个最多出现一次；出现其它字符或重复字符会失败且不写入。
+- `g` 可以传入但不需要传入；工具始终强制启用 `g`，传入时会在成功结果的 `note` 中提示。
+- `regex_flags` 实际只控制 `m` / `s`：例如 `"m"` 编译为 `gm`，`"s"` 编译为 `gs`，`""` 编译为 `g`。
+- 默认 dotAll (`s`) 下 `.` 会匹配换行；行内捕获优先使用 `[^\n]+`，不要使用容易跨行吞内容的 `.+`。
 - 不走 Exact / Flexible / Tokenized / Fuzzy fallback。
 - `target` 必须非空；非法正则、无匹配、零长度匹配都会失败且不写入。
 - 扫描阶段先收集全部匹配，再根据 `allow_multiple`、no-op 和写入规则决定是否修改文件。
+- 成功替换且任一匹配跨多行时，`note` 会提示检查 dotAll / `.` 是否误伤。
 
 `replacement` 只解释以下语法：
 
