@@ -30,6 +30,7 @@ custom-mcp/
 ├── config.json                  # 本地运行配置
 ├── package.json                 # npm 包信息与脚本
 ├── tsconfig.json                # TypeScript 编译配置
+├── logs/                        # 生产日志，每次启动一个日志文件
 ├── docs/
 │   ├── DEVELOPMENT.md           # 开发入口与文档导航
 │   ├── CONFIG.md                # 配置开发说明
