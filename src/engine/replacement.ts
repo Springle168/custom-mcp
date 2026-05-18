@@ -24,6 +24,7 @@ export interface ReplaceParams {
   target: string;
   replacement: string;
   allow_multiple?: boolean;
+  regex_flags?: string;
 }
 
 export interface MatchRange {
@@ -45,7 +46,11 @@ export interface ReplacementResult {
 }
 
 export type RegexReplacementResult =
-  | ({ ok: true; invalidReplacementSyntax: boolean } & ReplacementResult)
+  | ({
+      ok: true;
+      invalidReplacementSyntax: boolean;
+      hasMultilineMatch: boolean;
+    } & ReplacementResult)
   | { ok: false; reason: 'invalid_regex' | 'zero_length_match'; message: string };
 
 interface LineSegment {
@@ -498,6 +503,16 @@ function fuzzyMatch(
 // Explicit Regex Mode
 // ================
 
+function buildRegexFlags(regexFlags: string | undefined): string {
+  const requestedFlags = regexFlags ?? 'ms';
+  let flags = 'g';
+
+  if (requestedFlags.includes('m')) flags += 'm';
+  if (requestedFlags.includes('s')) flags += 's';
+
+  return flags;
+}
+
 function expandRegexReplacement(
   replacement: string,
   match: RegExpExecArray,
@@ -552,7 +567,7 @@ export function calculateRegexReplacement(
   let regex: RegExp;
 
   try {
-    regex = new RegExp(params.target, 'gms');
+    regex = new RegExp(params.target, buildRegexFlags(params.regex_flags));
   } catch (err: unknown) {
     const error = err as Error;
     return {
@@ -566,6 +581,7 @@ export function calculateRegexReplacement(
   let matchedTargets = 0;
   let firstRange: MatchRange | null = null;
   let lastRange: MatchRange | null = null;
+  let hasMultilineMatch = false;
 
   while (true) {
     const match = regex.exec(currentContent);
@@ -584,6 +600,7 @@ export function calculateRegexReplacement(
       startOffset: match.index,
       endOffset: match.index + match[0].length,
     };
+    hasMultilineMatch ||= match[0].includes('\n');
     firstRange ??= range;
     lastRange = range;
     matchedTargets++;
@@ -630,6 +647,7 @@ export function calculateRegexReplacement(
     replacementCount,
     matchRanges,
     invalidReplacementSyntax,
+    hasMultilineMatch,
   };
 }
 

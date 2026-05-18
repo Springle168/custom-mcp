@@ -57,10 +57,12 @@ export const REPLACE_TOOL_DEFINITION = {
 - Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. Possible placeholders are written but reported as warnings in note.
 - allow_multiple: If true, replace all matches. If false or omitted, exactly one match is required.
 - match_mode: 'default' or 'regex'. Defaults to 'default'.
+- regex_flags: Optional in regex mode. Controls only 'm' and 's'; 'g' is always enabled. Defaults to 'ms'.
 
 target:
 - In default mode this must be EXACT literal text including all whitespace, indentation, and newlines. NEVER escape the string content.
-- In regex mode this is a bare JavaScript RegExp pattern compiled as new RegExp(target, 'gms').
+- In regex mode this is a bare JavaScript RegExp pattern compiled with global matching plus regex_flags.
+- With dotAll ('s'), '.' matches newlines; for line-local captures prefer '[^\\n]+' over '.+'.
 
 replacement:
 - Must be EXACT literal replacement text and ensure the resulting is correct and idiomatic.
@@ -69,7 +71,7 @@ Mode boundaries:
 - default mode treats target and replacement as literal text. It does not interpret $!n, $1, $&, $$, or any regex replacement syntax.
 - regex mode interprets only $!n capture references and $$ dollar escaping in replacement; JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
 - Empty target is allowed only in default mode when the file does not exist, to create a new file. Prefer write_file for new file creation.
-- Any unknown field is rejected.
+- Any unknown field is rejected, including legacy old_string/new_string aliases; use target/replacement instead.
 
 Best practices:
 - Always use read_file to examine file content before making replacements.
@@ -103,7 +105,12 @@ Best practices:
         type: 'string',
         enum: ['default', 'regex'],
         description:
-          "Matching mode. Defaults to 'default'. 'regex' uses new RegExp(target, 'gms')",
+          "Matching mode. Defaults to 'default'. 'regex' compiles target as a bare JavaScript RegExp with global matching plus regex_flags.",
+      },
+      regex_flags: {
+        type: 'string',
+        description:
+          "Optional only when match_mode='regex'. Defaults to 'ms'. May contain each of g, m, and s at most once; g is always enabled internally and does not need to be specified. Use 'm' to keep multiline anchors and omit 's' when '.' must not match newlines.",
       },
     },
     required: ['file_path', 'target', 'replacement'],
@@ -207,10 +214,35 @@ const ALLOWED_KEYS = new Set([
   'replacement',
   'allow_multiple',
   'match_mode',
+  'regex_flags',
 ]);
 
 function hasOwn(args: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(args, key);
+}
+
+function validateRegexFlags(value: string): ValidationResult {
+  const seenFlags = new Set<string>();
+
+  for (const flag of value) {
+    if (flag !== 'g' && flag !== 'm' && flag !== 's') {
+      return {
+        ok: false,
+        note: "The 'regex_flags' parameter may contain only 'g', 'm', and 's'.",
+      };
+    }
+
+    if (seenFlags.has(flag)) {
+      return {
+        ok: false,
+        note: "The 'regex_flags' parameter must not repeat flags; each of 'g', 'm', and 's' can appear at most once.",
+      };
+    }
+
+    seenFlags.add(flag);
+  }
+
+  return { ok: true };
 }
 
 function validateParams(args: Record<string, unknown>): ValidationResult {
@@ -220,7 +252,7 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
       ok: false,
       note:
         `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
-        'replace_text accepts only file_path, target, replacement, allow_multiple, and match_mode.',
+        'replace_text accepts only file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
     };
   }
 
@@ -270,6 +302,27 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
       ok: false,
       note: "The 'match_mode' parameter must be either 'default' or 'regex'.",
     };
+  }
+
+  if (hasOwn(args, 'regex_flags')) {
+    if (typeof args.regex_flags !== 'string') {
+      return {
+        ok: false,
+        note: "The 'regex_flags' parameter must be a string when provided.",
+      };
+    }
+
+    if (args.match_mode !== 'regex') {
+      return {
+        ok: false,
+        note: "The 'regex_flags' parameter can be used only when match_mode is 'regex'.",
+      };
+    }
+
+    const regexFlagsValidation = validateRegexFlags(args.regex_flags);
+    if (!regexFlagsValidation.ok) {
+      return regexFlagsValidation;
+    }
   }
 
   if (args.match_mode === 'regex' && args.target === '') {
@@ -380,6 +433,28 @@ function getInvalidRegexReplacementWarning(
 ): string | null {
   if (matchMode !== 'regex' || !invalidReplacementSyntax) return null;
   return "Warning: replacement contains '$!' not followed by digits. In regex mode only $!n capture references are expanded; the suspicious syntax was written literally. Verify the result with read_file.";
+}
+
+function getRegexFlagsWarning(
+  matchMode: MatchMode,
+  regexFlags: string | undefined,
+): string | null {
+  if (
+    matchMode !== 'regex' ||
+    regexFlags === undefined ||
+    !regexFlags.includes('g')
+  ) {
+    return null;
+  }
+  return "Warning: regex_flags includes 'g', but replace_text always enables global matching internally; you do not need to specify it.";
+}
+
+function getRegexMultilineMatchWarning(
+  matchMode: MatchMode,
+  hasMultilineMatch: boolean,
+): string | null {
+  if (matchMode !== 'regex' || !hasMultilineMatch) return null;
+  return "Warning: regex target matched across multiple lines. If this was not intended, check dotAll ('s') usage; for line-local captures prefer '[^\\n]+' over '.+'.";
 }
 
 // ================
@@ -566,6 +641,7 @@ export async function handleReplace(
   const replacement = args.replacement as string;
   const matchMode = normalizeMatchMode(args.match_mode);
   const allowMultiple = normalizeAllowMultiple(args.allow_multiple);
+  const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
   const resolved = resolvePath(filePath, config.rootDir);
@@ -690,10 +766,12 @@ export async function handleReplace(
       target,
       replacement,
       allow_multiple: allowMultiple,
+      regex_flags: regexFlags,
     };
 
     let calculation: ReplacementResult;
     let invalidReplacementSyntax = false;
+    let hasMultilineRegexMatch = false;
 
     if (matchMode === 'regex') {
       const regexResult = calculateRegexReplacement(currentContent, params);
@@ -715,6 +793,7 @@ export async function handleReplace(
       }
       calculation = regexResult;
       invalidReplacementSyntax = regexResult.invalidReplacementSyntax;
+      hasMultilineRegexMatch = regexResult.hasMultilineMatch;
     } else {
       calculation = calculateReplacement(currentContent, params);
     }
@@ -779,7 +858,9 @@ export async function handleReplace(
         true,
         joinNotes(
           placeholderWarning,
+          getRegexFlagsWarning(matchMode, regexFlags),
           getInvalidRegexReplacementWarning(matchMode, invalidReplacementSyntax),
+          getRegexMultilineMatchWarning(matchMode, hasMultilineRegexMatch),
         ),
         {
           matched_targets: calculation.matchedTargets,

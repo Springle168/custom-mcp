@@ -58,8 +58,109 @@ async function testRegexCrossLineDotAllSpan(): Promise<void> {
   await assertFixtureContent(
     'dotall.txt',
     'before\ndone\nafter\n',
-    'Regex dot should cross line because s flag is fixed on',
+    'Regex dot should cross line because s flag is enabled by default',
   );
+}
+
+async function testRegexFlagsCanDisableDotAll(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('flags-no-dotall.txt', 'before\nstart end\nstart\nmiddle\nend\nafter\n');
+
+  const result = await callReplace({
+    file_path: 'flags-no-dotall.txt',
+    target: '^start.*end$',
+    replacement: 'done',
+    match_mode: 'regex',
+    regex_flags: 'm',
+  });
+
+  const json = assertSuccessResult(result);
+  assertSpan(json, 2, 2, 'Regex flags without s should keep dot line-local');
+  await assertFixtureContent(
+    'flags-no-dotall.txt',
+    'before\ndone\nstart\nmiddle\nend\nafter\n',
+    'regex_flags=m should disable dotAll while preserving multiline anchors',
+  );
+}
+
+async function testRegexFlagsCanDisableMultilineAnchors(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('flags-no-multiline.txt', 'before\ntarget\nafter\n');
+
+  const result = await callReplace({
+    file_path: 'flags-no-multiline.txt',
+    target: '^target$',
+    replacement: 'hit',
+    match_mode: 'regex',
+    regex_flags: 's',
+  });
+
+  const json = assertErrorResult(result);
+  assertEqual(json.matched_targets, 0, 'Regex flags without m should not match line anchors');
+  assertNoSpan(json, 'Regex flags without m should have no span');
+  await assertFixtureContent(
+    'flags-no-multiline.txt',
+    'before\ntarget\nafter\n',
+    'regex_flags=s should disable multiline anchors',
+  );
+}
+
+async function testRegexFlagsEmptyUsesGlobalOnly(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('flags-global-only.txt', 'before\nstart end\nstart\nmiddle\nend\nafter\n');
+
+  const result = await callReplace({
+    file_path: 'flags-global-only.txt',
+    target: 'start.*end',
+    replacement: 'done',
+    match_mode: 'regex',
+    regex_flags: '',
+  });
+
+  const json = assertSuccessResult(result);
+  assertSpan(json, 2, 2, 'Empty regex_flags should compile with global flag only');
+  await assertFixtureContent(
+    'flags-global-only.txt',
+    'before\ndone\nstart\nmiddle\nend\nafter\n',
+    'Empty regex_flags should disable m and s while retaining global scan',
+  );
+}
+
+async function testRegexFlagsExplicitGWarns(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('flags-explicit-g.txt', 'id=7\n');
+
+  const result = await callReplace({
+    file_path: 'flags-explicit-g.txt',
+    target: 'id=(\\d)',
+    replacement: 'id:$!1',
+    match_mode: 'regex',
+    regex_flags: 'gm',
+  });
+
+  const json = assertSuccessResult(result);
+  assertJsonNoteIncludes(json, "'g'", 'Explicit g flag should warn');
+  await assertFixtureContent(
+    'flags-explicit-g.txt',
+    'id:7\n',
+    'Explicit g in regex_flags should still succeed',
+  );
+}
+
+async function testRegexMultilineMatchWarns(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('dotall-warning.txt', 'before\nstart\nmiddle\nend\nafter\n');
+
+  const result = await callReplace({
+    file_path: 'dotall-warning.txt',
+    target: 'start.*end',
+    replacement: 'done',
+    match_mode: 'regex',
+  });
+
+  const json = assertSuccessResult(result);
+  assertSpan(json, 2, 4, 'Regex dotAll warning span');
+  assertJsonNoteIncludes(json, 'matched across multiple lines', 'Multiline regex match warning');
 }
 
 async function testRegexMultilineAnchors(): Promise<void> {
@@ -420,11 +521,31 @@ async function testRegexNoOpExpandedCaptureFails(): Promise<void> {
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 regex mode tests',
-    details: 'Covers explicit regex matching, gms behavior, capture replacement syntax, no fallback, no-op, and zero-length safety.',
+    details: 'Covers explicit regex matching, default gms behavior, regex_flags, capture replacement syntax, no fallback, no-op, and zero-length safety.',
     afterAll: cleanupFixtures,
     tests: [
       { name: 'Regex single match replaces once', run: testRegexSingleMatch },
       { name: 'Regex dot-all matches across lines', run: testRegexCrossLineDotAllSpan },
+      {
+        name: 'regex_flags can disable dotAll',
+        run: testRegexFlagsCanDisableDotAll,
+      },
+      {
+        name: 'regex_flags can disable multiline anchors',
+        run: testRegexFlagsCanDisableMultilineAnchors,
+      },
+      {
+        name: 'regex_flags empty string uses global only',
+        run: testRegexFlagsEmptyUsesGlobalOnly,
+      },
+      {
+        name: 'regex_flags explicit g warns',
+        run: testRegexFlagsExplicitGWarns,
+      },
+      {
+        name: 'Regex multiline match warns',
+        run: testRegexMultilineMatchWarns,
+      },
       { name: 'Regex multiline anchors match per line', run: testRegexMultilineAnchors },
       { name: 'Regex slash syntax is not /pattern/flags', run: testRegexSlashSyntaxIsLiteralPatternText },
       { name: 'Regex mode does not use default fallback', run: testRegexDoesNotUseDefaultFallback },
