@@ -71,7 +71,7 @@ Mode boundaries:
 - default mode treats target and replacement as literal text. It does not interpret $!n, $1, $&, $$, or any regex replacement syntax.
 - regex mode interprets only $!n capture references and $$ dollar escaping in replacement; JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
 - Empty target is allowed only in default mode when the file does not exist, to create a new file. Prefer write_file for new file creation.
-- Any unknown field is rejected, including legacy old_string/new_string aliases; use target/replacement instead.
+- Any unknown field is rejected.
 
 Best practices:
 - Always use read_file to examine file content before making replacements.

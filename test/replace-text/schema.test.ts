@@ -105,16 +105,6 @@ function testDescriptionsDocumentV2Boundaries(): void {
   assertIncludes(description, 'dotall', 'Tool description should mention dotAll');
   assertIncludes(
     description,
-    'old_string',
-    'Tool description should mention rejected legacy old_string field',
-  );
-  assertIncludes(
-    description,
-    'new_string',
-    'Tool description should mention rejected legacy new_string field',
-  );
-  assertIncludes(
-    description,
     'unknown',
     'Tool description should mention unknown field rejection',
   );
