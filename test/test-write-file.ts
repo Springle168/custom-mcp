@@ -121,19 +121,33 @@ async function testRejectBinaryTarget() {
   );
 }
 
-async function testRejectPlaceholderContent() {
+async function testWarnButWritePlaceholderContent() {
   const cases = ['// rest of code ...', '...', '...\ractual code'];
-  for (const content of cases) {
+  for (const [index, content] of cases.entries()) {
+    const filePath = `placeholder-${index}.txt`;
     const result = await writeFileTool.handler(
-      { file_path: 'placeholder.txt', content },
+      { file_path: filePath, content },
       testConfig,
     );
 
-    assert(result.isError === true, `Should fail for ${JSON.stringify(content)}`);
+    assert(result.isError !== true, `Should succeed for ${JSON.stringify(content)}`);
+    const text = getResultText(result);
     assertIncludes(
-      getResultText(result),
-      'omission placeholder',
-      'Should reject incomplete content',
+      text,
+      `Success: wrote ${filePath}.`,
+      'Should report successful write before the warning',
+    );
+    assertIncludes(
+      text,
+      'Warning: content contains possible omission placeholder',
+      'Should warn about possible incomplete content',
+    );
+
+    const raw = await fs.readFile(path.join(FIXTURES_DIR, filePath), 'utf-8');
+    assertEqual(
+      raw,
+      content.replace(/\r\n|\r/g, '\n'),
+      'Should write placeholder content literally',
     );
   }
 }
@@ -191,7 +205,7 @@ async function main(): Promise<void> {
       { name: 'Overwrite existing file and keep CRLF', run: testOverwriteExistingFilePreservesLineEnding },
       { name: 'Reject path outside workspace', run: testRejectOutsideWorkspace },
       { name: 'Reject binary target', run: testRejectBinaryTarget },
-      { name: 'Reject placeholder content', run: testRejectPlaceholderContent },
+      { name: 'Warn but write placeholder content', run: testWarnButWritePlaceholderContent },
       { name: 'Reject symlink escaping workspace', run: testRejectSymlinkEscapingWorkspace },
     ],
   });

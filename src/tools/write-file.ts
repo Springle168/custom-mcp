@@ -21,7 +21,7 @@ const WRITE_FILE_TOOL_DEFINITION = {
 
 Use this tool for new files or full-file rewrites. Use replace_text or similar tools for targeted edits to existing files.
 The file path must stay inside the configured workspace root.
-The content parameter must contain the full file contents; do not use omission placeholders like "..." or "rest of code".
+The content parameter must contain the full file contents; possible omission placeholders like "..." or "rest of code" are written but reported as warnings.
 On success, returns a message with the written path and the file's total line count.`,
   inputSchema: {
     type: 'object' as const,
@@ -34,7 +34,7 @@ On success, returns a message with the written path and the file's total line co
       content: {
         type: 'string',
         description:
-          'Complete text content to write. Provide the full file; do not use omission placeholders.',
+          'Complete text content to write. Provide the full file; possible omission placeholders are written but reported as warnings.',
       },
     },
     required: ['file_path', 'content'],
@@ -84,12 +84,29 @@ function stripCommentMarkers(line: string): string {
   return text;
 }
 
-function containsOmissionPlaceholder(content: string): boolean {
-  if (detectOmissionPlaceholders(content).length > 0) return true;
+function detectContentOmissionPlaceholders(content: string): string[] {
+  const placeholders = new Set(detectOmissionPlaceholders(content));
 
-  return content
-    .split(/\r\n|\r|\n/)
-    .some((line) => isDotsOnly(stripCommentMarkers(line)));
+  for (const line of content.split(/\r\n|\r|\n/)) {
+    if (isDotsOnly(stripCommentMarkers(line))) {
+      placeholders.add('...');
+    }
+  }
+
+  return [...placeholders];
+}
+
+function getOmissionPlaceholderWarning(content: string): string | null {
+  const placeholders = detectContentOmissionPlaceholders(content);
+  if (placeholders.length === 0) return null;
+
+  const shownPlaceholders = placeholders
+    .slice(0, 3)
+    .map((placeholder) => `'${placeholder}'`)
+    .join(', ');
+  const more = placeholders.length > 3 ? ' and more' : '';
+
+  return `Warning: content contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete file content.`;
 }
 
 function validateParams(args: Record<string, unknown>): string | null {
@@ -99,10 +116,6 @@ function validateParams(args: Record<string, unknown>): string | null {
 
   if (typeof args.content !== 'string') {
     return "The 'content' parameter must be a string.";
-  }
-
-  if (containsOmissionPlaceholder(args.content)) {
-    return "The 'content' parameter contains an omission placeholder (e.g. '...' or 'rest of code ...'). Provide the full file content.";
   }
 
   return null;
@@ -130,6 +143,10 @@ function successPath(filePath: string, resolved: string, rootDir: string): strin
   return path.isAbsolute(filePath)
     ? resolved
     : path.relative(rootDir, resolved);
+}
+
+function appendWarning(message: string, warning: string | null): string {
+  return warning ? `${message}\n${warning}` : message;
 }
 
 async function findExistingAncestor(directoryPath: string): Promise<string> {
@@ -206,6 +223,7 @@ async function handleWriteFile(
 
   const filePath = args.file_path as string;
   const content = args.content as string;
+  const placeholderWarning = getOmissionPlaceholderWarning(content);
   const resolved = resolvePath(filePath, config.rootDir);
   const pathError = validatePathAccess(resolved, config.rootDir);
   if (pathError) {
@@ -276,9 +294,8 @@ async function handleWriteFile(
     }
 
     const displayPath = successPath(filePath, resolved, config.rootDir);
-    return successResult(
-      `Success: wrote ${displayPath}. Total lines: ${countLines(finalContent)}.`,
-    );
+    const message = `Success: wrote ${displayPath}. Total lines: ${countLines(finalContent)}.`;
+    return successResult(appendWarning(message, placeholderWarning));
   });
 }
 
