@@ -29,7 +29,7 @@
 ### 顶层字段
 
 - `rootDir`：文件类工具的工作根目录，必填。
-- `otherRootDirs`：额外允许访问的其它工作根目录，可选。相对路径仍只基于 `rootDir`；访问其它工作区必须传入绝对路径。
+- `otherRootDirs`：额外允许访问的其它工作根目录，可选。相对路径仍只基于 `rootDir`；访问其它工作区必须传入绝对路径。Windows 下必须使用带盘符的完整路径（如 `E:/Proj/file.ts`），不支持 `/Proj/file.ts`、`\Proj\file.ts` 或 `E:Proj\file.ts`。
 - `lineEnding`：文本写回策略，支持 `auto` / `lf` / `crlf`。
 - `port`：HTTP MCP 服务端口。
 

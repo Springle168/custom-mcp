@@ -220,6 +220,19 @@ async function testWriteAbsolutePathInOtherRootDir() {
     'Should reject drive-relative paths',
   );
 
+  if (process.platform === 'win32') {
+    const rootedResult = await writeFileTool.handler(
+      { file_path: '/write-file-other-root/rooted-created.txt', content: 'nope' },
+      config,
+    );
+    assert(rootedResult.isError === true, 'Windows rooted path should fail');
+    assertIncludes(
+      getResultText(rootedResult),
+      'Windows rooted paths without a drive',
+      'Should reject Windows rooted paths without a drive',
+    );
+  }
+
   const traversalResult = await writeFileTool.handler(
     { file_path: traversalPath, content: 'nope' },
     config,

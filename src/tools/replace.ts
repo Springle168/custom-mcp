@@ -19,6 +19,7 @@ import {
   findContainingRoot,
   getAccessRootDirsForPath,
   isWindowsDriveRelativePath,
+  isWindowsRootedPathWithoutDrive,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -656,6 +657,15 @@ export async function handleReplace(
         args,
         false,
         `Drive-relative paths like ${filePath} are not supported. Use an absolute path with a slash after the drive prefix, or a relative path without a drive prefix.`,
+      ),
+    );
+  }
+  if (isWindowsRootedPathWithoutDrive(filePath)) {
+    return errorResult(
+      payloadFromArgs(
+        args,
+        false,
+        `Windows rooted paths without a drive like ${filePath} are not supported. Use a fully qualified absolute path, or a relative path without a leading slash.`,
       ),
     );
   }

@@ -388,6 +388,19 @@ async function testOtherRootDirRequiresAbsolutePath() {
       'Should reject drive-relative paths',
     );
 
+    if (process.platform === 'win32') {
+      const rootedResult = await readFileTool.handler(
+        { file_path: '/read-file-other-root/other-only.txt' },
+        config,
+      );
+      assert(rootedResult.isError === true, 'Windows rooted path should fail');
+      assertIncludes(
+        getResultText(rootedResult),
+        'Windows rooted paths without a drive',
+        'Should reject Windows rooted paths without a drive',
+      );
+    }
+
     const traversalResult = await readFileTool.handler(
       { file_path: path.join('..', 'read-file-other-root', 'other-only.txt') },
       config,

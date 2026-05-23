@@ -175,6 +175,23 @@ async function testReplaceAbsolutePathInOtherRootDir(): Promise<void> {
     'Should reject drive-relative paths',
   );
 
+  if (process.platform === 'win32') {
+    const rootedResult = await replaceTool.handler(
+      {
+        file_path: '/replace-text-other-root/other.ts',
+        target: 'value = 1',
+        replacement: 'value = 9',
+      },
+      config,
+    );
+    assert(rootedResult.isError === true, 'Windows rooted path should fail');
+    assertIncludes(
+      getResultText(rootedResult),
+      'Windows rooted paths without a drive',
+      'Should reject Windows rooted paths without a drive',
+    );
+  }
+
   const traversalResult = await replaceTool.handler(
     {
       file_path: traversalPath,

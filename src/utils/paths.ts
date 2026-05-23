@@ -13,8 +13,20 @@ export function isWindowsDriveRelativePath(filePath: string): boolean {
   return /^[a-zA-Z]:(?![\\/])/.test(filePath);
 }
 
+export function isWindowsRootedPathWithoutDrive(filePath: string): boolean {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+
+  const normalized = filePath.replace(/\//g, '\\');
+  return normalized.startsWith('\\') && !normalized.startsWith('\\\\');
+}
+
 export function isAbsoluteInputPath(filePath: string): boolean {
-  if (isWindowsDriveRelativePath(filePath)) {
+  if (
+    isWindowsDriveRelativePath(filePath) ||
+    isWindowsRootedPathWithoutDrive(filePath)
+  ) {
     return false;
   }
 
@@ -37,6 +49,9 @@ export function resolvePath(filePath: string, rootDir: string): string {
   }
   if (isWindowsDriveRelativePath(filePath)) {
     return resolve(rootDir, filePath.slice(2));
+  }
+  if (isWindowsRootedPathWithoutDrive(filePath)) {
+    return resolve(rootDir, filePath.replace(/^[\\/]+/, ''));
   }
   return resolve(rootDir, filePath);
 }

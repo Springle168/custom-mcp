@@ -8,6 +8,7 @@ import type { MCPTool } from './types.js';
 import {
   getAllowedRootDirs,
   isWindowsDriveRelativePath,
+  isWindowsRootedPathWithoutDrive,
   validatePathAccess,
 } from '../utils/paths.js';
 import {
@@ -136,6 +137,9 @@ function isAbsolutePath(p: string): boolean {
   if (isWindowsDriveRelativePath(p)) {
     return false;
   }
+  if (isWindowsRootedPathWithoutDrive(p)) {
+    return false;
+  }
 
   if (
     process.platform === 'win32' &&
@@ -190,6 +194,12 @@ function validateParams(args: Record<string, unknown>): string | null {
     }
     if (isWindowsDriveRelativePath(item)) {
       return `Drive-relative include paths like ${item} are not supported. Use an absolute path with a slash after the drive prefix, or a relative path without a drive prefix.`;
+    }
+    if (
+      isWindowsRootedPathWithoutDrive(item) &&
+      !(hasGlobChars(item) && item.startsWith('/') && !item.startsWith('//'))
+    ) {
+      return `Windows rooted include paths without a drive like ${item} are not supported. Use a fully qualified absolute path, or a relative path without a leading slash.`;
     }
   }
   if (args.exclude !== undefined) {

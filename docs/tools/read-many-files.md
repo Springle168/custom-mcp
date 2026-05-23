@@ -64,6 +64,8 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 相对路径和相对 glob 永远只基于主工作区 `rootDir`。`otherRootDirs` 只是额外允许访问边界，不参与相对路径搜索；访问其它工作区必须传绝对路径或绝对 glob。
 
+Windows 下访问 `otherRootDirs` 必须使用带盘符的完整路径 / glob；drive-relative 路径（如 `E:src/*.ts`）和无盘符 rooted 路径（如 `/src/Foo.ts`）不会被当作其它工作区绝对路径。
+
 绝对文件路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。绝对 glob 会应用 exclude 过滤，并在展开后再次校验每个结果仍位于允许工作区内。
 
 ### 二进制文件检测

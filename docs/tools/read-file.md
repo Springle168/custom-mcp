@@ -38,7 +38,7 @@
 
 ### 路径安全
 
-`file_path` 先通过 `resolvePath()` 解析为绝对路径，再通过 `validatePathAccess()` 校验必须位于 `rootDir` 或 `otherRootDirs` 范围内。相对路径只会基于主工作区 `rootDir` 解析，不会搜索 `otherRootDirs`。
+`file_path` 先通过 `resolvePath()` 解析为绝对路径，再通过 `validatePathAccess()` 校验必须位于 `rootDir` 或 `otherRootDirs` 范围内。相对路径只会基于主工作区 `rootDir` 解析，不会搜索 `otherRootDirs`。Windows 下访问 `otherRootDirs` 必须使用带盘符的完整路径；drive-relative 路径（如 `E:foo.txt`）和无盘符 rooted 路径（如 `/foo.txt`）会被拒绝。
 
 ### 参数校验
 

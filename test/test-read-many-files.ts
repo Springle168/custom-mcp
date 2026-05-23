@@ -247,6 +247,19 @@ async function testAbsoluteGlobInOtherRootDir() {
       'Should reject drive-relative include paths',
     );
 
+    if (process.platform === 'win32') {
+      const rootedResult = await readManyFilesTool.handler(
+        { include: ['/read-many-files-other-root/src/Other.kt'] },
+        config,
+      );
+      assert(rootedResult.isError === true, 'Windows rooted include should fail');
+      assertIncludes(
+        getResultText(rootedResult),
+        'Windows rooted include paths without a drive',
+        'Should reject Windows rooted include paths without a drive',
+      );
+    }
+
     const traversalPattern = path
       .join('..', 'read-many-files-other-root', 'src', '*.kt')
       .replace(/\\/g, '/');
