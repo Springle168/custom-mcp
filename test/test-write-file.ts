@@ -209,6 +209,17 @@ async function testWriteAbsolutePathInOtherRootDir() {
   };
 
   await fs.mkdir(otherRootDir, { recursive: true });
+  const driveRelativeResult = await writeFileTool.handler(
+    { file_path: 'C:relative-created.txt', content: 'nope' },
+    config,
+  );
+  assert(driveRelativeResult.isError === true, 'Drive-relative path should fail');
+  assertIncludes(
+    getResultText(driveRelativeResult),
+    'Drive-relative paths',
+    'Should reject drive-relative paths',
+  );
+
   const traversalResult = await writeFileTool.handler(
     { file_path: traversalPath, content: 'nope' },
     config,

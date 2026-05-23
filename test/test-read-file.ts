@@ -377,6 +377,17 @@ async function testOtherRootDirRequiresAbsolutePath() {
       'Should resolve relative paths against the primary rootDir only',
     );
 
+    const driveRelativeResult = await readFileTool.handler(
+      { file_path: 'C:other-only.txt' },
+      config,
+    );
+    assert(driveRelativeResult.isError === true, 'Drive-relative path should fail');
+    assertIncludes(
+      getResultText(driveRelativeResult),
+      'Drive-relative paths',
+      'Should reject drive-relative paths',
+    );
+
     const traversalResult = await readFileTool.handler(
       { file_path: path.join('..', 'read-file-other-root', 'other-only.txt') },
       config,

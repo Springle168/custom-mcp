@@ -7,6 +7,7 @@ import type { Config } from '../config.js';
 import type { MCPTool } from './types.js';
 import {
   getAllowedRootDirs,
+  isWindowsDriveRelativePath,
   validatePathAccess,
 } from '../utils/paths.js';
 import {
@@ -132,6 +133,10 @@ function hasGlobChars(p: string): boolean {
 }
 
 function isAbsolutePath(p: string): boolean {
+  if (isWindowsDriveRelativePath(p)) {
+    return false;
+  }
+
   if (
     process.platform === 'win32' &&
     hasGlobChars(p) &&
@@ -142,7 +147,7 @@ function isAbsolutePath(p: string): boolean {
     return false;
   }
 
-  return path.isAbsolute(p) || p.startsWith('/') || /^[a-zA-Z]:/.test(p);
+  return path.isAbsolute(p) || p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
 }
 
 function getStaticGlobBase(pattern: string): string {
@@ -182,6 +187,9 @@ function validateParams(args: Record<string, unknown>): string | null {
   for (const item of args.include) {
     if (typeof item !== 'string' || item.length === 0) {
       return "Each item in 'include' must be a non-empty string.";
+    }
+    if (isWindowsDriveRelativePath(item)) {
+      return `Drive-relative include paths like ${item} are not supported. Use an absolute path with a slash after the drive prefix, or a relative path without a drive prefix.`;
     }
   }
   if (args.exclude !== undefined) {

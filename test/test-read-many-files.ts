@@ -236,6 +236,17 @@ async function testAbsoluteGlobInOtherRootDir() {
       'Relative glob should not scan otherRootDirs',
     );
 
+    const driveRelativeResult = await readManyFilesTool.handler(
+      { include: ['C:src/*.kt'] },
+      config,
+    );
+    assert(driveRelativeResult.isError === true, 'Drive-relative include should fail');
+    assertIncludes(
+      getResultText(driveRelativeResult),
+      'Drive-relative include paths',
+      'Should reject drive-relative include paths',
+    );
+
     const traversalPattern = path
       .join('..', 'read-many-files-other-root', 'src', '*.kt')
       .replace(/\\/g, '/');

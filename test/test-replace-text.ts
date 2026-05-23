@@ -160,6 +160,21 @@ async function testReplaceAbsolutePathInOtherRootDir(): Promise<void> {
   await fs.mkdir(otherRootDir, { recursive: true });
   await fs.writeFile(targetPath, 'export const value = 1;\n', 'utf-8');
 
+  const driveRelativeResult = await replaceTool.handler(
+    {
+      file_path: 'C:other.ts',
+      target: 'value = 1',
+      replacement: 'value = 9',
+    },
+    config,
+  );
+  assert(driveRelativeResult.isError === true, 'Drive-relative path should fail');
+  assertIncludes(
+    getResultText(driveRelativeResult),
+    'Drive-relative paths',
+    'Should reject drive-relative paths',
+  );
+
   const traversalResult = await replaceTool.handler(
     {
       file_path: traversalPath,

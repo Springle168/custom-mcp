@@ -4,6 +4,7 @@ import type { Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import {
   getAccessRootDirsForPath,
+  isWindowsDriveRelativePath,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -230,6 +231,12 @@ async function handleReadFile(
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
+  if (isWindowsDriveRelativePath(filePath)) {
+    return errorResult(
+      `Drive-relative paths like ${filePath} are not supported. Use an absolute path with a slash after the drive prefix, or a relative path without a drive prefix.`,
+    );
+  }
+
   const accessRootDirs = getAccessRootDirsForPath(filePath, config);
   const resolvedPath = resolvePath(filePath, config.rootDir);
   const pathError = validatePathAccess(resolvedPath, accessRootDirs);

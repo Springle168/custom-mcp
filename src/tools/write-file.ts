@@ -11,6 +11,7 @@ import { withFileLock } from '../utils/file-lock.js';
 import {
   findContainingRoot,
   getAccessRootDirsForPath,
+  isWindowsDriveRelativePath,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -229,6 +230,12 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
+  if (isWindowsDriveRelativePath(filePath)) {
+    return errorResult(
+      `Drive-relative paths like ${filePath} are not supported. Use an absolute path with a slash after the drive prefix, or a relative path without a drive prefix.`,
+    );
+  }
+
   const accessRootDirs = getAccessRootDirsForPath(filePath, config);
   const resolved = resolvePath(filePath, config.rootDir);
   const pathError = validatePathAccess(resolved, accessRootDirs);

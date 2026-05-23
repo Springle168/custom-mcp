@@ -18,6 +18,7 @@ import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
 import {
   findContainingRoot,
   getAccessRootDirsForPath,
+  isWindowsDriveRelativePath,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -649,6 +650,15 @@ export async function handleReplace(
   const allowMultiple = normalizeAllowMultiple(args.allow_multiple);
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
+  if (isWindowsDriveRelativePath(filePath)) {
+    return errorResult(
+      payloadFromArgs(
+        args,
+        false,
+        `Drive-relative paths like ${filePath} are not supported. Use an absolute path with a slash after the drive prefix, or a relative path without a drive prefix.`,
+      ),
+    );
+  }
 
   const accessRootDirs = getAccessRootDirsForPath(filePath, config);
   const resolved = resolvePath(filePath, config.rootDir);

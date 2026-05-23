@@ -9,8 +9,16 @@ export function getAllowedRootDirs(config: WorkspaceConfig): string[] {
   return [config.rootDir, ...(config.otherRootDirs ?? [])];
 }
 
+export function isWindowsDriveRelativePath(filePath: string): boolean {
+  return /^[a-zA-Z]:(?![\\/])/.test(filePath);
+}
+
 export function isAbsoluteInputPath(filePath: string): boolean {
-  return isAbsolute(filePath) || filePath.startsWith('/') || /^[a-zA-Z]:/.test(filePath);
+  if (isWindowsDriveRelativePath(filePath)) {
+    return false;
+  }
+
+  return isAbsolute(filePath) || filePath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(filePath);
 }
 
 export function getAccessRootDirsForPath(
@@ -26,6 +34,9 @@ export function resolvePath(filePath: string, rootDir: string): string {
   // 绝对路径直接 normalize，相对路径基于 rootDir 解析
   if (isAbsoluteInputPath(filePath)) {
     return resolve(filePath);
+  }
+  if (isWindowsDriveRelativePath(filePath)) {
+    return resolve(rootDir, filePath.slice(2));
   }
   return resolve(rootDir, filePath);
 }
