@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import type { Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import {
-  getAllowedRootDirs,
+  getAccessRootDirsForPath,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -230,9 +230,9 @@ async function handleReadFile(
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
-  const allowedRootDirs = getAllowedRootDirs(config);
+  const accessRootDirs = getAccessRootDirsForPath(filePath, config);
   const resolvedPath = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolvedPath, allowedRootDirs);
+  const pathError = validatePathAccess(resolvedPath, accessRootDirs);
   if (pathError) {
     return errorResult(
       `${pathError} Provide a file path inside the configured workspace roots.`,

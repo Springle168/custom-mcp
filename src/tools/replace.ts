@@ -17,7 +17,7 @@ import {
 import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
 import {
   findContainingRoot,
-  getAllowedRootDirs,
+  getAccessRootDirsForPath,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -650,9 +650,9 @@ export async function handleReplace(
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
-  const allowedRootDirs = getAllowedRootDirs(config);
+  const accessRootDirs = getAccessRootDirsForPath(filePath, config);
   const resolved = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolved, allowedRootDirs);
+  const pathError = validatePathAccess(resolved, accessRootDirs);
   if (pathError) {
     return errorResult(
       payloadFromArgs(
@@ -662,7 +662,7 @@ export async function handleReplace(
       ),
     );
   }
-  const containingRoot = findContainingRoot(resolved, allowedRootDirs);
+  const containingRoot = findContainingRoot(resolved, accessRootDirs);
   if (!containingRoot) {
     return errorResult(
       payloadFromArgs(

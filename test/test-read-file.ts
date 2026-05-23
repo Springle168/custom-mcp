@@ -377,6 +377,17 @@ async function testOtherRootDirRequiresAbsolutePath() {
       'Should resolve relative paths against the primary rootDir only',
     );
 
+    const traversalResult = await readFileTool.handler(
+      { file_path: path.join('..', 'read-file-other-root', 'other-only.txt') },
+      config,
+    );
+    assert(traversalResult.isError === true, 'Relative traversal should not reach otherRootDirs');
+    assertIncludes(
+      getResultText(traversalResult),
+      'outside the allowed workspace',
+      'Should reject relative traversal into otherRootDirs',
+    );
+
     const absoluteResult = await readFileTool.handler(
       { file_path: otherFilePath },
       config,

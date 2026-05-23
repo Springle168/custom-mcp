@@ -202,12 +202,24 @@ async function testRejectSymlinkEscapingWorkspace() {
 async function testWriteAbsolutePathInOtherRootDir() {
   const otherRootDir = path.join(__dirname, 'fixtures', 'write-file-other-root');
   const targetPath = path.join(otherRootDir, 'created.txt');
+  const traversalPath = path.join('..', 'write-file-other-root', 'relative-created.txt');
   const config: Config = {
     ...testConfig,
     otherRootDirs: [otherRootDir],
   };
 
   await fs.mkdir(otherRootDir, { recursive: true });
+  const traversalResult = await writeFileTool.handler(
+    { file_path: traversalPath, content: 'nope' },
+    config,
+  );
+  assert(traversalResult.isError === true, 'Relative traversal should not reach otherRootDirs');
+  assertIncludes(
+    getResultText(traversalResult),
+    'outside the allowed workspace',
+    'Should reject relative traversal into otherRootDirs',
+  );
+
   const result = await writeFileTool.handler(
     { file_path: targetPath, content: 'hello from other root\n' },
     config,
@@ -221,6 +233,14 @@ async function testWriteAbsolutePathInOtherRootDir() {
   );
   const raw = await fs.readFile(targetPath, 'utf-8');
   assertEqual(raw, 'hello from other root\n', 'Should write inside otherRootDirs');
+
+  try {
+    await fs.stat(path.join(otherRootDir, 'relative-created.txt'));
+    assert(false, 'Should not write through relative traversal');
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') throw error;
+  }
 }
 
 async function main(): Promise<void> {

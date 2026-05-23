@@ -151,6 +151,7 @@ async function testRejectsOldFieldAliases(): Promise<void> {
 async function testReplaceAbsolutePathInOtherRootDir(): Promise<void> {
   const otherRootDir = path.join(__dirname, 'fixtures', 'replace-text-other-root');
   const targetPath = path.join(otherRootDir, 'other.ts');
+  const traversalPath = path.join('..', 'replace-text-other-root', 'other.ts');
   const config: Config = {
     ...testConfig,
     otherRootDirs: [otherRootDir],
@@ -158,6 +159,21 @@ async function testReplaceAbsolutePathInOtherRootDir(): Promise<void> {
 
   await fs.mkdir(otherRootDir, { recursive: true });
   await fs.writeFile(targetPath, 'export const value = 1;\n', 'utf-8');
+
+  const traversalResult = await replaceTool.handler(
+    {
+      file_path: traversalPath,
+      target: 'value = 1',
+      replacement: 'value = 9',
+    },
+    config,
+  );
+  assert(traversalResult.isError === true, 'Relative traversal should not reach otherRootDirs');
+  assertIncludes(
+    getResultText(traversalResult),
+    'outside the allowed workspace',
+    'Should reject relative traversal into otherRootDirs',
+  );
 
   const result = await replaceTool.handler(
     {

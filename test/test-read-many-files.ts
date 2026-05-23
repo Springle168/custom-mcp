@@ -236,6 +236,20 @@ async function testAbsoluteGlobInOtherRootDir() {
       'Relative glob should not scan otherRootDirs',
     );
 
+    const traversalPattern = path
+      .join('..', 'read-many-files-other-root', 'src', '*.kt')
+      .replace(/\\/g, '/');
+    const traversalResult = await readManyFilesTool.handler(
+      { include: [traversalPattern] },
+      config,
+    );
+    assert(traversalResult.isError === true, 'Relative traversal glob should not match otherRootDirs');
+    assertNotIncludes(
+      getResultText(traversalResult),
+      'OtherFromOtherRoot',
+      'Relative traversal glob should not read otherRootDirs',
+    );
+
     const absolutePattern = path.join(srcDir, '*.kt').replace(/\\/g, '/');
     const absoluteResult = await readManyFilesTool.handler(
       { include: [absolutePattern] },

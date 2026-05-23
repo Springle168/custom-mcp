@@ -1,4 +1,4 @@
-import { resolve, sep } from 'node:path';
+import { isAbsolute, resolve, sep } from 'node:path';
 
 export interface WorkspaceConfig {
   rootDir: string;
@@ -9,9 +9,22 @@ export function getAllowedRootDirs(config: WorkspaceConfig): string[] {
   return [config.rootDir, ...(config.otherRootDirs ?? [])];
 }
 
+export function isAbsoluteInputPath(filePath: string): boolean {
+  return isAbsolute(filePath) || filePath.startsWith('/') || /^[a-zA-Z]:/.test(filePath);
+}
+
+export function getAccessRootDirsForPath(
+  filePath: string,
+  config: WorkspaceConfig,
+): string[] {
+  return isAbsoluteInputPath(filePath)
+    ? getAllowedRootDirs(config)
+    : [config.rootDir];
+}
+
 export function resolvePath(filePath: string, rootDir: string): string {
   // 绝对路径直接 normalize，相对路径基于 rootDir 解析
-  if (filePath.startsWith('/') || /^[a-zA-Z]:/.test(filePath)) {
+  if (isAbsoluteInputPath(filePath)) {
     return resolve(filePath);
   }
   return resolve(rootDir, filePath);

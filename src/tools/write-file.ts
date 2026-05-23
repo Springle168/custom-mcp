@@ -10,7 +10,7 @@ import { isBinaryFile } from '../utils/file-read.js';
 import { withFileLock } from '../utils/file-lock.js';
 import {
   findContainingRoot,
-  getAllowedRootDirs,
+  getAccessRootDirsForPath,
   resolvePath,
   validatePathAccess,
 } from '../utils/paths.js';
@@ -229,15 +229,15 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
-  const allowedRootDirs = getAllowedRootDirs(config);
+  const accessRootDirs = getAccessRootDirsForPath(filePath, config);
   const resolved = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolved, allowedRootDirs);
+  const pathError = validatePathAccess(resolved, accessRootDirs);
   if (pathError) {
     return errorResult(
       `${pathError} Provide a file path inside the configured workspace roots.`,
     );
   }
-  const containingRoot = findContainingRoot(resolved, allowedRootDirs);
+  const containingRoot = findContainingRoot(resolved, accessRootDirs);
   if (!containingRoot) {
     return errorResult(
       `Path ${filePath} is outside the allowed workspace. Provide a file path inside the configured workspace roots.`,
