@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `file_path` | `string` | ✅ | — | 要读取的文本文件路径，支持相对 `rootDir` 或绝对路径 |
+| `file_path` | `string` | ✅ | — | 要读取的文本文件路径。相对路径只基于 `rootDir`；访问 `otherRootDirs` 必须使用绝对路径 |
 | `start_line` | `integer \| string` | ❌ | — | 起始位置；解释方式由 `read_mode` 决定 |
 | `end_line` | `integer \| string` | ❌ | — | 结束位置，包含该行；解释方式由 `read_mode` 决定 |
 | `read_mode` | `"line" \| "regex"` | ❌ | `"line"` | 行定位模式：`line` 按行号解释，`regex` 按逐行正则解释 |
@@ -38,7 +38,7 @@
 
 ### 路径安全
 
-`file_path` 先通过 `resolvePath()` 解析为绝对路径，再通过 `validatePathAccess()` 校验必须位于 `rootDir` 范围内。
+`file_path` 先通过 `resolvePath()` 解析为绝对路径，再通过 `validatePathAccess()` 校验必须位于 `rootDir` 或 `otherRootDirs` 范围内。相对路径只会基于主工作区 `rootDir` 解析，不会搜索 `otherRootDirs`。
 
 ### 参数校验
 
@@ -189,4 +189,4 @@ data class Foo(
 | 图片 / PDF / 音频读取 | 不移植，二进制文件直接报错 | 本项目 `ToolCallResult` 目前只建模 text 内容 |
 | JIT 上下文注入 | 移除 | Gemini CLI 专属功能 |
 | 遥测日志 | 移除 | 本项目使用自己的日志系统 |
-| ignore 文件过滤 | 移除 | 本项目以 `rootDir` 沙箱作为安全边界 |
+| ignore 文件过滤 | 移除 | 本项目以 `rootDir` + `otherRootDirs` 沙箱作为安全边界 |

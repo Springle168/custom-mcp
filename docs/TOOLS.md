@@ -157,7 +157,7 @@ return {
 
 ### 文件操作类工具的通用考虑
 
-1. **路径安全**：所有文件操作必须调用 `validatePathAccess()` 校验路径在 `rootDir` 范围内。
+1. **路径安全**：所有文件操作必须调用 `validatePathAccess()` 校验路径在允许的工作区范围内；相对路径只基于 `rootDir`，`otherRootDirs` 必须用绝对路径访问。
 2. **并发安全**：涉及文件写入的操作应使用 `withFileLock()` 包裹。只读工具不需要加锁。
 3. **行尾符**：读取时统一转为 `\n` 处理，写入时用 `resolveLineEnding()` 恢复。
 4. **错误处理**：区分 `ENOENT`（文件不存在）和其他文件系统错误，给出不同的错误消息。
@@ -184,5 +184,5 @@ MCP 客户端可能并发发送多个 `tools/call` 请求。当前的并发策�
 |-|-|-|
 | 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read_file` 确认内容；regex 模式检查 JavaScript 正则 pattern |
 | 替换失败 `expected 1` 或 `matched_targets=N` | `target` 匹配了多处但未允许多匹配 | AI 需要提供更多上下文，或设置 `allow_multiple=true` |
-| 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确，确认文件在 `rootDir` 范围内 |
+| 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确；相对模式只匹配 `rootDir`，其它工作区需传绝对路径 / glob |
 | 编译报类型错误 | SDK 版本更新导致接口变化 | 检查 `ToolCallResult` 是否需要补充字段 |

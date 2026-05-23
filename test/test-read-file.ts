@@ -21,6 +21,7 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'read-many-files');
 
 const testConfig: Config = {
   rootDir: FIXTURES_DIR,
+  otherRootDirs: [],
   lineEnding: 'auto',
   port: 3100,
 };
@@ -353,6 +354,42 @@ async function testBinaryFileRejected() {
 
 }
 
+async function testOtherRootDirRequiresAbsolutePath() {
+  const otherRootDir = path.join(__dirname, 'fixtures', 'read-file-other-root');
+  const otherFilePath = path.join(otherRootDir, 'other-only.txt');
+  const config: Config = {
+    ...testConfig,
+    otherRootDirs: [otherRootDir],
+  };
+
+  await fs.mkdir(otherRootDir, { recursive: true });
+  await fs.writeFile(otherFilePath, 'content from other root\n', 'utf-8');
+
+  try {
+    const relativeResult = await readFileTool.handler(
+      { file_path: 'other-only.txt' },
+      config,
+    );
+    assert(relativeResult.isError === true, 'Relative path should not search otherRootDirs');
+    assertIncludes(
+      getResultText(relativeResult),
+      'file not found',
+      'Should resolve relative paths against the primary rootDir only',
+    );
+
+    const absoluteResult = await readFileTool.handler(
+      { file_path: otherFilePath },
+      config,
+    );
+    assert(absoluteResult.isError !== true, 'Absolute path in otherRootDirs should succeed');
+    const text = getResultText(absoluteResult);
+    assertIncludes(text, otherFilePath, 'Should display the absolute path');
+    assertIncludes(text, 'content from other root', 'Should read content from otherRootDirs');
+  } finally {
+    await fs.rm(otherRootDir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing read_file tool',
@@ -374,6 +411,7 @@ async function main(): Promise<void> {
       { name: 'Reject invalid line range', run: testInvalidRange },
       { name: 'Reject start_line beyond EOF', run: testStartLineBeyondEof },
       { name: 'Reject binary file', run: testBinaryFileRejected },
+      { name: 'Other root dirs require absolute paths', run: testOtherRootDirRequiresAbsolutePath },
     ],
   });
 }

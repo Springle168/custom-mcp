@@ -2,7 +2,11 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
-import { resolvePath, validatePathAccess } from '../utils/paths.js';
+import {
+  getAllowedRootDirs,
+  resolvePath,
+  validatePathAccess,
+} from '../utils/paths.js';
 import {
   isBinaryFile,
   MAX_FILE_SIZE_MB,
@@ -39,7 +43,8 @@ Set show_line_numbers to true only when line numbers are necessary; it prefixes 
     properties: {
       file_path: {
         type: 'string',
-        description: 'The path to the text file to read.',
+        description:
+          'The path to the text file to read. Relative paths resolve from the primary rootDir; paths in otherRootDirs must be absolute.',
       },
       start_line: {
         type: ['integer', 'string'],
@@ -225,11 +230,12 @@ async function handleReadFile(
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
+  const allowedRootDirs = getAllowedRootDirs(config);
   const resolvedPath = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolvedPath, config.rootDir);
+  const pathError = validatePathAccess(resolvedPath, allowedRootDirs);
   if (pathError) {
     return errorResult(
-      `${pathError} Provide a file path inside the configured workspace root.`,
+      `${pathError} Provide a file path inside the configured workspace roots.`,
     );
   }
 

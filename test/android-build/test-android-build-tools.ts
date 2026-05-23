@@ -16,6 +16,7 @@ const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
 const baseConfig: Config = {
   rootDir: PROJECT_ROOT,
+  otherRootDirs: [],
   lineEnding: 'auto',
   port: 3100,
 };

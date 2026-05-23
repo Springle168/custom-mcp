@@ -8,7 +8,12 @@ import {
 } from '../engine/text-utils.js';
 import { isBinaryFile } from '../utils/file-read.js';
 import { withFileLock } from '../utils/file-lock.js';
-import { resolvePath, validatePathAccess } from '../utils/paths.js';
+import {
+  findContainingRoot,
+  getAllowedRootDirs,
+  resolvePath,
+  validatePathAccess,
+} from '../utils/paths.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 
 // ================
@@ -20,7 +25,7 @@ const WRITE_FILE_TOOL_DEFINITION = {
   description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
 
 Use this tool for new files or full-file rewrites. Use replace_text or similar tools for targeted edits to existing files.
-The file path must stay inside the configured workspace root.
+The file path must stay inside the configured workspace roots. Relative paths resolve from the primary rootDir; paths in otherRootDirs must be absolute.
 The content parameter must contain the full file contents; possible omission placeholders like "..." or "rest of code" are written but reported as warnings.
 On success, returns a message with the written path and the file's total line count.`,
   inputSchema: {
@@ -29,7 +34,7 @@ On success, returns a message with the written path and the file's total line co
       file_path: {
         type: 'string',
         description:
-          'Path to the file to write. Relative paths resolve from the configured workspace root.',
+          'Path to the file to write. Relative paths resolve from the primary rootDir; paths in otherRootDirs must be absolute.',
       },
       content: {
         type: 'string',
@@ -188,7 +193,7 @@ async function validateSafeWriteTarget(
     const existingAncestor = await findExistingAncestor(path.dirname(resolved));
     const realAncestor = await fs.realpath(existingAncestor);
     if (validatePathAccess(realAncestor, realRoot)) {
-      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
+      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace roots.`;
     }
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
@@ -224,18 +229,25 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
+  const allowedRootDirs = getAllowedRootDirs(config);
   const resolved = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolved, config.rootDir);
+  const pathError = validatePathAccess(resolved, allowedRootDirs);
   if (pathError) {
     return errorResult(
-      `${pathError} Provide a file path inside the configured workspace root.`,
+      `${pathError} Provide a file path inside the configured workspace roots.`,
+    );
+  }
+  const containingRoot = findContainingRoot(resolved, allowedRootDirs);
+  if (!containingRoot) {
+    return errorResult(
+      `Path ${filePath} is outside the allowed workspace. Provide a file path inside the configured workspace roots.`,
     );
   }
 
   return withFileLock(resolved, async () => {
     const safetyError = await validateSafeWriteTarget(
       resolved,
-      config.rootDir,
+      containingRoot,
       filePath,
     );
     if (safetyError) return errorResult(safetyError);
@@ -280,7 +292,7 @@ async function handleWriteFile(
       await fs.mkdir(path.dirname(resolved), { recursive: true });
       const postMkdirSafetyError = await validateSafeWriteTarget(
         resolved,
-        config.rootDir,
+        containingRoot,
         filePath,
       );
       if (postMkdirSafetyError) return errorResult(postMkdirSafetyError);

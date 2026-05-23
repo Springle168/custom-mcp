@@ -20,6 +20,7 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'write-file');
 
 const testConfig: Config = {
   rootDir: FIXTURES_DIR,
+  otherRootDirs: [],
   lineEnding: 'auto',
   port: 3100,
 };
@@ -32,6 +33,10 @@ async function prepareFixtures(): Promise<void> {
 async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
   await fs.rm(path.join(__dirname, 'fixtures', 'write-file-outside'), {
+    recursive: true,
+    force: true,
+  });
+  await fs.rm(path.join(__dirname, 'fixtures', 'write-file-other-root'), {
     recursive: true,
     force: true,
   });
@@ -194,6 +199,30 @@ async function testRejectSymlinkEscapingWorkspace() {
   }
 }
 
+async function testWriteAbsolutePathInOtherRootDir() {
+  const otherRootDir = path.join(__dirname, 'fixtures', 'write-file-other-root');
+  const targetPath = path.join(otherRootDir, 'created.txt');
+  const config: Config = {
+    ...testConfig,
+    otherRootDirs: [otherRootDir],
+  };
+
+  await fs.mkdir(otherRootDir, { recursive: true });
+  const result = await writeFileTool.handler(
+    { file_path: targetPath, content: 'hello from other root\n' },
+    config,
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  assertIncludes(
+    getResultText(result),
+    targetPath,
+    'Should report the absolute path in otherRootDirs',
+  );
+  const raw = await fs.readFile(targetPath, 'utf-8');
+  assertEqual(raw, 'hello from other root\n', 'Should write inside otherRootDirs');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing write_file tool',
@@ -207,6 +236,7 @@ async function main(): Promise<void> {
       { name: 'Reject binary target', run: testRejectBinaryTarget },
       { name: 'Warn but write placeholder content', run: testWarnButWritePlaceholderContent },
       { name: 'Reject symlink escaping workspace', run: testRejectSymlinkEscapingWorkspace },
+      { name: 'Write absolute path in otherRootDirs', run: testWriteAbsolutePathInOtherRootDir },
     ],
   });
 }

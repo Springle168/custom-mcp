@@ -17,6 +17,7 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'replace-text');
 
 const testConfig: Config = {
   rootDir: FIXTURES_DIR,
+  otherRootDirs: [],
   lineEnding: 'auto',
   port: 3100,
 };
@@ -38,6 +39,10 @@ async function prepareFixtures(): Promise<void> {
 
 async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
+  await fs.rm(path.join(__dirname, 'fixtures', 'replace-text-other-root'), {
+    recursive: true,
+    force: true,
+  });
 }
 
 function parsePayload(result: { content?: Array<{ text?: string }> }): ReplaceJsonPayload {
@@ -143,6 +148,34 @@ async function testRejectsOldFieldAliases(): Promise<void> {
   assertEqual(raw, 'old\n', 'Should not modify the file');
 }
 
+async function testReplaceAbsolutePathInOtherRootDir(): Promise<void> {
+  const otherRootDir = path.join(__dirname, 'fixtures', 'replace-text-other-root');
+  const targetPath = path.join(otherRootDir, 'other.ts');
+  const config: Config = {
+    ...testConfig,
+    otherRootDirs: [otherRootDir],
+  };
+
+  await fs.mkdir(otherRootDir, { recursive: true });
+  await fs.writeFile(targetPath, 'export const value = 1;\n', 'utf-8');
+
+  const result = await replaceTool.handler(
+    {
+      file_path: targetPath,
+      target: 'value = 1',
+      replacement: 'value = 2',
+    },
+    config,
+  );
+
+  assert(result.isError !== true, 'Should succeed');
+  const payload = parsePayload(result);
+  assert(payload.success, 'Payload should report success');
+  assertEqual(payload.replacement_count, 1, 'Should replace in otherRootDirs');
+  const raw = await fs.readFile(targetPath, 'utf-8');
+  assertEqual(raw, 'export const value = 2;\n', 'Should update the other-root file');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing replace_text tool',
@@ -165,6 +198,10 @@ async function main(): Promise<void> {
       {
         name: 'Rejects old field aliases',
         run: testRejectsOldFieldAliases,
+      },
+      {
+        name: 'Replaces absolute path in otherRootDirs',
+        run: testReplaceAbsolutePathInOtherRootDir,
       },
     ],
   });

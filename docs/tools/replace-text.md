@@ -147,8 +147,8 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ## 安全与写入规则
 
-- 路径先经过 `resolvePath()` 和 `validatePathAccess()`，必须位于 `rootDir` 内。
-- 创建缺失父目录前后都会校验现有父目录的 realpath，避免路径穿越或符号链接绕过 `rootDir`。
+- 路径先经过 `resolvePath()` 和 `validatePathAccess()`，必须位于 `rootDir` 或 `otherRootDirs` 内；相对路径只基于主工作区 `rootDir`。
+- 创建缺失父目录前后都会校验现有父目录的 realpath，避免路径穿越或符号链接绕过命中的允许工作区。
 - 目标路径若已存在且是符号链接会被拒绝；目录路径也会被拒绝。
 - 写入流程使用 `withFileLock()`，同一文件并发替换会串行化，不同文件互不阻塞。
 - 已有文件超过 `20MB`、被判定为二进制，或新建路径看起来是二进制文件时会被拒绝。

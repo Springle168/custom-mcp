@@ -15,7 +15,12 @@ import {
   detectOmissionPlaceholders,
 } from '../engine/text-utils.js';
 import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
-import { resolvePath, validatePathAccess } from '../utils/paths.js';
+import {
+  findContainingRoot,
+  getAllowedRootDirs,
+  resolvePath,
+  validatePathAccess,
+} from '../utils/paths.js';
 import { withFileLock } from '../utils/file-lock.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 
@@ -77,7 +82,8 @@ Best practices:
 - Always use read_file to examine file content before making replacements.
 - Prefer multiple small, atomic replacements over one large replacement.
 - If the target file requires extensive refactoring, it is recommended to first perform a full overwrite of the file using \`write_file\` or a similar file-writing tool, and then perform partial replacements based on needs and subsequent plan adjustments.
-- Verify file content after changes.`,
+- Verify file content after changes.
+- Relative file_path values resolve from the primary rootDir; paths in otherRootDirs must be absolute.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -252,7 +258,7 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
       ok: false,
       note:
         `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
-        'replace_text accepts only file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
+        'replace_text accepts only file_path, target, replacement, allow_multiple, match_mode, and regex_flags. Use target/replacement instead of old field aliases.',
     };
   }
 
@@ -500,7 +506,7 @@ async function validateSafeWriteTarget(
     const existingAncestor = await findExistingAncestor(path.dirname(resolved));
     const realAncestor = await fs.realpath(existingAncestor);
     if (validatePathAccess(realAncestor, realRoot)) {
-      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
+      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace roots.`;
     }
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
@@ -644,14 +650,25 @@ export async function handleReplace(
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
+  const allowedRootDirs = getAllowedRootDirs(config);
   const resolved = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolved, config.rootDir);
+  const pathError = validatePathAccess(resolved, allowedRootDirs);
   if (pathError) {
     return errorResult(
       payloadFromArgs(
         args,
         false,
-        `${pathError} Provide a file path inside the configured workspace root.`,
+        `${pathError} Provide a file path inside the configured workspace roots.`,
+      ),
+    );
+  }
+  const containingRoot = findContainingRoot(resolved, allowedRootDirs);
+  if (!containingRoot) {
+    return errorResult(
+      payloadFromArgs(
+        args,
+        false,
+        `Path ${filePath} is outside the allowed workspace. Provide a file path inside the configured workspace roots.`,
       ),
     );
   }
@@ -659,7 +676,7 @@ export async function handleReplace(
   return withFileLock(resolved, async () => {
     const safetyError = await validateSafeWriteTarget(
       resolved,
-      config.rootDir,
+      containingRoot,
       filePath,
     );
     if (safetyError) {
@@ -699,7 +716,7 @@ export async function handleReplace(
         }
         const postMkdirSafetyError = await validateSafeWriteTarget(
           resolved,
-          config.rootDir,
+          containingRoot,
           filePath,
         );
         if (postMkdirSafetyError) {

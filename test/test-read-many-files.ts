@@ -1,5 +1,6 @@
 // test/test-read-many-files.ts
 
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
@@ -21,6 +22,7 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'read-many-files');
 // Test config
 const testConfig: Config = {
   rootDir: FIXTURES_DIR,
+  otherRootDirs: [],
   lineEnding: 'auto',
   port: 3100,
 };
@@ -204,6 +206,48 @@ async function testPathOutsideRoot() {
   assertIncludes(text, 'skipped', 'Should report file skipped');
   assertIncludes(text, 'outside workspace', 'Should explain security reason');
   
+}
+
+async function testAbsoluteGlobInOtherRootDir() {
+  const otherRootDir = path.join(__dirname, 'fixtures', 'read-many-files-other-root');
+  const srcDir = path.join(otherRootDir, 'src');
+  const otherFilePath = path.join(srcDir, 'Other.kt');
+  const config: Config = {
+    ...testConfig,
+    otherRootDirs: [otherRootDir],
+  };
+
+  await fs.mkdir(srcDir, { recursive: true });
+  await fs.writeFile(
+    otherFilePath,
+    'package other\n\nclass OtherFromOtherRoot\n',
+    'utf-8',
+  );
+
+  try {
+    const relativeResult = await readManyFilesTool.handler(
+      { include: ['src/*.kt'] },
+      config,
+    );
+    assert(relativeResult.isError !== true, 'Relative glob should still succeed in rootDir');
+    assertNotIncludes(
+      getResultText(relativeResult),
+      'OtherFromOtherRoot',
+      'Relative glob should not scan otherRootDirs',
+    );
+
+    const absolutePattern = path.join(srcDir, '*.kt').replace(/\\/g, '/');
+    const absoluteResult = await readManyFilesTool.handler(
+      { include: [absolutePattern] },
+      config,
+    );
+    assert(absoluteResult.isError !== true, 'Absolute glob in otherRootDirs should succeed');
+    const text = getResultText(absoluteResult);
+    assertIncludes(text, otherFilePath, 'Should display absolute path for absolute glob');
+    assertIncludes(text, 'OtherFromOtherRoot', 'Should read files matched in otherRootDirs');
+  } finally {
+    await fs.rm(otherRootDir, { recursive: true, force: true });
+  }
 }
 
 async function testEmptyInclude() {
@@ -415,6 +459,7 @@ async function main(): Promise<void> {
       { name: 'File not found', run: testFileNotFound },
       { name: 'No matches for glob', run: testNoMatches },
       { name: 'Path outside root', run: testPathOutsideRoot },
+      { name: 'Absolute glob in otherRootDirs', run: testAbsoluteGlobInOtherRootDir },
       { name: 'Empty include array', run: testEmptyInclude },
       { name: 'Invalid include type', run: testInvalidIncludeType },
       { name: 'Custom exclude patterns', run: testCustomExclude },

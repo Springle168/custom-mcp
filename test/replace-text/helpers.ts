@@ -42,6 +42,7 @@ export function createTestConfig(
 ): Config {
   return {
     rootDir: FIXTURES_DIR,
+    otherRootDirs: [],
     lineEnding,
     port: 3100,
   };

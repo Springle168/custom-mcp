@@ -204,6 +204,9 @@ async function main() {
     logger.info('MCP Replace Server started');
     logger.info(`  Endpoint: http://localhost:${config.port}/mcp`);
     logger.info(`  Root dir: ${config.rootDir}`);
+    if (config.otherRootDirs.length > 0) {
+      logger.info(`  Other root dirs: ${config.otherRootDirs.join(', ')}`);
+    }
     logger.info(`  Line ending: ${config.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
   });

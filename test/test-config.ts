@@ -8,17 +8,25 @@ import { assert, assertEqual, runTestSuite } from './test-utils.js';
 function testBlankMcpEnvFallsBackToFileConfig() {
   const fileConfig: ConfigSource = {
     rootDir: 'E:/Workspace/Project',
+    otherRootDirs: ['E:/Workspace/Shared'],
     lineEnding: 'crlf',
     port: 3200,
   };
 
   const config = buildConfig(fileConfig, {
     MCP_ROOT_DIR: '   ',
+    MCP_OTHER_ROOT_DIRS: '   ',
     MCP_LINE_ENDING: '   ',
     MCP_PORT: '   ',
   });
 
   assertEqual(config.rootDir, 'E:/Workspace/Project', 'Should keep file rootDir');
+  assertEqual(config.otherRootDirs.length, 1, 'Should keep file otherRootDirs');
+  assertEqual(
+    config.otherRootDirs[0],
+    'E:/Workspace/Shared',
+    'Should keep file otherRootDirs entry',
+  );
   assertEqual(config.lineEnding, 'crlf', 'Should keep file lineEnding');
   assertEqual(config.port, 3200, 'Should keep file port');
 }
@@ -76,6 +84,7 @@ function testBlankAndroidEnvFallsBackToFileConfig() {
 function testNonBlankEnvStillOverridesFileConfig() {
   const fileConfig: ConfigSource = {
     rootDir: 'E:/Workspace/Project',
+    otherRootDirs: ['E:/Workspace/FileOther'],
     lineEnding: 'lf',
     port: 3100,
     android: {
@@ -89,6 +98,10 @@ function testNonBlankEnvStillOverridesFileConfig() {
 
   const config = buildConfig(fileConfig, {
     MCP_ROOT_DIR: 'E:/Workspace/Override',
+    MCP_OTHER_ROOT_DIRS: [
+      'E:/Workspace/EnvOtherA',
+      'E:/Workspace/EnvOtherB',
+    ].join(path.delimiter),
     MCP_LINE_ENDING: 'crlf',
     MCP_PORT: '3300',
     ANDROID_WORKSPACE_ROOT: 'E:/Android/Override',
@@ -96,6 +109,11 @@ function testNonBlankEnvStillOverridesFileConfig() {
   });
 
   assertEqual(config.rootDir, 'E:/Workspace/Override', 'Should override rootDir');
+  assertEqual(
+    config.otherRootDirs.join('|'),
+    'E:/Workspace/EnvOtherA|E:/Workspace/EnvOtherB',
+    'Should override otherRootDirs',
+  );
   assertEqual(config.lineEnding, 'crlf', 'Should override lineEnding');
   assertEqual(config.port, 3300, 'Should override port');
   assertEqual(
@@ -110,6 +128,34 @@ function testNonBlankEnvStillOverridesFileConfig() {
   );
 }
 
+function testOtherRootDirsAreOptionalAndDeduped() {
+  const defaultConfig = buildConfig({
+    rootDir: 'E:/Workspace/Main',
+  }, {});
+
+  assertEqual(
+    defaultConfig.otherRootDirs.length,
+    0,
+    'Should default otherRootDirs to an empty array',
+  );
+
+  const config = buildConfig({
+    rootDir: 'E:/Workspace/Main',
+    otherRootDirs: [
+      'E:/Workspace/OtherA',
+      ' E:/Workspace/OtherB ',
+      'E:/Workspace/Main',
+      'E:/Workspace/OtherA',
+    ],
+  }, {});
+
+  assertEqual(
+    config.otherRootDirs.join('|'),
+    'E:/Workspace/OtherA|E:/Workspace/OtherB',
+    'Should trim and dedupe otherRootDirs while excluding rootDir',
+  );
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing config loading',
@@ -117,6 +163,7 @@ async function main(): Promise<void> {
       { name: 'blank MCP env falls back to file config', run: testBlankMcpEnvFallsBackToFileConfig },
       { name: 'blank Android env falls back to file config', run: testBlankAndroidEnvFallsBackToFileConfig },
       { name: 'non-blank env still overrides file config', run: testNonBlankEnvStillOverridesFileConfig },
+      { name: 'otherRootDirs are optional and deduped', run: testOtherRootDirsAreOptionalAndDeduped },
     ],
   });
 }

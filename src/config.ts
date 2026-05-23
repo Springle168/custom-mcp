@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface AndroidConfig {
@@ -12,6 +12,7 @@ export interface AndroidConfig {
 
 export interface Config {
   rootDir: string;
+  otherRootDirs: string[];
   lineEnding: 'auto' | 'lf' | 'crlf';
   port: number;
   android?: AndroidConfig;
@@ -27,6 +28,7 @@ export interface AndroidConfigSource {
 
 export interface ConfigSource {
   rootDir?: unknown;
+  otherRootDirs?: unknown;
   lineEnding?: unknown;
   port?: unknown;
   android?: AndroidConfigSource;
@@ -50,6 +52,56 @@ function readOptionalString(value: unknown): string | undefined {
 
 function readRequiredString(value: unknown): string {
   return readOptionalString(value) || '';
+}
+
+function normalizeRootForComparison(rootDir: string): string {
+  const normalized = resolve(rootDir);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function readStringList(value: unknown, name: string): string[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(delimiter)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`${name} must be an array of non-empty strings.`);
+  }
+
+  return value.map((item, index) => {
+    const parsed = readOptionalString(item);
+    if (!parsed) {
+      throw new Error(`${name}[${index}] must be a non-empty string.`);
+    }
+    return parsed;
+  });
+}
+
+function dedupeOtherRootDirs(rootDir: string, otherRootDirs: string[]): string[] {
+  const seen = new Set<string>();
+  if (rootDir) {
+    seen.add(normalizeRootForComparison(rootDir));
+  }
+
+  const deduped: string[] = [];
+  for (const otherRootDir of otherRootDirs) {
+    const normalized = normalizeRootForComparison(otherRootDir);
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    deduped.push(otherRootDir);
+  }
+
+  return deduped;
 }
 
 function readLineEnding(value: unknown): Config['lineEnding'] {
@@ -174,9 +226,18 @@ export function buildConfig(
   fileConfig: ConfigSource = {},
   env: NodeJS.ProcessEnv = process.env,
 ): Config {
+  const rootDir = readRequiredString(
+    getConfiguredValue(env, 'MCP_ROOT_DIR', fileConfig.rootDir),
+  );
+
   return {
-    rootDir: readRequiredString(
-      getConfiguredValue(env, 'MCP_ROOT_DIR', fileConfig.rootDir),
+    rootDir,
+    otherRootDirs: dedupeOtherRootDirs(
+      rootDir,
+      readStringList(
+        getConfiguredValue(env, 'MCP_OTHER_ROOT_DIRS', fileConfig.otherRootDirs),
+        'otherRootDirs',
+      ),
     ),
     lineEnding: readLineEnding(
       getConfiguredValue(env, 'MCP_LINE_ENDING', fileConfig.lineEnding),

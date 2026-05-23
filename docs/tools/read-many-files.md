@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `include` | `string[]` | ✅ | — | 绝对路径或 glob 模式数组 |
+| `include` | `string[]` | ✅ | — | 文件路径或 glob 模式数组。相对路径 / glob 只基于 `rootDir`；访问 `otherRootDirs` 必须使用绝对路径 / glob |
 | `exclude` | `string[]` | ❌ | `[]` | 额外排除模式，追加到默认排除之后 |
 | `useDefaultExcludes` | `boolean` | ❌ | `true` | 是否启用默认排除规则 |
 | `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数、总行数和是否会截断，不返回文件内容 |
@@ -45,20 +45,26 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 ```
 遍历 include 数组
-├── 绝对路径（/ 开头 或 C:\ 开头）
-│   → validatePathAccess 安全校验
-│   → fs.stat 检查存在性
-│   → 直接加入待读文件集合
-│   → 不受 exclude 模式影响
+├── 绝对路径（/ 开头 或 C:\ 开头，且不是兼容旧行为的 slash-leading glob）
+│   ├── 不含 glob 元字符
+│   │   → validatePathAccess 安全校验
+│   │   → fs.stat 检查存在性
+│   │   → 直接加入待读文件集合
+│   │   → 不受 exclude 模式影响
+│   └── 含 glob 元字符
+│       → 先校验非 glob 前缀位于 rootDir 或 otherRootDirs
+│       → glob 展开后逐个 validatePathAccess
 │
 └── 其他（相对路径 / glob 模式）
     ├── 解析为完整路径后检查是否为已存在的文件
     │   ├── 是 → escape() 转义 glob 元字符，当字面路径处理
     │   └── 否 → 当 glob 模式处理
-    └── 统一传给 glob(patterns, { cwd: rootDir, ignore: effectiveExcludes })→ 结果逐个 validatePathAccess
+    └── 统一传给 glob(patterns, { cwd: rootDir, ignore: effectiveExcludes }) → 结果逐个 validatePathAccess
 ```
 
-绝对路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。
+相对路径和相对 glob 永远只基于主工作区 `rootDir`。`otherRootDirs` 只是额外允许访问边界，不参与相对路径搜索；访问其它工作区必须传绝对路径或绝对 glob。
+
+绝对文件路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。绝对 glob 会应用 exclude 过滤，并在展开后再次校验每个结果仍位于允许工作区内。
 
 ### 二进制文件检测
 
@@ -96,7 +102,7 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 ### 输出格式
 
-返回中的文件显示路径会跟随 `include` 条目的来源：直接传入绝对文件路径时显示绝对路径；通过相对路径或 glob 命中的文件显示相对 `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
+返回中的文件显示路径会跟随 `include` 条目的来源：直接传入绝对文件路径或绝对 glob 命中时显示绝对路径；通过相对路径或相对 glob 命中的文件显示相对 `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
 
 ```
 Read 3 file(s), skipped 1.
@@ -183,8 +189,8 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 
 | 原版功能 | 处理方式 | 原因 |
 |-|-|-|
-| 多工作区遍历 | 移除，使用单一 `rootDir` | 本项目只有一个工作区 |
-| gitignore / geminiignore 过滤 | 移除 | `rootDir` 沙箱 + exclude 参数已足够 |
+| 自动多工作区遍历 | 移除，相对 glob 只搜索主 `rootDir` | `otherRootDirs` 只作为额外安全边界，必须通过绝对路径 / glob 显式访问 |
+| gitignore / geminiignore 过滤 | 移除 | `rootDir` / `otherRootDirs` 沙箱 + exclude 参数已足够 |
 | 图片 / PDF / 音频读取（base64） | 移除，统一跳过非文本文件 | Android Studio 侧支持不确定，使用场景极少 |
 | JIT 上下文注入 | 移除 | Gemini CLI 专属功能 |
 | 遥测日志 | 移除 | 本项目使用自己的日志系统 |

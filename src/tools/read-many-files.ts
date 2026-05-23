@@ -5,7 +5,10 @@ import * as path from 'node:path';
 import { glob, escape } from 'glob';
 import type { Config } from '../config.js';
 import type { MCPTool } from './types.js';
-import { validatePathAccess } from '../utils/paths.js';
+import {
+  getAllowedRootDirs,
+  validatePathAccess,
+} from '../utils/paths.js';
 import {
   BINARY_EXTENSIONS,
   isBinaryFile,
@@ -65,6 +68,7 @@ Use this tool when you need content from several files at once, such as:
 - Reading specific files by absolute path: include ["/absolute/path/Foo.kt", "/absolute/path/Bar.kt"]
 - Mixing paths and patterns: include ["/absolute/path/Config.kt", "src/**/*.kt"]
 
+Relative paths and relative glob patterns resolve only from the primary rootDir. Files in otherRootDirs must be requested with absolute paths or absolute glob patterns.
 Text files only. Binary files (images, archives, compiled output, etc.) are automatically skipped.
 Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file or a similar file-reading tool on that specific file for full content.
 Set shallow_read to true to list matched files with per-file line counts, total line count, and truncation status without returning file contents.
@@ -79,7 +83,7 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
         items: { type: 'string', minLength: 1 },
         minItems: 1,
         description:
-          'File paths or glob patterns to read. Absolute paths and relative globs (resolved from workspace root) can be mixed. Examples: ["src/**/*.kt"], ["/abs/path/Foo.kt", "docs/*.md"]',
+          'File paths or glob patterns to read. Relative paths/globs resolve only from the primary rootDir; files in otherRootDirs require absolute paths/globs. Examples: ["src/**/*.kt"], ["/abs/path/Foo.kt", "docs/*.md"]',
       },
       exclude: {
         type: 'array',
@@ -123,12 +127,48 @@ function errorResult(text: string) {
 // Path Helpers
 // ================
 
+function hasGlobChars(p: string): boolean {
+  return /[*?[\]{}]/.test(p);
+}
+
 function isAbsolutePath(p: string): boolean {
-  // Glob patterns should not be treated as absolute paths
-  const hasGlobChars = /[*?[\]{}]/.test(p);
-  if (hasGlobChars) return false;
-  
-  return p.startsWith('/') || /^[a-zA-Z]:/.test(p);
+  if (
+    process.platform === 'win32' &&
+    hasGlobChars(p) &&
+    p.startsWith('/') &&
+    !p.startsWith('//') &&
+    !/^[a-zA-Z]:/.test(p)
+  ) {
+    return false;
+  }
+
+  return path.isAbsolute(p) || p.startsWith('/') || /^[a-zA-Z]:/.test(p);
+}
+
+function getStaticGlobBase(pattern: string): string {
+  const normalized = pattern.replace(/\\/g, '/');
+  const firstGlobIndex = normalized.search(/[*?[{]/);
+
+  if (firstGlobIndex === -1) {
+    return normalized;
+  }
+
+  const prefix = normalized.slice(0, firstGlobIndex);
+  const lastSeparatorIndex = prefix.lastIndexOf('/');
+
+  if (lastSeparatorIndex === -1) {
+    return '.';
+  }
+
+  const base = prefix.slice(0, lastSeparatorIndex);
+  if (base === '') {
+    return '/';
+  }
+  if (/^[a-zA-Z]:$/.test(base)) {
+    return `${base}/`;
+  }
+
+  return base;
 }
 
 // ================
@@ -191,6 +231,7 @@ async function handleReadManyFiles(
   const shallowRead = (args.shallow_read as boolean | undefined) ?? false;
   const showLineNumbers =
     (args.show_line_numbers as boolean | undefined) ?? false;
+  const allowedRootDirs = getAllowedRootDirs(config);
 
   // 2. Build effective exclude patterns
   const effectiveExcludes = useDefaultExcludes
@@ -201,13 +242,30 @@ async function handleReadManyFiles(
   //    For relative items that resolve to an existing file, escape glob
   //    metacharacters so filenames containing [ ] { } etc. are matched literally.
   const absolutePaths: string[] = [];
+  const absoluteGlobPatterns: string[] = [];
   const globPatterns: string[] = [];
 
   for (const item of include) {
     if (isAbsolutePath(item)) {
-      absolutePaths.push(item);
+      if (!hasGlobChars(item)) {
+        absolutePaths.push(item);
+        continue;
+      }
+
+      try {
+        const stat = await fs.stat(path.resolve(item));
+        if (stat.isFile()) {
+          absolutePaths.push(item);
+          continue;
+        }
+      } catch {
+        // If an absolute item with glob metacharacters is not a literal file,
+        // treat it as a glob pattern and validate its static base before use.
+      }
+
+      absoluteGlobPatterns.push(item.replace(/\\/g, '/'));
     } else {
-      const normalized = item.replace(/\\/g, '/');
+      const normalized = item.replace(/\\/g, '/').replace(/^\/+/, '');
       const fullPath = path.resolve(config.rootDir, normalized);
       let isLiteralFile = false;
       try {
@@ -227,7 +285,7 @@ async function handleReadManyFiles(
 
   for (const absPath of absolutePaths) {
     const resolved = path.resolve(absPath);
-    const pathError = validatePathAccess(resolved, config.rootDir);
+    const pathError = validatePathAccess(resolved, allowedRootDirs);
     if (pathError) {
       skipped.push({ path: absPath, reason: 'outside workspace' });
       continue;
@@ -249,7 +307,46 @@ async function handleReadManyFiles(
     }
   }
 
-  // 5. Expand glob patterns relative to rootDir
+  // 5. Expand absolute glob patterns after checking their non-glob base.
+  if (absoluteGlobPatterns.length > 0) {
+    const safeAbsoluteGlobPatterns: string[] = [];
+
+    for (const pattern of absoluteGlobPatterns) {
+      const staticBase = getStaticGlobBase(pattern);
+      const resolvedBase = path.resolve(staticBase);
+      const pathError = validatePathAccess(resolvedBase, allowedRootDirs);
+      if (pathError) {
+        skipped.push({ path: pattern, reason: 'outside workspace' });
+        continue;
+      }
+      safeAbsoluteGlobPatterns.push(pattern);
+    }
+
+    if (safeAbsoluteGlobPatterns.length > 0) {
+      try {
+        const entries = await glob(safeAbsoluteGlobPatterns, {
+          ignore: effectiveExcludes,
+          nodir: true,
+          dot: true,
+          absolute: true,
+        });
+        for (const entry of entries) {
+          const resolved = path.resolve(entry);
+          if (!validatePathAccess(resolved, allowedRootDirs)) {
+            fileSet.add(resolved);
+            absolutePathSet.add(resolved);
+          }
+        }
+      } catch (err: unknown) {
+        return errorResult(
+          `Glob pattern error: ${err instanceof Error ? err.message : String(err)}. ` +
+            'Check that your include patterns are valid.',
+        );
+      }
+    }
+  }
+
+  // 6. Expand relative glob patterns relative to the primary rootDir
   if (globPatterns.length > 0) {
     try {
       const entries = await glob(globPatterns, {
@@ -273,7 +370,7 @@ async function handleReadManyFiles(
     }
   }
 
-  // 6. Early exit when nothing was found at all
+  // 7. Early exit when nothing was found at all
   if (fileSet.size === 0 && skipped.length === 0) {
     return errorResult(
       'No files matched the given include patterns. ' +
@@ -281,7 +378,7 @@ async function handleReadManyFiles(
     );
   }
 
-  // 7. Sort and enforce file count limit
+  // 8. Sort and enforce file count limit
   const sortedFiles = Array.from(fileSet).sort();
   let filesLimited = false;
   if (sortedFiles.length > MAX_FILES) {
@@ -289,7 +386,7 @@ async function handleReadManyFiles(
     sortedFiles.length = MAX_FILES;
   }
 
-  // 8. Read files in parallel (binary check → text read)
+  // 9. Read files in parallel (binary check → text read)
   const readResults = await Promise.allSettled(
     sortedFiles.map(async (filePath) => {
       if (await isBinaryFile(filePath)) {
@@ -316,7 +413,7 @@ async function handleReadManyFiles(
     }),
   );
 
-  // 9. Assemble file content blocks
+  // 10. Assemble file content blocks
   const contentParts: string[] = [];
   const processedFiles: Array<{
     filePath: string;
@@ -364,7 +461,7 @@ async function handleReadManyFiles(
     });
   }
 
-  // 10. Build summary header
+  // 11. Build summary header
   const summaryParts: string[] = [];
 
   summaryParts.push(
