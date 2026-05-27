@@ -270,6 +270,8 @@ async function relativeLiteralPassesExcludes(
     nodir: true,
     dot: true,
     absolute: true,
+    nobrace: true,
+    noext: true,
   });
   const expectedPath = fileKey(safePath.resolvedPath);
 

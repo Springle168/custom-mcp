@@ -73,7 +73,7 @@ interface StaticGlobBase {
 const DRIVE_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 const DRIVE_RELATIVE_RE = /^[a-zA-Z]:(?![\\/])/;
 const GLOB_MAGIC_RE = /[*?\[\]{}]|[!@+]\(/;
-const MAX_SEGMENT_EXPANSIONS = 64;
+const MAX_SEGMENT_TRAVERSAL_CHECKS = 1024;
 
 export function hasGlobMagic(input: string): boolean {
   return GLOB_MAGIC_RE.test(input);
@@ -482,61 +482,74 @@ function containsParentTraversal(globPart: string): boolean {
 }
 
 function segmentCanExpandToParentTraversal(segment: string): boolean {
-  if (segment === '..') return true;
-
-  const expansions = expandSegmentAlternatives(segment, MAX_SEGMENT_EXPANSIONS);
-  return expansions.some((expanded) => expanded === '..');
+  return segmentCanExpandToParentTraversalWithinBudget(segment, {
+    remaining: MAX_SEGMENT_TRAVERSAL_CHECKS,
+  });
 }
 
-function expandSegmentAlternatives(segment: string, limit: number): string[] {
+function segmentCanExpandToParentTraversalWithinBudget(
+  segment: string,
+  budget: { remaining: number },
+): boolean {
+  budget.remaining--;
+  if (budget.remaining < 0) {
+    // Fail closed: overly complex brace/extglob segments are not allowed to reach glob().
+    return true;
+  }
+
+  if (segment === '..') return true;
+
   const brace = findFirstBraceGroup(segment);
   if (brace) {
-    return expandGroupAlternatives(
+    return groupAlternativesCanExpandToParentTraversal(
       segment,
       brace.start,
       brace.end,
       splitTopLevel(brace.content, ','),
-      limit,
+      budget,
     );
   }
 
   const extglob = findFirstExtglobGroup(segment);
   if (extglob && extglob.operator !== '!') {
-    return expandGroupAlternatives(
+    const alternatives = splitTopLevel(extglob.content, '|');
+    if ((extglob.operator === '*' || extglob.operator === '?') && alternatives.every((alternative) => alternative !== '')) {
+      alternatives.push('');
+    }
+    return groupAlternativesCanExpandToParentTraversal(
       segment,
       extglob.start,
       extglob.end,
-      splitTopLevel(extglob.content, '|'),
-      limit,
+      alternatives,
+      budget,
     );
   }
 
-  return [segment];
+  return false;
 }
 
-function expandGroupAlternatives(
+function groupAlternativesCanExpandToParentTraversal(
   segment: string,
   start: number,
   end: number,
   alternatives: string[],
-  limit: number,
-): string[] {
+  budget: { remaining: number },
+): boolean {
   const prefix = segment.slice(0, start);
   const suffix = segment.slice(end + 1);
-  const expanded: string[] = [];
 
   for (const alternative of alternatives) {
-    const candidates = expandSegmentAlternatives(
-      `${prefix}${alternative}${suffix}`,
-      limit,
-    );
-    for (const candidate of candidates) {
-      expanded.push(candidate);
-      if (expanded.length >= limit) return expanded;
+    if (
+      segmentCanExpandToParentTraversalWithinBudget(
+        `${prefix}${alternative}${suffix}`,
+        budget,
+      )
+    ) {
+      return true;
     }
   }
 
-  return expanded;
+  return false;
 }
 
 function findFirstBraceGroup(
