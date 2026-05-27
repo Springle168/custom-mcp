@@ -46,6 +46,7 @@ async function prepareFixtures(): Promise<void> {
   await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'nested', 'Bar.ts'), 'export const bar = 2;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file[test].ts'), 'export const bracket = true;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file{brace}.ts'), 'export const brace = true;\n', 'utf-8');
+  await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file{a,b}.ts'), 'export const braceComma = true;\n', 'utf-8');
   await fs.writeFile(path.join(OUTSIDE_DIR, 'outside.ts'), 'export const outside = true;\n', 'utf-8');
 }
 
@@ -179,6 +180,16 @@ async function testBraceExpandedParentTraversalFailsBeforeGlob(): Promise<void> 
   assertNotIncludes(text, 'export const outside = true;', 'Outside file content must not be read');
 }
 
+async function testLongBraceExpandedParentTraversalFailsClosed(): Promise<void> {
+  const alternatives = Array.from({ length: 70 }, (_, index) => `a${index}`);
+  alternatives.push('.');
+  const pattern = `.{${alternatives.join(',')}}/**/*.ts`;
+  const globSafety = resolveSafeGlobPattern(pattern, FIXTURES_DIR);
+
+  assert(globSafety.ok === false, 'Traversal branch after many alternatives should still be rejected');
+  assertEqual(globSafety.error.code, 'invalid_glob', 'Long brace traversal should be an invalid glob');
+}
+
 async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
   const globSafety = resolveSafeGlobPattern('src/@(Foo).ts', FIXTURES_DIR);
   assert(globSafety.ok === true, 'Extglob-only pattern should be recognized as glob magic');
@@ -210,7 +221,7 @@ async function testRelativeLiteralPathHonorsDefaultExcludes(): Promise<void> {
 async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
   const result = await readManyFilesTool.handler(
     {
-      include: ['special/file[test].ts', 'special/file{brace}.ts'],
+      include: ['special/file[test].ts', 'special/file{brace}.ts', 'special/file{a,b}.ts'],
       useDefaultExcludes: false,
     },
     testConfig,
@@ -218,11 +229,13 @@ async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
 
   assert(result.isError !== true, 'Literal files containing glob metacharacters should be read');
   const text = getResultText(result);
-  assertIncludes(text, 'Read 2 file(s)', 'Both literal special-name files should be read');
+  assertIncludes(text, 'Read 3 file(s)', 'All literal special-name files should be read');
   assertIncludes(text, 'file[test].ts', 'Bracket filename should appear literally');
   assertIncludes(text, 'file{brace}.ts', 'Brace filename should appear literally');
+  assertIncludes(text, 'file{a,b}.ts', 'Brace-comma filename should appear literally');
   assertIncludes(text, 'export const bracket = true;', 'Bracket file content should be returned');
   assertIncludes(text, 'export const brace = true;', 'Brace file content should be returned');
+  assertIncludes(text, 'export const braceComma = true;', 'Brace-comma file content should be returned');
 }
 
 async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
@@ -307,6 +320,7 @@ async function main(): Promise<void> {
       { name: 'Slash-leading glob is relative while plain rooted path fails', run: testSlashLeadingGlobIsRelativeButPlainRootedPathFails },
       { name: 'Glob static base outside root fails before reading', run: testGlobStaticBaseOutsideRootFailsBeforeReading },
       { name: 'Brace-expanded parent traversal fails before glob', run: testBraceExpandedParentTraversalFailsBeforeGlob },
+      { name: 'Long brace-expanded parent traversal fails closed', run: testLongBraceExpandedParentTraversalFailsClosed },
       { name: 'Extglob-only pattern is expanded', run: testExtglobOnlyPatternIsExpanded },
       { name: 'Relative literal path honors default excludes', run: testRelativeLiteralPathHonorsDefaultExcludes },
       { name: 'Literal filenames with glob metacharacters are read safely', run: testLiteralFilenamesWithGlobMetacharacters },
