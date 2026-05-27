@@ -264,7 +264,10 @@ function relativeLiteralPassesExcludes(
 ): boolean {
   if (effectiveExcludes.length === 0) return true;
 
-  const ignore = new Ignore(effectiveExcludes, { dot: true });
+  const ignore = new Ignore(effectiveExcludes, {
+    dot: true,
+    nocase: process.platform === 'win32',
+  });
   const ignorePath = {
     fullpath: () => safePath.resolvedPath,
     relative: () => safePath.displayPath.replace(/\\/g, '/'),
