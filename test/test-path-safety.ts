@@ -42,6 +42,7 @@ async function prepareFixtures(): Promise<void> {
   await fs.mkdir(OUTSIDE_DIR, { recursive: true });
 
   await fs.writeFile(path.join(FIXTURES_DIR, '.env'), 'SECRET=hidden\n', 'utf-8');
+  await fs.writeFile(path.join(FIXTURES_DIR, '.ENV'), 'SECRET=uppercase\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'Foo.ts'), 'export const foo = 1;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'nested', 'Bar.ts'), 'export const bar = 2;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file[test].ts'), 'export const bracket = true;\n', 'utf-8');
@@ -218,6 +219,28 @@ async function testRelativeLiteralPathHonorsDefaultExcludes(): Promise<void> {
   assertNotIncludes(text, 'SECRET=hidden', 'Excluded relative literal content must not be read');
 }
 
+async function testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows(): Promise<void> {
+  if (process.platform !== 'win32') return;
+
+  const defaultResult = await readManyFilesTool.handler(
+    { include: ['.ENV'] },
+    testConfig,
+  );
+
+  assert(defaultResult.isError === true, 'Uppercase .ENV should be excluded by default on Windows');
+  assertIncludes(getResultText(defaultResult), 'excluded by exclude patterns', 'Uppercase default exclude should be reported');
+  assertNotIncludes(getResultText(defaultResult), 'SECRET=uppercase', 'Uppercase .ENV content must not be read');
+
+  const customResult = await readManyFilesTool.handler(
+    { include: ['src/Foo.ts'], exclude: ['SRC/*.TS'], useDefaultExcludes: false },
+    testConfig,
+  );
+
+  assert(customResult.isError === true, 'Case-different custom exclude should filter a relative literal on Windows');
+  assertIncludes(getResultText(customResult), 'excluded by exclude patterns', 'Case-different custom exclude should be reported');
+  assertNotIncludes(getResultText(customResult), 'export const foo = 1;', 'Case-excluded content must not be read');
+}
+
 async function testRelativeLiteralPathHonorsBraceAndExtglobExcludes(): Promise<void> {
   const braceResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['src/*.{ts,tsx}'], useDefaultExcludes: false },
@@ -343,6 +366,7 @@ async function main(): Promise<void> {
       { name: 'Long brace-expanded parent traversal fails closed', run: testLongBraceExpandedParentTraversalFailsClosed },
       { name: 'Extglob-only pattern is expanded', run: testExtglobOnlyPatternIsExpanded },
       { name: 'Relative literal path honors default excludes', run: testRelativeLiteralPathHonorsDefaultExcludes },
+      { name: 'Relative literal path honors case-insensitive excludes on Windows', run: testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows },
       { name: 'Relative literal path honors brace and extglob excludes', run: testRelativeLiteralPathHonorsBraceAndExtglobExcludes },
       { name: 'Literal filenames with glob metacharacters are read safely', run: testLiteralFilenamesWithGlobMetacharacters },
       { name: 'Read rejects symlink escape when available', run: testReadRejectsSymlinkEscapeWhenAvailable },
