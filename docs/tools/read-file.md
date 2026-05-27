@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `file_path` | `string` | ✅ | — | 要读取的文本文件路径，支持相对 `rootDir` 或绝对路径 |
+| `file_path` | `string` | ✅ | — | 要读取的文本文件路径，支持相对 `rootDir` 或位于 `rootDir` 内的 drive-absolute 路径 |
 | `start_line` | `integer \| string` | ❌ | — | 起始位置；解释方式由 `read_mode` 决定 |
 | `end_line` | `integer \| string` | ❌ | — | 结束位置，包含该行；解释方式由 `read_mode` 决定 |
 | `read_mode` | `"line" \| "regex"` | ❌ | `"line"` | 行定位模式：`line` 按行号解释，`regex` 按逐行正则解释 |
@@ -38,7 +38,9 @@
 
 ### 路径安全
 
-`file_path` 先通过 `resolvePath()` 解析为绝对路径，再通过 `validatePathAccess()` 校验必须位于 `rootDir` 范围内。
+`file_path` 统一通过 `src/utils/paths.ts` 的路径安全层处理：先按原始输入分类，再解析和做 lexical root 边界校验。支持普通相对路径和 drive-absolute 路径；drive-relative（如 `C:foo.txt`）、rooted without drive（如 `/foo.txt`、`\\foo.txt`）、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
+
+读取已存在文件时，工具会在 lexical 校验通过后执行 `realpath` 校验，确认真实目标仍位于 `rootDir` 内，再继续 `stat`、二进制检测和文本读取。
 
 ### 参数校验
 
@@ -102,7 +104,7 @@ Partial read: showing lines A-B of N total lines.
 --- End of content ---
 ```
 
-输出中的 `{filePath}` 会跟随调用时的路径形式：`file_path` 传入绝对路径时显示解析后的绝对路径，传入相对路径时显示相对 `rootDir` 的路径。
+输出中的 `{filePath}` 由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 `rootDir` 的路径。工具层不再通过 `path.isAbsolute()` 自行判断显示策略。
 
 ### 输出示例
 
@@ -167,7 +169,7 @@ data class Foo(
 |-|-|
 | `src/tools/read-file.ts` | Schema 定义、参数校验、`read_mode` 解析、路径安全、结果拼接 |
 | `src/utils/file-read.ts` | 二进制检测、20MB 文件大小保护、文本读取、可配置截断、行号前缀 |
-| `src/utils/paths.ts` | `resolvePath()` 与 `validatePathAccess()` 路径安全校验 |
+| `src/utils/paths.ts` | 路径分类、root 边界校验、display path、读取 realpath 安全校验 |
 | `src/tools/index.ts` | 工具注册 |
 
 ---

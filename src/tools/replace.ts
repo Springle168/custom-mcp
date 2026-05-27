@@ -15,7 +15,11 @@ import {
   detectOmissionPlaceholders,
 } from '../engine/text-utils.js';
 import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
-import { resolvePath, validatePathAccess } from '../utils/paths.js';
+import {
+  formatPathSafetyError,
+  resolveSafePath,
+  validateSafeWriteTarget,
+} from '../utils/paths.js';
 import { withFileLock } from '../utils/file-lock.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 
@@ -252,7 +256,7 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
       ok: false,
       note:
         `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
-        'replace_text accepts only file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
+        'Use target/replacement for replace_text v2; accepted parameters are file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
     };
   }
 
@@ -458,71 +462,6 @@ function getRegexMultilineMatchWarning(
 }
 
 // ================
-// Path Safety
-// ================
-
-async function findExistingAncestor(directoryPath: string): Promise<string> {
-  let current = directoryPath;
-
-  while (true) {
-    try {
-      await fs.lstat(current);
-      return current;
-    } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        throw error;
-      }
-
-      const parent = path.dirname(current);
-      if (parent === current) {
-        throw error;
-      }
-      current = parent;
-    }
-  }
-}
-
-async function validateSafeWriteTarget(
-  resolved: string,
-  rootDir: string,
-  filePath: string,
-): Promise<string | null> {
-  let realRoot: string;
-  try {
-    realRoot = await fs.realpath(rootDir);
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return `Could not resolve workspace root: ${error.message}. Check the server configuration.`;
-  }
-
-  try {
-    const existingAncestor = await findExistingAncestor(path.dirname(resolved));
-    const realAncestor = await fs.realpath(existingAncestor);
-    if (validatePathAccess(realAncestor, realRoot)) {
-      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
-    }
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return `Could not validate write path ${filePath}: ${error.message}. Check the path and permissions.`;
-  }
-
-  try {
-    const stat = await fs.lstat(resolved);
-    if (stat.isSymbolicLink()) {
-      return `Cannot modify file ${filePath}: target path is a symbolic link. Provide a regular file path inside the workspace.`;
-    }
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code !== 'ENOENT') {
-      return `Could not validate write target ${filePath}: ${error.message}. Check the path and permissions.`;
-    }
-  }
-
-  return null;
-}
-
-// ================
 // File Preparation
 // ================
 
@@ -644,36 +583,32 @@ export async function handleReplace(
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
-  const resolved = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolved, config.rootDir);
-  if (pathError) {
+  const safePathResult = resolveSafePath(filePath, config.rootDir);
+  if (!safePathResult.ok) {
     return errorResult(
       payloadFromArgs(
         args,
         false,
-        `${pathError} Provide a file path inside the configured workspace root.`,
+        formatPathSafetyError(safePathResult.error),
       ),
     );
   }
+  const safePath = safePathResult.path;
 
-  return withFileLock(resolved, async () => {
-    const safetyError = await validateSafeWriteTarget(
-      resolved,
-      config.rootDir,
-      filePath,
-    );
+  return withFileLock(safePath.resolvedPath, async () => {
+    const safetyError = await validateSafeWriteTarget(safePath);
     if (safetyError) {
       return errorResult(payloadFromArgs(args, false, safetyError));
     }
 
-    const existingFile = await readExistingTextFile(resolved, filePath);
+    const existingFile = await readExistingTextFile(safePath.resolvedPath, filePath);
     if (existingFile.exists === null) {
       return errorResult(payloadFromArgs(args, false, existingFile.error));
     }
 
     if (!existingFile.exists) {
       if (matchMode === 'default' && target === '') {
-        if (await isBinaryFile(resolved)) {
+        if (await isBinaryFile(safePath.resolvedPath)) {
           return errorResult(
             payloadFromArgs(
               args,
@@ -686,7 +621,7 @@ export async function handleReplace(
         const normalizedReplacement = normalizeTextLineEndings(replacement);
         const lineEnding = resolveLineEnding(config.lineEnding, null);
         try {
-          await fs.mkdir(path.dirname(resolved), { recursive: true });
+          await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
         } catch (err: unknown) {
           const error = err as NodeJS.ErrnoException;
           return errorResult(
@@ -697,17 +632,13 @@ export async function handleReplace(
             ),
           );
         }
-        const postMkdirSafetyError = await validateSafeWriteTarget(
-          resolved,
-          config.rootDir,
-          filePath,
-        );
+        const postMkdirSafetyError = await validateSafeWriteTarget(safePath);
         if (postMkdirSafetyError) {
           return errorResult(payloadFromArgs(args, false, postMkdirSafetyError));
         }
 
         const writeError = await writeTextContent(
-          resolved,
+          safePath.resolvedPath,
           normalizedReplacement,
           lineEnding,
         );
@@ -836,8 +767,20 @@ export async function handleReplace(
       config.lineEnding,
       existingFile.detectedLineEnding,
     );
+    const preWriteSafetyError = await validateSafeWriteTarget(safePath);
+    if (preWriteSafetyError) {
+      return errorResult(
+        payloadFromArgs(args, false, preWriteSafetyError, {
+          file_line_count: {
+            previous: previousLineCount,
+            current: previousLineCount,
+          },
+        }),
+      );
+    }
+
     const writeError = await writeTextContent(
-      resolved,
+      safePath.resolvedPath,
       calculation.newContent,
       lineEnding,
     );

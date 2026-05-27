@@ -2,7 +2,7 @@
 
 ## 概述
 
-批量读取多个文本文件内容并拼接返回。支持绝对路径和 glob 模式混合输入，解决 Android Studio 内置 `read_file` 只能逐个读取的效率问题。
+批量读取多个文本文件内容并拼接返回。支持相对路径、位于 `rootDir` 内的 drive-absolute 路径和 glob 模式混合输入，解决 Android Studio 内置 `read_file` 只能逐个读取的效率问题。
 
 核心设计理念：AI 在分析代码时经常需要同时查看多个文件的内容（如一个包下的所有 `.kt` 文件），逐个调用 `read_file` 会产生大量往返，浪费 token和时间。本工具一次调用即可返回所有文件内容。
 
@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `include` | `string[]` | ✅ | — | 绝对路径或 glob 模式数组 |
+| `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；所有输入最终必须位于 `rootDir` 内 |
 | `exclude` | `string[]` | ❌ | `[]` | 额外排除模式，追加到默认排除之后 |
 | `useDefaultExcludes` | `boolean` | ❌ | `true` | 是否启用默认排除规则 |
 | `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数、总行数和是否会截断，不返回文件内容 |
@@ -28,7 +28,7 @@
 
 description 中刻意包含了以下信息引导 AI 正确使用：
 
-- **使用场景示例**：给出绝对路径、glob、混合三种用法，降低 AI 猜测成本
+- **使用场景示例**：给出 drive-absolute 路径、glob、混合三种用法，降低 AI 猜测成本
 - **文本文件限定**：明确告知只处理文本文件，避免 AI 尝试读取图片等二进制文件
 - **截断提示**：告知超过行数限制会截断，引导 AI 用 `read_file` 或类似读取工具查看完整内容
 - **浅读取提示**：说明 `shallow_read` 适合先摸清文件集合规模和截断风险
@@ -41,24 +41,28 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 ### 路径分类处理
 
-`include` 数组中的每个元素按以下规则分类：
+`include` 数组中的每个元素先进入统一路径安全层，路径层会在任何文件系统 I/O 前完成输入形态分类和 lexical root 边界校验：
 
-```
+```text
 遍历 include 数组
-├── 绝对路径（/ 开头 或 C:\ 开头）
-│   → validatePathAccess 安全校验
-│   → fs.stat 检查存在性
-│   → 直接加入待读文件集合
-│   → 不受 exclude 模式影响
+├── 字面路径候选（relative 或 drive-absolute）
+│   → resolveSafePath lexical 校验
+│   → validateSafeReadTarget realpath 校验
+│   → fs.stat 确认为文件后加入待读集合
+│   → drive-absolute 字面路径不受 exclude 模式影响
 │
-└── 其他（相对路径 / glob 模式）
-    ├── 解析为完整路径后检查是否为已存在的文件
-    │   ├── 是 → escape() 转义 glob 元字符，当字面路径处理
-    │   └── 否 → 当 glob 模式处理
-    └── 统一传给 glob(patterns, { cwd: rootDir, ignore: effectiveExcludes })→ 结果逐个 validatePathAccess
+└── glob 候选
+    → resolveSafeGlobPattern 分类并计算 static base
+    → static base 必须位于 rootDir 内，否则不调用 glob()
+    → glob(pattern, { cwd: rootDir, ignore: effectiveExcludes, absolute: true })
+    → 每个展开结果再次做 lexical + realpath 校验
 ```
 
-绝对路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。
+支持的 glob 来源包括 relative glob（如 `src/**/*.ts`）、drive-absolute glob（如 `E:/Repo/src/**/*.ts`）和窄兼容的 slash-leading glob（如 `/**/Foo.kt`）。普通 `/foo/bar.ts` 不含 glob 元字符，会按 rooted without drive 拒绝。
+
+文件名中包含 glob 元字符（如 `special/file[test].ts`、`special/file{brace}.ts`）时，工具会先在 lexical 校验通过后按字面文件探测；只有不存在或不是文件时，才继续按 glob 模式处理。
+
+Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。Glob 展开结果仍受 exclude 过滤。
 
 ### 二进制文件检测
 
@@ -96,7 +100,7 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 ### 输出格式
 
-返回中的文件显示路径会跟随 `include` 条目的来源：直接传入绝对文件路径时显示绝对路径；通过相对路径或 glob 命中的文件显示相对 `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
+返回中的文件显示路径由路径安全层统一决定：drive-absolute 字面路径或 drive-absolute glob 命中的文件显示绝对路径；相对路径、relative glob 和 slash-leading glob 命中的文件显示相对 `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
 
 ```
 Read 3 file(s), skipped 1.
@@ -162,7 +166,7 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 |-|-|
 | `src/tools/read-many-files.ts` | Schema定义、参数校验、路径分类、glob 展开、结果拼接 |
 | `src/utils/file-read.ts` | 常量、二进制检测（`isBinaryFile`）、文本读取与截断（`readTextFile`）、`BINARY_EXTENSIONS` 集合 |
-| `src/utils/paths.ts` | `validatePathAccess()` 路径安全校验 |
+| `src/utils/paths.ts` | 路径分类、root 边界校验、glob static base 校验、展开结果校验、读取 realpath 安全校验 |
 | `src/tools/index.ts` | 工具注册 |
 
 ---

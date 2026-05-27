@@ -1,11 +1,20 @@
 // src/tools/read-many-files.ts
 
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { glob, escape } from 'glob';
+import { glob } from 'glob';
 import type { Config } from '../config.js';
 import type { MCPTool } from './types.js';
-import { validatePathAccess } from '../utils/paths.js';
+import {
+  formatPathSafetyError,
+  hasGlobMagic,
+  resolveSafeGlobEntry,
+  resolveSafeGlobPattern,
+  resolveSafePath,
+  validateSafeReadTarget,
+  type PathSafetyError,
+  type SafePath,
+  type SafeReadTargetResult,
+} from '../utils/paths.js';
 import {
   BINARY_EXTENSIONS,
   isBinaryFile,
@@ -58,12 +67,12 @@ const DEFAULT_EXCLUDES: string[] = [
 
 const READ_MANY_FILES_TOOL_DEFINITION = {
   name: 'read_many_files',
-  description: `Reads and returns the content of multiple text files in one call. Supports absolute file paths and glob patterns.
+  description: `Reads and returns the content of multiple text files in one call. Supports drive-absolute file paths and glob patterns inside the configured workspace root.
 
 Use this tool when you need content from several files at once, such as:
 - Reading all Kotlin files in a package: include ["src/main/kotlin/com/example/**/*.kt"]
-- Reading specific files by absolute path: include ["/absolute/path/Foo.kt", "/absolute/path/Bar.kt"]
-- Mixing paths and patterns: include ["/absolute/path/Config.kt", "src/**/*.kt"]
+- Reading specific files by absolute path: include ["E:/workspace/project/Foo.kt", "E:/workspace/project/Bar.kt"]
+- Mixing paths and patterns: include ["E:/workspace/project/Config.kt", "src/**/*.kt"]
 
 Text files only. Binary files (images, archives, compiled output, etc.) are automatically skipped.
 Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file or a similar file-reading tool on that specific file for full content.
@@ -79,7 +88,7 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
         items: { type: 'string', minLength: 1 },
         minItems: 1,
         description:
-          'File paths or glob patterns to read. Absolute paths and relative globs (resolved from workspace root) can be mixed. Examples: ["src/**/*.kt"], ["/abs/path/Foo.kt", "docs/*.md"]',
+          'File paths or glob patterns to read. Drive-absolute paths and relative globs are resolved under the workspace root. Examples: ["src/**/*.kt"], ["E:/workspace/project/Foo.kt", "docs/*.md"]',
       },
       exclude: {
         type: 'array',
@@ -117,18 +126,6 @@ function successResult(text: string) {
 
 function errorResult(text: string) {
   return { content: [{ type: 'text' as const, text }], isError: true };
-}
-
-// ================
-// Path Helpers
-// ================
-
-function isAbsolutePath(p: string): boolean {
-  // Glob patterns should not be treated as absolute paths
-  const hasGlobChars = /[*?[\]{}]/.test(p);
-  if (hasGlobChars) return false;
-  
-  return p.startsWith('/') || /^[a-zA-Z]:/.test(p);
 }
 
 // ================
@@ -173,6 +170,155 @@ function validateParams(args: Record<string, unknown>): string | null {
 }
 
 // ================
+// File Collection Helpers
+// ================
+
+interface FileEntry {
+  readPath: string;
+  displayPath: string;
+}
+
+interface SkippedEntry {
+  path: string;
+  reason: string;
+}
+
+type LiteralDecision = 'added' | 'handled' | 'continue_to_glob';
+
+function fileKey(filePath: string): string {
+  return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+}
+
+function addFile(fileMap: Map<string, FileEntry>, entry: FileEntry): void {
+  const key = fileKey(entry.readPath);
+  if (!fileMap.has(key)) {
+    fileMap.set(key, entry);
+  }
+}
+
+function pathSafetySkipReason(error: PathSafetyError): string {
+  if (error.code === 'outside_root_dir') return 'outside workspace';
+  return formatPathSafetyError(error);
+}
+
+function readSafetySkipReason(result: SafeReadTargetResult): string {
+  if (result.ok) return '';
+  if (result.code === 'outside_root_dir') return 'outside workspace';
+  return result.reason;
+}
+
+async function tryAddLiteralFile(
+  item: string,
+  safePath: SafePath,
+  itemHasGlobMagic: boolean,
+  fileMap: Map<string, FileEntry>,
+  skipped: SkippedEntry[],
+): Promise<LiteralDecision> {
+  const readTarget = await validateSafeReadTarget(safePath);
+  if (!readTarget.ok) {
+    if (readTarget.code === 'not_found' && itemHasGlobMagic) {
+      return 'continue_to_glob';
+    }
+    skipped.push({ path: item, reason: readSafetySkipReason(readTarget) });
+    return 'handled';
+  }
+
+  try {
+    const stat = await fs.stat(readTarget.realPath);
+    if (!stat.isFile()) {
+      if (itemHasGlobMagic) return 'continue_to_glob';
+      skipped.push({ path: item, reason: 'not a file' });
+      return 'handled';
+    }
+
+    addFile(fileMap, {
+      readPath: readTarget.realPath,
+      displayPath: safePath.displayPath,
+    });
+    return 'added';
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT' && itemHasGlobMagic) {
+      return 'continue_to_glob';
+    }
+    skipped.push({
+      path: item,
+      reason: error.code === 'ENOENT' ? 'file not found' : error.message,
+    });
+    return 'handled';
+  }
+}
+
+async function expandGlobPattern(
+  item: string,
+  effectiveExcludes: string[],
+  config: Config,
+  fileMap: Map<string, FileEntry>,
+  skipped: SkippedEntry[],
+): Promise<string | null> {
+  const globResult = resolveSafeGlobPattern(item, config.rootDir);
+  if (!globResult.ok) {
+    skipped.push({ path: item, reason: pathSafetySkipReason(globResult.error) });
+    return null;
+  }
+
+  let entries: string[];
+  try {
+    entries = await glob(globResult.glob.pattern, {
+      cwd: globResult.glob.rootDir,
+      ignore: effectiveExcludes,
+      nodir: true,
+      dot: true,
+      absolute: true,
+    });
+  } catch (err: unknown) {
+    return (
+      `Glob pattern error: ${err instanceof Error ? err.message : String(err)}. ` +
+      'Check that your include patterns are valid.'
+    );
+  }
+
+  for (const entry of entries) {
+    const safeEntry = resolveSafeGlobEntry(entry, globResult.glob);
+    if (!safeEntry.ok) {
+      skipped.push({ path: entry, reason: pathSafetySkipReason(safeEntry.error) });
+      continue;
+    }
+
+    const readTarget = await validateSafeReadTarget(safeEntry.path);
+    if (!readTarget.ok) {
+      skipped.push({
+        path: safeEntry.path.displayPath,
+        reason: readSafetySkipReason(readTarget),
+      });
+      continue;
+    }
+
+    try {
+      const stat = await fs.stat(readTarget.realPath);
+      if (!stat.isFile()) {
+        skipped.push({ path: safeEntry.path.displayPath, reason: 'not a file' });
+        continue;
+      }
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      skipped.push({
+        path: safeEntry.path.displayPath,
+        reason: error.code === 'ENOENT' ? 'file not found' : error.message,
+      });
+      continue;
+    }
+
+    addFile(fileMap, {
+      readPath: readTarget.realPath,
+      displayPath: safeEntry.path.displayPath,
+    });
+  }
+
+  return null;
+}
+
+// ================
 // Tool Handler
 // ================
 
@@ -197,112 +343,89 @@ async function handleReadManyFiles(
     ? [...DEFAULT_EXCLUDES, ...exclude]
     : [...exclude];
 
-  // 3. Classify include items into absolute paths and glob patterns.
-  //    For relative items that resolve to an existing file, escape glob
-  //    metacharacters so filenames containing [ ] { } etc. are matched literally.
-  const absolutePaths: string[] = [];
-  const globPatterns: string[] = [];
+  // 3. Resolve literal paths and expand glob patterns after lexical safety checks.
+  const fileMap = new Map<string, FileEntry>();
+  const skipped: SkippedEntry[] = [];
 
   for (const item of include) {
-    if (isAbsolutePath(item)) {
-      absolutePaths.push(item);
-    } else {
-      const normalized = item.replace(/\\/g, '/');
-      const fullPath = path.resolve(config.rootDir, normalized);
-      let isLiteralFile = false;
-      try {
-        const stat = await fs.stat(fullPath);
-        isLiteralFile = stat.isFile();
-      } catch {
-        isLiteralFile = false;
-      }
-      globPatterns.push(isLiteralFile ? escape(normalized) : normalized);
-    }
-  }
+    const itemHasGlobMagic = hasGlobMagic(item);
+    const safePathResult = resolveSafePath(item, config.rootDir);
 
-  // 4. Resolve absolute paths directly (bypass glob, no exclude filtering)
-  const fileSet = new Set<string>();
-  const absolutePathSet = new Set<string>();
-  const skipped: Array<{ path: string; reason: string }> = [];
+    if (safePathResult.ok) {
+      const literalDecision = await tryAddLiteralFile(
+        item,
+        safePathResult.path,
+        itemHasGlobMagic,
+        fileMap,
+        skipped,
+      );
 
-  for (const absPath of absolutePaths) {
-    const resolved = path.resolve(absPath);
-    const pathError = validatePathAccess(resolved, config.rootDir);
-    if (pathError) {
-      skipped.push({ path: absPath, reason: 'outside workspace' });
-      continue;
-    }
-    try {
-      const stat = await fs.stat(resolved);
-      if (!stat.isFile()) {
-        skipped.push({ path: absPath, reason: 'not a file' });
+      if (literalDecision !== 'continue_to_glob') {
         continue;
       }
-      fileSet.add(resolved);
-      absolutePathSet.add(resolved);
-    } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
+    } else if (!itemHasGlobMagic) {
       skipped.push({
-        path: absPath,
-        reason: error.code === 'ENOENT' ? 'file not found' : error.message,
+        path: item,
+        reason: pathSafetySkipReason(safePathResult.error),
       });
+      continue;
     }
-  }
 
-  // 5. Expand glob patterns relative to rootDir
-  if (globPatterns.length > 0) {
-    try {
-      const entries = await glob(globPatterns, {
-        cwd: config.rootDir,
-        ignore: effectiveExcludes,
-        nodir: true,
-        dot: true,
-        absolute: true,
-      });
-      for (const entry of entries) {
-        const resolved = path.resolve(entry);
-        if (!validatePathAccess(resolved, config.rootDir)) {
-          fileSet.add(resolved);
-        }
-      }
-    } catch (err: unknown) {
-      return errorResult(
-        `Glob pattern error: ${err instanceof Error ? err.message : String(err)}. ` +
-          'Check that your include patterns are valid.',
+    if (itemHasGlobMagic) {
+      const globError = await expandGlobPattern(
+        item,
+        effectiveExcludes,
+        config,
+        fileMap,
+        skipped,
       );
+      if (globError) return errorResult(globError);
     }
   }
 
-  // 6. Early exit when nothing was found at all
-  if (fileSet.size === 0 && skipped.length === 0) {
+  // 4. Early exit when nothing was found at all
+  if (fileMap.size === 0 && skipped.length === 0) {
     return errorResult(
       'No files matched the given include patterns. ' +
         'Verify the paths/patterns and ensure files exist in the workspace.',
     );
   }
 
-  // 7. Sort and enforce file count limit
-  const sortedFiles = Array.from(fileSet).sort();
+  // 5. Sort and enforce file count limit
+  const sortedFiles = Array.from(fileMap.values()).sort((a, b) =>
+    a.readPath.localeCompare(b.readPath),
+  );
   let filesLimited = false;
   if (sortedFiles.length > MAX_FILES) {
     filesLimited = true;
     sortedFiles.length = MAX_FILES;
   }
 
-  // 8. Read files in parallel (binary check → text read)
+  // 6. Read files in parallel (binary check → text read)
   const readResults = await Promise.allSettled(
-    sortedFiles.map(async (filePath) => {
-      if (await isBinaryFile(filePath)) {
-        return { filePath, ok: false as const, reason: 'binary file' };
+    sortedFiles.map(async (file) => {
+      if (await isBinaryFile(file.readPath)) {
+        return {
+          filePath: file.readPath,
+          displayPath: file.displayPath,
+          ok: false as const,
+          reason: 'binary file',
+        };
       }
-      const result = await readTextFile(filePath, {
+      const result = await readTextFile(file.readPath, {
         showLineNumbers: !shallowRead && showLineNumbers,
       });
       if (!result.ok) {
-        return { filePath, ok: false as const, reason: result.reason };
+        return {
+          filePath: file.readPath,
+          displayPath: file.displayPath,
+          ok: false as const,
+          reason: result.reason,
+        };
       }
       return {
-        filePath,
+        filePath: file.readPath,
+        displayPath: file.displayPath,
         ok: true as const,
         content: result.content,
         isTruncated: result.isTruncated,
@@ -316,7 +439,7 @@ async function handleReadManyFiles(
     }),
   );
 
-  // 9. Assemble file content blocks
+  // 7. Assemble file content blocks
   const contentParts: string[] = [];
   const processedFiles: Array<{
     filePath: string;
@@ -342,17 +465,13 @@ async function handleReadManyFiles(
 
     const r = settled.value;
     if (!r.ok) {
-      skipped.push({ path: r.filePath, reason: r.reason });
+      skipped.push({ path: r.displayPath, reason: r.reason });
       continue;
     }
 
-    const displayPath = absolutePathSet.has(r.filePath)
-      ? r.filePath
-      : path.relative(config.rootDir, r.filePath);
-
     processedFiles.push({
       filePath: r.filePath,
-      displayPath,
+      displayPath: r.displayPath,
       content: r.content,
       isTruncated: r.isTruncated,
       lineCountTruncated: r.lineCountTruncated,
@@ -364,7 +483,7 @@ async function handleReadManyFiles(
     });
   }
 
-  // 10. Build summary header
+  // 8. Build summary header
   const summaryParts: string[] = [];
 
   summaryParts.push(

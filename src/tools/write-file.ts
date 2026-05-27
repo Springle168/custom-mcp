@@ -8,7 +8,11 @@ import {
 } from '../engine/text-utils.js';
 import { isBinaryFile } from '../utils/file-read.js';
 import { withFileLock } from '../utils/file-lock.js';
-import { resolvePath, validatePathAccess } from '../utils/paths.js';
+import {
+  formatPathSafetyError,
+  resolveSafePath,
+  validateSafeWriteTarget,
+} from '../utils/paths.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 
 // ================
@@ -139,75 +143,8 @@ function countLines(content: string): number {
   return content.split(/\r?\n/).length;
 }
 
-function successPath(filePath: string, resolved: string, rootDir: string): string {
-  return path.isAbsolute(filePath)
-    ? resolved
-    : path.relative(rootDir, resolved);
-}
-
 function appendWarning(message: string, warning: string | null): string {
   return warning ? `${message}\n${warning}` : message;
-}
-
-async function findExistingAncestor(directoryPath: string): Promise<string> {
-  let current = directoryPath;
-
-  while (true) {
-    try {
-      await fs.lstat(current);
-      return current;
-    } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        throw error;
-      }
-
-      const parent = path.dirname(current);
-      if (parent === current) {
-        throw error;
-      }
-      current = parent;
-    }
-  }
-}
-
-async function validateSafeWriteTarget(
-  resolved: string,
-  rootDir: string,
-  filePath: string,
-): Promise<string | null> {
-  let realRoot: string;
-  try {
-    realRoot = await fs.realpath(rootDir);
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return `Could not resolve workspace root: ${error.message}. Check the server configuration.`;
-  }
-
-  try {
-    const existingAncestor = await findExistingAncestor(path.dirname(resolved));
-    const realAncestor = await fs.realpath(existingAncestor);
-    if (validatePathAccess(realAncestor, realRoot)) {
-      return `Path ${filePath} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
-    }
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return `Could not validate write path ${filePath}: ${error.message}. Check the path and permissions.`;
-  }
-
-  try {
-    const stat = await fs.lstat(resolved);
-    if (stat.isSymbolicLink()) {
-      return `Cannot write file ${filePath}: target path is a symbolic link. Provide a regular file path inside the workspace.`;
-    }
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code !== 'ENOENT') {
-      return `Could not validate write target ${filePath}: ${error.message}. Check the path and permissions.`;
-    }
-  }
-
-  return null;
 }
 
 // ================
@@ -224,44 +161,38 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
-  const resolved = resolvePath(filePath, config.rootDir);
-  const pathError = validatePathAccess(resolved, config.rootDir);
-  if (pathError) {
-    return errorResult(
-      `${pathError} Provide a file path inside the configured workspace root.`,
-    );
+  const safePathResult = resolveSafePath(filePath, config.rootDir);
+  if (!safePathResult.ok) {
+    return errorResult(formatPathSafetyError(safePathResult.error));
   }
+  const safePath = safePathResult.path;
 
-  return withFileLock(resolved, async () => {
-    const safetyError = await validateSafeWriteTarget(
-      resolved,
-      config.rootDir,
-      filePath,
-    );
+  return withFileLock(safePath.resolvedPath, async () => {
+    const safetyError = await validateSafeWriteTarget(safePath);
     if (safetyError) return errorResult(safetyError);
 
     let detectedLineEnding: '\r\n' | '\n' | null = null;
 
     try {
-      const stat = await fs.stat(resolved);
+      const stat = await fs.stat(safePath.resolvedPath);
       if (stat.isDirectory()) {
         return errorResult(
           `Could not write file ${filePath}: target path is a directory. Provide a file path instead.`,
         );
       }
 
-      if (await isBinaryFile(resolved)) {
+      if (await isBinaryFile(safePath.resolvedPath)) {
         return errorResult(
           `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
         );
       }
 
-      const raw = await fs.readFile(resolved, 'utf-8');
+      const raw = await fs.readFile(safePath.resolvedPath, 'utf-8');
       detectedLineEnding = detectLineEnding(raw);
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       if (error.code === 'ENOENT') {
-        if (await isBinaryFile(resolved)) {
+        if (await isBinaryFile(safePath.resolvedPath)) {
           return errorResult(
             `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
           );
@@ -277,15 +208,11 @@ async function handleWriteFile(
     const finalContent = normalizeLineEndings(content, lineEnding);
 
     try {
-      await fs.mkdir(path.dirname(resolved), { recursive: true });
-      const postMkdirSafetyError = await validateSafeWriteTarget(
-        resolved,
-        config.rootDir,
-        filePath,
-      );
+      await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
+      const postMkdirSafetyError = await validateSafeWriteTarget(safePath);
       if (postMkdirSafetyError) return errorResult(postMkdirSafetyError);
 
-      await fs.writeFile(resolved, finalContent, 'utf-8');
+      await fs.writeFile(safePath.resolvedPath, finalContent, 'utf-8');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       return errorResult(
@@ -293,8 +220,7 @@ async function handleWriteFile(
       );
     }
 
-    const displayPath = successPath(filePath, resolved, config.rootDir);
-    const message = `Success: wrote ${displayPath}. Total lines: ${countLines(finalContent)}.`;
+    const message = `Success: wrote ${safePath.displayPath}. Total lines: ${countLines(finalContent)}.`;
     return successResult(appendWarning(message, placeholderWarning));
   });
 }

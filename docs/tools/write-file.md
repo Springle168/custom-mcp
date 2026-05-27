@@ -20,7 +20,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `file_path` | `string` | ✅ | — | 要写入的文件路径，支持相对 `rootDir` 或绝对路径 |
+| `file_path` | `string` | ✅ | — | 要写入的文件路径，支持相对 `rootDir` 或位于 `rootDir` 内的 drive-absolute 路径 |
 | `content` | `string` | ✅ | — | 要写入的完整文本内容；疑似省略占位符会写入但触发 Warning |
 
 ### description 设计意图
@@ -36,12 +36,13 @@
 
 ### 路径安全
 
-`file_path` 先通过 `resolvePath()` 解析为绝对路径，再通过 `validatePathAccess()` 校验必须位于 `rootDir` 范围内。
+`file_path` 统一通过 `src/utils/paths.ts` 的路径安全层处理：先按原始输入分类，再解析和做 lexical root 边界校验。支持普通相对路径和 drive-absolute 路径；drive-relative（如 `C:foo.txt`）、rooted without drive（如 `/foo.txt`、`\\foo.txt`）、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
 
 ### 写入策略
 
 - 写入前使用 `withFileLock()`，避免同一路径的并发写入互相覆盖。
-- 写入前会校验真实父目录仍位于 `rootDir` 内，并拒绝最终目标是 symbolic link 的路径，避免通过 symlink / junction 写出工作区。
+- 写入前会查找目标父目录中最近的已存在祖先目录并校验其 `realpath` 仍位于 `rootDir` 内；创建缺失父目录后会再次执行同一校验。
+- 目标路径若已存在且是 symbolic link，会被拒绝，避免通过 symlink / junction 写出工作区。
 - 目标路径已存在时，会先读取文件并检测原始行尾；`lineEnding=auto` 时保留原始行尾风格。
 - 目标路径不存在时，`lineEnding=auto` 默认使用 LF。
 - 内容中如果包含疑似省略占位符，会继续写入并在成功消息后追加 Warning，提醒调用方确认是否为有意的文档或示例文本。
@@ -65,7 +66,7 @@ Success: wrote nested/example.txt. Total lines: 2.
 |-|-|
 | `src/tools/write-file.ts` | Schema 定义、参数校验、路径安全、写入编排、成功消息 |
 | `src/tools/index.ts` | 工具注册 |
-| `src/utils/paths.ts` | `resolvePath()` 与 `validatePathAccess()` 路径安全校验 |
+| `src/utils/paths.ts` | 路径分类、root 边界校验、display path、写入 realpath / symlink 安全校验 |
 | `src/utils/file-lock.ts` | `withFileLock()` 文件级并发锁 |
 | `src/engine/text-utils.ts` | 行尾符检测与解析 |
 | `src/utils/file-read.ts` | 二进制文件识别 |
