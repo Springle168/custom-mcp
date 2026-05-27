@@ -1,7 +1,8 @@
 // src/tools/read-many-files.ts
 
 import * as fs from 'node:fs/promises';
-import { glob } from 'glob';
+import * as path from 'node:path';
+import { escape, glob } from 'glob';
 import type { Config } from '../config.js';
 import type { MCPTool } from './types.js';
 import {
@@ -211,6 +212,7 @@ async function tryAddLiteralFile(
   item: string,
   safePath: SafePath,
   itemHasGlobMagic: boolean,
+  effectiveExcludes: string[],
   fileMap: Map<string, FileEntry>,
   skipped: SkippedEntry[],
 ): Promise<LiteralDecision> {
@@ -231,6 +233,14 @@ async function tryAddLiteralFile(
       return 'handled';
     }
 
+    if (
+      safePath.kind === 'relative' &&
+      !(await relativeLiteralPassesExcludes(safePath, effectiveExcludes))
+    ) {
+      skipped.push({ path: item, reason: 'excluded by exclude patterns' });
+      return 'handled';
+    }
+
     addFile(fileMap, {
       readPath: readTarget.realPath,
       displayPath: safePath.displayPath,
@@ -247,6 +257,23 @@ async function tryAddLiteralFile(
     });
     return 'handled';
   }
+}
+
+async function relativeLiteralPassesExcludes(
+  safePath: SafePath,
+  effectiveExcludes: string[],
+): Promise<boolean> {
+  const escapedPattern = escape(safePath.displayPath.replace(/\\/g, '/'));
+  const entries = await glob(escapedPattern, {
+    cwd: safePath.rootDir,
+    ignore: effectiveExcludes,
+    nodir: true,
+    dot: true,
+    absolute: true,
+  });
+  const expectedPath = fileKey(safePath.resolvedPath);
+
+  return entries.some((entry) => fileKey(path.resolve(entry)) === expectedPath);
 }
 
 async function expandGlobPattern(
@@ -356,6 +383,7 @@ async function handleReadManyFiles(
         item,
         safePathResult.path,
         itemHasGlobMagic,
+        effectiveExcludes,
         fileMap,
         skipped,
       );

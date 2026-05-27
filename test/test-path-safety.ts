@@ -41,6 +41,7 @@ async function prepareFixtures(): Promise<void> {
   await fs.mkdir(path.join(FIXTURES_DIR, 'special'), { recursive: true });
   await fs.mkdir(OUTSIDE_DIR, { recursive: true });
 
+  await fs.writeFile(path.join(FIXTURES_DIR, '.env'), 'SECRET=hidden\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'Foo.ts'), 'export const foo = 1;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'nested', 'Bar.ts'), 'export const bar = 2;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file[test].ts'), 'export const bracket = true;\n', 'utf-8');
@@ -162,6 +163,50 @@ async function testGlobStaticBaseOutsideRootFailsBeforeReading(): Promise<void> 
   assertNotIncludes(text, 'export const outside = true;', 'Outside file content must not be read');
 }
 
+async function testBraceExpandedParentTraversalFailsBeforeGlob(): Promise<void> {
+  const globSafety = resolveSafeGlobPattern('{..,src}/**/*.ts', FIXTURES_DIR);
+  assert(globSafety.ok === false, 'Brace-expanded parent traversal should be rejected before glob expansion');
+  assertEqual(globSafety.error.code, 'invalid_glob', 'Brace-expanded parent traversal should be an invalid glob');
+
+  const result = await readManyFilesTool.handler(
+    { include: ['{..,src}/**/*.ts'], useDefaultExcludes: false },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Brace-expanded parent traversal should fail');
+  const text = getResultText(result);
+  assertIncludes(text, "contains '..'", 'Failure should explain parent traversal in glob remainder');
+  assertNotIncludes(text, 'export const outside = true;', 'Outside file content must not be read');
+}
+
+async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
+  const globSafety = resolveSafeGlobPattern('src/@(Foo).ts', FIXTURES_DIR);
+  assert(globSafety.ok === true, 'Extglob-only pattern should be recognized as glob magic');
+
+  const result = await readManyFilesTool.handler(
+    { include: ['src/@(Foo).ts'], useDefaultExcludes: false },
+    testConfig,
+  );
+
+  assert(result.isError !== true, 'Extglob-only pattern should be expanded');
+  const text = getResultText(result);
+  assertIncludes(text, 'Read 1 file(s)', 'Extglob-only pattern should read Foo.ts');
+  assertIncludes(text, 'src\\Foo.ts', 'Extglob-only pattern should display the matched file');
+  assertIncludes(text, 'export const foo = 1;', 'Extglob-only pattern should include Foo content');
+}
+
+async function testRelativeLiteralPathHonorsDefaultExcludes(): Promise<void> {
+  const result = await readManyFilesTool.handler(
+    { include: ['.env'] },
+    testConfig,
+  );
+
+  assert(result.isError === true, 'Relative literal .env should be excluded by default');
+  const text = getResultText(result);
+  assertIncludes(text, 'excluded by exclude patterns', 'Relative literal should report exclude filtering');
+  assertNotIncludes(text, 'SECRET=hidden', 'Excluded relative literal content must not be read');
+}
+
 async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
   const result = await readManyFilesTool.handler(
     {
@@ -261,6 +306,9 @@ async function main(): Promise<void> {
       { name: 'Drive-absolute glob validates static base and preserves display kind', run: testDriveAbsoluteGlobStaticBaseAndDisplay },
       { name: 'Slash-leading glob is relative while plain rooted path fails', run: testSlashLeadingGlobIsRelativeButPlainRootedPathFails },
       { name: 'Glob static base outside root fails before reading', run: testGlobStaticBaseOutsideRootFailsBeforeReading },
+      { name: 'Brace-expanded parent traversal fails before glob', run: testBraceExpandedParentTraversalFailsBeforeGlob },
+      { name: 'Extglob-only pattern is expanded', run: testExtglobOnlyPatternIsExpanded },
+      { name: 'Relative literal path honors default excludes', run: testRelativeLiteralPathHonorsDefaultExcludes },
       { name: 'Literal filenames with glob metacharacters are read safely', run: testLiteralFilenamesWithGlobMetacharacters },
       { name: 'Read rejects symlink escape when available', run: testReadRejectsSymlinkEscapeWhenAvailable },
       { name: 'Write rejects symlink target when available', run: testWriteRejectsSymlinkTargetWhenAvailable },

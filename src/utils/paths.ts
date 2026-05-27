@@ -72,7 +72,8 @@ interface StaticGlobBase {
 
 const DRIVE_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 const DRIVE_RELATIVE_RE = /^[a-zA-Z]:(?![\\/])/;
-const GLOB_MAGIC_RE = /[*?\[\]{}]/;
+const GLOB_MAGIC_RE = /[*?\[\]{}]|[!@+]\(/;
+const MAX_SEGMENT_EXPANSIONS = 64;
 
 export function hasGlobMagic(input: string): boolean {
   return GLOB_MAGIC_RE.test(input);
@@ -472,7 +473,150 @@ function getStaticGlobBase(
 }
 
 function containsParentTraversal(globPart: string): boolean {
-  return globPart.split('/').some((segment) => segment === '..');
+  if (/(^|\/)\.\.(\/|$)/.test(globPart)) return true;
+  if (/[({|,]\.\.(?:[\/)},|]|$)/.test(globPart)) return true;
+
+  return globPart
+    .split('/')
+    .some((segment) => segmentCanExpandToParentTraversal(segment));
+}
+
+function segmentCanExpandToParentTraversal(segment: string): boolean {
+  if (segment === '..') return true;
+
+  const expansions = expandSegmentAlternatives(segment, MAX_SEGMENT_EXPANSIONS);
+  return expansions.some((expanded) => expanded === '..');
+}
+
+function expandSegmentAlternatives(segment: string, limit: number): string[] {
+  const brace = findFirstBraceGroup(segment);
+  if (brace) {
+    return expandGroupAlternatives(
+      segment,
+      brace.start,
+      brace.end,
+      splitTopLevel(brace.content, ','),
+      limit,
+    );
+  }
+
+  const extglob = findFirstExtglobGroup(segment);
+  if (extglob && extglob.operator !== '!') {
+    return expandGroupAlternatives(
+      segment,
+      extglob.start,
+      extglob.end,
+      splitTopLevel(extglob.content, '|'),
+      limit,
+    );
+  }
+
+  return [segment];
+}
+
+function expandGroupAlternatives(
+  segment: string,
+  start: number,
+  end: number,
+  alternatives: string[],
+  limit: number,
+): string[] {
+  const prefix = segment.slice(0, start);
+  const suffix = segment.slice(end + 1);
+  const expanded: string[] = [];
+
+  for (const alternative of alternatives) {
+    const candidates = expandSegmentAlternatives(
+      `${prefix}${alternative}${suffix}`,
+      limit,
+    );
+    for (const candidate of candidates) {
+      expanded.push(candidate);
+      if (expanded.length >= limit) return expanded;
+    }
+  }
+
+  return expanded;
+}
+
+function findFirstBraceGroup(
+  input: string,
+): { start: number; end: number; content: string } | null {
+  let depth = 0;
+  let start = -1;
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index];
+    if (char === '{') {
+      if (depth === 0) start = index;
+      depth++;
+    } else if (char === '}' && depth > 0) {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return {
+          start,
+          end: index,
+          content: input.slice(start + 1, index),
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function findFirstExtglobGroup(
+  input: string,
+): { start: number; end: number; content: string; operator: string } | null {
+  for (let index = 0; index < input.length - 1; index++) {
+    const operator = input[index];
+    if (!'!@+*?'.includes(operator) || input[index + 1] !== '(') continue;
+
+    let depth = 1;
+    for (let cursor = index + 2; cursor < input.length; cursor++) {
+      const char = input[cursor];
+      if (char === '(') {
+        depth++;
+      } else if (char === ')') {
+        depth--;
+        if (depth === 0) {
+          return {
+            start: index,
+            end: cursor,
+            content: input.slice(index + 2, cursor),
+            operator,
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function splitTopLevel(input: string, delimiter: ',' | '|'): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let braceDepth = 0;
+  let parenDepth = 0;
+
+  for (const char of input) {
+    if (char === '{') braceDepth++;
+    if (char === '}' && braceDepth > 0) braceDepth--;
+    if (char === '(') parenDepth++;
+    if (char === ')' && parenDepth > 0) parenDepth--;
+
+    if (char === delimiter && braceDepth === 0 && parenDepth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  parts.push(current);
+  return parts;
 }
 
 function joinGlobParts(base: string, remainder: string): string {
