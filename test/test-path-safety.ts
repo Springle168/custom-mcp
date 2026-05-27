@@ -218,6 +218,26 @@ async function testRelativeLiteralPathHonorsDefaultExcludes(): Promise<void> {
   assertNotIncludes(text, 'SECRET=hidden', 'Excluded relative literal content must not be read');
 }
 
+async function testRelativeLiteralPathHonorsBraceAndExtglobExcludes(): Promise<void> {
+  const braceResult = await readManyFilesTool.handler(
+    { include: ['src/Foo.ts'], exclude: ['src/*.{ts,tsx}'], useDefaultExcludes: false },
+    testConfig,
+  );
+
+  assert(braceResult.isError === true, 'Brace exclude should filter a relative literal path');
+  assertIncludes(getResultText(braceResult), 'excluded by exclude patterns', 'Brace exclude should be reported');
+  assertNotIncludes(getResultText(braceResult), 'export const foo = 1;', 'Brace-excluded content must not be read');
+
+  const extglobResult = await readManyFilesTool.handler(
+    { include: ['src/Foo.ts'], exclude: ['src/@(Foo).ts'], useDefaultExcludes: false },
+    testConfig,
+  );
+
+  assert(extglobResult.isError === true, 'Extglob exclude should filter a relative literal path');
+  assertIncludes(getResultText(extglobResult), 'excluded by exclude patterns', 'Extglob exclude should be reported');
+  assertNotIncludes(getResultText(extglobResult), 'export const foo = 1;', 'Extglob-excluded content must not be read');
+}
+
 async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
   const result = await readManyFilesTool.handler(
     {
@@ -323,6 +343,7 @@ async function main(): Promise<void> {
       { name: 'Long brace-expanded parent traversal fails closed', run: testLongBraceExpandedParentTraversalFailsClosed },
       { name: 'Extglob-only pattern is expanded', run: testExtglobOnlyPatternIsExpanded },
       { name: 'Relative literal path honors default excludes', run: testRelativeLiteralPathHonorsDefaultExcludes },
+      { name: 'Relative literal path honors brace and extglob excludes', run: testRelativeLiteralPathHonorsBraceAndExtglobExcludes },
       { name: 'Literal filenames with glob metacharacters are read safely', run: testLiteralFilenamesWithGlobMetacharacters },
       { name: 'Read rejects symlink escape when available', run: testReadRejectsSymlinkEscapeWhenAvailable },
       { name: 'Write rejects symlink target when available', run: testWriteRejectsSymlinkTargetWhenAvailable },
