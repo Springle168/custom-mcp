@@ -1,3 +1,5 @@
+import { format } from 'node:util';
+
 export type TestFn = () => void | Promise<void>;
 
 export interface TestCase {
@@ -21,6 +23,16 @@ export interface TestSuiteResult {
 export interface TextResultLike {
   content?: Array<{ text?: string }>;
 }
+
+type ConsoleMethod = 'log' | 'info' | 'warn' | 'error';
+
+interface CapturedConsoleLine {
+  method: ConsoleMethod;
+  text: string;
+}
+
+const CONSOLE_METHODS: ConsoleMethod[] = ['log', 'info', 'warn', 'error'];
+const VERBOSE_TEST_OUTPUT = process.argv.includes('--verbose');
 
 export function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
@@ -65,18 +77,29 @@ export function getResultText(result: TextResultLike): string {
 }
 
 export async function runTest(name: string, test: TestFn): Promise<void> {
-  console.log(`Test: ${name}`);
+  if (VERBOSE_TEST_OUTPUT) {
+    console.log(`Test: ${name}`);
+  }
+
   await test();
-  console.log('  ✓ Passed\n');
+
+  if (VERBOSE_TEST_OUTPUT) {
+    console.log('  ✓ Passed\n');
+  }
 }
 
 export async function runTestSuite(
   options: RunTestSuiteOptions,
 ): Promise<TestSuiteResult> {
-  printDivider();
-  console.log(options.title);
-  printDivider();
-  printDetails(options.details);
+  if (VERBOSE_TEST_OUTPUT) {
+    printDivider();
+    console.log(options.title);
+    printDivider();
+    printDetails(options.details);
+  } else {
+    console.log();
+    console.log(options.title);
+  }
 
   let passed = 0;
   let failed = 0;
@@ -87,12 +110,19 @@ export async function runTestSuite(
 
   try {
     for (const testCase of options.tests) {
+      let capturedOutput: CapturedConsoleLine[] = [];
+
       try {
-        await runTest(testCase.name, testCase.run);
+        if (VERBOSE_TEST_OUTPUT) {
+          await runTest(testCase.name, testCase.run);
+        } else {
+          capturedOutput = await runQuietTest(testCase.run);
+        }
+
         passed++;
       } catch (error) {
         failed++;
-        console.error(`  ✗ Failed: ${formatError(error)}\n`);
+        printFailure(testCase.name, error, capturedOutput);
       }
     }
   } finally {
@@ -101,15 +131,74 @@ export async function runTestSuite(
     }
   }
 
-  printDivider();
+  if (VERBOSE_TEST_OUTPUT) {
+    printDivider();
+  }
+
   console.log(`Results: ${passed} passed, ${failed} failed`);
-  printDivider();
+
+  if (VERBOSE_TEST_OUTPUT) {
+    printDivider();
+  }
 
   if (failed > 0) {
     process.exit(1);
   }
 
   return { passed, failed };
+}
+
+async function runQuietTest(test: TestFn): Promise<CapturedConsoleLine[]> {
+  const capturedOutput: CapturedConsoleLine[] = [];
+  const originalMethods = new Map<ConsoleMethod, (...data: unknown[]) => void>();
+
+  for (const method of CONSOLE_METHODS) {
+    originalMethods.set(method, console[method].bind(console));
+    console[method] = (...data: unknown[]): void => {
+      capturedOutput.push({
+        method,
+        text: format(...data),
+      });
+    };
+  }
+
+  try {
+    await test();
+  } finally {
+    for (const method of CONSOLE_METHODS) {
+      const original = originalMethods.get(method);
+      if (original) {
+        console[method] = original;
+      }
+    }
+  }
+
+  return capturedOutput;
+}
+
+function printFailure(
+  name: string,
+  error: unknown,
+  capturedOutput: CapturedConsoleLine[],
+): void {
+  if (VERBOSE_TEST_OUTPUT) {
+    console.error(`  ✗ Failed: ${formatError(error)}\n`);
+    return;
+  }
+
+  console.error(`Test: ${name}`);
+  console.error(`  ✗ Failed: ${formatError(error)}`);
+
+  if (capturedOutput.length > 0) {
+    console.error('  Captured output:');
+    for (const line of capturedOutput) {
+      for (const textLine of line.text.split('\n')) {
+        console.error(`    [${line.method}] ${textLine}`);
+      }
+    }
+  }
+
+  console.error('');
 }
 
 function printDivider(): void {

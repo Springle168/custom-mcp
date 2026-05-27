@@ -39,7 +39,7 @@ custom-mcp/test/
 
 - 使用 `assert()`、`assertEqual()`、`assertIncludes()`、`assertNotIncludes()` 统一断言错误格式。
 - 使用 `getResultText()` 提取 MCP 工具调用结果中的首段文本，避免各测试重复定义结果结构。
-- 使用 `runTestSuite()` 注册测试用例，保留 `Test: ...`、`✓ Passed` 和 `Results: ...` 的统一输出。
+- 使用 `runTestSuite()` 注册测试用例；默认输出测试套件标题、失败用例和最终 `Results: ...` 汇总，成功用例及其 `console.*` 输出会保持静默。需要旧的逐用例 `Test: ...` / `✓ Passed` 输出时，在测试命令末尾追加 `--verbose`。
 - 需要准备或清理 fixture 时，通过 `beforeAll` / `afterAll` 挂到 `runTestSuite()`；`afterAll` 会在测试失败后继续执行。
 - `test/test-ask-user.ts`、`test/inspect-tools.ts`、`test/test-logger.ts` 属于交互、检查或日志演示脚本，可按自身输出需求保留独立结构。
 
