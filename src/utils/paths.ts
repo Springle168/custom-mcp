@@ -4,10 +4,34 @@ import * as path from 'node:path';
 export type SafePathKind = 'drive_absolute' | 'relative';
 export type SafePathDisplayKind = 'absolute' | 'relative_to_root';
 
+export type WorkspaceRootKind = 'primary' | 'additional';
+
+export interface WorkspaceRootPermissions {
+  read: true;
+  write: true;
+}
+
+export interface WorkspaceRoot {
+  kind: WorkspaceRootKind;
+  rootDir: string;
+  /**
+   * Null means this root was built by the legacy synchronous single-root
+   * wrapper, so read/write validation must resolve the real path lazily.
+   */
+  realRootDir: string | null;
+  permissions: WorkspaceRootPermissions;
+}
+
+export interface PathSafetyContext {
+  primaryRoot: WorkspaceRoot;
+  allowedRoots: WorkspaceRoot[];
+}
+
 export interface SafePath {
   input: string;
   kind: SafePathKind;
   resolvedPath: string;
+  matchedRoot: WorkspaceRoot;
   rootDir: string;
   displayPath: string;
   displayKind: SafePathDisplayKind;
@@ -39,6 +63,7 @@ export interface SafeGlobPattern {
   pattern: string;
   staticBase: string;
   resolvedStaticBase: string;
+  matchedRoot: WorkspaceRoot;
   rootDir: string;
   displayKind: SafePathDisplayKind;
 }
@@ -65,6 +90,8 @@ type PathClassificationResult =
   | { ok: true; path: PathClassification }
   | { ok: false; error: PathSafetyError };
 
+type WorkspaceRootMatch = WorkspaceRoot | 'multiple' | null;
+
 interface StaticGlobBase {
   staticBase: string;
   magicRemainder: string;
@@ -74,9 +101,42 @@ const DRIVE_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 const DRIVE_RELATIVE_RE = /^[a-zA-Z]:(?![\\/])/;
 const GLOB_MAGIC_RE = /[*?\[\]{}]|[!@+]\(/;
 const MAX_SEGMENT_TRAVERSAL_CHECKS = 1024;
+const DEFAULT_WORKSPACE_ROOT_PERMISSIONS: WorkspaceRootPermissions = {
+  read: true,
+  write: true,
+};
 
 export function hasGlobMagic(input: string): boolean {
   return GLOB_MAGIC_RE.test(input);
+}
+
+export function createWorkspaceRoot(
+  kind: WorkspaceRootKind,
+  rootDir: string,
+  realRootDir: string | null = null,
+): WorkspaceRoot {
+  return {
+    kind,
+    rootDir: path.resolve(rootDir),
+    realRootDir: realRootDir === null ? null : path.resolve(realRootDir),
+    permissions: { ...DEFAULT_WORKSPACE_ROOT_PERMISSIONS },
+  };
+}
+
+export function createPathSafetyContext(
+  rootDir: string,
+  otherRootDirs: string[] = [],
+): PathSafetyContext {
+  const primaryRoot = createWorkspaceRoot('primary', rootDir);
+  return {
+    primaryRoot,
+    allowedRoots: [
+      primaryRoot,
+      ...otherRootDirs.map((otherRootDir) =>
+        createWorkspaceRoot('additional', otherRootDir),
+      ),
+    ],
+  };
 }
 
 export function resolvePath(filePath: string, rootDir: string): string {
@@ -98,19 +158,42 @@ export function validatePathAccess(
 }
 
 export function resolveSafePath(input: string, rootDir: string): SafePathResult {
+  return resolveSafePathInContext(input, createPathSafetyContext(rootDir));
+}
+
+export function resolveSafePathInContext(
+  input: string,
+  context: PathSafetyContext,
+): SafePathResult {
   const classification = classifyPathInput(input, { allowSlashLeadingGlob: false });
   if (!classification.ok) return classification;
 
-  const normalizedRoot = path.resolve(rootDir);
+  const primaryRoot = context.primaryRoot;
+  const allowedRoots = getAllowedRoots(context);
   const resolvedPath = classification.path.kind === 'drive_absolute'
     ? path.resolve(classification.path.pathInput)
-    : path.resolve(normalizedRoot, classification.path.pathInput);
+    : path.resolve(primaryRoot.rootDir, classification.path.pathInput);
 
-  if (!isPathInsideRoot(resolvedPath, normalizedRoot)) {
+  const matchedRoot = classification.path.kind === 'drive_absolute'
+    ? matchUniqueAllowedRoot(resolvedPath, allowedRoots)
+    : matchPrimaryRoot(resolvedPath, primaryRoot);
+
+  if (matchedRoot === null) {
+    const boundary = classification.path.kind === 'relative'
+      ? primaryRoot.rootDir
+      : describeWorkspaceBoundaryForError(context);
     return pathError(
       input,
       'outside_root_dir',
-      `Path ${input} resolves outside the allowed workspace ${normalizedRoot}.`,
+      `Path ${input} resolves outside the allowed workspace ${boundary}.`,
+    );
+  }
+
+  if (matchedRoot === 'multiple') {
+    return pathError(
+      input,
+      'outside_root_dir',
+      `Path ${input} matches multiple allowed workspaces. Check the path safety configuration.`,
     );
   }
 
@@ -124,8 +207,9 @@ export function resolveSafePath(input: string, rootDir: string): SafePathResult 
       input,
       kind: classification.path.kind,
       resolvedPath,
-      rootDir: normalizedRoot,
-      displayPath: getDisplayPath(resolvedPath, normalizedRoot, displayKind),
+      matchedRoot,
+      rootDir: matchedRoot.rootDir,
+      displayPath: getDisplayPath(resolvedPath, matchedRoot.rootDir, displayKind),
       displayKind,
     },
   };
@@ -134,6 +218,16 @@ export function resolveSafePath(input: string, rootDir: string): SafePathResult 
 export function resolveSafeGlobPattern(
   input: string,
   rootDir: string,
+): SafeGlobPatternResult {
+  return resolveSafeGlobPatternInContext(
+    input,
+    createPathSafetyContext(rootDir),
+  );
+}
+
+export function resolveSafeGlobPatternInContext(
+  input: string,
+  context: PathSafetyContext,
 ): SafeGlobPatternResult {
   const classification = classifyPathInput(input, { allowSlashLeadingGlob: true });
   if (!classification.ok) return classification;
@@ -160,21 +254,37 @@ export function resolveSafeGlobPattern(
     );
   }
 
-  const normalizedRoot = path.resolve(rootDir);
+  const primaryRoot = context.primaryRoot;
+  const allowedRoots = getAllowedRoots(context);
   const resolvedStaticBase = classification.path.kind === 'drive_absolute'
     ? path.resolve(staticBase.staticBase)
-    : path.resolve(normalizedRoot, staticBase.staticBase);
+    : path.resolve(primaryRoot.rootDir, staticBase.staticBase);
 
-  if (!isPathInsideRoot(resolvedStaticBase, normalizedRoot)) {
+  const matchedRoot = classification.path.kind === 'drive_absolute'
+    ? matchUniqueAllowedRoot(resolvedStaticBase, allowedRoots)
+    : matchPrimaryRoot(resolvedStaticBase, primaryRoot);
+
+  if (matchedRoot === null) {
+    const boundary = classification.path.kind === 'relative'
+      ? primaryRoot.rootDir
+      : describeWorkspaceBoundaryForError(context);
     return pathError(
       input,
       'outside_root_dir',
-      `Glob pattern ${input} has a static base outside the allowed workspace ${normalizedRoot}.`,
+      `Glob pattern ${input} has a static base outside the allowed workspace ${boundary}.`,
+    );
+  }
+
+  if (matchedRoot === 'multiple') {
+    return pathError(
+      input,
+      'outside_root_dir',
+      `Glob pattern ${input} has a static base that matches multiple allowed workspaces. Check the path safety configuration.`,
     );
   }
 
   const canonicalStaticBase = toGlobPath(
-    path.relative(normalizedRoot, resolvedStaticBase),
+    path.relative(matchedRoot.rootDir, resolvedStaticBase),
   );
   const pattern = joinGlobParts(
     canonicalStaticBase,
@@ -192,7 +302,8 @@ export function resolveSafeGlobPattern(
       pattern,
       staticBase: staticBase.staticBase,
       resolvedStaticBase,
-      rootDir: normalizedRoot,
+      matchedRoot,
+      rootDir: matchedRoot.rootDir,
       displayKind,
     },
   };
@@ -204,11 +315,11 @@ export function resolveSafeGlobEntry(
 ): SafePathResult {
   const resolvedPath = path.resolve(entry);
 
-  if (!isPathInsideRoot(resolvedPath, globPattern.rootDir)) {
+  if (!isPathInsideRoot(resolvedPath, globPattern.matchedRoot.rootDir)) {
     return pathError(
       entry,
       'outside_root_dir',
-      `Glob result ${entry} resolves outside the allowed workspace ${globPattern.rootDir}.`,
+      `Glob result ${entry} resolves outside the allowed workspace ${globPattern.matchedRoot.rootDir}.`,
     );
   }
 
@@ -218,10 +329,11 @@ export function resolveSafeGlobEntry(
       input: entry,
       kind: globPattern.kind,
       resolvedPath,
-      rootDir: globPattern.rootDir,
+      matchedRoot: globPattern.matchedRoot,
+      rootDir: globPattern.matchedRoot.rootDir,
       displayPath: getDisplayPath(
         resolvedPath,
-        globPattern.rootDir,
+        globPattern.matchedRoot.rootDir,
         globPattern.displayKind,
       ),
       displayKind: globPattern.displayKind,
@@ -234,7 +346,7 @@ export async function validateSafeReadTarget(
 ): Promise<SafeReadTargetResult> {
   let realRoot: string;
   try {
-    realRoot = await fs.realpath(safePath.rootDir);
+    realRoot = await resolveWorkspaceRealRoot(safePath.matchedRoot);
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
     return {
@@ -275,7 +387,7 @@ export async function validateSafeWriteTarget(
 ): Promise<string | null> {
   let realRoot: string;
   try {
-    realRoot = await fs.realpath(safePath.rootDir);
+    realRoot = await resolveWorkspaceRealRoot(safePath.matchedRoot);
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
     return `Could not resolve workspace root: ${error.message}. Check the server configuration.`;
@@ -311,6 +423,48 @@ export async function validateSafeWriteTarget(
 
 export function formatPathSafetyError(error: PathSafetyError): string {
   return error.message;
+}
+
+async function resolveWorkspaceRealRoot(root: WorkspaceRoot): Promise<string> {
+  if (root.realRootDir !== null) return root.realRootDir;
+  return fs.realpath(root.rootDir);
+}
+
+function matchPrimaryRoot(
+  resolvedPath: string,
+  primaryRoot: WorkspaceRoot,
+): WorkspaceRoot | null {
+  return isPathInsideRoot(resolvedPath, primaryRoot.rootDir)
+    ? primaryRoot
+    : null;
+}
+
+function matchUniqueAllowedRoot(
+  resolvedPath: string,
+  allowedRoots: WorkspaceRoot[],
+): WorkspaceRootMatch {
+  const matches = allowedRoots.filter((root) =>
+    isPathInsideRoot(resolvedPath, root.rootDir),
+  );
+
+  if (matches.length === 0) return null;
+  if (matches.length > 1) return 'multiple';
+  return matches[0];
+}
+
+function getAllowedRoots(context: PathSafetyContext): WorkspaceRoot[] {
+  if (context.allowedRoots.includes(context.primaryRoot)) {
+    return context.allowedRoots;
+  }
+  return [context.primaryRoot, ...context.allowedRoots];
+}
+
+function describeWorkspaceBoundaryForError(context: PathSafetyContext): string {
+  const allowedRoots = getAllowedRoots(context);
+  if (allowedRoots.length === 1) {
+    return allowedRoots[0].rootDir;
+  }
+  return `one of: ${allowedRoots.map((root) => root.rootDir).join(', ')}`;
 }
 
 function classifyPathInput(

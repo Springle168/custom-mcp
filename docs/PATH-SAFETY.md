@@ -14,6 +14,8 @@
 - glob 模式在展开前和展开后都必须保持在 `rootDir` 内。
 - 文件类工具的路径入口统一由 `src/utils/paths.ts` 处理。
 
+内部实现已经引入 `PathSafetyContext` / `WorkspaceRoot` 抽象。当前工具层仍调用 `resolveSafePath(input, rootDir)`、`resolveSafeGlobPattern(input, rootDir)` 等单 root wrapper；wrapper 会构造只含 primary root 的 context，因此当前运行时语义仍保持单一 `rootDir`。`SafePath` 与 `SafeGlobPattern` 同时保留兼容字段 `rootDir`，并携带内部 `matchedRoot` 元数据，供后续多工作区切换使用。
+
 ---
 
 ## 输入路径语义

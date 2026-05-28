@@ -6,8 +6,12 @@ import readFileTool from '../src/tools/read-file.js';
 import readManyFilesTool from '../src/tools/read-many-files.js';
 import writeFileTool from '../src/tools/write-file.js';
 import {
+  createPathSafetyContext,
+  resolveSafeGlobEntry,
   resolveSafeGlobPattern,
+  resolveSafeGlobPatternInContext,
   resolveSafePath,
+  resolveSafePathInContext,
   type PathSafetyErrorCode,
 } from '../src/utils/paths.js';
 import {
@@ -70,6 +74,62 @@ function assertPathError(input: string, code: PathSafetyErrorCode): void {
   const result = resolveSafePath(input, FIXTURES_DIR);
   assert(result.ok === false, `${input} should be rejected`);
   assertEqual(result.error.code, code, `${input} should fail with ${code}`);
+}
+
+async function testSingleRootWrappersAttachPrimaryMatchedRoot(): Promise<void> {
+  const normalizedRoot = path.resolve(FIXTURES_DIR);
+  const safePathResult = resolveSafePath('src/Foo.ts', FIXTURES_DIR);
+
+  assert(safePathResult.ok === true, 'Single-root path wrapper should still resolve relative paths');
+  assertEqual(safePathResult.path.rootDir, normalizedRoot, 'SafePath.rootDir should remain the normalized root');
+  assertEqual(safePathResult.path.matchedRoot.kind, 'primary', 'SafePath should carry the primary matched root');
+  assertEqual(safePathResult.path.matchedRoot.rootDir, normalizedRoot, 'Matched root should use the normalized root');
+  assert(
+    safePathResult.path.matchedRoot.permissions.read &&
+      safePathResult.path.matchedRoot.permissions.write,
+    'Matched root should expose read/write permissions for future root metadata',
+  );
+
+  const globResult = resolveSafeGlobPattern('src/**/*.ts', FIXTURES_DIR);
+  assert(globResult.ok === true, 'Single-root glob wrapper should still resolve relative globs');
+  assertEqual(globResult.glob.rootDir, normalizedRoot, 'SafeGlobPattern.rootDir should remain the normalized root');
+  assertEqual(globResult.glob.matchedRoot.kind, 'primary', 'SafeGlobPattern should carry the primary matched root');
+
+  const entryResult = resolveSafeGlobEntry(
+    path.join(FIXTURES_DIR, 'src', 'Foo.ts'),
+    globResult.glob,
+  );
+  assert(entryResult.ok === true, 'Glob entry should resolve against the glob matched root');
+  assertEqual(entryResult.path.matchedRoot.rootDir, normalizedRoot, 'Glob entry should preserve matched root metadata');
+}
+
+async function testContextMatchesAdditionalRootOnlyForAbsoluteInput(): Promise<void> {
+  const context = createPathSafetyContext(FIXTURES_DIR, [OUTSIDE_DIR]);
+  const additionalFile = path.join(OUTSIDE_DIR, 'outside.ts');
+  const absoluteResult = resolveSafePathInContext(additionalFile, context);
+
+  assert(absoluteResult.ok === true, 'Context API should resolve drive-absolute paths in additional roots');
+  assertEqual(absoluteResult.path.matchedRoot.kind, 'additional', 'Drive-absolute additional root path should match additional root');
+  assertEqual(absoluteResult.path.rootDir, path.resolve(OUTSIDE_DIR), 'SafePath.rootDir should point at the matched additional root');
+  assertEqual(absoluteResult.path.displayKind, 'absolute', 'Additional root paths should keep absolute display');
+  assertEqual(absoluteResult.path.displayPath, path.resolve(additionalFile), 'Additional root display should be absolute');
+
+  const relativeEscape = resolveSafePathInContext(
+    path.join('..', 'path-safety-outside', 'outside.ts'),
+    context,
+  );
+  assert(relativeEscape.ok === false, 'Relative paths must not escape primary root into an additional root');
+  assertEqual(relativeEscape.error.code, 'outside_root_dir', 'Relative escape into additional root should fail closed');
+
+  const globResult = resolveSafeGlobPatternInContext(
+    path.join(OUTSIDE_DIR, '**', '*.ts'),
+    context,
+  );
+  assert(globResult.ok === true, 'Context API should resolve drive-absolute globs in additional roots');
+  assertEqual(globResult.glob.matchedRoot.kind, 'additional', 'Drive-absolute glob should match additional root');
+  assertEqual(globResult.glob.rootDir, path.resolve(OUTSIDE_DIR), 'SafeGlobPattern.rootDir should point at the matched additional root');
+  assertEqual(globResult.glob.pattern, '**/*.ts', 'Additional root glob should expand relative to the matched root');
+  assertEqual(globResult.glob.displayKind, 'absolute', 'Additional root glob results should display as absolute paths');
 }
 
 async function testRejectsUnsupportedPathShapes(): Promise<void> {
@@ -357,6 +417,8 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
+      { name: 'Single-root wrappers attach primary matched root metadata', run: testSingleRootWrappersAttachPrimaryMatchedRoot },
+      { name: 'Context API matches additional root only for absolute input', run: testContextMatchesAdditionalRootOnlyForAbsoluteInput },
       { name: 'Reject unsupported path shapes before resolve', run: testRejectsUnsupportedPathShapes },
       { name: 'Reject prefix-sibling path outside root', run: testPrefixSiblingIsOutsideRoot },
       { name: 'Drive-absolute glob validates static base and preserves display kind', run: testDriveAbsoluteGlobStaticBaseAndDisplay },
