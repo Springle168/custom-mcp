@@ -23,7 +23,7 @@ docs/tools/
 | 工具名 | 功能 | 文档 |
 |-|-|-|
 | `replace_text` | 文件局部替换，default 模式使用 Exact → Flexible → Tokenized → Fuzzy，regex 模式使用显式 JavaScript 正则 | [docs/tools/replace-text.md](tools/replace-text.md) |
-| `read_many_files` | 批量读取多个文本文件，支持绝对路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `read_many_files` | 批量读取多个文本文件，支持相对路径、位于 `rootDir` 内的 drive-absolute 路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
@@ -157,7 +157,7 @@ return {
 
 ### 文件操作类工具的通用考虑
 
-1. **路径安全**：所有文件操作必须调用 `validatePathAccess()` 校验路径在 `rootDir` 范围内。
+1. **路径安全**：所有文件 I/O 必须先通过 `src/utils/paths.ts` 的统一路径安全层；写入工具还必须使用共享写入安全校验。详细语义见 [docs/PATH-SAFETY.md](PATH-SAFETY.md)。
 2. **并发安全**：涉及文件写入的操作应使用 `withFileLock()` 包裹。只读工具不需要加锁。
 3. **行尾符**：读取时统一转为 `\n` 处理，写入时用 `resolveLineEnding()` 恢复。
 4. **错误处理**：区分 `ENOENT`（文件不存在）和其他文件系统错误，给出不同的错误消息。
