@@ -183,8 +183,8 @@ async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise
   );
   assertIncludes(
     getResultText(relativeEscapeResult),
-    'outside the allowed workspace',
-    'Relative escape into additional root should explain boundary rejection',
+    'primary workspace root',
+    'Relative escape into additional root should explain primary-root boundary rejection',
   );
 }
 
@@ -291,7 +291,7 @@ async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): P
     );
     assertIncludes(
       getResultText(result),
-      'outside the allowed workspace',
+      'matched primary workspace root',
       'Matched-root realpath check should reject primary -> additional symlink reads',
     );
     symlinkResults.push('primary to additional symlink: ran');
@@ -328,7 +328,7 @@ async function testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck(): P
     );
     assertIncludes(
       getResultText(result),
-      'outside the allowed workspace',
+      'matched additional workspace root',
       'Matched-root realpath check should reject additional -> primary symlink reads',
     );
     symlinkResults.push('additional to primary symlink: ran');
@@ -370,7 +370,7 @@ async function testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootChec
     );
     assertIncludes(
       getResultText(result),
-      'resolves outside the allowed workspace',
+      'matched additional workspace root',
       'Matched-root realpath check should reject additional -> primary symlink writes',
     );
 
@@ -414,7 +414,7 @@ async function testPrefixSiblingIsOutsideRoot(): Promise<void> {
     assert(result.isError === true, 'Sibling prefix path should fail');
     assertIncludes(
       getResultText(result),
-      'outside the allowed workspace',
+      'configured workspace roots',
       'Failure should explain root boundary rejection',
     );
   } finally {
@@ -477,7 +477,11 @@ async function testGlobStaticBaseOutsideRootFailsBeforeReading(): Promise<void> 
 
   assert(result.isError === true, 'Outside glob static base should fail');
   const text = getResultText(result);
-  assertIncludes(text, 'outside workspace', 'Failure should identify the workspace boundary');
+  assertIncludes(
+    text,
+    'primary workspace root',
+    'Failure should identify the primary workspace boundary',
+  );
   assertNotIncludes(text, 'export const outside = true;', 'Outside file content must not be read');
 }
 
@@ -622,8 +626,26 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
     assert(result.isError === true, 'read_file should reject symlink escapes');
     assertIncludes(
       getResultText(result),
-      'outside the allowed workspace',
+      'matched primary workspace root',
       'read_file should report realpath escape',
+    );
+
+    const readManyResult = await readManyFilesTool.handler(
+      {
+        include: [path.join('outside-link', 'outside.ts')],
+        useDefaultExcludes: false,
+      },
+      testConfig,
+    );
+
+    assert(
+      readManyResult.isError === true,
+      'read_many_files should reject symlink escapes',
+    );
+    assertIncludes(
+      getResultText(readManyResult),
+      'matched primary workspace root',
+      'read_many_files should preserve detailed realpath escape reasons',
     );
     symlinkResults.push('read symlink escape: ran');
   } finally {

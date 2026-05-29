@@ -200,13 +200,11 @@ function addFile(fileMap: Map<string, FileEntry>, entry: FileEntry): void {
 }
 
 function pathSafetySkipReason(error: PathSafetyError): string {
-  if (error.code === 'outside_root_dir') return 'outside workspace';
   return formatPathSafetyError(error);
 }
 
 function readSafetySkipReason(result: SafeReadTargetResult): string {
   if (result.ok) return '';
-  if (result.code === 'outside_root_dir') return 'outside workspace';
   return result.reason;
 }
 

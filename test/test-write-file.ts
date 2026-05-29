@@ -100,7 +100,7 @@ async function testRejectOutsideWorkspace() {
   assert(result.isError === true, 'Should fail');
   assertIncludes(
     getResultText(result),
-    'outside the allowed workspace',
+    'configured workspace roots',
     'Should explain path rejection',
   );
 
@@ -178,7 +178,7 @@ async function testRejectSymlinkEscapingWorkspace() {
     assert(result.isError === true, 'Should fail');
     assertIncludes(
       getResultText(result),
-      'resolves outside the allowed workspace',
+      'matched primary workspace root',
       'Should reject symlink path escapes',
     );
 
