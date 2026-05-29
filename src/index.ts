@@ -41,6 +41,27 @@ function createMCPServer(config: Config, logger: Logger): Server {
   return server;
 }
 
+function logWorkspaceRoots(config: Config, logger: Logger): void {
+  const primaryRoot = config.pathSafetyContext?.primaryRoot.rootDir ?? config.rootDir;
+  const additionalRoots = config.pathSafetyContext
+    ? config.pathSafetyContext.allowedRoots
+        .filter((root) => root.kind === 'additional')
+        .map((root) => root.rootDir)
+    : config.otherRootDirs ?? [];
+
+  logger.info(`  Primary root: ${primaryRoot}`);
+
+  if (additionalRoots.length === 0) {
+    logger.info('  Additional roots: none');
+    return;
+  }
+
+  logger.info('  Additional roots:');
+  for (const rootDir of additionalRoots) {
+    logger.info(`    - ${rootDir}`);
+  }
+}
+
 // ================
 // HTTP + Session Management
 // ================
@@ -203,7 +224,7 @@ async function main() {
   app.listen(config.port, () => {
     logger.info('MCP Replace Server started');
     logger.info(`  Endpoint: http://localhost:${config.port}/mcp`);
-    logger.info(`  Root dir: ${config.rootDir}`);
+    logWorkspaceRoots(config, logger);
     logger.info(`  Line ending: ${config.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
   });
