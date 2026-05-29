@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { Config } from '../config.js';
+import { getPathSafetyContext, type Config } from '../config.js';
 import {
   detectLineEnding,
   resolveLineEnding,
@@ -10,7 +10,7 @@ import { isBinaryFile } from '../utils/file-read.js';
 import { withFileLock } from '../utils/file-lock.js';
 import {
   formatPathSafetyError,
-  resolveSafePath,
+  resolveSafePathInContext,
   validateSafeWriteTarget,
 } from '../utils/paths.js';
 import type { MCPTool, ToolCallResult } from './types.js';
@@ -24,7 +24,7 @@ const WRITE_FILE_TOOL_DEFINITION = {
   description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
 
 Use this tool for new files or full-file rewrites. Use replace_text or similar tools for targeted edits to existing files.
-The file path must stay inside the configured workspace root.
+The file path must stay inside a configured workspace root. Relative paths resolve from the primary root; additional roots require drive-absolute paths.
 The content parameter must contain the full file contents; possible omission placeholders like "..." or "rest of code" are written but reported as warnings.
 On success, returns a message with the written path and the file's total line count.`,
   inputSchema: {
@@ -33,7 +33,7 @@ On success, returns a message with the written path and the file's total line co
       file_path: {
         type: 'string',
         description:
-          'Path to the file to write. Relative paths resolve from the configured workspace root.',
+          'Path to the file to write. Relative paths resolve from the primary workspace root; drive-absolute paths may target any configured workspace root.',
       },
       content: {
         type: 'string',
@@ -161,7 +161,8 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
-  const safePathResult = resolveSafePath(filePath, config.rootDir);
+  const pathSafetyContext = getPathSafetyContext(config);
+  const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
     return errorResult(formatPathSafetyError(safePathResult.error));
   }

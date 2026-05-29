@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `file_path` | `string` | ✅ | — | 要读取的文本文件路径，支持相对 `rootDir` 或位于 `rootDir` 内的 drive-absolute 路径 |
+| `file_path` | `string` | ✅ | — | 要读取的文本文件路径；相对路径基于 primary `rootDir`，drive-absolute 路径可位于任一 allowed root 内 |
 | `start_line` | `integer \| string` | ❌ | — | 起始位置；解释方式由 `read_mode` 决定 |
 | `end_line` | `integer \| string` | ❌ | — | 结束位置，包含该行；解释方式由 `read_mode` 决定 |
 | `read_mode` | `"line" \| "regex"` | ❌ | `"line"` | 行定位模式：`line` 按行号解释，`regex` 按逐行正则解释 |
@@ -38,9 +38,9 @@
 
 ### 路径安全
 
-`file_path` 统一通过 `src/utils/paths.ts` 的路径安全层处理：先按原始输入分类，再解析和做 lexical root 边界校验。支持普通相对路径和 drive-absolute 路径；drive-relative（如 `C:foo.txt`）、rooted without drive（如 `/foo.txt`、`\\foo.txt`）、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
+`file_path` 统一通过 `src/utils/paths.ts` 的路径安全层处理：先按原始输入分类，再解析和做 lexical root 边界校验。相对路径只基于 primary `rootDir`；drive-absolute 路径可位于 primary 或 additional root 内，并会命中唯一 matched root。drive-relative（如 `C:foo.txt`）、rooted without drive（如 `/foo.txt`、`\\foo.txt`）、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
 
-读取已存在文件时，工具会在 lexical 校验通过后执行 `realpath` 校验，确认真实目标仍位于 `rootDir` 内，再继续 `stat`、二进制检测和文本读取。
+读取已存在文件时，工具会在 lexical 校验通过后执行 `realpath` 校验，确认真实目标仍位于同一个 matched root 内，再继续 `stat`、二进制检测和文本读取。
 
 ### 参数校验
 
@@ -104,7 +104,7 @@ Partial read: showing lines A-B of N total lines.
 --- End of content ---
 ```
 
-输出中的 `{filePath}` 由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 `rootDir` 的路径。工具层不再通过 `path.isAbsolute()` 自行判断显示策略。
+输出中的 `{filePath}` 由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 primary `rootDir` 的路径。工具层不再通过 `path.isAbsolute()` 自行判断显示策略。
 
 ### 输出示例
 
@@ -191,4 +191,4 @@ data class Foo(
 | 图片 / PDF / 音频读取 | 不移植，二进制文件直接报错 | 本项目 `ToolCallResult` 目前只建模 text 内容 |
 | JIT 上下文注入 | 移除 | Gemini CLI 专属功能 |
 | 遥测日志 | 移除 | 本项目使用自己的日志系统 |
-| ignore 文件过滤 | 移除 | 本项目以 `rootDir` 沙箱作为安全边界 |
+| ignore 文件过滤 | 移除 | 本项目以 allowed roots 沙箱作为安全边界 |

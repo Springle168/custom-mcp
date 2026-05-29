@@ -2,7 +2,7 @@
 
 ## 概述
 
-批量读取多个文本文件内容并拼接返回。支持相对路径、位于 `rootDir` 内的 drive-absolute 路径和 glob 模式混合输入，解决 Android Studio 内置 `read_file` 只能逐个读取的效率问题。
+批量读取多个文本文件内容并拼接返回。支持相对路径、位于任一 allowed root 内的 drive-absolute 路径和 glob 模式混合输入，解决 Android Studio 内置 `read_file` 只能逐个读取的效率问题。
 
 核心设计理念：AI 在分析代码时经常需要同时查看多个文件的内容（如一个包下的所有 `.kt` 文件），逐个调用 `read_file` 会产生大量往返，浪费 token和时间。本工具一次调用即可返回所有文件内容。
 
@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；所有输入最终必须位于 `rootDir` 内 |
+| `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；相对输入基于 primary `rootDir`，drive-absolute 输入可位于任一 allowed root 内 |
 | `exclude` | `string[]` | ❌ | `[]` | 额外排除模式，追加到默认排除之后 |
 | `useDefaultExcludes` | `boolean` | ❌ | `true` | 是否启用默认排除规则 |
 | `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数、总行数和是否会截断，不返回文件内容 |
@@ -41,28 +41,28 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 
 ### 路径分类处理
 
-`include` 数组中的每个元素先进入统一路径安全层，路径层会在任何文件系统 I/O 前完成输入形态分类和 lexical root 边界校验：
+`include` 数组中的每个元素先进入统一路径安全层，路径层会在任何文件系统 I/O 前完成输入形态分类、lexical root 边界校验和 matched root 选择：
 
 ```text
 遍历 include 数组
 ├── 字面路径候选（relative 或 drive-absolute）
-│   → resolveSafePath lexical 校验
-│   → validateSafeReadTarget realpath 校验
+│   → resolveSafePathInContext lexical 校验并得到 matched root
+│   → validateSafeReadTarget realpath 校验，真实目标必须仍在 matched root 内
 │   → fs.stat 确认为文件后加入待读集合
 │   → drive-absolute 字面路径不受 exclude 模式影响
 │
 └── glob 候选
-    → resolveSafeGlobPattern 分类并计算 static base
-    → static base 必须位于 rootDir 内，否则不调用 glob()
-    → glob(pattern, { cwd: rootDir, ignore: effectiveExcludes, absolute: true })
-    → 每个展开结果再次做 lexical + realpath 校验
+    → resolveSafeGlobPatternInContext 分类并计算 static base
+    → static base 必须命中唯一 matched root，否则不调用 glob()
+    → glob(pattern, { cwd: matchedRoot.rootDir, ignore: effectiveExcludes, absolute: true })
+    → 每个展开结果再次做 lexical + realpath 校验，且必须仍在同一个 matched root 内
 ```
 
-支持的 glob 来源包括 relative glob（如 `src/**/*.ts`）、drive-absolute glob（如 `E:/Repo/src/**/*.ts`）和窄兼容的 slash-leading glob（如 `/**/Foo.kt`）。普通 `/foo/bar.ts` 不含 glob 元字符，会按 rooted without drive 拒绝。
+支持的 glob 来源包括 relative glob（如 `src/**/*.ts`）、drive-absolute glob（如 `E:/Repo/src/**/*.ts`）和窄兼容的 slash-leading glob（如 `/**/Foo.kt`）。relative glob 和 slash-leading glob 只基于 primary `rootDir`；drive-absolute glob 可命中 primary 或 additional root。普通 `/foo/bar.ts` 不含 glob 元字符，会按 rooted without drive 拒绝。
 
 文件名中包含 glob 元字符（如 `special/file[test].ts`、`special/file{brace}.ts`）时，工具会先在 lexical 校验通过后按字面文件探测；只有不存在或不是文件时，才继续按 glob 模式处理。
 
-Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。Glob 展开结果仍受 exclude 过滤。
+Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。Glob 展开结果仍受 exclude 过滤，包括 additional root 内的 drive-absolute glob。
 
 ### 二进制文件检测
 
@@ -100,7 +100,7 @@ Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的�
 
 ### 输出格式
 
-返回中的文件显示路径由路径安全层统一决定：drive-absolute 字面路径或 drive-absolute glob 命中的文件显示绝对路径；相对路径、relative glob 和 slash-leading glob 命中的文件显示相对 `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
+返回中的文件显示路径由路径安全层统一决定：drive-absolute 字面路径或 drive-absolute glob 命中的文件显示绝对路径；相对路径、relative glob 和 slash-leading glob 命中的文件显示相对 primary `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
 
 ```
 Read 3 file(s), skipped 1.
@@ -187,8 +187,8 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 
 | 原版功能 | 处理方式 | 原因 |
 |-|-|-|
-| 多工作区遍历 | 移除，使用单一 `rootDir` | 本项目只有一个工作区 |
-| gitignore / geminiignore 过滤 | 移除 | `rootDir` 沙箱 + exclude 参数已足够 |
+| 多工作区遍历 | 不移植 Gemini CLI 的自动遍历模型；改为显式 `otherRootDirs` allowed roots | 本项目要求 additional root 必须通过 drive-absolute path / glob 明确访问 |
+| gitignore / geminiignore 过滤 | 移除 | allowed roots 沙箱 + exclude 参数已足够 |
 | 图片 / PDF / 音频读取（base64） | 移除，统一跳过非文本文件 | Android Studio 侧支持不确定，使用场景极少 |
 | JIT 上下文注入 | 移除 | Gemini CLI 专属功能 |
 | 遥测日志 | 移除 | 本项目使用自己的日志系统 |

@@ -23,7 +23,7 @@ docs/tools/
 | 工具名 | 功能 | 文档 |
 |-|-|-|
 | `replace_text` | 文件局部替换，default 模式使用 Exact → Flexible → Tokenized → Fuzzy，regex 模式使用显式 JavaScript 正则 | [docs/tools/replace-text.md](tools/replace-text.md) |
-| `read_many_files` | 批量读取多个文本文件，支持相对路径、位于 `rootDir` 内的 drive-absolute 路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `read_many_files` | 批量读取多个文本文件，支持相对路径、位于 allowed roots 内的 drive-absolute 路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
@@ -184,5 +184,5 @@ MCP 客户端可能并发发送多个 `tools/call` 请求。当前的并发策�
 |-|-|-|
 | 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read_file` 确认内容；regex 模式检查 JavaScript 正则 pattern |
 | 替换失败 `expected 1` 或 `matched_targets=N` | `target` 匹配了多处但未允许多匹配 | AI 需要提供更多上下文，或设置 `allow_multiple=true` |
-| 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确，确认文件在 `rootDir` 范围内 |
+| 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确；相对输入需位于 primary `rootDir`，drive-absolute 输入需位于 allowed roots 内 |
 | 编译报类型错误 | SDK 版本更新导致接口变化 | 检查 `ToolCallResult` 是否需要补充字段 |

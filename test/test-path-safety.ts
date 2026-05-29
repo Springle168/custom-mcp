@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/config.js';
 import readFileTool from '../src/tools/read-file.js';
 import readManyFilesTool from '../src/tools/read-many-files.js';
+import replaceTool from '../src/tools/replace.js';
 import writeFileTool from '../src/tools/write-file.js';
 import {
   createPathSafetyContext,
+  createValidatedPathSafetyContext,
   resolveSafeGlobEntry,
   resolveSafeGlobPattern,
   resolveSafeGlobPatternInContext,
@@ -37,12 +39,27 @@ const testConfig: Config = {
 
 const symlinkResults: string[] = [];
 
+function createMultiRootConfig(): Config {
+  return {
+    rootDir: FIXTURES_DIR,
+    otherRootDirs: [OUTSIDE_DIR],
+    lineEnding: 'auto',
+    port: 3100,
+    pathSafetyContext: createValidatedPathSafetyContext(
+      FIXTURES_DIR,
+      [OUTSIDE_DIR],
+    ),
+  };
+}
+
 async function prepareFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
   await fs.rm(OUTSIDE_DIR, { recursive: true, force: true });
 
   await fs.mkdir(path.join(FIXTURES_DIR, 'src', 'nested'), { recursive: true });
   await fs.mkdir(path.join(FIXTURES_DIR, 'special'), { recursive: true });
+  await fs.mkdir(path.join(OUTSIDE_DIR, 'docs'), { recursive: true });
+  await fs.mkdir(path.join(OUTSIDE_DIR, 'node_modules'), { recursive: true });
   await fs.mkdir(OUTSIDE_DIR, { recursive: true });
 
   await fs.writeFile(path.join(FIXTURES_DIR, '.env'), 'SECRET=hidden\n', 'utf-8');
@@ -53,6 +70,8 @@ async function prepareFixtures(): Promise<void> {
   await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file{brace}.ts'), 'export const brace = true;\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file{a,b}.ts'), 'export const braceComma = true;\n', 'utf-8');
   await fs.writeFile(path.join(OUTSIDE_DIR, 'outside.ts'), 'export const outside = true;\n', 'utf-8');
+  await fs.writeFile(path.join(OUTSIDE_DIR, 'docs', 'visible.txt'), 'visible additional text\n', 'utf-8');
+  await fs.writeFile(path.join(OUTSIDE_DIR, 'node_modules', 'excluded.txt'), 'excluded additional text\n', 'utf-8');
 }
 
 async function cleanupFixtures(): Promise<void> {
@@ -130,6 +149,243 @@ async function testContextMatchesAdditionalRootOnlyForAbsoluteInput(): Promise<v
   assertEqual(globResult.glob.rootDir, path.resolve(OUTSIDE_DIR), 'SafeGlobPattern.rootDir should point at the matched additional root');
   assertEqual(globResult.glob.pattern, '**/*.ts', 'Additional root glob should expand relative to the matched root');
   assertEqual(globResult.glob.displayKind, 'absolute', 'Additional root glob results should display as absolute paths');
+}
+
+async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise<void> {
+  const multiRootConfig = createMultiRootConfig();
+  const additionalFile = path.join(OUTSIDE_DIR, 'outside.ts');
+
+  const readResult = await readFileTool.handler(
+    { file_path: additionalFile },
+    multiRootConfig,
+  );
+
+  assert(readResult.isError !== true, 'read_file should read absolute paths in additional roots');
+  assertIncludes(
+    getResultText(readResult),
+    `--- ${additionalFile} ---`,
+    'Additional root read_file display should stay absolute',
+  );
+  assertIncludes(
+    getResultText(readResult),
+    'export const outside = true;',
+    'Additional root read_file should include file content',
+  );
+
+  const relativeEscapeResult = await readFileTool.handler(
+    { file_path: path.join('..', 'path-safety-outside', 'outside.ts') },
+    multiRootConfig,
+  );
+
+  assert(
+    relativeEscapeResult.isError === true,
+    'Relative paths must not escape primary root into an additional root',
+  );
+  assertIncludes(
+    getResultText(relativeEscapeResult),
+    'outside the allowed workspace',
+    'Relative escape into additional root should explain boundary rejection',
+  );
+}
+
+async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
+  const multiRootConfig = createMultiRootConfig();
+  const writeTarget = path.join(OUTSIDE_DIR, 'written-from-tool.txt');
+  const writeResult = await writeFileTool.handler(
+    { file_path: writeTarget, content: 'alpha\nbeta' },
+    multiRootConfig,
+  );
+
+  assert(writeResult.isError !== true, 'write_file should write absolute paths in additional roots');
+  assertIncludes(
+    getResultText(writeResult),
+    `Success: wrote ${writeTarget}.`,
+    'Additional root write_file display should stay absolute',
+  );
+  assertEqual(
+    await fs.readFile(writeTarget, 'utf-8'),
+    'alpha\nbeta',
+    'write_file should write into the additional root target',
+  );
+
+  const replaceTarget = path.join(OUTSIDE_DIR, 'replace-from-tool.ts');
+  await fs.writeFile(replaceTarget, 'export const flag = true;\n', 'utf-8');
+  const replaceResult = await replaceTool.handler(
+    {
+      file_path: replaceTarget,
+      target: 'true',
+      replacement: 'false',
+    },
+    multiRootConfig,
+  );
+
+  assert(replaceResult.isError !== true, 'replace_text should modify absolute paths in additional roots');
+  assertEqual(
+    await fs.readFile(replaceTarget, 'utf-8'),
+    'export const flag = false;\n',
+    'replace_text should write back to the additional root target',
+  );
+}
+
+async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise<void> {
+  const multiRootConfig = createMultiRootConfig();
+  const visiblePath = path.join(OUTSIDE_DIR, 'docs', 'visible.txt');
+  const excludedPath = path.join(OUTSIDE_DIR, 'node_modules', 'excluded.txt');
+
+  const literalResult = await readManyFilesTool.handler(
+    { include: [excludedPath] },
+    multiRootConfig,
+  );
+
+  assert(
+    literalResult.isError !== true,
+    'Drive-absolute literal paths in additional roots should bypass excludes',
+  );
+  assertIncludes(
+    getResultText(literalResult),
+    'excluded additional text',
+    'Drive-absolute literal should read even when default excludes match',
+  );
+
+  const globResult = await readManyFilesTool.handler(
+    { include: [path.join(OUTSIDE_DIR, '**', '*.txt')] },
+    multiRootConfig,
+  );
+
+  assert(
+    globResult.isError !== true,
+    'Drive-absolute glob in additional roots should expand from its matched root',
+  );
+  const text = getResultText(globResult);
+  assertIncludes(text, `--- ${visiblePath} ---`, 'Additional root glob should display absolute file paths');
+  assertIncludes(text, 'visible additional text', 'Additional root glob should include non-excluded files');
+  assertNotIncludes(text, 'excluded additional text', 'Additional root glob should honor default excludes');
+  assertNotIncludes(text, 'node_modules', 'Additional root glob should not list excluded node_modules files');
+}
+
+async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): Promise<void> {
+  const linkPath = path.join(FIXTURES_DIR, 'link-to-additional');
+  await removeLinkIfExists(linkPath);
+
+  try {
+    try {
+      await fs.symlink(
+        OUTSIDE_DIR,
+        linkPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      symlinkResults.push(`primary to additional symlink skipped: ${error.message}`);
+      return;
+    }
+
+    const result = await readFileTool.handler(
+      { file_path: path.join('link-to-additional', 'outside.ts') },
+      createMultiRootConfig(),
+    );
+
+    assert(
+      result.isError === true,
+      'Relative access through a primary-root symlink to an additional root should fail',
+    );
+    assertIncludes(
+      getResultText(result),
+      'outside the allowed workspace',
+      'Matched-root realpath check should reject primary -> additional symlink reads',
+    );
+    symlinkResults.push('primary to additional symlink: ran');
+  } finally {
+    await removeLinkIfExists(linkPath);
+  }
+}
+
+async function testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck(): Promise<void> {
+  const linkPath = path.join(OUTSIDE_DIR, 'link-to-primary');
+  await removeLinkIfExists(linkPath);
+
+  try {
+    try {
+      await fs.symlink(
+        FIXTURES_DIR,
+        linkPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      symlinkResults.push(`additional to primary symlink skipped: ${error.message}`);
+      return;
+    }
+
+    const result = await readFileTool.handler(
+      { file_path: path.join(linkPath, 'src', 'Foo.ts') },
+      createMultiRootConfig(),
+    );
+
+    assert(
+      result.isError === true,
+      'Absolute access through an additional-root symlink to primary should fail',
+    );
+    assertIncludes(
+      getResultText(result),
+      'outside the allowed workspace',
+      'Matched-root realpath check should reject additional -> primary symlink reads',
+    );
+    symlinkResults.push('additional to primary symlink: ran');
+  } finally {
+    await removeLinkIfExists(linkPath);
+  }
+}
+
+async function testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootCheck(): Promise<void> {
+  const linkPath = path.join(OUTSIDE_DIR, 'write-link-to-primary');
+  const primaryEscapedPath = path.join(FIXTURES_DIR, 'escaped-from-additional.txt');
+  await removeLinkIfExists(linkPath);
+  await fs.rm(primaryEscapedPath, { force: true });
+
+  try {
+    try {
+      await fs.symlink(
+        FIXTURES_DIR,
+        linkPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      symlinkResults.push(`additional write parent symlink skipped: ${error.message}`);
+      return;
+    }
+
+    const result = await writeFileTool.handler(
+      {
+        file_path: path.join(linkPath, 'escaped-from-additional.txt'),
+        content: 'nope',
+      },
+      createMultiRootConfig(),
+    );
+
+    assert(
+      result.isError === true,
+      'write_file should reject additional-root parent symlinks that resolve into primary',
+    );
+    assertIncludes(
+      getResultText(result),
+      'resolves outside the allowed workspace',
+      'Matched-root realpath check should reject additional -> primary symlink writes',
+    );
+
+    try {
+      await fs.stat(primaryEscapedPath);
+      assert(false, 'write_file must not write through an additional-root symlink into primary');
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') throw error;
+    }
+    symlinkResults.push('additional write parent symlink: ran');
+  } finally {
+    await removeLinkIfExists(linkPath);
+    await fs.rm(primaryEscapedPath, { force: true });
+  }
 }
 
 async function testRejectsUnsupportedPathShapes(): Promise<void> {
@@ -419,6 +675,12 @@ async function main(): Promise<void> {
     tests: [
       { name: 'Single-root wrappers attach primary matched root metadata', run: testSingleRootWrappersAttachPrimaryMatchedRoot },
       { name: 'Context API matches additional root only for absolute input', run: testContextMatchesAdditionalRootOnlyForAbsoluteInput },
+      { name: 'File tools access additional root only with absolute paths', run: testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths },
+      { name: 'write_file and replace_text use additional matched root', run: testWriteAndReplaceUseAdditionalMatchedRoot },
+      { name: 'read_many_files handles additional root glob and exclude semantics', run: testReadManyFilesAdditionalRootGlobAndExcludeSemantics },
+      { name: 'Primary symlink to additional root still fails matched-root check', run: testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck },
+      { name: 'Additional symlink to primary root still fails matched-root check', run: testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck },
+      { name: 'Additional write parent symlink to primary root fails matched-root check', run: testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootCheck },
       { name: 'Reject unsupported path shapes before resolve', run: testRejectsUnsupportedPathShapes },
       { name: 'Reject prefix-sibling path outside root', run: testPrefixSiblingIsOutsideRoot },
       { name: 'Drive-absolute glob validates static base and preserves display kind', run: testDriveAbsoluteGlobStaticBaseAndDisplay },

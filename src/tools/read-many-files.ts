@@ -2,15 +2,16 @@
 
 import * as fs from 'node:fs/promises';
 import { glob, Ignore } from 'glob';
-import type { Config } from '../config.js';
+import { getPathSafetyContext, type Config } from '../config.js';
 import type { MCPTool } from './types.js';
 import {
   formatPathSafetyError,
   hasGlobMagic,
   resolveSafeGlobEntry,
-  resolveSafeGlobPattern,
-  resolveSafePath,
+  resolveSafeGlobPatternInContext,
+  resolveSafePathInContext,
   validateSafeReadTarget,
+  type PathSafetyContext,
   type PathSafetyError,
   type SafePath,
   type SafeReadTargetResult,
@@ -67,7 +68,7 @@ const DEFAULT_EXCLUDES: string[] = [
 
 const READ_MANY_FILES_TOOL_DEFINITION = {
   name: 'read_many_files',
-  description: `Reads and returns the content of multiple text files in one call. Supports drive-absolute file paths and glob patterns inside the configured workspace root.
+  description: `Reads and returns the content of multiple text files in one call. Supports drive-absolute file paths and glob patterns inside configured workspace roots.
 
 Use this tool when you need content from several files at once, such as:
 - Reading all Kotlin files in a package: include ["src/main/kotlin/com/example/**/*.kt"]
@@ -78,6 +79,8 @@ Text files only. Binary files (images, archives, compiled output, etc.) are auto
 Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file or a similar file-reading tool on that specific file for full content.
 Set shallow_read to true to list matched files with per-file line counts, total line count, and truncation status without returning file contents.
 Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".
+Relative paths and globs resolve from the primary workspace root. Additional roots must be accessed with drive-absolute paths or globs.
+Drive-absolute literal paths bypass excludes; glob results, including drive-absolute globs in additional roots, still use excludes.
 Default excludes filter out node_modules, .git, build directories, and binary files. Set useDefaultExcludes to false to disable.
 Prefer read_file for a single file. Use this tool when reading 2 or more files.`,
   inputSchema: {
@@ -88,7 +91,7 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
         items: { type: 'string', minLength: 1 },
         minItems: 1,
         description:
-          'File paths or glob patterns to read. Drive-absolute paths and relative globs are resolved under the workspace root. Examples: ["src/**/*.kt"], ["E:/workspace/project/Foo.kt", "docs/*.md"]',
+          'File paths or glob patterns to read. Relative paths/globs resolve from the primary workspace root; drive-absolute paths/globs may target any configured workspace root. Examples: ["src/**/*.kt"], ["E:/workspace/project/Foo.kt", "docs/*.md"]',
       },
       exclude: {
         type: 'array',
@@ -279,11 +282,11 @@ function relativeLiteralPassesExcludes(
 async function expandGlobPattern(
   item: string,
   effectiveExcludes: string[],
-  config: Config,
+  pathSafetyContext: PathSafetyContext,
   fileMap: Map<string, FileEntry>,
   skipped: SkippedEntry[],
 ): Promise<string | null> {
-  const globResult = resolveSafeGlobPattern(item, config.rootDir);
+  const globResult = resolveSafeGlobPatternInContext(item, pathSafetyContext);
   if (!globResult.ok) {
     skipped.push({ path: item, reason: pathSafetySkipReason(globResult.error) });
     return null;
@@ -373,10 +376,11 @@ async function handleReadManyFiles(
   // 3. Resolve literal paths and expand glob patterns after lexical safety checks.
   const fileMap = new Map<string, FileEntry>();
   const skipped: SkippedEntry[] = [];
+  const pathSafetyContext = getPathSafetyContext(config);
 
   for (const item of include) {
     const itemHasGlobMagic = hasGlobMagic(item);
-    const safePathResult = resolveSafePath(item, config.rootDir);
+    const safePathResult = resolveSafePathInContext(item, pathSafetyContext);
 
     if (safePathResult.ok) {
       const literalDecision = await tryAddLiteralFile(
@@ -403,7 +407,7 @@ async function handleReadManyFiles(
       const globError = await expandGlobPattern(
         item,
         effectiveExcludes,
-        config,
+        pathSafetyContext,
         fileMap,
         skipped,
       );

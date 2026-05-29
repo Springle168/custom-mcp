@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  createPathSafetyContext,
+  createValidatedPathSafetyContext,
+  type PathSafetyContext,
+} from './utils/paths.js';
 
 export interface AndroidConfig {
   workspaceRoot?: string;
@@ -12,9 +17,11 @@ export interface AndroidConfig {
 
 export interface Config {
   rootDir: string;
+  otherRootDirs?: string[];
   lineEnding: 'auto' | 'lf' | 'crlf';
   port: number;
   android?: AndroidConfig;
+  pathSafetyContext?: PathSafetyContext;
 }
 
 export interface AndroidConfigSource {
@@ -27,6 +34,7 @@ export interface AndroidConfigSource {
 
 export interface ConfigSource {
   rootDir?: unknown;
+  otherRootDirs?: unknown;
   lineEnding?: unknown;
   port?: unknown;
   android?: AndroidConfigSource;
@@ -50,6 +58,31 @@ function readOptionalString(value: unknown): string | undefined {
 
 function readRequiredString(value: unknown): string {
   return readOptionalString(value) || '';
+}
+
+function readOptionalStringArray(
+  name: string,
+  value: unknown,
+): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`${name} must be an array of non-empty strings.`);
+  }
+
+  if (value.length === 0) {
+    return undefined;
+  }
+
+  return value.map((item, index) => {
+    const parsed = readOptionalString(item);
+    if (parsed === undefined) {
+      throw new Error(`${name}[${index}] must be a non-empty string.`);
+    }
+    return parsed;
+  });
 }
 
 function readLineEnding(value: unknown): Config['lineEnding'] {
@@ -174,10 +207,17 @@ export function buildConfig(
   fileConfig: ConfigSource = {},
   env: NodeJS.ProcessEnv = process.env,
 ): Config {
+  const rootDir = readRequiredString(
+    getConfiguredValue(env, 'MCP_ROOT_DIR', fileConfig.rootDir),
+  );
+  const otherRootDirs = readOptionalStringArray(
+    'otherRootDirs',
+    fileConfig.otherRootDirs,
+  );
+
   return {
-    rootDir: readRequiredString(
-      getConfiguredValue(env, 'MCP_ROOT_DIR', fileConfig.rootDir),
-    ),
+    rootDir,
+    ...(otherRootDirs ? { otherRootDirs } : {}),
     lineEnding: readLineEnding(
       getConfiguredValue(env, 'MCP_LINE_ENDING', fileConfig.lineEnding),
     ),
@@ -188,6 +228,23 @@ export function buildConfig(
     ),
     android: buildAndroidConfig(fileConfig.android, env),
   };
+}
+
+export function attachValidatedPathSafetyContext(config: Config): Config {
+  return {
+    ...config,
+    pathSafetyContext: createValidatedPathSafetyContext(
+      config.rootDir,
+      config.otherRootDirs ?? [],
+    ),
+  };
+}
+
+export function getPathSafetyContext(config: Config): PathSafetyContext {
+  return config.pathSafetyContext ?? createPathSafetyContext(
+    config.rootDir,
+    config.otherRootDirs ?? [],
+  );
 }
 
 export function loadConfig(): Config {
@@ -213,7 +270,7 @@ export function loadConfig(): Config {
       process.exit(1);
     }
 
-    return config;
+    return attachValidatedPathSafetyContext(config);
   } catch (err) {
     console.error(`Invalid config in ${CONFIG_PATH}`);
     console.error(err);

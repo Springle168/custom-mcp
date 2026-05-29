@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { Config } from '../config.js';
+import { getPathSafetyContext, type Config } from '../config.js';
 import {
   calculateMatchedSpan,
   calculateRegexReplacement,
@@ -17,7 +17,7 @@ import {
 import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
 import {
   formatPathSafetyError,
-  resolveSafePath,
+  resolveSafePathInContext,
   validateSafeWriteTarget,
 } from '../utils/paths.js';
 import { withFileLock } from '../utils/file-lock.js';
@@ -583,7 +583,8 @@ export async function handleReplace(
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
-  const safePathResult = resolveSafePath(filePath, config.rootDir);
+  const pathSafetyContext = getPathSafetyContext(config);
+  const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
     return errorResult(
       payloadFromArgs(
