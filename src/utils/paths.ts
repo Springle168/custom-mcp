@@ -334,7 +334,7 @@ export function validatePathAccess(
   rootDir: string,
 ): string | null {
   if (!isPathInsideRoot(resolvedPath, rootDir)) {
-    return `Path ${resolvedPath} is outside the allowed workspace ${rootDir}.`;
+    return `Path ${resolvedPath} is outside the configured workspace root ${rootDir}.`;
   }
   return null;
 }
@@ -361,13 +361,13 @@ export function resolveSafePathInContext(
     : matchPrimaryRoot(resolvedPath, primaryRoot);
 
   if (matchedRoot === null) {
-    const boundary = classification.path.kind === 'relative'
-      ? primaryRoot.rootDir
-      : describeWorkspaceBoundaryForError(context);
+    const message = classification.path.kind === 'relative'
+      ? describeRelativePathOutsidePrimaryRootError(input, context)
+      : `Path ${input} resolves outside the configured workspace roots (${describeAllowedWorkspaceRootsForError(context)}). Provide a drive-absolute path inside one of these roots.`;
     return pathError(
       input,
       'outside_root_dir',
-      `Path ${input} resolves outside the allowed workspace ${boundary}.`,
+      message,
     );
   }
 
@@ -375,7 +375,7 @@ export function resolveSafePathInContext(
     return pathError(
       input,
       'outside_root_dir',
-      `Path ${input} matches multiple allowed workspaces. Check the path safety configuration.`,
+      `Path ${input} matches multiple configured workspace roots. Check the path safety configuration.`,
     );
   }
 
@@ -447,13 +447,13 @@ export function resolveSafeGlobPatternInContext(
     : matchPrimaryRoot(resolvedStaticBase, primaryRoot);
 
   if (matchedRoot === null) {
-    const boundary = classification.path.kind === 'relative'
-      ? primaryRoot.rootDir
-      : describeWorkspaceBoundaryForError(context);
+    const message = classification.path.kind === 'relative'
+      ? describeRelativeGlobOutsidePrimaryRootError(input, context)
+      : `Glob pattern ${input} has a static base outside the configured workspace roots (${describeAllowedWorkspaceRootsForError(context)}). Provide a glob whose static base is inside one of these roots.`;
     return pathError(
       input,
       'outside_root_dir',
-      `Glob pattern ${input} has a static base outside the allowed workspace ${boundary}.`,
+      message,
     );
   }
 
@@ -461,7 +461,7 @@ export function resolveSafeGlobPatternInContext(
     return pathError(
       input,
       'outside_root_dir',
-      `Glob pattern ${input} has a static base that matches multiple allowed workspaces. Check the path safety configuration.`,
+      `Glob pattern ${input} has a static base that matches multiple configured workspace roots. Check the path safety configuration.`,
     );
   }
 
@@ -501,7 +501,7 @@ export function resolveSafeGlobEntry(
     return pathError(
       entry,
       'outside_root_dir',
-      `Glob result ${entry} resolves outside the allowed workspace ${globPattern.matchedRoot.rootDir}.`,
+      `Glob result ${entry} resolves outside its matched ${describeWorkspaceRootForError(globPattern.matchedRoot)}. Glob expansion results must stay within the same matched workspace root.`,
     );
   }
 
@@ -557,7 +557,7 @@ export async function validateSafeReadTarget(
     return {
       ok: false,
       code: 'outside_root_dir',
-      reason: `Path ${safePath.input} resolves outside the allowed workspace. Provide a path inside the configured workspace root.`,
+      reason: `Path ${safePath.input} resolves outside its matched ${describeWorkspaceRootForError(safePath.matchedRoot)}. Symlinks and real paths must stay within the same matched workspace root.`,
     };
   }
 
@@ -581,7 +581,7 @@ export async function validateSafeWriteTarget(
     );
     const realAncestor = await fs.realpath(existingAncestor);
     if (!isPathInsideRoot(realAncestor, realRoot)) {
-      return `Path ${safePath.input} resolves outside the allowed workspace. Provide a file path inside the configured workspace root.`;
+      return `Path ${safePath.input} resolves outside its matched ${describeWorkspaceRootForError(safePath.matchedRoot)}. Symlinks and real paths must stay within the same matched workspace root.`;
     }
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
@@ -591,7 +591,7 @@ export async function validateSafeWriteTarget(
   try {
     const stat = await fs.lstat(safePath.resolvedPath);
     if (stat.isSymbolicLink()) {
-      return `Cannot write file ${safePath.input}: target path is a symbolic link. Provide a regular file path inside the workspace.`;
+      return `Cannot write file ${safePath.input}: target path is a symbolic link. Provide a regular file path inside the matched workspace root.`;
     }
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
@@ -641,12 +641,61 @@ function getAllowedRoots(context: PathSafetyContext): WorkspaceRoot[] {
   return [context.primaryRoot, ...context.allowedRoots];
 }
 
-function describeWorkspaceBoundaryForError(context: PathSafetyContext): string {
+function describeWorkspaceRootForError(root: WorkspaceRoot): string {
+  return root.kind === 'primary'
+    ? `primary workspace root ${root.rootDir}`
+    : `additional workspace root ${root.rootDir}`;
+}
+
+function describeAllowedWorkspaceRootsForError(context: PathSafetyContext): string {
   const allowedRoots = getAllowedRoots(context);
   if (allowedRoots.length === 1) {
-    return allowedRoots[0].rootDir;
+    return describeWorkspaceRootForError(allowedRoots[0]);
   }
-  return `one of: ${allowedRoots.map((root) => root.rootDir).join(', ')}`;
+
+  const primaryRoots = allowedRoots.filter((root) => root.kind === 'primary');
+  const additionalRoots = allowedRoots.filter((root) => root.kind === 'additional');
+  const parts = [
+    ...primaryRoots.map((root) => describeWorkspaceRootForError(root)),
+  ];
+
+  if (additionalRoots.length > 0) {
+    parts.push(
+      `additional workspace roots ${additionalRoots.map((root) => root.rootDir).join(', ')}`,
+    );
+  }
+
+  return parts.join('; ');
+}
+
+function describeRelativePathOutsidePrimaryRootError(
+  input: string,
+  context: PathSafetyContext,
+): string {
+  const baseMessage =
+    `Relative path ${input} resolves outside the primary workspace root ` +
+    `${context.primaryRoot.rootDir}.`;
+
+  if (getAllowedRoots(context).some((root) => root.kind === 'additional')) {
+    return `${baseMessage} Relative paths cannot access additional roots; use a drive-absolute path for files in an additional root.`;
+  }
+
+  return `${baseMessage} Provide a path inside the primary workspace root.`;
+}
+
+function describeRelativeGlobOutsidePrimaryRootError(
+  input: string,
+  context: PathSafetyContext,
+): string {
+  const baseMessage =
+    `Glob pattern ${input} has a static base outside the primary workspace root ` +
+    `${context.primaryRoot.rootDir}.`;
+
+  if (getAllowedRoots(context).some((root) => root.kind === 'additional')) {
+    return `${baseMessage} Relative globs cannot access additional roots; use a drive-absolute glob for files in an additional root.`;
+  }
+
+  return `${baseMessage} Provide a glob whose static base is inside the primary workspace root.`;
 }
 
 function classifyPathInput(

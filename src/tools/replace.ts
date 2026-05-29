@@ -256,7 +256,7 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
       ok: false,
       note:
         `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
-        'Use target/replacement for replace_text v2; accepted parameters are file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
+        'Use target/replacement for replace_text; accepted parameters are file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
     };
   }
 

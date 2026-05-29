@@ -202,7 +202,7 @@ async function testPathOutsideRoot() {
   const text = getResultText(result);
   
   assertIncludes(text, 'skipped', 'Should report file skipped');
-  assertIncludes(text, 'outside workspace', 'Should explain security reason');
+  assertIncludes(text, 'configured workspace roots', 'Should explain security reason');
   
 }
 
