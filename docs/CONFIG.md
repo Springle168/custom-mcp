@@ -11,6 +11,9 @@
 ```json
 {
   "rootDir": "E:/YourWorkspace",
+  "otherRootDirs": [
+    "E:/AnotherWorkspace"
+  ],
   "lineEnding": "auto",
   "port": 3100,
   "android": {
@@ -25,9 +28,12 @@
 
 ### 顶层字段
 
-- `rootDir`：文件类工具的工作根目录，必填。
+- `rootDir`：文件类工具的 primary root，必填；相对路径和相对 glob 永远基于它解析。
+- `otherRootDirs`：文件类工具允许访问的 additional roots，可选；只能通过 drive-absolute path / glob 访问。
 - `lineEnding`：文本写回策略，支持 `auto` / `lf` / `crlf`。
 - `port`：HTTP MCP 服务端口。
+
+`rootDir` 和 `otherRootDirs` 会在配置加载阶段集中校验：每个 root 必须是本地绝对路径、真实存在且为目录；所有 allowed roots 在 lexical normalized path 层和 realpath 层都不得重复或互相嵌套。root 本身可以是 symlink / junction，但 realpath 后仍必须满足唯一且互不嵌套。
 
 ### `android` 配置段
 
@@ -60,6 +66,7 @@
 
 - 非空环境变量优先于 `config.json`。
 - 空字符串环境变量视为“未设置”，会回退到 `config.json`。
+- 当前不支持 `MCP_OTHER_ROOT_DIRS`；`otherRootDirs` 只从配置文件读取。
 - 若 Android 配置缺失，服务仍可启动；只有调用 Android 构建工具时才会返回配置错误。
 
 ---
@@ -70,7 +77,8 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 |-|-|-|-|
-| `rootDir` | string | 无（必填） | 工作区根目录，所有文件操作限制在此范围内 |
+| `rootDir` | string | 无（必填） | primary root；相对 path / glob 的解析基准 |
+| `otherRootDirs` | string[] | 未配置 | 额外允许访问的工作区根目录；相对路径不会基于这些目录解析 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | `"auto"` | 文件写入时的行尾符策略 |
 | `port` | number | `3100` | HTTP 服务器监听端口 |
 | `android.workspaceRoot` | string | 无 | Android 构建工具工作目录，应包含 `gradlew.bat` |
@@ -94,6 +102,7 @@
 | 现象 | 可能原因 | 解决方案 |
 |-|-|-|
 | 启动报 `rootDir is not configured` | `config.json` 中 `rootDir` 为空 | 填入项目绝对路径，或设置 `MCP_ROOT_DIR` |
-| 工具调用返回 `Path outside workspace` | AI 传了 `rootDir` 范围外的路径 | 检查目标路径和 `rootDir` 配置是否对应 |
+| 启动报 root 重复或嵌套 | `rootDir` 与 `otherRootDirs` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 root |
+| 工具调用返回 `Path outside workspace` | AI 传了所有 allowed roots 范围外的路径，或用相对路径试图访问 additional root | 检查目标路径和 root 配置；additional root 必须用 drive-absolute 路径访问 |
 | Android 构建工具返回配置错误 | 未配置 `android.workspaceRoot` 或 `android.javaHome` | 补全 `android` 配置段，或设置对应环境变量 |
 | 环境变量没有生效 | 环境变量为空字符串或名称不匹配 | 确认变量非空，并使用本文列出的变量名 |

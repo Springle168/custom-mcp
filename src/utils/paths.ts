@@ -1,3 +1,4 @@
+import { realpathSync, statSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -97,6 +98,16 @@ interface StaticGlobBase {
   magicRemainder: string;
 }
 
+interface WorkspaceRootConfigSpec {
+  kind: WorkspaceRootKind;
+  label: string;
+  rootDir: string;
+}
+
+interface ResolvedWorkspaceRootConfigSpec extends WorkspaceRootConfigSpec {
+  resolvedRootDir: string;
+}
+
 const DRIVE_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 const DRIVE_RELATIVE_RE = /^[a-zA-Z]:(?![\\/])/;
 const GLOB_MAGIC_RE = /[*?\[\]{}]|[!@+]\(/;
@@ -137,6 +148,177 @@ export function createPathSafetyContext(
       ),
     ],
   };
+}
+
+export function createValidatedPathSafetyContext(
+  rootDir: string,
+  otherRootDirs: string[] = [],
+): PathSafetyContext {
+  const rootSpecs = buildWorkspaceRootConfigSpecs(rootDir, otherRootDirs);
+  const resolvedRootSpecs = rootSpecs.map(resolveConfiguredWorkspaceRoot);
+
+  validateIndependentRoots(
+    resolvedRootSpecs.map((root) => ({
+      label: root.label,
+      rootDir: root.resolvedRootDir,
+    })),
+    'lexical path',
+  );
+
+  const workspaceRoots = resolvedRootSpecs.map((root) => {
+    validateWorkspaceRootExists(root);
+    const realRootDir = resolveConfiguredWorkspaceRootRealPath(root);
+    return createWorkspaceRoot(root.kind, root.resolvedRootDir, realRootDir);
+  });
+
+  validateIndependentRoots(
+    workspaceRoots.map((root, index) => ({
+      label: resolvedRootSpecs[index].label,
+      rootDir: root.realRootDir ?? root.rootDir,
+    })),
+    'real path',
+  );
+
+  return {
+    primaryRoot: workspaceRoots[0],
+    allowedRoots: workspaceRoots,
+  };
+}
+
+function buildWorkspaceRootConfigSpecs(
+  rootDir: string,
+  otherRootDirs: string[],
+): WorkspaceRootConfigSpec[] {
+  return [
+    { kind: 'primary', label: 'rootDir', rootDir },
+    ...otherRootDirs.map((otherRootDir, index) => ({
+      kind: 'additional' as const,
+      label: `otherRootDirs[${index}]`,
+      rootDir: otherRootDir,
+    })),
+  ];
+}
+
+function resolveConfiguredWorkspaceRoot(
+  spec: WorkspaceRootConfigSpec,
+): ResolvedWorkspaceRootConfigSpec {
+  const rootDir = spec.rootDir.trim();
+  if (rootDir.length === 0) {
+    throw new Error(`${spec.label} must be a non-empty absolute path.`);
+  }
+
+  if (isUnsupportedConfiguredWindowsRoot(rootDir) || !path.isAbsolute(rootDir)) {
+    throw new Error(
+      `${spec.label} must be an absolute local path. ` +
+        'Use a drive-absolute path on Windows, for example E:/Workspace.',
+    );
+  }
+
+  return {
+    ...spec,
+    rootDir,
+    resolvedRootDir: path.resolve(rootDir),
+  };
+}
+
+function isUnsupportedConfiguredWindowsRoot(rootDir: string): boolean {
+  if (process.platform !== 'win32') return false;
+
+  const normalized = normalizeGlobSeparators(rootDir);
+  return (
+    normalized.startsWith('//?/') ||
+    normalized.startsWith('//./') ||
+    DRIVE_RELATIVE_RE.test(rootDir) ||
+    !DRIVE_ABSOLUTE_RE.test(rootDir)
+  );
+}
+
+function validateWorkspaceRootExists(
+  root: ResolvedWorkspaceRootConfigSpec,
+): void {
+  let stats;
+  try {
+    stats = statSync(root.resolvedRootDir);
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    throw new Error(
+      `${root.label} does not exist or cannot be accessed: ${root.resolvedRootDir}. ` +
+        `Check the configured workspace root. ${error.message}`,
+    );
+  }
+
+  if (!stats.isDirectory()) {
+    throw new Error(
+      `${root.label} must point to an existing directory: ${root.resolvedRootDir}.`,
+    );
+  }
+}
+
+function resolveConfiguredWorkspaceRootRealPath(
+  root: ResolvedWorkspaceRootConfigSpec,
+): string {
+  try {
+    return path.resolve(realpathSync.native(root.resolvedRootDir));
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    throw new Error(
+      `Could not resolve real path for ${root.label}: ${root.resolvedRootDir}. ` +
+        `Check the configured workspace root. ${error.message}`,
+    );
+  }
+}
+
+function validateIndependentRoots(
+  roots: Array<{ label: string; rootDir: string }>,
+  layer: 'lexical path' | 'real path',
+): void {
+  for (let leftIndex = 0; leftIndex < roots.length; leftIndex++) {
+    for (let rightIndex = leftIndex + 1; rightIndex < roots.length; rightIndex++) {
+      const left = roots[leftIndex];
+      const right = roots[rightIndex];
+
+      if (areSamePath(left.rootDir, right.rootDir)) {
+        throw new Error(
+          `Allowed workspace roots must be unique at the ${layer} layer: ` +
+            `${left.label} and ${right.label} both resolve to ${left.rootDir}.`,
+        );
+      }
+
+      if (isProperPathInsideRoot(left.rootDir, right.rootDir)) {
+        throwNestedRootError(left, right, layer);
+      }
+
+      if (isProperPathInsideRoot(right.rootDir, left.rootDir)) {
+        throwNestedRootError(right, left, layer);
+      }
+    }
+  }
+}
+
+function throwNestedRootError(
+  nested: { label: string; rootDir: string },
+  parent: { label: string; rootDir: string },
+  layer: 'lexical path' | 'real path',
+): never {
+  throw new Error(
+    `Allowed workspace roots must not be nested at the ${layer} layer: ` +
+      `${nested.label} (${nested.rootDir}) is inside ${parent.label} (${parent.rootDir}).`,
+  );
+}
+
+function areSamePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+
+  if (process.platform === 'win32') {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+
+  return normalizedLeft === normalizedRight;
+}
+
+function isProperPathInsideRoot(candidatePath: string, rootDir: string): boolean {
+  return !areSamePath(candidatePath, rootDir) && isPathInsideRoot(candidatePath, rootDir);
 }
 
 export function resolvePath(filePath: string, rootDir: string): string {

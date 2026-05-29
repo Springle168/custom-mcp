@@ -1,5 +1,8 @@
 {
   "rootDir": "/path/to/your/workspace",
+  "otherRootDirs": [
+    "/path/to/another/workspace"
+  ],
   "lineEnding": "auto",
   "port": 3100,
   "android": {

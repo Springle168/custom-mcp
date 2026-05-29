@@ -1,9 +1,9 @@
 import * as fs from 'node:fs/promises';
-import type { Config } from '../config.js';
+import { getPathSafetyContext, type Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import {
   formatPathSafetyError,
-  resolveSafePath,
+  resolveSafePathInContext,
   validateSafeReadTarget,
 } from '../utils/paths.js';
 import {
@@ -228,7 +228,8 @@ async function handleReadFile(
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
-  const safePathResult = resolveSafePath(filePath, config.rootDir);
+  const pathSafetyContext = getPathSafetyContext(config);
+  const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
     return errorResult(formatPathSafetyError(safePathResult.error));
   }

@@ -6,15 +6,35 @@
 
 ## 适用范围
 
-当前项目使用单一 `rootDir` 沙箱：
+文件类工具使用 allowed roots 沙箱：
 
-- `rootDir` 是唯一允许访问的文件边界。
-- 相对路径基于 `rootDir` 解析。
-- drive-absolute 路径必须最终位于 `rootDir` 内。
-- glob 模式在展开前和展开后都必须保持在 `rootDir` 内。
-- 文件类工具的路径入口统一由 `src/utils/paths.ts` 处理。
+- `rootDir` 是 primary root。
+- `otherRootDirs` 是 additional roots，可选。
+- primary root 和 additional roots 合称 allowed roots。
+- 相对 path / glob 永远只基于 primary root 解析。
+- additional roots 只能通过 drive-absolute path / glob 访问。
+- 所有普通路径、glob static base 和 glob 展开结果都必须命中唯一 matched root。
+- 读取和写入的 realpath / symlink 校验必须保持在同一个 matched root 内，不能落入其它 allowed root。
+- Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 
-内部实现已经引入 `PathSafetyContext` / `WorkspaceRoot` 抽象。当前工具层仍调用 `resolveSafePath(input, rootDir)`、`resolveSafeGlobPattern(input, rootDir)` 等单 root wrapper；wrapper 会构造只含 primary root 的 context，因此当前运行时语义仍保持单一 `rootDir`。`SafePath` 与 `SafeGlobPattern` 同时保留兼容字段 `rootDir`，并携带内部 `matchedRoot` 元数据，供后续多工作区切换使用。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。工具层通过 `getPathSafetyContext(config)` 取得已验证的 `PathSafetyContext`，再调用 context API。工具层不应直接遍历或理解 `otherRootDirs`。
+
+---
+
+## root 配置校验
+
+配置加载阶段会集中创建并校验 `PathSafetyContext`：
+
+1. `rootDir` 必填，且必须是本地绝对路径。
+2. `otherRootDirs` 可选；空数组等同未配置。
+3. `otherRootDirs` 中每一项必须是非空字符串和本地绝对路径。
+4. 当前不支持 `MCP_OTHER_ROOT_DIRS`；`MCP_ROOT_DIR` 仍只覆盖 `rootDir`。
+5. 每个 root 必须真实存在且为目录。
+6. root 本身可以是 symlink / junction。
+7. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。
+8. 所有 allowed roots 在 realpath 层也不得重复或互相嵌套。
+
+这些不变量由 `createValidatedPathSafetyContext()` 负责。`SafePath` / `SafeGlobPattern` 会携带 `matchedRoot`，供后续 read/write realpath 校验使用。
 
 ---
 
@@ -24,8 +44,10 @@
 
 | 类型 | 示例 | 语义 |
 |-|-|-|
-| relative | `src/index.ts`, `../maybe.ts` | 基于 `rootDir` 解析，解析后必须仍在 `rootDir` 内 |
-| drive-absolute | `E:/Repo/src/index.ts`, `E:\Repo\src\index.ts` | 按绝对路径解析，解析后必须在 `rootDir` 内 |
+| relative | `src/index.ts`, `../maybe.ts` | 基于 primary root 解析；解析后必须仍在 primary root 内 |
+| drive-absolute | `E:/Repo/src/index.ts`, `E:\\Repo\\src\\index.ts` | 按绝对路径解析；解析后必须位于唯一 allowed root 内 |
+
+相对路径不能通过 `..` 逃出 primary root 后再命中 additional root。例如 primary root 为 `E:/Main`、additional root 为 `E:/Other` 时，`../Other/file.ts` 必须失败。
 
 ### 拒绝的普通路径
 
@@ -34,10 +56,10 @@
 | 类型 | 示例 | 原因 |
 |-|-|-|
 | drive-relative | `C:foo.txt` | Windows 会相对当前驱动工作目录解析，语义不稳定 |
-| rooted without drive | `/foo.txt`, `\foo.txt` | 无法明确表达工作区意图 |
-| repeated rooted without drive | `///foo.txt`, `\\\foo.txt` | 容易被误判为根路径或特殊路径 |
-| UNC | `//server/share/file.txt`, `\\server\share\file.txt` | 当前设计不支持网络共享路径 |
-| namespace path | `\\?\E:\Repo\file.txt`, `\\.\C:\path` | 可能绕过普通路径规范化规则 |
+| rooted without drive | `/foo.txt`, `\\foo.txt` | 无法明确表达目标工作区 |
+| repeated rooted without drive | `///foo.txt`, `\\\\\\foo.txt` | 容易被误判为根路径、UNC 或特殊路径 |
+| UNC | `//server/share/file.txt`, `\\\\server\\share\\file.txt` | 当前设计不支持网络共享路径 |
+| namespace path | `\\\\?\\E:\\Repo\\file.txt`, `\\\\.\\C:\\path` | 可能绕过普通路径规范化规则 |
 
 ---
 
@@ -47,9 +69,9 @@
 
 1. 校验输入非空。
 2. 分类输入路径形态，拒绝不支持形态。
-3. 将 relative 路径基于 `rootDir` 解析；drive-absolute 路径按绝对路径解析。
-4. 做 lexical root 边界校验。
-5. 返回 `SafePath`，工具层使用 `SafePath.resolvedPath` 进行 I/O。
+3. relative 路径基于 primary root 解析；drive-absolute 路径按绝对路径解析。
+4. 匹配唯一 allowed root：relative 只允许 matched root 为 primary root；drive-absolute 可匹配 primary 或 additional root。
+5. 返回 `SafePath`，工具层使用 `SafePath.resolvedPath` 进行后续 I/O。
 
 第 4 步之前禁止执行文件系统 I/O，包括 `fs.stat()`、`fs.lstat()`、`fs.realpath()`、`fs.readFile()`、`fs.writeFile()`、`isBinaryFile()` 和 `glob()`。
 
@@ -62,15 +84,16 @@
 1. 先尝试作为字面路径进入普通路径安全流程。
 2. 已存在且是文件的字面路径按文件处理。
 3. 若字面路径不存在或不是文件，且输入包含 glob 语法，再按 glob 处理。
-4. glob 处理先计算 static base；static base 必须位于 `rootDir` 内，否则不调用 `glob()`。
-5. `glob()` 展开后的每个结果再次进入 lexical + realpath 校验。
+4. glob 处理先计算 static base；static base 必须命中唯一 matched root，否则不调用 `glob()`。
+5. `glob()` 使用 matched root 作为 `cwd` 展开。
+6. `glob()` 展开后的每个结果再次进入 lexical + realpath 校验，并且必须仍位于同一个 matched root 内。
 
 支持的 glob 来源包括：
 
 | 类型 | 示例 | 语义 |
 |-|-|-|
-| relative glob | `src/**/*.ts` | 基于 `rootDir` 展开 |
-| drive-absolute glob | `E:/Repo/src/**/*.ts` | static base 和结果都必须在 `rootDir` 内 |
+| relative glob | `src/**/*.ts` | 基于 primary root 展开 |
+| drive-absolute glob | `E:/Other/src/**/*.ts` | static base 必须命中唯一 allowed root；展开 `cwd` 为 matched root |
 | slash-leading glob | `/**/Foo.kt` | 兼容行为，仅含 glob 元字符时按 relative glob 处理 |
 
 普通 `/foo/bar.ts` 不含 glob 元字符，会按 rooted without drive 拒绝。
@@ -83,7 +106,7 @@ glob static base 通过后，glob segment 中仍不能包含会在展开后形�
 - `.{a,b,.}/**/*.ts`
 - `@(../src|src)/**/*.ts`
 
-这类模式必须在调用 `glob()` 前拒绝，避免 glob 枚举 `rootDir` 外部目录。
+这类模式必须在调用 `glob()` 前拒绝，避免 glob 枚举 matched root 外部目录。
 
 ### 字面文件名中的 glob 字符
 
@@ -97,7 +120,17 @@ glob static base 通过后，glob segment 中仍不能包含会在展开后形�
 
 ### exclude 语义
 
-`read_many_files` 中 drive-absolute 字面路径不受 exclude 过滤，因为调用方显式指定了绝对文件。relative 字面路径仍受默认和用户提供的 exclude 过滤。
+`read_many_files` 的 exclude 规则是全局性的：
+
+| 输入类型 | 是否受 exclude 影响 |
+|-|-|
+| relative literal | 是 |
+| drive-absolute literal | 否 |
+| relative glob | 是 |
+| slash-leading glob | 是 |
+| drive-absolute glob | 是 |
+
+Drive-absolute 字面路径不走 exclude 过滤，因为调用方显式指定了绝对文件。Glob 展开结果始终受默认和用户提供的 exclude 过滤，包括 additional root 内的 absolute glob。
 
 relative 字面路径的 exclude 检查使用 `glob.Ignore`，要求：
 
@@ -107,28 +140,46 @@ relative 字面路径的 exclude 检查使用 `glob.Ignore`，要求：
 
 ---
 
+## display path 语义
+
+返回中的显示路径由路径安全层统一决定：
+
+| 输入来源 | matched root | display |
+|-|-|-|
+| relative path | primary root | 相对 primary root |
+| relative glob | primary root | 相对 primary root |
+| slash-leading glob | primary root | 相对 primary root |
+| drive-absolute path | primary 或 additional root | 绝对路径 |
+| drive-absolute glob | primary 或 additional root | 绝对路径 |
+
+additional root 必须通过绝对路径访问，因此 additional root 的结果也显示绝对路径，避免调用方误以为可以用相对路径再次访问。
+
+---
+
 ## realpath 与 symlink
 
-lexical 校验只能保证路径字符串位于 `rootDir` 内，不能保证真实文件系统目标仍在 `rootDir` 内。因此读取和写入还要执行 realpath 相关校验。
+lexical 校验只能保证路径字符串位于 matched root 内，不能保证真实文件系统目标仍在 matched root 内。因此读取和写入还要执行 realpath 相关校验。
 
 ### 读取路径
 
 读取已存在文件时：
 
-1. 先做 lexical 路径安全校验。
+1. 先做 lexical 路径安全校验并得到 `SafePath.matchedRoot`。
 2. 对目标执行 `fs.realpath()`。
-3. 校验真实目标仍在 `rootDir` 内。
+3. 校验真实目标仍位于 `matchedRoot.realRootDir` 内。
 4. 再执行 `fs.stat()`、二进制检测和文本读取。
 
 如果目标不存在，按工具语义返回不存在，不需要读取真实路径。
+
+关键限制：primary root 内的 symlink 不能通过相对路径访问 additional root；additional root 内的 symlink 也不能访问 primary root 或其它 additional root。realpath 后落入其它 allowed root 仍然必须失败。
 
 ### 写入路径
 
 `write_file` 和 `replace_text` 共享写入安全策略：
 
-1. 先做 lexical 路径安全校验。
+1. 先做 lexical 路径安全校验并得到 `SafePath.matchedRoot`。
 2. 查找目标父目录中最近的已存在祖先目录。
-3. 对该祖先目录执行 `fs.realpath()` 并确认仍在 `rootDir` 内。
+3. 对该祖先目录执行 `fs.realpath()` 并确认仍位于 `matchedRoot.realRootDir` 内。
 4. 如果目标文件已存在且是 symbolic link，拒绝写入。
 5. 创建缺失父目录后、正式写入前再次执行写入安全校验。
 6. 写入流程必须包裹在 `withFileLock()` 中。
@@ -139,12 +190,15 @@ lexical 校验只能保证路径字符串位于 `rootDir` 内，不能保证真�
 
 新增或维护文件类工具时：
 
-- 普通路径使用 `resolveSafePath()`，不要在工具层自行调用 `path.isAbsolute()` 判断用户意图。
+- 从配置层调用 `getPathSafetyContext(config)`，不要在工具层自行读取或遍历 `otherRootDirs`。
+- 普通路径使用 `resolveSafePathInContext()`，不要在工具层自行调用 `path.isAbsolute()` 判断用户意图。
 - 读取已存在文件前调用 `validateSafeReadTarget()`。
 - 写入文件前调用 `validateSafeWriteTarget()`，创建父目录后、正式写入前再次调用。
-- glob 输入使用 `resolveSafeGlobPattern()` 做展开前校验，展开结果使用 `resolveSafeGlobEntry()` 做逐项校验。
+- glob 输入使用 `resolveSafeGlobPatternInContext()` 做展开前校验，展开结果使用 `resolveSafeGlobEntry()` 做逐项校验。
 - 文件写入必须使用 `withFileLock()`。
 - 所有文件系统 I/O 必须发生在 lexical path safety 之后。
+
+单 root wrapper（如 `resolveSafePath(input, rootDir)`）仍保留用于兼容和窄范围测试；新增文件类工具默认应使用 context API。
 
 ---
 
@@ -154,15 +208,20 @@ lexical 校验只能保证路径字符串位于 `rootDir` 内，不能保证真�
 
 ```bash
 cmd /c npx tsx test/test-path-safety.ts
+cmd /c npx tsx test/test-config.ts
 ```
 
-该测试覆盖：
+这些测试覆盖：
 
+- 配置层 allowed roots 绝对路径、存在性、目录类型、lexical 重复/嵌套和 realpath 重复/嵌套校验。
 - 不支持路径形态的拒绝。
 - root 字符串前缀相似目录拒绝。
+- relative path / glob 只能访问 primary root。
+- drive-absolute path / glob 可访问 primary 或 additional root。
 - drive-absolute glob、slash-leading glob、glob static base 越界。
 - brace / extglob parent traversal 拦截。
 - 含 glob 元字符的字面文件名。
-- relative 字面路径的 exclude 语义。
-- 读取 symlink escape 与写入 symlink 相关行为。
+- relative 字面路径与 drive-absolute literal / glob 的 exclude 语义。
+- primary / additional root 之间的 symlink realpath 越界拒绝。
+- 写入目标 symlink 与写入父目录 symlink 相关行为。
 
