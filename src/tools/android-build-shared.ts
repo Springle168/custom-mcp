@@ -1,5 +1,6 @@
 import type { AndroidConfig, Config } from '../config.js';
 import type { ToolCallResult } from './types.js';
+import { textErrorResult, textResult } from './results.js';
 import {
   runAndroidGradle,
   type AndroidGradleRuntimeConfig,
@@ -40,19 +41,6 @@ interface AndroidGradleToolFailure {
   summary: 'BUILD FAILED';
   firstErrorBlock: string | null;
   logTail: string | null;
-}
-
-function successResult(text: string): ToolCallResult {
-  return {
-    content: [{ type: 'text', text }],
-  };
-}
-
-function errorResult(text: string): ToolCallResult {
-  return {
-    content: [{ type: 'text', text }],
-    isError: true,
-  };
 }
 
 export function validateAndroidGradleToolArgs(
@@ -117,12 +105,12 @@ export async function executeAndroidGradleTask(
 ): Promise<ToolCallResult> {
   const validationError = validateAndroidGradleToolArgs(args);
   if (validationError) {
-    return errorResult(validationError);
+    return textErrorResult(validationError);
   }
 
   const runtimeConfig = resolveAndroidGradleRuntimeConfig(config);
   if (!runtimeConfig.ok) {
-    return errorResult(runtimeConfig.error);
+    return textErrorResult(runtimeConfig.error);
   }
 
   const result = await runAndroidGradle(
@@ -138,7 +126,7 @@ export function formatAndroidGradleToolResult(
   result: RunAndroidGradleResult,
 ): ToolCallResult {
   if (result.success) {
-    return successResult(result.summary);
+    return textResult(result.summary);
   }
 
   const failure: AndroidGradleToolFailure = {
@@ -153,7 +141,7 @@ export function formatAndroidGradleToolResult(
     logTail: result.logTail,
   };
 
-  return errorResult(JSON.stringify(failure, null, 2));
+  return textErrorResult(JSON.stringify(failure, null, 2));
 }
 
 function toRuntimeConfig(androidConfig: AndroidConfig): AndroidGradleRuntimeConfig {

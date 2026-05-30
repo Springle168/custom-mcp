@@ -87,9 +87,7 @@ interface Option {
 3. **阻塞等待用户输入**
    ```typescript
    const answers = await answerPromise;
-   return {
-     content: [{ type: 'text', text: JSON.stringify({ answers }) }],
-   };
+   return textResult(JSON.stringify({ answers }));
    ```
 
 4. **HTTP 路由处理**

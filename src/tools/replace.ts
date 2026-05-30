@@ -22,6 +22,7 @@ import {
 } from '../utils/paths.js';
 import { withFileLock } from '../utils/file-lock.js';
 import type { MCPTool, ToolCallResult } from './types.js';
+import { textErrorResult, textResult } from './results.js';
 
 // ================
 // Types
@@ -127,14 +128,11 @@ Best practices:
 // ================
 
 function successResult(payload: ReplaceTextPayload): ToolCallResult {
-  return { content: [{ type: 'text', text: JSON.stringify(payload) }] };
+  return textResult(JSON.stringify(payload));
 }
 
 function errorResult(payload: ReplaceTextPayload): ToolCallResult {
-  return {
-    content: [{ type: 'text', text: JSON.stringify(payload) }],
-    isError: true,
-  };
+  return textErrorResult(JSON.stringify(payload));
 }
 
 function normalizeMatchMode(value: unknown): MatchMode {

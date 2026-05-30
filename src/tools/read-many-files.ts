@@ -3,7 +3,8 @@
 import * as fs from 'node:fs/promises';
 import { glob, Ignore } from 'glob';
 import { getPathSafetyContext, type Config } from '../config.js';
-import type { MCPTool } from './types.js';
+import type { MCPTool, ToolCallResult } from './types.js';
+import { textErrorResult, textResult } from './results.js';
 import {
   formatPathSafetyError,
   hasGlobMagic,
@@ -118,18 +119,6 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
     required: ['include'],
   },
 };
-
-// ================
-// Response Helpers
-// ================
-
-function successResult(text: string) {
-  return { content: [{ type: 'text' as const, text }] };
-}
-
-function errorResult(text: string) {
-  return { content: [{ type: 'text' as const, text }], isError: true };
-}
 
 // ================
 // Parameter Validation
@@ -353,10 +342,10 @@ async function expandGlobPattern(
 async function handleReadManyFiles(
   args: Record<string, unknown>,
   config: Config,
-) {
+): Promise<ToolCallResult> {
   // 1. Parameter validation
   const validationError = validateParams(args);
-  if (validationError) return errorResult(validationError);
+  if (validationError) return textErrorResult(validationError);
 
   const include = args.include as string[];
   const exclude = (args.exclude as string[] | undefined) ?? [];
@@ -409,13 +398,13 @@ async function handleReadManyFiles(
         fileMap,
         skipped,
       );
-      if (globError) return errorResult(globError);
+      if (globError) return textErrorResult(globError);
     }
   }
 
   // 4. Early exit when nothing was found at all
   if (fileMap.size === 0 && skipped.length === 0) {
-    return errorResult(
+    return textErrorResult(
       'No files matched the given include patterns. ' +
         'Verify the paths/patterns and ensure files exist in the workspace.',
     );
@@ -599,8 +588,8 @@ async function handleReadManyFiles(
   const output = [...summaryParts, '', ...contentParts].join('\n');
 
   return processedFiles.length > 0
-    ? successResult(output)
-    : errorResult(output);
+    ? textResult(output)
+    : textErrorResult(output);
 }
 
 // ================
