@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import { getPathSafetyContext, type Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
+import { textErrorResult, textResult } from './results.js';
 import {
   formatPathSafetyError,
   resolveSafePathInContext,
@@ -70,18 +71,6 @@ Set show_line_numbers to true only when line numbers are necessary; it prefixes 
     additionalProperties: false,
   },
 };
-
-// ================
-// Response Helpers
-// ================
-
-function successResult(text: string): ToolCallResult {
-  return { content: [{ type: 'text', text }] };
-}
-
-function errorResult(text: string): ToolCallResult {
-  return { content: [{ type: 'text', text }], isError: true };
-}
 
 // ================
 // Parameter Validation
@@ -224,20 +213,20 @@ async function handleReadFile(
   config: Config,
 ): Promise<ToolCallResult> {
   const validationError = validateParams(args);
-  if (validationError) return errorResult(validationError);
+  if (validationError) return textErrorResult(validationError);
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
   const pathSafetyContext = getPathSafetyContext(config);
   const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
-    return errorResult(formatPathSafetyError(safePathResult.error));
+    return textErrorResult(formatPathSafetyError(safePathResult.error));
   }
   const safePath = safePathResult.path;
 
   const readTarget = await validateSafeReadTarget(safePath);
   if (!readTarget.ok) {
-    return errorResult(
+    return textErrorResult(
       `Could not read file ${filePath}: ${readTarget.reason}. Check the path and ensure it is a readable text file.`,
     );
   }
@@ -245,26 +234,26 @@ async function handleReadFile(
   try {
     const stat = await fs.stat(readTarget.realPath);
     if (stat.isDirectory()) {
-      return errorResult(
+      return textErrorResult(
         `Could not read file ${filePath}: path is a directory. Provide a text file path instead.`,
       );
     }
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
-    return errorResult(
+    return textErrorResult(
       `Could not read file ${filePath}: ${error.code === 'ENOENT' ? 'file not found' : error.message}. Check the path and ensure it is a readable text file.`,
     );
   }
 
   if (await isBinaryFile(readTarget.realPath)) {
-    return errorResult(
+    return textErrorResult(
       `Cannot display content of binary file: ${filePath}. Provide a text file path instead.`,
     );
   }
 
   const lineRange = await resolveLineRange(readMode, readTarget.realPath, args);
   if (typeof lineRange === 'string') {
-    return errorResult(
+    return textErrorResult(
       `Could not read file ${filePath}: ${lineRange}`,
     );
   }
@@ -278,7 +267,7 @@ async function handleReadFile(
   });
 
   if (!result.ok) {
-    return errorResult(
+    return textErrorResult(
       `Could not read file ${filePath}: ${result.reason}. Check the path and ensure it is a readable text file.`,
     );
   }
@@ -297,7 +286,7 @@ async function handleReadFile(
     summaryParts.push('No truncation: all returned file content is complete.');
   }
 
-  return successResult(
+  return textResult(
     `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${OUTPUT_TERMINATOR}`,
   );
 }

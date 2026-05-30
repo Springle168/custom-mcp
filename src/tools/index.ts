@@ -1,5 +1,6 @@
 import type { Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
+import { textErrorResult } from './results.js';
 
 // =============================
 // 在这里导入所有工具
@@ -47,10 +48,7 @@ export async function routeToolCall(
   const handler = routeMap.get(name);
 
   if (!handler) {
-    return {
-      content: [{ type: 'text', text: `Unknown tool: ${name}` }],
-      isError: true,
-    };
+    return textErrorResult(`Unknown tool: ${name}`);
   }
 
   return handler(args, config);

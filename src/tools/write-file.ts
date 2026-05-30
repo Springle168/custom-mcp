@@ -14,6 +14,7 @@ import {
   validateSafeWriteTarget,
 } from '../utils/paths.js';
 import type { MCPTool, ToolCallResult } from './types.js';
+import { textErrorResult, textResult } from './results.js';
 
 // ================
 // Tool Schema
@@ -44,18 +45,6 @@ On success, returns a message with the written path and the file's total line co
     required: ['file_path', 'content'],
   },
 };
-
-// ================
-// Response Helpers
-// ================
-
-function successResult(text: string): ToolCallResult {
-  return { content: [{ type: 'text', text }] };
-}
-
-function errorResult(text: string): ToolCallResult {
-  return { content: [{ type: 'text', text }], isError: true };
-}
 
 // ================
 // Parameter Validation
@@ -156,7 +145,7 @@ async function handleWriteFile(
   config: Config,
 ): Promise<ToolCallResult> {
   const validationError = validateParams(args);
-  if (validationError) return errorResult(validationError);
+  if (validationError) return textErrorResult(validationError);
 
   const filePath = args.file_path as string;
   const content = args.content as string;
@@ -164,26 +153,26 @@ async function handleWriteFile(
   const pathSafetyContext = getPathSafetyContext(config);
   const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
-    return errorResult(formatPathSafetyError(safePathResult.error));
+    return textErrorResult(formatPathSafetyError(safePathResult.error));
   }
   const safePath = safePathResult.path;
 
   return withFileLock(safePath.resolvedPath, async () => {
     const safetyError = await validateSafeWriteTarget(safePath);
-    if (safetyError) return errorResult(safetyError);
+    if (safetyError) return textErrorResult(safetyError);
 
     let detectedLineEnding: '\r\n' | '\n' | null = null;
 
     try {
       const stat = await fs.stat(safePath.resolvedPath);
       if (stat.isDirectory()) {
-        return errorResult(
+        return textErrorResult(
           `Could not write file ${filePath}: target path is a directory. Provide a file path instead.`,
         );
       }
 
       if (await isBinaryFile(safePath.resolvedPath)) {
-        return errorResult(
+        return textErrorResult(
           `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
         );
       }
@@ -194,12 +183,12 @@ async function handleWriteFile(
       const error = err as NodeJS.ErrnoException;
       if (error.code === 'ENOENT') {
         if (await isBinaryFile(safePath.resolvedPath)) {
-          return errorResult(
+          return textErrorResult(
             `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
           );
         }
       } else if (error.code !== 'ENOENT') {
-        return errorResult(
+        return textErrorResult(
           `Could not prepare file ${filePath}: ${error.message}. Check the path and permissions.`,
         );
       }
@@ -211,18 +200,18 @@ async function handleWriteFile(
     try {
       await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
       const postMkdirSafetyError = await validateSafeWriteTarget(safePath);
-      if (postMkdirSafetyError) return errorResult(postMkdirSafetyError);
+      if (postMkdirSafetyError) return textErrorResult(postMkdirSafetyError);
 
       await fs.writeFile(safePath.resolvedPath, finalContent, 'utf-8');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
-      return errorResult(
+      return textErrorResult(
         `Could not write file ${filePath}: ${error.message}. Check the path and permissions.`,
       );
     }
 
     const message = `Success: wrote ${safePath.displayPath}. Total lines: ${countLines(finalContent)}.`;
-    return successResult(appendWarning(message, placeholderWarning));
+    return textResult(appendWarning(message, placeholderWarning));
   });
 }
 

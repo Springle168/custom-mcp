@@ -41,6 +41,7 @@ docs/tools/
 ```typescript
 import type { Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
+import { textResult } from './results.js';
 
 // 1. 定义 Schema（MCP tools/list 返回给宿主）
 const READ_FILE_TOOL_DEFINITION = {
@@ -67,9 +68,7 @@ async function handleReadFile(
   // 参数校验
   // 业务逻辑
   // 返回结果
-  return {
-    content: [{ type: 'text', text: '结果文本' }],
-  };
+  return textResult('结果文本');
 }
 
 // 3. 默认导出 MCPTool 对象
@@ -140,17 +139,14 @@ Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为 Gemini Function 
 
 ### 返回值设计
 
+详细约定见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)。新增工具不要手写 MCP 文本返回壳，优先使用 `src/tools/results.ts` 中的统一 helper。
+
 ```typescript
 // 成功
-return {
-  content: [{ type: 'text', text: '给 AI 看的结果描述' }],
-};
+return textResult('给 AI 看的结果描述');
 
 // 失败
-return {
-  content: [{ type: 'text', text: '错误描述 + 引导 AI 下一步怎么做' }],
-  isError: true,
-};
+return textErrorResult('错误描述 + 引导 AI 下一步怎么做');
 ```
 
 **关键原则：错误消息应该引导 AI 自我纠正。** 不只是说“失败了”，要告诉 AI 为什么失败、怎么修复。

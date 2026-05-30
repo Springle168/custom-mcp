@@ -30,6 +30,7 @@ logger.logToolResult(
         text: '{"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":1,"end_line":1},"replacement_line_count":1,"file_line_count":{"previous":10,"current":10}}',
       },
     ],
+    isError: false,
   },
   45
 );
@@ -76,6 +77,7 @@ logger.logToolResult(
   'complex_tool',
   {
     content: [{ type: 'text', text: 'Operation completed successfully.' }],
+    isError: false,
   },
   123
 );
@@ -97,6 +99,7 @@ logger.logToolResult(
         text: 'Processed large dataset. Size exceeded threshold, highlighting disabled.',
       },
     ],
+    isError: false,
   },
   567
 );

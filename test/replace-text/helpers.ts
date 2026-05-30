@@ -114,10 +114,7 @@ export function parseResultJson(result: ToolCallResult): ReplaceTextV2Json {
 }
 
 export function assertSuccessResult(result: ToolCallResult): ReplaceTextV2Json {
-  assert(
-    result.isError !== true,
-    'Successful replace_text result must not set isError: true',
-  );
+  assertEqual(result.isError, false, 'Success result should set isError: false');
   const json = parseResultJson(result);
   assertEqual(json.success, true, 'JSON success should be true');
   return json;
@@ -210,6 +207,10 @@ function assertEnvelope(result: ToolCallResult): void {
   assert(
     typeof result.content[0]?.text === 'string',
     'Result content text should be a string',
+  );
+  assert(
+    typeof result.isError === 'boolean',
+    'Result should include explicit isError boolean',
   );
   assert(
     !('structuredContent' in result),

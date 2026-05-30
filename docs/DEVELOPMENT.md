@@ -12,6 +12,7 @@
 |-|-|-|
 | 配置 | [docs/CONFIG.md](CONFIG.md) | `config.json`、环境变量覆盖、行尾符策略、配置相关故障排查 |
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、添加新工具、schema 设计、返回值、并发模型 |
+| 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试目录、脚本测试约定、常用验证命令、测试日志 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
@@ -36,6 +37,7 @@ custom-mcp/
 │   ├── DEVELOPMENT.md           # 开发入口与文档导航
 │   ├── CONFIG.md                # 配置开发说明
 │   ├── TOOLS.md                 # 工具开发说明
+│   ├── TOOL-RESULTS.md          # 工具返回结果设计
 │   ├── PATH-SAFETY.md           # 文件路径安全维护说明
 │   ├── TESTING.md               # 测试开发说明
 │   ├── LOGGING.md               # 日志系统开发说明

@@ -1,5 +1,6 @@
 import type { Config } from '../config.js';
 import type { MCPTool, ToolCallResult } from './types.js';
+import { textErrorResult, textResult } from './results.js';
 import crypto from 'crypto';
 
 // 类型定义
@@ -180,10 +181,7 @@ async function handleAskUser(
   // 参数校验
   const validationError = validateParams(params);
   if (validationError) {
-    return {
-      content: [{ type: 'text', text: validationError }],
-      isError: true,
-    };
+    return textErrorResult(validationError);
   }
 
   // 创建会话
@@ -215,20 +213,11 @@ async function handleAskUser(
 
   // 处理取消
   if (result === null) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: 'User dismissed ask_user dialog without answering.',
-        },
-      ],
-    };
+    return textResult('User dismissed ask_user dialog without answering.');
   }
 
   // 返回答案
-  return {
-    content: [{ type: 'text', text: JSON.stringify(result) }],
-  };
+  return textResult(JSON.stringify(result));
 }
 
 // HTML 表单生成
