@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -62,6 +62,11 @@ function logWorkspaceRoots(config: Config, logger: Logger): void {
   }
 }
 
+function getMcpSessionId(req: Request): string | undefined {
+  const header = req.headers['mcp-session-id'];
+  return Array.isArray(header) ? header[0] : header;
+}
+
 // ================
 // HTTP + Session Management
 // ================
@@ -80,13 +85,22 @@ async function main() {
     { transport: StreamableHTTPServerTransport; server: Server }
   >();
 
+  // Unknown session IDs return 404 so Streamable HTTP clients can treat them as
+  // stale and reinitialize after a server restart.
+
   // POST /mcp — JSON-RPC 请求
   app.post('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    const sessionId = getMcpSessionId(req);
 
-    if (sessionId && sessions.has(sessionId)) {
-      const session = sessions.get(sessionId)!;
-      await session.transport.handleRequest(req, res, req.body);
+    if (sessionId) {
+      const session = sessions.get(sessionId);
+      if (session) {
+        await session.transport.handleRequest(req, res, req.body);
+        return;
+      }
+
+      logger.info(`Unknown MCP session on POST: ${sessionId}`);
+      res.status(404).end();
       return;
     }
 
@@ -114,22 +128,35 @@ async function main() {
 
   // GET /mcp — SSE 通道
   app.get('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !sessions.has(sessionId)) {
-      res.status(400).json({ error: 'Invalid or missing session ID' });
+    const sessionId = getMcpSessionId(req);
+    if (!sessionId) {
+      res.status(400).json({ error: 'Missing session ID' });
       return;
     }
-    await sessions.get(sessionId)!.transport.handleRequest(req, res);
+
+    const session = sessions.get(sessionId);
+    if (!session) {
+      logger.info(`Unknown MCP session on GET: ${sessionId}`);
+      res.status(404).json({ error: 'Session not found or expired' });
+      return;
+    }
+    await session.transport.handleRequest(req, res);
   });
 
   // DELETE /mcp — 会话终止
   app.delete('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !sessions.has(sessionId)) {
-      res.status(400).json({ error: 'Invalid or missing session ID' });
+    const sessionId = getMcpSessionId(req);
+    if (!sessionId) {
+      res.status(400).json({ error: 'Missing session ID' });
       return;
     }
-    const session = sessions.get(sessionId)!;
+
+    const session = sessions.get(sessionId);
+    if (!session) {
+      logger.info(`Unknown MCP session on DELETE: ${sessionId}`);
+      res.status(404).json({ error: 'Session not found or expired' });
+      return;
+    }
     await session.transport.handleRequest(req, res);
     await session.server.close();
     sessions.delete(sessionId);
