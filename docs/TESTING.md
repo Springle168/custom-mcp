@@ -76,4 +76,10 @@ Android 构建工具本身的行为文档见 [docs/tools/android-build.md](tools
 npx tsx test/test-logger.ts
 ```
 
+默认会跳过超大 JSON 演示，避免 Agent 或自动化运行时输出大量噪音；需要验证 50KB 阈值下的大输出降级行为时，追加 `--verbose`：
+
+```bash
+npx tsx test/test-logger.ts --verbose
+```
+
 测试生成的日志文件保存在 `test/logs/` 目录下，不会与生产日志混淆。日志系统设计见 [docs/LOGGING.md](LOGGING.md)。

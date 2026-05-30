@@ -1,4 +1,5 @@
 import { Logger } from '../src/utils/logger.js';
+import { isVerboseTestOutput } from './test-utils.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -82,27 +83,32 @@ logger.logToolResult(
   123
 );
 
-// 测试 5: 超大 JSON（测试 50KB 阈值）
-const largeObject: Record<string, string> = {};
-for (let i = 0; i < 2000; i++) {
-  largeObject[`key_${i}`] = `value_${i}_${'x'.repeat(50)}`;
+// 测试 5: 超大 JSON（测试 50KB 阈值）。Agent 运行时要非常谨慎：
+// 这段会向终端写入大量 JSON 噪音，默认跳过；需要验证大输出降级行为时使用 --verbose。
+if (isVerboseTestOutput()) {
+  const largeObject: Record<string, string> = {};
+  for (let i = 0; i < 2000; i++) {
+    largeObject[`key_${i}`] = `value_${i}_${'x'.repeat(50)}`;
+  }
+
+  logger.logToolCall('large_data_tool', largeObject);
+
+  logger.logToolResult(
+    'large_data_tool',
+    {
+      content: [
+        {
+          type: 'text',
+          text: 'Processed large dataset. Size exceeded threshold, highlighting disabled.',
+        },
+      ],
+      isError: false,
+    },
+    567
+  );
+} else {
+  console.log('\nSkipping large JSON logger demo. Use --verbose to include it.');
 }
-
-logger.logToolCall('large_data_tool', largeObject);
-
-logger.logToolResult(
-  'large_data_tool',
-  {
-    content: [
-      {
-        type: 'text',
-        text: 'Processed large dataset. Size exceeded threshold, highlighting disabled.',
-      },
-    ],
-    isError: false,
-  },
-  567
-);
 
 logger.info('Test completed. Check terminal colors and log file.');
 logger.close();

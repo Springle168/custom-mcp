@@ -34,6 +34,10 @@ interface CapturedConsoleLine {
 const CONSOLE_METHODS: ConsoleMethod[] = ['log', 'info', 'warn', 'error'];
 const VERBOSE_TEST_OUTPUT = process.argv.includes('--verbose');
 
+export function isVerboseTestOutput(): boolean {
+  return VERBOSE_TEST_OUTPUT;
+}
+
 export function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
     throw new Error(`Assertion failed: ${message}`);
