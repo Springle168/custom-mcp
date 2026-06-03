@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-基于 Gemini CLI 的 Edit 工具移植而来的 MCP 服务器，通过 Streamable HTTP 协议与 Android Studio 等 MCP 宿主通信，当前提供三类能力：精准的文件局部替换（含 default 容错文本匹配与显式 regex 模式）、文件读取（单文件与批量），以及固定环境下的 Android Gradle 构建能力。
+一个别具特色的 MCP 服务器项目，客户端可通过 Streamable HTTP 协议与 MCP 宿主通信。
 
 ---
 
@@ -27,7 +27,7 @@
 
 ```text
 custom-mcp/
-├── AGENTS.md                    # AI Coding Agent 操作说明
+├── AGENTS.md                    # AI Agent 操作说明
 ├── config.example.json          # 配置示例
 ├── config.json                  # 本地运行配置
 ├── package.json                 # npm 包信息与脚本
@@ -56,8 +56,8 @@ custom-mcp/
 │   │   ├── read-file.ts         # read_file 工具
 │   │   ├── read-many-files.ts   # read_many_files 工具
 │   │   ├── ask-user.ts          # ask_user 工具
-│   │   ├── android-build-shared.ts # Android 构建工具共享逻辑
-│   │   ├── android-assemble-debug.ts # android.assembleDebug 工具
+│   │   ├── android-build-shared.ts         # Android 构建工具共享逻辑
+│   │   ├── android-assemble-debug.ts       # android.assembleDebug 工具
 │   │   └── android-test-debug-unit-test.ts # android.testDebugUnitTest 工具
 │   ├── engine/
 │   │   ├── replacement.ts       # 四级替换策略

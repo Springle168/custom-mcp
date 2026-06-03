@@ -133,7 +133,7 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 
 ### Android Studio 嵌套 Schema 限制
 
-Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为 Gemini Function Calling 格式时，会丢失嵌套对象数组内部字段的 `description`。若新增工具 schema 含有 `array` of `object`，必须将嵌套字段的语义、类型、取值范围和使用条件上提到顶层 `description`。
+仅正在为 Android Studio 的使用场景开发工具时需要注意。
 
 详细背景和验证方式见 [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md)。
 

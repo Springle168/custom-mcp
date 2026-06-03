@@ -62,7 +62,7 @@ npx tsx test/inspect-tools.ts
 
 ## Android 构建相关测试
 
-Android 构建相关测试集中在 `test/android-build/`。其中 timeout / launcher 测试依赖 Windows 进程树和 `gradlew.bat` 启动行为，在沙箱或受限权限环境中的 AI Agent 需要提权才能跑测试验证。
+Android 构建相关测试集中在 `test/android-build/`。其中 timeout / launcher 测试依赖 Windows 进程树和 `gradlew.bat` 启动行为，在沙箱或受限权限环境中的 AI Agent 需要**提权**才能跑测试验证。
 
 Android 构建工具本身的行为文档见 [docs/tools/android-build.md](tools/android-build.md)。
 
