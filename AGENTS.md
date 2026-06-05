@@ -5,7 +5,7 @@
 ## 项目上下文
 
 - 这是一个 TypeScript / Node.js MCP 工具集，通过 Streamable HTTP 协议提供工具能力。
-- 当任务目标涉及本项目的代码、配置、构建或测试时，请在操作前阅读 `docs/DEVELOPMENT.md` 及与当前任务相关的文档。
+- 当任务目标涉及本项目的代码、配置、构建或测试时，请在操作前阅读 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 及与当前任务相关的文档。
 - 根目录 `config.json` 是本地运行配置，可能包含个人路径；除非任务明确需要，否则优先参考 `config.example.json`。
 
 ## 操作边界
@@ -72,7 +72,7 @@
 - 除非用户特殊要求，否则 Git 操作不得输出作者名或作者邮箱；使用 `git log` 时选择不含作者字段的格式，使用 `git blame` 时优先使用 `git blame -s`。
 - 未经用户明确同意和授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
 - 如果用户明确允许或要求创建提交：
-  * **按需读取**：当下一步是进行提交时，阅读 `docs/commit-guidelines.md` 并遵循其中对于“约定式提交”的指引；避免不必要的提前读取。
+  * **按需读取**：当下一步是进行提交时，阅读 [docs/commit-guidelines.md](docs/commit-guidelines.md) 并遵循其中对于“约定式提交”的指引；避免不必要的提前读取。
   * 提交修改：基于实际改动生成提交信息。
 - 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式**提权**流程运行 `git commit`，因为提交需要写入 `.git/`（如 `.git/index.lock`）。
 - 未经用户明确授权，不要执行历史改写或破坏性操作，包括但不限于 `git commit --amend`、`git rebase`、`git reset`、`git clean`、`git stash`、`git cherry-pick`。
@@ -81,10 +81,6 @@
 
 ## sub-agent 的使用
 
-- 仅当用户明确表示允许使用时才考虑创建 sub-agent。
-- sub-agent 适合独立、可并行的调查、验证或特定范围修改；不要把阻塞主线、高耦合或需要关键判断的任务外包。
-- 创建 sub-agent 时：
-  * 告知只读 / 可写边界、任务目标、输出要求等信息。
-  * 默认不 fork 当前线程历史（忽略 `fork_context` 或设置其参数为 `false`）。
-  * 不未经用户要求而设定非必要的参数，包括但不限于特定模型、思考深度。
-- 若授权 sub-agent 修改文件，必须指定明确且互不重叠的写入范围。
+[docs/sub-agent-guidelines.md](docs/sub-agent-guidelines.md)
+
+**注意：`docs/sub-agent-guidelines.md` 的内容默认只允许主 Agent（Parent Thread）查看，任何未受到明确授权的 sub-agent 禁止查看。**
