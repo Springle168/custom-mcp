@@ -81,6 +81,6 @@
 
 ## sub-agent 的使用
 
-[docs/sub-agent-guidelines.md](docs/sub-agent-guidelines.md)
-
-**注意：`docs/sub-agent-guidelines.md` 的内容默认只允许主 Agent（Parent Thread）查看，任何未受到明确授权的 sub-agent 禁止查看。**
+- 仅当用户明确表示允许使用时主 Agent 才考虑创建 sub-agent。
+- [docs/sub-agent-guidelines.md](docs/sub-agent-guidelines.md)
+- **注意：`docs/sub-agent-guidelines.md` 的内容默认只允许主 Agent（Parent Thread）查看，任何未受到明确授权的 sub-agent 禁止查看。**
