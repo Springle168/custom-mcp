@@ -2,7 +2,7 @@
 
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../src/config.js';
+import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
 import readManyFilesTool from '../src/tools/read-many-files.js';
 import {
   assert,
@@ -19,11 +19,7 @@ const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'read-many-files');
 
 // Test config
-const testConfig: Config = {
-  rootDir: FIXTURES_DIR,
-  lineEnding: 'auto',
-  port: 3100,
-};
+const testContext = createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
 
 // ================
 // Test Cases
@@ -34,7 +30,7 @@ async function testSingleFileAbsolutePath() {
   const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
   const result = await readManyFilesTool.handler(
     { include: [fooPath] },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -51,7 +47,7 @@ async function testGlobPattern() {
   
   const result = await readManyFilesTool.handler(
     { include: ['src/**/*.kt'] },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -72,7 +68,7 @@ async function testMixedPathsAndGlobs() {
   const readmePath = path.join(FIXTURES_DIR, 'docs', 'README.md');
   const result = await readManyFilesTool.handler(
     { include: [readmePath, 'src/*.kt'] },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -92,7 +88,7 @@ async function testGlobStartingWithSlash() {
   
   const result = await readManyFilesTool.handler(
     { include: ['/**/Foo.kt'] },  // 以 / 开头但包含 glob 元字符
-    testConfig
+    testContext
   );
   
   assert(result.isError !== true, 'Should succeed');
@@ -106,7 +102,7 @@ async function testDefaultExcludes() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt', '**/*.kt', '**/*.md'] },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -125,7 +121,7 @@ async function testDefaultExcludesDisabled() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useDefaultExcludes: false },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -145,7 +141,7 @@ async function testAbsolutePathBypassesExcludes() {
       include: [excludedPath],
       useDefaultExcludes: true  // Even with default excludes on
     },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -162,7 +158,7 @@ async function testFileNotFound() {
   const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
   const result = await readManyFilesTool.handler(
     { include: [nonexistentPath] },
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -179,7 +175,7 @@ async function testNoMatches() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.xyz'] },
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error');
@@ -195,7 +191,7 @@ async function testPathOutsideRoot() {
   const outsidePath = path.join(FIXTURES_DIR, '..', '..', '..', 'etc', 'passwd');
   const result = await readManyFilesTool.handler(
     { include: [outsidePath] },
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -210,7 +206,7 @@ async function testEmptyInclude() {
   
   const result = await readManyFilesTool.handler(
     { include: [] },
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error');
@@ -224,7 +220,7 @@ async function testInvalidIncludeType() {
   
   const result = await readManyFilesTool.handler(
     { include: 'not-an-array' },
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error');
@@ -241,7 +237,7 @@ async function testCustomExclude() {
       include: ['src/**/*.kt'],
       exclude: ['**/nested/**']
     },
-    testConfig
+    testContext
   );
   
   assert(!result.isError, 'Should succeed');
@@ -260,7 +256,7 @@ async function testPartialSuccess() {
   const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
   const result = await readManyFilesTool.handler(
     { include: [fooPath, nonexistentPath] },
-    testConfig
+    testContext
   );
   
   assert(result.isError !== true, 'Should succeed when at least one file is read');
@@ -277,7 +273,7 @@ async function testRelativePathWithGlobChars() {
   // 使用相对路径读取文件名含 [ ] 的文件
   const result = await readManyFilesTool.handler(
     { include: ['special-names/file[test].kt'] },
-    testConfig
+    testContext
   );
   
   assert(result.isError !== true, 'Should succeed');
@@ -293,7 +289,7 @@ async function testRelativePathWithBraces() {
   
   const result = await readManyFilesTool.handler(
     { include: ['special-names/file{brace}.kt'] },
-    testConfig
+    testContext
   );
   
   assert(result.isError !== true, 'Should succeed');
@@ -310,7 +306,7 @@ async function testPathIsDirectory() {
   const dirPath = path.join(FIXTURES_DIR, 'src');
   const result = await readManyFilesTool.handler(
     { include: [dirPath] },
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -327,7 +323,7 @@ async function testBinaryFileSkipped() {
   const pngPath = path.join(FIXTURES_DIR, 'binary', 'fake.png');
   const result = await readManyFilesTool.handler(
     { include: [pngPath] },  // 绝对路径绕过 exclude
-    testConfig
+    testContext
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -346,7 +342,7 @@ async function testBinaryFileInGlob() {
       include: ['**/*.{kt,png}'],
       useDefaultExcludes: false  // 关闭默认排除，让 PNG 能被 glob 匹配到
     },
-    testConfig
+    testContext
   );
   
   assert(result.isError !== true, 'Should succeed (kt files found)');
@@ -364,7 +360,7 @@ async function testShallowRead() {
 
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt', 'docs/README.md'], shallow_read: true },
-    testConfig
+    testContext
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -384,7 +380,7 @@ async function testShowLineNumbers() {
 
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt'], show_line_numbers: true },
-    testConfig
+    testContext
   );
 
   assert(result.isError !== true, 'Should succeed');

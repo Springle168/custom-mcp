@@ -9,7 +9,7 @@ import {
   assertSuccessResult,
   callReplace,
   cleanupFixtures,
-  createTestConfig,
+  createTestToolContext,
   readFixture,
   resetFixtures,
   writeFixture,
@@ -25,7 +25,7 @@ async function testAutoPreservesExistingLf(): Promise<void> {
       target: 'alpha',
       replacement: 'ALPHA',
     },
-    createTestConfig('auto'),
+    createTestToolContext('auto'),
   );
 
   const json = assertSuccessResult(result);
@@ -48,7 +48,7 @@ async function testAutoPreservesExistingCrlf(): Promise<void> {
       target: 'alpha',
       replacement: 'ALPHA',
     },
-    createTestConfig('auto'),
+    createTestToolContext('auto'),
   );
 
   const json = assertSuccessResult(result);
@@ -71,7 +71,7 @@ async function testAutoNewFileUsesLf(): Promise<void> {
       replacement: 'alpha\nbeta\n',
       match_mode: 'default',
     },
-    createTestConfig('auto'),
+    createTestToolContext('auto'),
   );
 
   const json = assertSuccessResult(result);
@@ -94,7 +94,7 @@ async function testLfConfigConvertsExistingCrlfToLf(): Promise<void> {
       target: 'alpha',
       replacement: 'ALPHA',
     },
-    createTestConfig('lf'),
+    createTestToolContext('lf'),
   );
 
   assertSuccessResult(result);
@@ -115,7 +115,7 @@ async function testCrlfConfigConvertsExistingLfToCrlf(): Promise<void> {
       target: 'alpha',
       replacement: 'ALPHA',
     },
-    createTestConfig('crlf'),
+    createTestToolContext('crlf'),
   );
 
   assertSuccessResult(result);
@@ -137,7 +137,7 @@ async function testRegexCrossLineUsesNormalizedLfForCrlfFile(): Promise<void> {
       replacement: 'done',
       match_mode: 'regex',
     },
-    createTestConfig('auto'),
+    createTestToolContext('auto'),
   );
 
   const json = assertSuccessResult(result);
@@ -161,7 +161,7 @@ async function testSpanAndCountsIgnorePhysicalCrlfWidth(): Promise<void> {
       target: 'two\nthree',
       replacement: 'TWO\nTHREE',
     },
-    createTestConfig('crlf'),
+    createTestToolContext('crlf'),
   );
 
   const json = assertSuccessResult(result);

@@ -1,4 +1,4 @@
-import type { Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import {
   ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
@@ -14,9 +14,9 @@ const ANDROID_ASSEMBLE_DEBUG_TOOL_DEFINITION = {
 
 async function handleAndroidAssembleDebug(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  return executeAndroidGradleTask('assembleDebug', args, config);
+  return executeAndroidGradleTask('assembleDebug', args, context);
 }
 
 const androidAssembleDebugTool: MCPTool = {

@@ -13,7 +13,7 @@ import {
   assertSuccessResult,
   callReplace,
   cleanupFixtures,
-  createTestConfig,
+  createTestToolContext,
   fixturePath,
   FIXTURES_DIR,
   makeFixtureDir,
@@ -152,7 +152,7 @@ async function testConfiguredLfConvertsExistingCrlf(): Promise<void> {
       target: 'alpha',
       replacement: 'ALPHA',
     },
-    createTestConfig('lf'),
+    createTestToolContext('lf'),
   );
 
   assertSuccessResult(result);
@@ -170,7 +170,7 @@ async function testConfiguredCrlfConvertsExistingLf(): Promise<void> {
       target: 'alpha',
       replacement: 'ALPHA',
     },
-    createTestConfig('crlf'),
+    createTestToolContext('crlf'),
   );
 
   assertSuccessResult(result);

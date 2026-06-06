@@ -14,7 +14,7 @@ import {
   assertSuccessResult,
   callReplace,
   cleanupFixtures,
-  createTestConfig,
+  createTestToolContext,
   fixturePath,
   makeFixtureDir,
   resetFixtures,
@@ -100,7 +100,7 @@ async function testRootOutsidePathRejectedWithoutModifying(): Promise<void> {
       target: 'outside',
       replacement: 'modified',
     },
-    createTestConfig(),
+    createTestToolContext(),
   );
 
   const json = assertErrorResult(result);

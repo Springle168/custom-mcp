@@ -2,7 +2,7 @@
 
 import * as fs from 'node:fs/promises';
 import { glob, Ignore } from 'glob';
-import { getPathSafetyContext, type Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import {
@@ -341,7 +341,7 @@ async function expandGlobPattern(
 
 async function handleReadManyFiles(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   // 1. Parameter validation
   const validationError = validateParams(args);
@@ -363,7 +363,7 @@ async function handleReadManyFiles(
   // 3. Resolve literal paths and expand glob patterns after lexical safety checks.
   const fileMap = new Map<string, FileEntry>();
   const skipped: SkippedEntry[] = [];
-  const pathSafetyContext = getPathSafetyContext(config);
+  const pathSafetyContext = context.pathSafetyContext;
 
   for (const item of include) {
     const itemHasGlobMagic = hasGlobMagic(item);

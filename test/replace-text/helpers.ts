@@ -1,9 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../../src/config.js';
+import type { LineEnding } from '../../src/config.js';
+import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
 import replaceTool from '../../src/tools/replace.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import {
   assert,
   assertEqual,
@@ -37,14 +39,10 @@ export interface ReplaceTextV2Json {
   note?: string;
 }
 
-export function createTestConfig(
-  lineEnding: Config['lineEnding'] = 'auto',
-): Config {
-  return {
-    rootDir: FIXTURES_DIR,
-    lineEnding,
-    port: 3100,
-  };
+export function createTestToolContext(
+  lineEnding: LineEnding = 'auto',
+): ToolRuntimeContext {
+  return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR, lineEnding });
 }
 
 export async function resetFixtures(): Promise<void> {
@@ -91,9 +89,9 @@ export async function fixtureExists(relativePath: string): Promise<boolean> {
 
 export async function callReplace(
   args: Record<string, unknown>,
-  config: Config = createTestConfig(),
+  context: ToolRuntimeContext = createTestToolContext(),
 ): Promise<ToolCallResult> {
-  return replaceTool.handler(args, config);
+  return replaceTool.handler(args, context);
 }
 
 export function parseResultJson(result: ToolCallResult): ReplaceTextV2Json {

@@ -11,7 +11,7 @@ import {
   assertSuccessResult,
   callReplace,
   cleanupFixtures,
-  createTestConfig,
+  createTestToolContext,
   resetFixtures,
   writeFixture,
 } from './helpers.js';
@@ -408,7 +408,7 @@ async function testRouteUsesProvidedFixtureRootOnly(): Promise<void> {
       target: 'alpha',
       replacement: 'beta',
     },
-    createTestConfig(),
+    createTestToolContext(),
   );
 
   assertSuccessResult(result);

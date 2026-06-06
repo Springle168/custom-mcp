@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { getPathSafetyContext, type Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import {
   detectLineEnding,
   resolveLineEnding,
@@ -142,7 +142,7 @@ function appendWarning(message: string, warning: string | null): string {
 
 async function handleWriteFile(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   const validationError = validateParams(args);
   if (validationError) return textErrorResult(validationError);
@@ -150,7 +150,7 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
-  const pathSafetyContext = getPathSafetyContext(config);
+  const pathSafetyContext = context.pathSafetyContext;
   const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
     return textErrorResult(formatPathSafetyError(safePathResult.error));
@@ -194,7 +194,7 @@ async function handleWriteFile(
       }
     }
 
-    const lineEnding = resolveLineEnding(config.lineEnding, detectedLineEnding);
+    const lineEnding = resolveLineEnding(context.lineEnding, detectedLineEnding);
     const finalContent = normalizeLineEndings(content, lineEnding);
 
     try {

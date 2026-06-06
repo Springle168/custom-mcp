@@ -3,7 +3,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../src/config.js';
+import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
 import writeFileTool from '../src/tools/write-file.js';
 import {
   assert,
@@ -18,11 +18,9 @@ const __dirname = path.dirname(__filename);
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'write-file');
 
-const testConfig: Config = {
-  rootDir: FIXTURES_DIR,
-  lineEnding: 'auto',
-  port: 3100,
-};
+function createToolContext() {
+  return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
+}
 
 async function prepareFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
@@ -56,7 +54,7 @@ async function removeLinkIfExists(linkPath: string): Promise<void> {
 async function testCreateNestedFile() {
   const result = await writeFileTool.handler(
     { file_path: 'nested/example.txt', content: 'alpha\nbeta' },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -77,7 +75,7 @@ async function testOverwriteExistingFilePreservesLineEnding() {
 
   const result = await writeFileTool.handler(
     { file_path: 'existing.txt', content: 'new1\nnew2' },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -94,7 +92,7 @@ async function testRejectOutsideWorkspace() {
   const outsidePath = path.join(__dirname, 'write-file-outside.txt');
   const result = await writeFileTool.handler(
     { file_path: outsidePath, content: 'nope' },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -110,7 +108,7 @@ async function testRejectOutsideWorkspace() {
 async function testRejectBinaryTarget() {
   const result = await writeFileTool.handler(
     { file_path: 'binary/fake.png', content: 'nope' },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -127,7 +125,7 @@ async function testWarnButWritePlaceholderContent() {
     const filePath = `placeholder-${index}.txt`;
     const result = await writeFileTool.handler(
       { file_path: filePath, content },
-      testConfig,
+      createToolContext(),
     );
 
     assert(result.isError !== true, `Should succeed for ${JSON.stringify(content)}`);
@@ -172,7 +170,7 @@ async function testRejectSymlinkEscapingWorkspace() {
 
     const result = await writeFileTool.handler(
       { file_path: path.join('escape-link', 'escaped.txt'), content: 'nope' },
-      testConfig,
+      createToolContext(),
     );
 
     assert(result.isError === true, 'Should fail');

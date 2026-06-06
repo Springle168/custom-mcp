@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import { getPathSafetyContext, type Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import {
@@ -210,14 +210,14 @@ async function resolveLineRange(
 
 async function handleReadFile(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   const validationError = validateParams(args);
   if (validationError) return textErrorResult(validationError);
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
-  const pathSafetyContext = getPathSafetyContext(config);
+  const pathSafetyContext = context.pathSafetyContext;
   const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
     return textErrorResult(formatPathSafetyError(safePathResult.error));

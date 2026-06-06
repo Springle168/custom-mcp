@@ -1,4 +1,4 @@
-import type { AndroidConfig, Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import {
@@ -30,6 +30,8 @@ export interface AndroidGradleToolArgs {
   quiet?: boolean;
   stacktrace?: boolean;
 }
+
+type ToolAndroidConfig = NonNullable<ToolRuntimeContext['android']>;
 
 interface AndroidGradleToolFailure {
   success: false;
@@ -80,35 +82,32 @@ export function toRunAndroidGradleOptions(
 }
 
 export function resolveAndroidGradleRuntimeConfig(
-  config: Config,
+  context: ToolRuntimeContext,
 ): { ok: true; value: AndroidGradleRuntimeConfig } | { ok: false; error: string } {
-  const androidConfig = config.android;
-
-  if (!androidConfig?.workspaceRoot || !androidConfig.javaHome) {
+  if (!context.android) {
     return {
       ok: false,
-      error:
-        'Android build config is incomplete. Please set android.workspaceRoot and android.javaHome in config.json, or provide ANDROID_WORKSPACE_ROOT and ANDROID_JAVA_HOME environment variables.',
+      error: context.missingAndroidConfigMessage,
     };
   }
 
   return {
     ok: true,
-    value: toRuntimeConfig(androidConfig),
+    value: toRuntimeConfig(context.android),
   };
 }
 
 export async function executeAndroidGradleTask(
   task: AndroidGradleTask,
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   const validationError = validateAndroidGradleToolArgs(args);
   if (validationError) {
     return textErrorResult(validationError);
   }
 
-  const runtimeConfig = resolveAndroidGradleRuntimeConfig(config);
+  const runtimeConfig = resolveAndroidGradleRuntimeConfig(context);
   if (!runtimeConfig.ok) {
     return textErrorResult(runtimeConfig.error);
   }
@@ -144,7 +143,7 @@ export function formatAndroidGradleToolResult(
   return textErrorResult(JSON.stringify(failure, null, 2));
 }
 
-function toRuntimeConfig(androidConfig: AndroidConfig): AndroidGradleRuntimeConfig {
+function toRuntimeConfig(androidConfig: ToolAndroidConfig): AndroidGradleRuntimeConfig {
   if (!androidConfig.workspaceRoot || !androidConfig.javaHome) {
     throw new Error('Android build config is incomplete.');
   }

@@ -6,7 +6,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { loadConfig, type Config } from './config.js';
+import { loadConfig, type RuntimeConfigSnapshot } from './config.js';
+import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
+import { createToolRuntimeContext } from './runtime/tool-context.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
 import { Logger } from './utils/logger.js';
 import { pendingQuestions, generateQuestionForm } from './tools/ask-user.js';
@@ -15,7 +17,7 @@ import { pendingQuestions, generateQuestionForm } from './tools/ask-user.js';
 // MCP Server Factory
 // ================
 
-function createMCPServer(config: Config, logger: Logger): Server {
+function createMCPServer(configStore: ConfigStore, logger: Logger): Server {
   const server = new Server(
     { name: 'custom-mcp', version: '1.0.0' },
     { capabilities: { tools: {} } },
@@ -29,10 +31,12 @@ function createMCPServer(config: Config, logger: Logger): Server {
     const { name, arguments: args } = request.params;
     const safeArgs = (args ?? {}) as Record<string, unknown>;
     const startTime = Date.now();
+    const snapshot = configStore.getSnapshot();
+    const toolContext = createToolRuntimeContext(snapshot);
 
     logger.logToolCall(name, safeArgs);
 
-    const result = await routeToolCall(name, safeArgs, config);
+    const result = await routeToolCall(name, safeArgs, toolContext);
 
     logger.logToolResult(name, result, Date.now() - startTime);
     return result;
@@ -41,13 +45,12 @@ function createMCPServer(config: Config, logger: Logger): Server {
   return server;
 }
 
-function logWorkspaceRoots(config: Config, logger: Logger): void {
-  const primaryRoot = config.pathSafetyContext?.primaryRoot.rootDir ?? config.rootDir;
-  const additionalRoots = config.pathSafetyContext
-    ? config.pathSafetyContext.allowedRoots
-        .filter((root) => root.kind === 'additional')
-        .map((root) => root.rootDir)
-    : config.otherRootDirs ?? [];
+function logWorkspaceRoots(snapshot: RuntimeConfigSnapshot, logger: Logger): void {
+  const { pathSafetyContext } = snapshot;
+  const primaryRoot = pathSafetyContext.primaryRoot.rootDir;
+  const additionalRoots = pathSafetyContext.allowedRoots
+    .filter((root) => root.kind === 'additional')
+    .map((root) => root.rootDir);
 
   logger.info(`  Primary root: ${primaryRoot}`);
 
@@ -72,7 +75,8 @@ function getMcpSessionId(req: Request): string | undefined {
 // ================
 
 async function main() {
-  const config = loadConfig();
+  const initialSnapshot = loadConfig();
+  const configStore = createConfigStore(initialSnapshot);
   const logger = new Logger();
 
   const app = express();
@@ -116,7 +120,7 @@ async function main() {
       }
     };
 
-    const server = createMCPServer(config, logger);
+    const server = createMCPServer(configStore, logger);
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
 
@@ -248,11 +252,14 @@ async function main() {
   });
 
   // 启动
-  app.listen(config.port, () => {
+  app.listen(initialSnapshot.port, () => {
     logger.info('MCP Replace Server started');
-    logger.info(`  Endpoint: http://localhost:${config.port}/mcp`);
-    logWorkspaceRoots(config, logger);
-    logger.info(`  Line ending: ${config.lineEnding}`);
+    logger.info(`  Endpoint: http://localhost:${initialSnapshot.port}/mcp`);
+    logger.info(`  Workspace id: ${initialSnapshot.workspaceId}`);
+    logger.info(`  Snapshot version: ${initialSnapshot.snapshotVersion}`);
+    logger.info(`  Config file: ${initialSnapshot.configFilePath}`);
+    logWorkspaceRoots(initialSnapshot, logger);
+    logger.info(`  Line ending: ${initialSnapshot.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
   });
 }

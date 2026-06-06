@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../../src/config.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import androidAssembleDebugTool from '../../src/tools/android-assemble-debug.js';
 import androidTestDebugUnitTestTool from '../../src/tools/android-test-debug-unit-test.js';
 import {
@@ -14,16 +14,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
-const baseConfig: Config = {
-  rootDir: PROJECT_ROOT,
-  lineEnding: 'auto',
-  port: 3100,
-};
+const baseContext = createTestToolRuntimeContext({ rootDir: PROJECT_ROOT });
 
 async function testValidationErrorForUnknownField() {
   const result = await androidAssembleDebugTool.handler(
     { quiet: true, profile: true },
-    baseConfig,
+    baseContext,
   );
 
   assert(result.isError === true, 'Should fail on unknown field');
@@ -37,7 +33,7 @@ async function testValidationErrorForUnknownField() {
 async function testValidationErrorForNonBoolean() {
   const result = await androidTestDebugUnitTestTool.handler(
     { stacktrace: 'yes' },
-    baseConfig,
+    baseContext,
   );
 
   assert(result.isError === true, 'Should fail on non-boolean parameter');
@@ -49,19 +45,19 @@ async function testValidationErrorForNonBoolean() {
 }
 
 async function testMissingAndroidConfig() {
-  const result = await androidAssembleDebugTool.handler({}, baseConfig);
+  const result = await androidAssembleDebugTool.handler({}, baseContext);
 
   assert(result.isError === true, 'Should fail when Android config is missing');
   assertIncludes(
     getResultText(result),
-    'android.workspaceRoot and android.javaHome',
+    'workspaceRoot, javaHome',
     'Should explain required Android config keys',
   );
 }
 
 async function testMissingGradleWrapper() {
-  const config: Config = {
-    ...baseConfig,
+  const context = createTestToolRuntimeContext({
+    rootDir: PROJECT_ROOT,
     android: {
       workspaceRoot: PROJECT_ROOT,
       javaHome: 'C:/AndroidStudio/jbr',
@@ -69,9 +65,9 @@ async function testMissingGradleWrapper() {
       maxErrorBlockChars: 2500,
       maxLogTailChars: 4000,
     },
-  };
+  });
 
-  const result = await androidTestDebugUnitTestTool.handler({ quiet: true }, config);
+  const result = await androidTestDebugUnitTestTool.handler({ quiet: true }, context);
 
   assert(result.isError === true, 'Should fail when gradlew.bat is missing');
   assertIncludes(

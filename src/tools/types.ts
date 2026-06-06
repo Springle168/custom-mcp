@@ -1,4 +1,4 @@
-import type { Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 
 export interface ToolCallResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -14,6 +14,6 @@ export interface MCPTool {
   };
   handler: (
     args: Record<string, unknown>,
-    config: Config,
+    context: ToolRuntimeContext,
   ) => Promise<ToolCallResult>;
 }
