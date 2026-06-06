@@ -1,4 +1,4 @@
-import type { Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import crypto from 'crypto';
@@ -174,7 +174,7 @@ function validateParams(params: AskUserParams): string | null {
 // Handler 实现
 async function handleAskUser(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   const params = args as unknown as AskUserParams;
 
@@ -186,7 +186,7 @@ async function handleAskUser(
 
   // 创建会话
   const sessionId = crypto.randomUUID();
-  const url = `http://localhost:${config.port}/ask/${sessionId}`;
+  const url = context.askUser.makeUrl(sessionId);
 
   // 终端响铃提醒
   process.stdout.write('\u0007')

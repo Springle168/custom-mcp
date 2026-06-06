@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../src/config.js';
+import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
 import replaceTool from '../src/tools/replace.js';
 import {
   assert,
@@ -15,11 +15,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'replace-text');
 
-const testConfig: Config = {
-  rootDir: FIXTURES_DIR,
-  lineEnding: 'auto',
-  port: 3100,
-};
+function createToolContext() {
+  return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
+}
 
 interface ReplaceJsonPayload {
   success: boolean;
@@ -54,7 +52,7 @@ async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
       target: '  return 1;',
       replacement: '  // ...\n  return 2;',
     },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -88,7 +86,7 @@ async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
       target: '// ...',
       replacement: '// ...\nactual content',
     },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -112,7 +110,7 @@ async function testRejectsNonBooleanAllowMultiple(): Promise<void> {
       replacement: 'new',
       allow_multiple: 'false',
     },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -131,7 +129,7 @@ async function testRejectsOldFieldAliases(): Promise<void> {
       old_string: 'old',
       new_string: 'new',
     },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Should fail');

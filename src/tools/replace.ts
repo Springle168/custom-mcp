@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { getPathSafetyContext, type Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import {
   calculateMatchedSpan,
   calculateRegexReplacement,
@@ -566,7 +566,7 @@ function buildMatchedFailure(
 
 export async function handleReplace(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   const validation = validateParams(args);
   if (!validation.ok) {
@@ -581,7 +581,7 @@ export async function handleReplace(
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
-  const pathSafetyContext = getPathSafetyContext(config);
+  const pathSafetyContext = context.pathSafetyContext;
   const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
   if (!safePathResult.ok) {
     return errorResult(
@@ -618,7 +618,7 @@ export async function handleReplace(
         }
 
         const normalizedReplacement = normalizeTextLineEndings(replacement);
-        const lineEnding = resolveLineEnding(config.lineEnding, null);
+        const lineEnding = resolveLineEnding(context.lineEnding, null);
         try {
           await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
         } catch (err: unknown) {
@@ -763,7 +763,7 @@ export async function handleReplace(
 
     const currentLineCount = countLines(calculation.newContent);
     const lineEnding = resolveLineEnding(
-      config.lineEnding,
+      context.lineEnding,
       existingFile.detectedLineEnding,
     );
     const preWriteSafetyError = await validateSafeWriteTarget(safePath);

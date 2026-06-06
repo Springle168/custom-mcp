@@ -9,7 +9,7 @@ import {
   assertDeepEqual,
   callReplace,
   cleanupFixtures,
-  createTestConfig,
+  createTestToolContext,
   parseResultJson,
   resetFixtures,
   writeFixture,
@@ -161,7 +161,7 @@ async function testToolResultHasNoStructuredContent(): Promise<void> {
       target: 'alpha',
       replacement: 'beta',
     },
-    createTestConfig(),
+    createTestToolContext(),
   );
 
   assert(

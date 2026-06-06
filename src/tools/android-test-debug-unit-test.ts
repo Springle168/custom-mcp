@@ -1,4 +1,4 @@
-import type { Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import {
   ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
@@ -14,9 +14,9 @@ const ANDROID_TEST_DEBUG_UNIT_TEST_TOOL_DEFINITION = {
 
 async function handleAndroidTestDebugUnitTest(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  return executeAndroidGradleTask('testDebugUnitTest', args, config);
+  return executeAndroidGradleTask('testDebugUnitTest', args, context);
 }
 
 const androidTestDebugUnitTestTool: MCPTool = {

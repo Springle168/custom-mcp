@@ -1,4 +1,4 @@
-import type { Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult } from './results.js';
 
@@ -43,7 +43,7 @@ export function getAllToolDefinitions() {
 export async function routeToolCall(
   name: string,
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   const handler = routeMap.get(name);
 
@@ -51,5 +51,5 @@ export async function routeToolCall(
     return textErrorResult(`Unknown tool: ${name}`);
   }
 
-  return handler(args, config);
+  return handler(args, context);
 }

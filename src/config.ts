@@ -2,10 +2,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  createPathSafetyContext,
   createValidatedPathSafetyContext,
   type PathSafetyContext,
 } from './utils/paths.js';
+
+export type LineEnding = 'auto' | 'lf' | 'crlf';
 
 export interface AndroidConfig {
   workspaceRoot?: string;
@@ -15,10 +16,41 @@ export interface AndroidConfig {
   maxLogTailChars: number;
 }
 
+export interface RuntimeAndroidConfig {
+  readonly workspaceRoot: string;
+  readonly javaHome: string;
+  readonly buildTimeoutMs: number;
+  readonly maxErrorBlockChars: number;
+  readonly maxLogTailChars: number;
+}
+
+export interface RuntimeConfigSnapshot {
+  readonly snapshotVersion: number;
+  readonly configFilePath: string;
+  readonly workspaceId: string;
+  readonly rootDir: string;
+  readonly otherRootDirs: readonly string[];
+  readonly port: number;
+  readonly lineEnding: LineEnding;
+  readonly android?: RuntimeAndroidConfig;
+  readonly pathSafetyContext: PathSafetyContext;
+}
+
+export interface RuntimeConfigSnapshotInput {
+  readonly snapshotVersion?: number;
+  readonly configFilePath: string;
+  readonly workspaceId: string;
+  readonly rootDir: string;
+  readonly otherRootDirs?: readonly string[];
+  readonly port: number;
+  readonly lineEnding: LineEnding;
+  readonly android?: RuntimeAndroidConfig;
+}
+
 export interface Config {
   rootDir: string;
   otherRootDirs?: string[];
-  lineEnding: 'auto' | 'lf' | 'crlf';
+  lineEnding: LineEnding;
   port: number;
   android?: AndroidConfig;
   pathSafetyContext?: PathSafetyContext;
@@ -85,7 +117,7 @@ function readOptionalStringArray(
   });
 }
 
-function readLineEnding(value: unknown): Config['lineEnding'] {
+function readLineEnding(value: unknown): LineEnding {
   if (value === undefined) {
     return 'auto';
   }
@@ -230,7 +262,9 @@ export function buildConfig(
   };
 }
 
-export function attachValidatedPathSafetyContext(config: Config): Config {
+export function attachValidatedPathSafetyContext(
+  config: Config,
+): Config & { pathSafetyContext: PathSafetyContext } {
   return {
     ...config,
     pathSafetyContext: createValidatedPathSafetyContext(
@@ -240,14 +274,37 @@ export function attachValidatedPathSafetyContext(config: Config): Config {
   };
 }
 
-export function getPathSafetyContext(config: Config): PathSafetyContext {
-  return config.pathSafetyContext ?? createPathSafetyContext(
-    config.rootDir,
-    config.otherRootDirs ?? [],
-  );
+export function getPathSafetyContext(config: {
+  pathSafetyContext: PathSafetyContext;
+}): PathSafetyContext {
+  return config.pathSafetyContext;
 }
 
-export function loadConfig(): Config {
+export function createRuntimeConfigSnapshot(
+  input: RuntimeConfigSnapshotInput,
+): RuntimeConfigSnapshot {
+  const otherRootDirs = [...(input.otherRootDirs ?? [])];
+  const pathSafetyContext = createValidatedPathSafetyContext(
+    input.rootDir,
+    otherRootDirs,
+  );
+
+  const snapshot: RuntimeConfigSnapshot = {
+    snapshotVersion: input.snapshotVersion ?? 1,
+    configFilePath: input.configFilePath,
+    workspaceId: input.workspaceId,
+    rootDir: input.rootDir,
+    otherRootDirs,
+    port: input.port,
+    lineEnding: input.lineEnding,
+    ...(input.android ? { android: { ...input.android } } : {}),
+    pathSafetyContext,
+  };
+
+  return deepFreeze(snapshot);
+}
+
+export function loadConfig(): RuntimeConfigSnapshot {
   let fileConfig: ConfigSource = {};
 
   try {
@@ -270,10 +327,48 @@ export function loadConfig(): Config {
       process.exit(1);
     }
 
-    return attachValidatedPathSafetyContext(config);
+    const android = toRuntimeAndroidConfig(config.android);
+
+    return createRuntimeConfigSnapshot({
+      configFilePath: CONFIG_PATH,
+      workspaceId: 'default',
+      rootDir: config.rootDir,
+      otherRootDirs: config.otherRootDirs ?? [],
+      port: config.port,
+      lineEnding: config.lineEnding,
+      ...(android ? { android } : {}),
+    });
   } catch (err) {
     console.error(`Invalid config in ${CONFIG_PATH}`);
     console.error(err);
     process.exit(1);
   }
+}
+
+function toRuntimeAndroidConfig(
+  androidConfig: AndroidConfig | undefined,
+): RuntimeAndroidConfig | undefined {
+  if (!androidConfig?.workspaceRoot || !androidConfig.javaHome) {
+    return undefined;
+  }
+
+  return {
+    workspaceRoot: androidConfig.workspaceRoot,
+    javaHome: androidConfig.javaHome,
+    buildTimeoutMs: androidConfig.buildTimeoutMs,
+    maxErrorBlockChars: androidConfig.maxErrorBlockChars,
+    maxLogTailChars: androidConfig.maxLogTailChars,
+  };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+
+  for (const propertyValue of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(propertyValue);
+  }
+
+  return Object.freeze(value);
 }

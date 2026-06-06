@@ -1,14 +1,13 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from '../src/config.js';
+import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
 import readFileTool from '../src/tools/read-file.js';
 import readManyFilesTool from '../src/tools/read-many-files.js';
 import replaceTool from '../src/tools/replace.js';
 import writeFileTool from '../src/tools/write-file.js';
 import {
   createPathSafetyContext,
-  createValidatedPathSafetyContext,
   resolveSafeGlobEntry,
   resolveSafeGlobPattern,
   resolveSafeGlobPatternInContext,
@@ -31,25 +30,17 @@ const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'path-safety');
 const OUTSIDE_DIR = path.join(__dirname, 'fixtures', 'path-safety-outside');
 
-const testConfig: Config = {
-  rootDir: FIXTURES_DIR,
-  lineEnding: 'auto',
-  port: 3100,
-};
+function createToolContext() {
+  return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
+}
 
 const symlinkResults: string[] = [];
 
-function createMultiRootConfig(): Config {
-  return {
+function createMultiRootContext() {
+  return createTestToolRuntimeContext({
     rootDir: FIXTURES_DIR,
     otherRootDirs: [OUTSIDE_DIR],
-    lineEnding: 'auto',
-    port: 3100,
-    pathSafetyContext: createValidatedPathSafetyContext(
-      FIXTURES_DIR,
-      [OUTSIDE_DIR],
-    ),
-  };
+  });
 }
 
 async function prepareFixtures(): Promise<void> {
@@ -152,12 +143,12 @@ async function testContextMatchesAdditionalRootOnlyForAbsoluteInput(): Promise<v
 }
 
 async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise<void> {
-  const multiRootConfig = createMultiRootConfig();
+  const multiRootContext = createMultiRootContext();
   const additionalFile = path.join(OUTSIDE_DIR, 'outside.ts');
 
   const readResult = await readFileTool.handler(
     { file_path: additionalFile },
-    multiRootConfig,
+    multiRootContext,
   );
 
   assert(readResult.isError !== true, 'read_file should read absolute paths in additional roots');
@@ -174,7 +165,7 @@ async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise
 
   const relativeEscapeResult = await readFileTool.handler(
     { file_path: path.join('..', 'path-safety-outside', 'outside.ts') },
-    multiRootConfig,
+    multiRootContext,
   );
 
   assert(
@@ -189,11 +180,11 @@ async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise
 }
 
 async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
-  const multiRootConfig = createMultiRootConfig();
+  const multiRootContext = createMultiRootContext();
   const writeTarget = path.join(OUTSIDE_DIR, 'written-from-tool.txt');
   const writeResult = await writeFileTool.handler(
     { file_path: writeTarget, content: 'alpha\nbeta' },
-    multiRootConfig,
+    multiRootContext,
   );
 
   assert(writeResult.isError !== true, 'write_file should write absolute paths in additional roots');
@@ -216,7 +207,7 @@ async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
       target: 'true',
       replacement: 'false',
     },
-    multiRootConfig,
+    multiRootContext,
   );
 
   assert(replaceResult.isError !== true, 'replace_text should modify absolute paths in additional roots');
@@ -228,13 +219,13 @@ async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
 }
 
 async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise<void> {
-  const multiRootConfig = createMultiRootConfig();
+  const multiRootContext = createMultiRootContext();
   const visiblePath = path.join(OUTSIDE_DIR, 'docs', 'visible.txt');
   const excludedPath = path.join(OUTSIDE_DIR, 'node_modules', 'excluded.txt');
 
   const literalResult = await readManyFilesTool.handler(
     { include: [excludedPath] },
-    multiRootConfig,
+    multiRootContext,
   );
 
   assert(
@@ -249,7 +240,7 @@ async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise
 
   const globResult = await readManyFilesTool.handler(
     { include: [path.join(OUTSIDE_DIR, '**', '*.txt')] },
-    multiRootConfig,
+    multiRootContext,
   );
 
   assert(
@@ -282,7 +273,7 @@ async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): P
 
     const result = await readFileTool.handler(
       { file_path: path.join('link-to-additional', 'outside.ts') },
-      createMultiRootConfig(),
+      createMultiRootContext(),
     );
 
     assert(
@@ -319,7 +310,7 @@ async function testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck(): P
 
     const result = await readFileTool.handler(
       { file_path: path.join(linkPath, 'src', 'Foo.ts') },
-      createMultiRootConfig(),
+      createMultiRootContext(),
     );
 
     assert(
@@ -361,7 +352,7 @@ async function testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootChec
         file_path: path.join(linkPath, 'escaped-from-additional.txt'),
         content: 'nope',
       },
-      createMultiRootConfig(),
+      createMultiRootContext(),
     );
 
     assert(
@@ -408,7 +399,7 @@ async function testPrefixSiblingIsOutsideRoot(): Promise<void> {
   try {
     const result = await readFileTool.handler(
       { file_path: siblingFile },
-      testConfig,
+      createToolContext(),
     );
 
     assert(result.isError === true, 'Sibling prefix path should fail');
@@ -432,7 +423,7 @@ async function testDriveAbsoluteGlobStaticBaseAndDisplay(): Promise<void> {
 
   const result = await readManyFilesTool.handler(
     { include: [pattern], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Drive-absolute glob should read files');
@@ -450,7 +441,7 @@ async function testSlashLeadingGlobIsRelativeButPlainRootedPathFails(): Promise<
 
   const globResult = await readManyFilesTool.handler(
     { include: ['/**/Foo.ts'] },
-    testConfig,
+    createToolContext(),
   );
 
   assert(globResult.isError !== true, 'Slash-leading glob should read within root');
@@ -458,7 +449,7 @@ async function testSlashLeadingGlobIsRelativeButPlainRootedPathFails(): Promise<
 
   const plainRootedResult = await readManyFilesTool.handler(
     { include: ['/src/Foo.ts'] },
-    testConfig,
+    createToolContext(),
   );
 
   assert(plainRootedResult.isError === true, 'Plain slash-leading non-glob path should fail');
@@ -472,7 +463,7 @@ async function testSlashLeadingGlobIsRelativeButPlainRootedPathFails(): Promise<
 async function testGlobStaticBaseOutsideRootFailsBeforeReading(): Promise<void> {
   const result = await readManyFilesTool.handler(
     { include: ['../path-safety-outside/**/*.ts'], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Outside glob static base should fail');
@@ -492,7 +483,7 @@ async function testBraceExpandedParentTraversalFailsBeforeGlob(): Promise<void> 
 
   const result = await readManyFilesTool.handler(
     { include: ['{..,src}/**/*.ts'], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Brace-expanded parent traversal should fail');
@@ -517,7 +508,7 @@ async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
 
   const result = await readManyFilesTool.handler(
     { include: ['src/@(Foo).ts'], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Extglob-only pattern should be expanded');
@@ -530,7 +521,7 @@ async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
 async function testRelativeLiteralPathHonorsDefaultExcludes(): Promise<void> {
   const result = await readManyFilesTool.handler(
     { include: ['.env'] },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError === true, 'Relative literal .env should be excluded by default');
@@ -544,7 +535,7 @@ async function testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows(): 
 
   const defaultResult = await readManyFilesTool.handler(
     { include: ['.ENV'] },
-    testConfig,
+    createToolContext(),
   );
 
   assert(defaultResult.isError === true, 'Uppercase .ENV should be excluded by default on Windows');
@@ -553,7 +544,7 @@ async function testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows(): 
 
   const customResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['SRC/*.TS'], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(customResult.isError === true, 'Case-different custom exclude should filter a relative literal on Windows');
@@ -564,7 +555,7 @@ async function testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows(): 
 async function testRelativeLiteralPathHonorsBraceAndExtglobExcludes(): Promise<void> {
   const braceResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['src/*.{ts,tsx}'], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(braceResult.isError === true, 'Brace exclude should filter a relative literal path');
@@ -573,7 +564,7 @@ async function testRelativeLiteralPathHonorsBraceAndExtglobExcludes(): Promise<v
 
   const extglobResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['src/@(Foo).ts'], useDefaultExcludes: false },
-    testConfig,
+    createToolContext(),
   );
 
   assert(extglobResult.isError === true, 'Extglob exclude should filter a relative literal path');
@@ -587,7 +578,7 @@ async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
       include: ['special/file[test].ts', 'special/file{brace}.ts', 'special/file{a,b}.ts'],
       useDefaultExcludes: false,
     },
-    testConfig,
+    createToolContext(),
   );
 
   assert(result.isError !== true, 'Literal files containing glob metacharacters should be read');
@@ -620,7 +611,7 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
 
     const result = await readFileTool.handler(
       { file_path: path.join('outside-link', 'outside.ts') },
-      testConfig,
+      createToolContext(),
     );
 
     assert(result.isError === true, 'read_file should reject symlink escapes');
@@ -635,7 +626,7 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
         include: [path.join('outside-link', 'outside.ts')],
         useDefaultExcludes: false,
       },
-      testConfig,
+      createToolContext(),
     );
 
     assert(
@@ -670,7 +661,7 @@ async function testWriteRejectsSymlinkTargetWhenAvailable(): Promise<void> {
 
     const result = await writeFileTool.handler(
       { file_path: 'write-link.txt', content: 'changed\n' },
-      testConfig,
+      createToolContext(),
     );
 
     assert(result.isError === true, 'write_file should reject symlink targets');
