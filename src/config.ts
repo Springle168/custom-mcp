@@ -1,10 +1,22 @@
 import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import { ConfigError } from './config/errors.js';
+import {
+  getDefaultGlobalConfigPath,
+  type DefaultGlobalConfigPathOptions,
+} from './config/global-config-path.js';
 import {
   createValidatedPathSafetyContext,
   type PathSafetyContext,
 } from './utils/paths.js';
+
+export { ConfigError, isConfigError } from './config/errors.js';
+export type { ConfigErrorCode } from './config/errors.js';
+export { getDefaultGlobalConfigPath } from './config/global-config-path.js';
+export type {
+  DefaultGlobalConfigPathOptions,
+  GlobalConfigLocation,
+} from './config/global-config-path.js';
 
 export type LineEnding = 'auto' | 'lf' | 'crlf';
 
@@ -47,6 +59,11 @@ export interface RuntimeConfigSnapshotInput {
   readonly android?: RuntimeAndroidConfig;
 }
 
+export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly snapshotVersion?: number;
+}
+
 export interface Config {
   rootDir: string;
   otherRootDirs?: string[];
@@ -75,9 +92,11 @@ export interface ConfigSource {
 const DEFAULT_ANDROID_BUILD_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_ANDROID_MAX_ERROR_BLOCK_CHARS = 2500;
 const DEFAULT_ANDROID_MAX_LOG_TAIL_CHARS = 4000;
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, '..', 'config.json');
+const MINIMAL_TRANSITIONAL_CONFIG_EXAMPLE = `{
+  "rootDir": "E:/Workspace/YourProject",
+  "port": 3100,
+  "lineEnding": "auto"
+}`;
 
 function readOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
@@ -304,45 +323,111 @@ export function createRuntimeConfigSnapshot(
   return deepFreeze(snapshot);
 }
 
-export function loadConfig(): RuntimeConfigSnapshot {
-  let fileConfig: ConfigSource = {};
+export function loadRuntimeConfig(
+  options: LoadRuntimeConfigOptions = {},
+): RuntimeConfigSnapshot {
+  const location = getDefaultGlobalConfigPath(options);
+  const raw = readConfigFile(location.configFilePath);
+  const fileConfig = parseConfigFile(raw, location.configFilePath);
 
   try {
-    const raw = readFileSync(CONFIG_PATH, 'utf-8');
-    fileConfig = JSON.parse(raw) as ConfigSource;
-  } catch (err) {
-    console.error(`Failed to read config file at ${CONFIG_PATH}`);
-    console.error(err);
-    process.exit(1);
-  }
-
-  try {
-    const config = buildConfig(fileConfig);
+    const config = buildConfig(fileConfig, options.env ?? process.env);
 
     if (!config.rootDir) {
-      console.error(
-        'Error: rootDir is not configured.\n' +
-          `Please set it in ${CONFIG_PATH} or via MCP_ROOT_DIR environment variable.`,
-      );
-      process.exit(1);
+      throw new ConfigError({
+        code: 'config_validation_failed',
+        configFilePath: location.configFilePath,
+        fieldPath: 'rootDir',
+        message: 'rootDir is not configured.',
+        suggestion:
+          `Set rootDir in ${location.configFilePath}. ` +
+          'The server no longer reads config.json from the repository root.',
+      });
     }
 
     const android = toRuntimeAndroidConfig(config.android);
 
     return createRuntimeConfigSnapshot({
-      configFilePath: CONFIG_PATH,
+      configFilePath: location.configFilePath,
       workspaceId: 'default',
       rootDir: config.rootDir,
       otherRootDirs: config.otherRootDirs ?? [],
       port: config.port,
       lineEnding: config.lineEnding,
       ...(android ? { android } : {}),
+      snapshotVersion: options.snapshotVersion ?? 1,
     });
-  } catch (err) {
-    console.error(`Invalid config in ${CONFIG_PATH}`);
-    console.error(err);
-    process.exit(1);
+  } catch (err: unknown) {
+    if (err instanceof ConfigError) {
+      throw err;
+    }
+
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ConfigError({
+      code: 'config_validation_failed',
+      configFilePath: location.configFilePath,
+      message,
+      suggestion: `Fix the configuration in ${location.configFilePath} and restart the server.`,
+      cause: err,
+    });
   }
+}
+
+
+function readConfigFile(configFilePath: string): string {
+  try {
+    return readFileSync(configFilePath, 'utf-8');
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+
+    if (error.code === 'ENOENT') {
+      throw new ConfigError({
+        code: 'config_file_not_found',
+        configFilePath,
+        message: `Global config file does not exist: ${configFilePath}`,
+        suggestion:
+          `Create ${configFilePath}. The server no longer reads config.json from the repository root.\n` +
+          `Minimum config for the current migration step:\n${MINIMAL_TRANSITIONAL_CONFIG_EXAMPLE}`,
+        cause: err,
+      });
+    }
+
+    throw new ConfigError({
+      code: 'config_file_read_failed',
+      configFilePath,
+      message: `Failed to read global config file at ${configFilePath}: ${error.message}`,
+      suggestion: 'Check that the file exists and that the current user can read it.',
+      cause: err,
+    });
+  }
+}
+
+function parseConfigFile(raw: string, configFilePath: string): ConfigSource {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ConfigError({
+      code: 'config_json_invalid',
+      configFilePath,
+      message: `Config file contains invalid JSON: ${message}`,
+      suggestion: `Fix the JSON syntax in ${configFilePath} and restart the server.`,
+      cause: err,
+    });
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new ConfigError({
+      code: 'config_validation_failed',
+      configFilePath,
+      message: 'Config file must contain a JSON object.',
+      suggestion: `Replace ${configFilePath} with a JSON object configuration.`,
+    });
+  }
+
+  return parsed as ConfigSource;
 }
 
 function toRuntimeAndroidConfig(
