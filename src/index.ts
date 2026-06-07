@@ -6,7 +6,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { loadConfig, type RuntimeConfigSnapshot } from './config.js';
+import { ConfigError, loadRuntimeConfig, type RuntimeConfigSnapshot } from './config.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
 import { createToolRuntimeContext } from './runtime/tool-context.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
@@ -70,12 +70,37 @@ function getMcpSessionId(req: Request): string | undefined {
   return Array.isArray(header) ? header[0] : header;
 }
 
+function formatConfigStartupError(error: ConfigError): string {
+  const lines = ['Failed to load configuration.', `Reason: ${error.message}`];
+
+  if (error.configFilePath) {
+    lines.push(`Config file: ${error.configFilePath}`);
+  }
+
+  if (error.fieldPath) {
+    lines.push(`Field: ${error.fieldPath}`);
+  }
+
+  if (error.suggestion) {
+    lines.push('', 'Next step:', indentBlock(error.suggestion));
+  }
+
+  return lines.join('\n');
+}
+
+function indentBlock(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => `  ${line}`)
+    .join('\n');
+}
+
 // ================
 // HTTP + Session Management
 // ================
 
 async function main() {
-  const initialSnapshot = loadConfig();
+  const initialSnapshot = loadRuntimeConfig();
   const configStore = createConfigStore(initialSnapshot);
   const logger = new Logger();
 
@@ -265,6 +290,11 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Failed to start server:', err);
+  if (err instanceof ConfigError) {
+    console.error(formatConfigStartupError(err));
+  } else {
+    console.error('Failed to start server:', err);
+  }
+
   process.exit(1);
 });
