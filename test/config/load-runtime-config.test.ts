@@ -20,11 +20,15 @@ const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const ADDITIONAL_DIR = path.join(FIXTURES_DIR, 'additional');
+const SECONDARY_DIR = path.join(FIXTURES_DIR, 'secondary');
+const OVERRIDE_DIR = path.join(FIXTURES_DIR, 'override-root');
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
   await fs.mkdir(PRIMARY_DIR, { recursive: true });
   await fs.mkdir(ADDITIONAL_DIR, { recursive: true });
+  await fs.mkdir(SECONDARY_DIR, { recursive: true });
+  await fs.mkdir(OVERRIDE_DIR, { recursive: true });
 }
 
 async function cleanupFixtures(): Promise<void> {
@@ -47,21 +51,37 @@ function captureConfigError(run: () => unknown): ConfigError {
   throw new Error('Expected loadRuntimeConfig() to throw.');
 }
 
+function createGlobalConfig(): unknown {
+  return {
+    version: 1,
+    workspaces: [
+      {
+        id: 'primary-workspace',
+        rootDir: PRIMARY_DIR,
+        otherRootDirs: [ADDITIONAL_DIR],
+        port: 4321,
+        lineEnding: 'lf',
+      },
+      {
+        id: 'secondary-workspace',
+        rootDir: SECONDARY_DIR,
+        port: 4322,
+        lineEnding: 'auto',
+      },
+    ],
+  };
+}
+
 async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig({
-    rootDir: PRIMARY_DIR,
-    otherRootDirs: [ADDITIONAL_DIR],
-    port: 4321,
-    lineEnding: 'lf',
-  });
+  await writeGlobalConfig(createGlobalConfig());
 
   const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, env: {} });
 
   assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the home-level dotdir config path');
-  assertEqual(snapshot.workspaceId, 'default', 'Phase 2 should preserve the transitional default workspace id');
-  assertEqual(snapshot.rootDir, PRIMARY_DIR, 'Snapshot should use rootDir from the global config file');
-  assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should keep additional roots from the config file');
+  assertEqual(snapshot.workspaceId, 'primary-workspace', 'Phase 3 bridge should use the first validated workspace');
+  assertEqual(snapshot.rootDir, PRIMARY_DIR, 'Snapshot should use rootDir from the selected workspace');
+  assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should keep additional roots from the selected workspace');
   assertEqual(snapshot.otherRootDirs[0], ADDITIONAL_DIR, 'Snapshot should keep the additional root path');
   assertEqual(snapshot.port, 4321, 'Snapshot should use the configured port');
   assertEqual(snapshot.lineEnding, 'lf', 'Snapshot should use the configured line ending');
@@ -70,6 +90,24 @@ async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
     2,
     'Snapshot should include a validated path safety context',
   );
+}
+
+async function testPhase3BridgeKeepsLegacyEnvOverrides(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(createGlobalConfig());
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    env: {
+      MCP_ROOT_DIR: OVERRIDE_DIR,
+      MCP_PORT: '5432',
+      MCP_LINE_ENDING: 'crlf',
+    },
+  });
+
+  assertEqual(snapshot.rootDir, OVERRIDE_DIR, 'Phase 3 should still preserve legacy MCP_ROOT_DIR override until phase 5');
+  assertEqual(snapshot.port, 5432, 'Phase 3 should still preserve legacy MCP_PORT override until phase 5');
+  assertEqual(snapshot.lineEnding, 'crlf', 'Phase 3 should still preserve legacy MCP_LINE_ENDING override until phase 5');
 }
 
 async function testMissingConfigThrowsWithoutProcessExit(): Promise<void> {
@@ -89,7 +127,7 @@ async function testMissingConfigThrowsWithoutProcessExit(): Promise<void> {
     assertEqual(error.code, 'config_file_not_found', 'Missing config should have a precise error code');
     assertEqual(error.configFilePath, CONFIG_FILE, 'Missing config error should point to the expanded absolute path');
     assertIncludes(error.suggestion, CONFIG_FILE, 'Missing config suggestion should include the file to create');
-    assertIncludes(error.suggestion, 'Minimum config', 'Missing config suggestion should include a minimal example');
+    assertIncludes(error.suggestion, 'Minimum global config', 'Missing config suggestion should include a minimal example');
   } finally {
     process.exit = originalExit;
   }
@@ -105,7 +143,7 @@ async function testDoesNotReadCurrentDirectoryConfigJson(): Promise<void> {
   await fs.mkdir(cwdRootDir, { recursive: true });
   await fs.writeFile(
     path.join(cwdDir, 'config.json'),
-    JSON.stringify({ rootDir: cwdRootDir, port: 9999, lineEnding: 'auto' }, null, 2),
+    JSON.stringify({ version: 1, workspaces: [{ id: 'cwd', rootDir: cwdRootDir, port: 9999, lineEnding: 'auto' }] }, null, 2),
     'utf-8',
   );
   await fs.mkdir(HOME_DIR, { recursive: true });
@@ -139,6 +177,7 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'loads runtime snapshot from home dotdir config', run: testLoadsRuntimeSnapshotFromHomeDotdirConfig },
+      { name: 'phase 3 bridge keeps legacy env overrides', run: testPhase3BridgeKeepsLegacyEnvOverrides },
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },
       { name: 'invalid JSON throws structured error', run: testInvalidJsonThrowsStructuredError },

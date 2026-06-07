@@ -29,7 +29,7 @@
 
 - 固定执行目录：`android.workspaceRoot`
 - 固定使用：`gradlew.bat`
-- 固定注入：`JAVA_HOME`（值来自 `android.javaHome`，或阶段 2 过渡期的 `ANDROID_JAVA_HOME` 覆盖）
+- 固定注入：`JAVA_HOME`（值来自当前 workspace 的 `android.javaHome`，或阶段 3 兼容桥接中的 `ANDROID_JAVA_HOME` 覆盖）
 - 固定追加：`--no-daemon`
 - 不开放任意 task、任意命令、任意环境变量透传
 
@@ -37,7 +37,7 @@
 
 ## 配置与返回
 
-工具读取 `~/.custom-mcp/config.json` 中的 `android` 配置段；阶段 2 过渡期仍支持以下旧环境变量覆盖：
+工具读取 `~/.custom-mcp/config.json` 中当前 workspace 的 `android` 配置段；阶段 3 的配置文件 schema 要求 `android` 一旦出现就必须字段完整。当前仍保留兼容桥接，支持以下旧环境变量覆盖，阶段 5 会替换为 allowlist：
 
 - `ANDROID_WORKSPACE_ROOT`
 - `ANDROID_JAVA_HOME`

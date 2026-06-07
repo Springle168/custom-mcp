@@ -98,6 +98,17 @@ interface StaticGlobBase {
   magicRemainder: string;
 }
 
+export interface WorkspaceRootValidationSpec {
+  readonly label: string;
+  readonly rootDir: string;
+}
+
+export interface ValidatedWorkspaceRootPath {
+  readonly label: string;
+  readonly rootDir: string;
+  readonly realRootDir: string;
+}
+
 interface WorkspaceRootConfigSpec {
   kind: WorkspaceRootKind;
   label: string;
@@ -155,7 +166,37 @@ export function createValidatedPathSafetyContext(
   otherRootDirs: string[] = [],
 ): PathSafetyContext {
   const rootSpecs = buildWorkspaceRootConfigSpecs(rootDir, otherRootDirs);
-  const resolvedRootSpecs = rootSpecs.map(resolveConfiguredWorkspaceRoot);
+  const validatedRootPaths = validateWorkspaceRootPathSet(
+    rootSpecs.map((root) => ({
+      label: root.label,
+      rootDir: root.rootDir,
+    })),
+  );
+
+  const workspaceRoots = rootSpecs.map((root, index) =>
+    createWorkspaceRoot(
+      root.kind,
+      validatedRootPaths[index].rootDir,
+      validatedRootPaths[index].realRootDir,
+    ),
+  );
+
+  return {
+    primaryRoot: workspaceRoots[0],
+    allowedRoots: workspaceRoots,
+  };
+}
+
+export function validateWorkspaceRootPathSet(
+  roots: readonly WorkspaceRootValidationSpec[],
+): ValidatedWorkspaceRootPath[] {
+  const resolvedRootSpecs = roots.map((root) =>
+    resolveConfiguredWorkspaceRoot({
+      kind: 'primary',
+      label: root.label,
+      rootDir: root.rootDir,
+    }),
+  );
 
   validateIndependentRoots(
     resolvedRootSpecs.map((root) => ({
@@ -165,24 +206,25 @@ export function createValidatedPathSafetyContext(
     'lexical path',
   );
 
-  const workspaceRoots = resolvedRootSpecs.map((root) => {
+  const validatedRootPaths = resolvedRootSpecs.map((root) => {
     validateWorkspaceRootExists(root);
     const realRootDir = resolveConfiguredWorkspaceRootRealPath(root);
-    return createWorkspaceRoot(root.kind, root.resolvedRootDir, realRootDir);
+    return {
+      label: root.label,
+      rootDir: root.resolvedRootDir,
+      realRootDir,
+    };
   });
 
   validateIndependentRoots(
-    workspaceRoots.map((root, index) => ({
-      label: resolvedRootSpecs[index].label,
-      rootDir: root.realRootDir ?? root.rootDir,
+    validatedRootPaths.map((root) => ({
+      label: root.label,
+      rootDir: root.realRootDir,
     })),
     'real path',
   );
 
-  return {
-    primaryRoot: workspaceRoots[0],
-    allowedRoots: workspaceRoots,
-  };
+  return validatedRootPaths;
 }
 
 function buildWorkspaceRootConfigSpecs(

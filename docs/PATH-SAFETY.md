@@ -28,7 +28,7 @@
 1. `rootDir` 必填，且必须是本地绝对路径。
 2. `otherRootDirs` 可选；空数组等同未配置。
 3. `otherRootDirs` 中每一项必须是非空字符串和本地绝对路径。
-4. 当前不支持 `MCP_OTHER_ROOT_DIRS`；`MCP_ROOT_DIR` 仍只覆盖 `rootDir`。
+4. 当前不支持 `MCP_OTHER_ROOT_DIRS`；阶段 3 兼容桥接中 `MCP_ROOT_DIR` 只覆盖当前临时选中 workspace 的 `rootDir`，阶段 5 会替换为 allowlist 语义。
 5. 每个 root 必须真实存在且为目录。
 6. root 本身可以是 symlink / junction。
 7. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。
@@ -208,7 +208,8 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 ```bash
 cmd /c npx tsx test/test-path-safety.ts
-cmd /c npx tsx test/test-config.ts
+cmd /c npx tsx test/config/global-config-schema.test.ts
+cmd /c npx tsx test/config/load-runtime-config.test.ts
 ```
 
 这些测试覆盖：

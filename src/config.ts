@@ -6,6 +6,10 @@ import {
   type DefaultGlobalConfigPathOptions,
 } from './config/global-config-path.js';
 import {
+  parseGlobalConfig,
+  type ParsedWorkspaceConfig,
+} from './config/schema.js';
+import {
   createValidatedPathSafetyContext,
   type PathSafetyContext,
 } from './utils/paths.js';
@@ -19,14 +23,6 @@ export type {
 } from './config/global-config-path.js';
 
 export type LineEnding = 'auto' | 'lf' | 'crlf';
-
-export interface AndroidConfig {
-  workspaceRoot?: string;
-  javaHome?: string;
-  buildTimeoutMs: number;
-  maxErrorBlockChars: number;
-  maxLogTailChars: number;
-}
 
 export interface RuntimeAndroidConfig {
   readonly workspaceRoot: string;
@@ -64,234 +60,30 @@ export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions
   readonly snapshotVersion?: number;
 }
 
-export interface Config {
-  rootDir: string;
-  otherRootDirs?: string[];
-  lineEnding: LineEnding;
-  port: number;
-  android?: AndroidConfig;
-  pathSafetyContext?: PathSafetyContext;
-}
-
-export interface AndroidConfigSource {
-  workspaceRoot?: unknown;
-  javaHome?: unknown;
-  buildTimeoutMs?: unknown;
-  maxErrorBlockChars?: unknown;
-  maxLogTailChars?: unknown;
-}
-
-export interface ConfigSource {
-  rootDir?: unknown;
-  otherRootDirs?: unknown;
-  lineEnding?: unknown;
-  port?: unknown;
-  android?: AndroidConfigSource;
+interface Phase3RuntimeWorkspace {
+  readonly id: string;
+  readonly rootDir: string;
+  readonly otherRootDirs: readonly string[];
+  readonly port: number;
+  readonly lineEnding: LineEnding;
+  readonly android?: RuntimeAndroidConfig;
 }
 
 const DEFAULT_ANDROID_BUILD_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_ANDROID_MAX_ERROR_BLOCK_CHARS = 2500;
 const DEFAULT_ANDROID_MAX_LOG_TAIL_CHARS = 4000;
-const MINIMAL_TRANSITIONAL_CONFIG_EXAMPLE = `{
-  "rootDir": "E:/Workspace/YourProject",
-  "port": 3100,
-  "lineEnding": "auto"
-}`;
 
-function readOptionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function readRequiredString(value: unknown): string {
-  return readOptionalString(value) || '';
-}
-
-function readOptionalStringArray(
-  name: string,
-  value: unknown,
-): string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (!Array.isArray(value)) {
-    throw new Error(`${name} must be an array of non-empty strings.`);
-  }
-
-  if (value.length === 0) {
-    return undefined;
-  }
-
-  return value.map((item, index) => {
-    const parsed = readOptionalString(item);
-    if (parsed === undefined) {
-      throw new Error(`${name}[${index}] must be a non-empty string.`);
+const MINIMAL_GLOBAL_CONFIG_EXAMPLE = `{
+  "version": 1,
+  "workspaces": [
+    {
+      "id": "your-workspace",
+      "rootDir": "E:/Workspace/YourProject",
+      "port": 3100,
+      "lineEnding": "auto"
     }
-    return parsed;
-  });
-}
-
-function readLineEnding(value: unknown): LineEnding {
-  if (value === undefined) {
-    return 'auto';
-  }
-
-  if (value === 'auto' || value === 'lf' || value === 'crlf') {
-    return value;
-  }
-
-  throw new Error(
-    `Invalid lineEnding: ${String(value)}. Expected one of: auto, lf, crlf.`,
-  );
-}
-
-function readPositiveInt(
-  name: string,
-  value: unknown,
-  fallback: number,
-): number {
-  if (value === undefined || value === null || value === '') {
-    return fallback;
-  }
-
-  const parsed =
-    typeof value === 'number' ? value : Number.parseInt(String(value), 10);
-
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`${name} must be a positive integer.`);
-  }
-
-  return parsed;
-}
-
-function getEnvOverride(
-  env: NodeJS.ProcessEnv,
-  name: string,
-): string | undefined {
-  return readOptionalString(env[name]);
-}
-
-function getConfiguredValue(
-  env: NodeJS.ProcessEnv,
-  envName: string,
-  fileValue: unknown,
-): unknown {
-  return getEnvOverride(env, envName) ?? fileValue;
-}
-
-function hasAndroidEnvOverrides(env: NodeJS.ProcessEnv): boolean {
-  return (
-    getEnvOverride(env, 'ANDROID_WORKSPACE_ROOT') !== undefined ||
-    getEnvOverride(env, 'ANDROID_JAVA_HOME') !== undefined ||
-    getEnvOverride(env, 'ANDROID_BUILD_TIMEOUT_MS') !== undefined ||
-    getEnvOverride(env, 'ANDROID_MAX_ERROR_BLOCK_CHARS') !== undefined ||
-    getEnvOverride(env, 'ANDROID_MAX_LOG_TAIL_CHARS') !== undefined
-  );
-}
-
-function buildAndroidConfig(
-  raw: AndroidConfigSource | undefined,
-  env: NodeJS.ProcessEnv,
-): AndroidConfig | undefined {
-  const workspaceRootSource = getConfiguredValue(
-    env,
-    'ANDROID_WORKSPACE_ROOT',
-    raw?.workspaceRoot,
-  );
-  const javaHomeSource = getConfiguredValue(
-    env,
-    'ANDROID_JAVA_HOME',
-    raw?.javaHome,
-  );
-  const buildTimeoutMsSource = getConfiguredValue(
-    env,
-    'ANDROID_BUILD_TIMEOUT_MS',
-    raw?.buildTimeoutMs,
-  );
-  const maxErrorBlockCharsSource = getConfiguredValue(
-    env,
-    'ANDROID_MAX_ERROR_BLOCK_CHARS',
-    raw?.maxErrorBlockChars,
-  );
-  const maxLogTailCharsSource = getConfiguredValue(
-    env,
-    'ANDROID_MAX_LOG_TAIL_CHARS',
-    raw?.maxLogTailChars,
-  );
-
-  const hasAndroidConfig = raw !== undefined || hasAndroidEnvOverrides(env);
-
-  if (!hasAndroidConfig) {
-    return undefined;
-  }
-
-  const workspaceRoot = readOptionalString(workspaceRootSource);
-  const javaHome = readOptionalString(javaHomeSource);
-
-  return {
-    workspaceRoot: workspaceRoot ? resolve(workspaceRoot) : undefined,
-    javaHome: javaHome ? resolve(javaHome) : undefined,
-    buildTimeoutMs: readPositiveInt(
-      'ANDROID_BUILD_TIMEOUT_MS',
-      buildTimeoutMsSource,
-      DEFAULT_ANDROID_BUILD_TIMEOUT_MS,
-    ),
-    maxErrorBlockChars: readPositiveInt(
-      'ANDROID_MAX_ERROR_BLOCK_CHARS',
-      maxErrorBlockCharsSource,
-      DEFAULT_ANDROID_MAX_ERROR_BLOCK_CHARS,
-    ),
-    maxLogTailChars: readPositiveInt(
-      'ANDROID_MAX_LOG_TAIL_CHARS',
-      maxLogTailCharsSource,
-      DEFAULT_ANDROID_MAX_LOG_TAIL_CHARS,
-    ),
-  };
-}
-
-export function buildConfig(
-  fileConfig: ConfigSource = {},
-  env: NodeJS.ProcessEnv = process.env,
-): Config {
-  const rootDir = readRequiredString(
-    getConfiguredValue(env, 'MCP_ROOT_DIR', fileConfig.rootDir),
-  );
-  const otherRootDirs = readOptionalStringArray(
-    'otherRootDirs',
-    fileConfig.otherRootDirs,
-  );
-
-  return {
-    rootDir,
-    ...(otherRootDirs ? { otherRootDirs } : {}),
-    lineEnding: readLineEnding(
-      getConfiguredValue(env, 'MCP_LINE_ENDING', fileConfig.lineEnding),
-    ),
-    port: readPositiveInt(
-      'MCP_PORT',
-      getConfiguredValue(env, 'MCP_PORT', fileConfig.port),
-      3100,
-    ),
-    android: buildAndroidConfig(fileConfig.android, env),
-  };
-}
-
-export function attachValidatedPathSafetyContext(
-  config: Config,
-): Config & { pathSafetyContext: PathSafetyContext } {
-  return {
-    ...config,
-    pathSafetyContext: createValidatedPathSafetyContext(
-      config.rootDir,
-      config.otherRootDirs ?? [],
-    ),
-  };
-}
+  ]
+}`;
 
 export function getPathSafetyContext(config: {
   pathSafetyContext: PathSafetyContext;
@@ -328,33 +120,25 @@ export function loadRuntimeConfig(
 ): RuntimeConfigSnapshot {
   const location = getDefaultGlobalConfigPath(options);
   const raw = readConfigFile(location.configFilePath);
-  const fileConfig = parseConfigFile(raw, location.configFilePath);
+  const parsed = parseConfigFile(raw, location.configFilePath);
 
   try {
-    const config = buildConfig(fileConfig, options.env ?? process.env);
-
-    if (!config.rootDir) {
-      throw new ConfigError({
-        code: 'config_validation_failed',
-        configFilePath: location.configFilePath,
-        fieldPath: 'rootDir',
-        message: 'rootDir is not configured.',
-        suggestion:
-          `Set rootDir in ${location.configFilePath}. ` +
-          'The server no longer reads config.json from the repository root.',
-      });
-    }
-
-    const android = toRuntimeAndroidConfig(config.android);
+    const globalConfig = parseGlobalConfig(parsed, {
+      configFilePath: location.configFilePath,
+    });
+    const workspace = applyPhase3LegacyEnvOverrides(
+      selectPhase3Workspace(globalConfig.workspaces, location.configFilePath),
+      options.env ?? process.env,
+    );
 
     return createRuntimeConfigSnapshot({
       configFilePath: location.configFilePath,
-      workspaceId: 'default',
-      rootDir: config.rootDir,
-      otherRootDirs: config.otherRootDirs ?? [],
-      port: config.port,
-      lineEnding: config.lineEnding,
-      ...(android ? { android } : {}),
+      workspaceId: workspace.id,
+      rootDir: workspace.rootDir,
+      otherRootDirs: workspace.otherRootDirs,
+      port: workspace.port,
+      lineEnding: workspace.lineEnding,
+      ...(workspace.android ? { android: workspace.android } : {}),
       snapshotVersion: options.snapshotVersion ?? 1,
     });
   } catch (err: unknown) {
@@ -373,6 +157,153 @@ export function loadRuntimeConfig(
   }
 }
 
+function selectPhase3Workspace(
+  workspaces: readonly ParsedWorkspaceConfig[],
+  configFilePath: string,
+): ParsedWorkspaceConfig {
+  const workspace = workspaces[0];
+  if (workspace) {
+    return workspace;
+  }
+
+  throw new ConfigError({
+    code: 'config_validation_failed',
+    configFilePath,
+    fieldPath: 'workspaces',
+    message: 'workspaces must contain at least one workspace.',
+    suggestion: `Add at least one workspace to ${configFilePath} and restart the server.`,
+  });
+}
+
+function applyPhase3LegacyEnvOverrides(
+  workspace: ParsedWorkspaceConfig,
+  env: NodeJS.ProcessEnv,
+): Phase3RuntimeWorkspace {
+  // Phase 5 will replace this compatibility bridge with workspace allowlisted env overrides.
+  const lineEndingOverride = readOptionalEnvString(env, 'MCP_LINE_ENDING');
+
+  return {
+    id: workspace.id,
+    rootDir: readOptionalEnvString(env, 'MCP_ROOT_DIR') ?? workspace.rootDir,
+    otherRootDirs: workspace.otherRootDirs,
+    port: readOptionalEnvString(env, 'MCP_PORT') === undefined
+      ? workspace.port
+      : readPositiveInteger('MCP_PORT', readOptionalEnvString(env, 'MCP_PORT'), {
+        max: 65535,
+        rangeDescription: 'between 1 and 65535',
+      }),
+    lineEnding: lineEndingOverride === undefined
+      ? workspace.lineEnding
+      : readLineEnding('MCP_LINE_ENDING', lineEndingOverride),
+    ...buildPhase3LegacyAndroidConfig(workspace.android, env),
+  };
+}
+
+function buildPhase3LegacyAndroidConfig(
+  android: RuntimeAndroidConfig | undefined,
+  env: NodeJS.ProcessEnv,
+): { readonly android?: RuntimeAndroidConfig } {
+  const workspaceRoot = readOptionalEnvString(env, 'ANDROID_WORKSPACE_ROOT') ?? android?.workspaceRoot;
+  const javaHome = readOptionalEnvString(env, 'ANDROID_JAVA_HOME') ?? android?.javaHome;
+  const hasAndroidEnvOverrides = [
+    'ANDROID_WORKSPACE_ROOT',
+    'ANDROID_JAVA_HOME',
+    'ANDROID_BUILD_TIMEOUT_MS',
+    'ANDROID_MAX_ERROR_BLOCK_CHARS',
+    'ANDROID_MAX_LOG_TAIL_CHARS',
+  ].some((name) => readOptionalEnvString(env, name) !== undefined);
+
+  if (android === undefined && !hasAndroidEnvOverrides) {
+    return {};
+  }
+
+  if (!workspaceRoot || !javaHome) {
+    return {};
+  }
+
+  return {
+    android: {
+      workspaceRoot: resolve(workspaceRoot),
+      javaHome: resolve(javaHome),
+      buildTimeoutMs: readPositiveInteger(
+        'ANDROID_BUILD_TIMEOUT_MS',
+        readOptionalEnvString(env, 'ANDROID_BUILD_TIMEOUT_MS') ?? android?.buildTimeoutMs,
+        { fallback: DEFAULT_ANDROID_BUILD_TIMEOUT_MS },
+      ),
+      maxErrorBlockChars: readPositiveInteger(
+        'ANDROID_MAX_ERROR_BLOCK_CHARS',
+        readOptionalEnvString(env, 'ANDROID_MAX_ERROR_BLOCK_CHARS') ?? android?.maxErrorBlockChars,
+        { fallback: DEFAULT_ANDROID_MAX_ERROR_BLOCK_CHARS },
+      ),
+      maxLogTailChars: readPositiveInteger(
+        'ANDROID_MAX_LOG_TAIL_CHARS',
+        readOptionalEnvString(env, 'ANDROID_MAX_LOG_TAIL_CHARS') ?? android?.maxLogTailChars,
+        { fallback: DEFAULT_ANDROID_MAX_LOG_TAIL_CHARS },
+      ),
+    },
+  };
+}
+
+function readOptionalEnvString(
+  env: NodeJS.ProcessEnv,
+  name: string,
+): string | undefined {
+  const value = env[name];
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readLineEnding(name: string, value: unknown): LineEnding {
+  if (value === 'auto' || value === 'lf' || value === 'crlf') {
+    return value;
+  }
+
+  throw new Error(`${name} must be one of: auto, lf, crlf.`);
+}
+
+function readPositiveInteger(
+  name: string,
+  value: unknown,
+  options: {
+    readonly fallback?: number;
+    readonly max?: number;
+    readonly rangeDescription?: string;
+  } = {},
+): number {
+  if (value === undefined || value === null || value === '') {
+    if (options.fallback !== undefined) {
+      return options.fallback;
+    }
+    throw new Error(`${name} must be a positive integer${describeRange(options)}.`);
+  }
+
+  let parsed: number;
+  if (typeof value === 'number') {
+    parsed = value;
+  } else if (typeof value === 'string' && /^[1-9]\d*$/.test(value.trim())) {
+    parsed = Number(value.trim());
+  } else {
+    throw new Error(`${name} must be a positive integer${describeRange(options)}.`);
+  }
+
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer${describeRange(options)}.`);
+  }
+
+  if (options.max !== undefined && parsed > options.max) {
+    throw new Error(`${name} must be a positive integer ${options.rangeDescription ?? `no greater than ${options.max}`}.`);
+  }
+
+  return parsed;
+}
+
+function describeRange(options: { readonly rangeDescription?: string }): string {
+  return options.rangeDescription ? ` ${options.rangeDescription}` : '';
+}
 
 function readConfigFile(configFilePath: string): string {
   try {
@@ -387,7 +318,7 @@ function readConfigFile(configFilePath: string): string {
         message: `Global config file does not exist: ${configFilePath}`,
         suggestion:
           `Create ${configFilePath}. The server no longer reads config.json from the repository root.\n` +
-          `Minimum config for the current migration step:\n${MINIMAL_TRANSITIONAL_CONFIG_EXAMPLE}`,
+          `Minimum global config:\n${MINIMAL_GLOBAL_CONFIG_EXAMPLE}`,
         cause: err,
       });
     }
@@ -402,11 +333,9 @@ function readConfigFile(configFilePath: string): string {
   }
 }
 
-function parseConfigFile(raw: string, configFilePath: string): ConfigSource {
-  let parsed: unknown;
-
+function parseConfigFile(raw: string, configFilePath: string): unknown {
   try {
-    parsed = JSON.parse(raw);
+    return JSON.parse(raw);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ConfigError({
@@ -417,33 +346,6 @@ function parseConfigFile(raw: string, configFilePath: string): ConfigSource {
       cause: err,
     });
   }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new ConfigError({
-      code: 'config_validation_failed',
-      configFilePath,
-      message: 'Config file must contain a JSON object.',
-      suggestion: `Replace ${configFilePath} with a JSON object configuration.`,
-    });
-  }
-
-  return parsed as ConfigSource;
-}
-
-function toRuntimeAndroidConfig(
-  androidConfig: AndroidConfig | undefined,
-): RuntimeAndroidConfig | undefined {
-  if (!androidConfig?.workspaceRoot || !androidConfig.javaHome) {
-    return undefined;
-  }
-
-  return {
-    workspaceRoot: androidConfig.workspaceRoot,
-    javaHome: androidConfig.javaHome,
-    buildTimeoutMs: androidConfig.buildTimeoutMs,
-    maxErrorBlockChars: androidConfig.maxErrorBlockChars,
-    maxLogTailChars: androidConfig.maxLogTailChars,
-  };
 }
 
 function deepFreeze<T>(value: T): T {
