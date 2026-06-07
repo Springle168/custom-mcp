@@ -17,7 +17,7 @@
 - 读取和写入的 realpath / symlink 校验必须保持在同一个 matched root 内，不能落入其它 allowed root。
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。工具层通过 `getPathSafetyContext(config)` 取得已验证的 `PathSafetyContext`，再调用 context API。工具层不应直接遍历或理解 `otherRootDirs`。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。配置加载阶段会创建已验证的 `PathSafetyContext`；工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`。
 
 ---
 
@@ -190,7 +190,7 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 新增或维护文件类工具时：
 
-- 从配置层调用 `getPathSafetyContext(config)`，不要在工具层自行读取或遍历 `otherRootDirs`。
+- 从 `ToolRuntimeContext.pathSafetyContext` 获取已验证上下文，不要在工具层自行读取或遍历 `rootDir` / `otherRootDirs`。
 - 普通路径使用 `resolveSafePathInContext()`，不要在工具层自行调用 `path.isAbsolute()` 判断用户意图。
 - 读取已存在文件前调用 `validateSafeReadTarget()`。
 - 写入文件前调用 `validateSafeWriteTarget()`，创建父目录后、正式写入前再次调用。
@@ -224,4 +224,3 @@ cmd /c npx tsx test/test-config.ts
 - relative 字面路径与 drive-absolute literal / glob 的 exclude 语义。
 - primary / additional root 之间的 symlink realpath 越界拒绝。
 - 写入目标 symlink 与写入父目录 symlink 相关行为。
-

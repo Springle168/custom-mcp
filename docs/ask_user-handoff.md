@@ -80,7 +80,7 @@ interface Option {
 
 2. **生成 URL 并记录日志**
    ```typescript
-   const url = `http://localhost:${config.port}/interact/${sessionId}`;
+   const url = context.askUser.makeUrl(sessionId);
    logger.info(`User input required: ${url}`);
    ```
 
