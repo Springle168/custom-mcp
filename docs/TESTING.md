@@ -9,7 +9,7 @@
 ```text
 custom-mcp/test/
 ├── android-build/           # Android 构建相关测试
-├── replace-text/            # replace_text 相关测试
+├── config/                  # 全局配置路径与 loadRuntimeConfig 测试
 ├── fixtures/                # 测试数据文件
 │   └── read-many-files/
 │       ├── setup.ts         # fixtures 生成脚本
@@ -19,10 +19,13 @@ custom-mcp/test/
 │       ├── binary/          # 二进制文件测试
 │       ├── node_modules/    # 默认排除测试
 │       └── build/           # 默认排除测试
+├── helpers/                 # 测试辅助函数
 ├── logs/                    # 测试日志输出目录
+├── replace-text/            # replace_text 相关测试
+├── runtime/                 # ConfigStore 等运行时测试
 ├── inspect-tools.ts         # 输出 tools/list 结构
 ├── test-ask-user.ts         # ask_user 工具测试
-├── test-config.ts           # 通用配置加载测试
+├── test-config.ts           # 过渡期 flat config parser/env override 回归测试
 ├── test-logger.ts           # 日志系统测试
 ├── test-read-file.ts        # read_file 工具测试
 ├── test-replace-text.ts     # replace_text 工具测试
@@ -52,10 +55,15 @@ custom-mcp/test/
 npm run build
 
 # 单个脚本测试
-npx tsx test/test-read-file.ts
+cmd /c npx tsx test/test-read-file.ts
+
+# 配置加载相关脚本测试
+cmd /c npx tsx test/config/global-config-path.test.ts
+cmd /c npx tsx test/config/load-runtime-config.test.ts
+cmd /c npx tsx test/runtime/config-store.test.ts
 
 # 查看 tools/list 结构
-npx tsx test/inspect-tools.ts
+cmd /c npx tsx test/inspect-tools.ts
 ```
 
 ---

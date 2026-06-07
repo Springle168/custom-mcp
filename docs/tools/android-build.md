@@ -29,7 +29,7 @@
 
 - 固定执行目录：`android.workspaceRoot`
 - 固定使用：`gradlew.bat`
-- 固定注入：`JAVA_HOME` / `ANDROID_JAVA_HOME`
+- 固定注入：`JAVA_HOME`（值来自 `android.javaHome`，或阶段 2 过渡期的 `ANDROID_JAVA_HOME` 覆盖）
 - 固定追加：`--no-daemon`
 - 不开放任意 task、任意命令、任意环境变量透传
 
@@ -37,7 +37,7 @@
 
 ## 配置与返回
 
-工具读取 `config.json` 中的 `android` 配置段，也支持环境变量覆盖：
+工具读取 `~/.custom-mcp/config.json` 中的 `android` 配置段；阶段 2 过渡期仍支持以下旧环境变量覆盖：
 
 - `ANDROID_WORKSPACE_ROOT`
 - `ANDROID_JAVA_HOME`
@@ -70,6 +70,7 @@ BUILD SUCCESSFUL
 - 当前仅支持 Windows
 - `android.workspaceRoot` 中必须存在 `gradlew.bat`
 - Android 配置缺失不会阻止服务启动，但会在工具调用时报错
+- 仓库根目录 `config.json` 不再作为运行配置来源；Android 配置错误会指向当前全局配置文件
 
 ---
 
@@ -84,7 +85,7 @@ BUILD SUCCESSFUL
    - 不能简单用 `stdout + stderr` 重建输出，否则 `firstErrorBlock` 和 `logTail` 可能失真。
 
 3. **空环境变量要视为未设置**
-   - 空字符串不能覆盖 `config.json` 中的有效值，必须回退到文件配置。
+   - 空字符串不能覆盖全局配置文件中的有效值，必须回退到文件配置。
 
 4. **不要把危险工作目录路径直接拼进 `cmd.exe /c`**
    - Windows 路径可能包含 `&`、`%...%` 等 `cmd` 敏感字符。

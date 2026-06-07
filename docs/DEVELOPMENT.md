@@ -10,7 +10,7 @@
 
 | 主题 | 文档 | 内容 |
 |-|-|-|
-| 配置 | [docs/CONFIG.md](CONFIG.md) | `config.json`、环境变量覆盖、行尾符策略、配置相关故障排查 |
+| 配置 | [docs/CONFIG.md](CONFIG.md) | `~/.custom-mcp/config.json`、阶段 2 过渡期环境变量覆盖、行尾符策略、配置相关故障排查 |
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、添加新工具、schema 设计、返回值、并发模型 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
@@ -28,8 +28,8 @@
 ```text
 custom-mcp/
 ├── AGENTS.md                    # AI Agent 操作说明
-├── config.example.json          # 配置示例
-├── config.json                  # 本地运行配置
+├── config.example.json          # 全局配置示例模板，可复制到 ~/.custom-mcp/config.json
+├── config.json                  # 本地/历史配置，可能含个人路径；运行时不再读取仓库根配置
 ├── package.json                 # npm 包信息与脚本
 ├── tsconfig.json                # TypeScript 编译配置
 ├── logs/                        # 生产日志，每次启动一个日志文件
@@ -47,7 +47,13 @@ custom-mcp/
 │   └── tools/                   # 单工具文档
 ├── src/
 │   ├── index.ts                 # HTTP 入口 + MCP 会话管理
-│   ├── config.ts                # 配置加载（文件 + 环境变量）
+│   ├── config.ts                # 运行配置加载、快照构建、过渡期 flat schema/env override
+│   ├── config/
+│   │   ├── errors.ts            # 结构化配置错误
+│   │   └── global-config-path.ts # home-level dotdir 配置路径解析
+│   ├── runtime/
+│   │   ├── config-store.ts      # 运行时配置快照存取
+│   │   └── tool-context.ts      # 工具 handler 消费的运行时上下文
 │   ├── tools/
 │   │   ├── index.ts             # 工具注册表 + 路由分发
 │   │   ├── types.ts             # MCPTool 接口定义
@@ -78,7 +84,9 @@ custom-mcp/
 
 | 层 | 目录 | 职责 | 原则 |
 |-|-|-|-|
-| 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理 | 加新工具时不需要改动 |
+| 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时不需要改动 |
+| 配置层 | `src/config.ts`, `src/config/` | 读取 `~/.custom-mcp/config.json`、保留过渡期 flat schema/env override、构建运行时快照 | 不在工具层读取配置文件 |
+| 运行时层 | `src/runtime/` | 持有配置快照，派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力 |
 | 工具层 | `src/tools/` | 工具定义、参数校验、业务编排 | 每个工具一个文件 |
 | 引擎层 | `src/engine/` | 纯算法逻辑，无 I/O 操作 | 可独立测试，无副作用 |
 | 工具库 | `src/utils/` | 基础设施（日志、路径、锁、文件读取） | 跨工具共用 |

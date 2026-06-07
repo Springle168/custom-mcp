@@ -152,7 +152,7 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 - 目标路径若已存在且是符号链接会被拒绝；目录路径也会被拒绝。`write_file` 与 `replace_text` 共享同一套写入 realpath / symlink 安全校验。
 - 写入流程使用 `withFileLock()`，同一文件并发替换会串行化，不同文件互不阻塞。
 - 已有文件超过 `20MB`、被判定为二进制，或新建路径看起来是二进制文件时会被拒绝。
-- 写回行尾符由 `config.lineEnding` 控制：`auto` 保留已有主要行尾符，新文件默认 LF。
+- 写回行尾符由 `ToolRuntimeContext.lineEnding` 控制：`auto` 保留已有主要行尾符，新文件默认 LF。
 - 无匹配、多匹配但未设置 `allow_multiple=true`、no-op、非法正则和零长度正则匹配都不会写入文件。
 - `replacement` 中新增疑似省略占位符会成功写入，但 `note` 会提示自检。
 

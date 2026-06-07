@@ -39,7 +39,7 @@ docs/tools/
 在 `src/tools/` 下新建文件，例如 `src/tools/read-file.ts`：
 
 ```typescript
-import type { Config } from '../config.js';
+import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textResult } from './results.js';
 
@@ -63,10 +63,10 @@ const READ_FILE_TOOL_DEFINITION = {
 // 2. 实现 Handler
 async function handleReadFile(
   args: Record<string, unknown>,
-  config: Config,
+  context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   // 参数校验
-  // 业务逻辑
+  // 业务逻辑；文件类工具从 context.pathSafetyContext 使用路径安全能力
   // 返回结果
   return textResult('结果文本');
 }
@@ -97,6 +97,8 @@ const registry: MCPTool[] = [
 ```
 
 完成。`index.ts` 入口文件、日志系统、路由逻辑都不需要改动。
+
+工具 handler 接收 `ToolRuntimeContext`，不要在工具层读取配置文件或解析全局配置结构。配置来源、workspace 选择和运行时快照归一化由配置层/运行时层负责。
 
 ### 步骤 3：编译测试
 
@@ -155,7 +157,7 @@ return textErrorResult('错误描述 + 引导 AI 下一步怎么做');
 
 1. **路径安全**：所有文件 I/O 必须先通过 `src/utils/paths.ts` 的统一路径安全层；写入工具还必须使用共享写入安全校验。详细语义见 [docs/PATH-SAFETY.md](PATH-SAFETY.md)。
 2. **并发安全**：涉及文件写入的操作应使用 `withFileLock()` 包裹。只读工具不需要加锁。
-3. **行尾符**：读取时统一转为 `\n` 处理，写入时用 `resolveLineEnding()` 恢复。
+3. **行尾符**：读取时统一转为 `\n` 处理，写入时根据 `context.lineEnding` 用 `resolveLineEnding()` 恢复。
 4. **错误处理**：区分 `ENOENT`（文件不存在）和其他文件系统错误，给出不同的错误消息。
 5. **二进制检测**：读取文件内容前应使用 `isBinaryFile()` 检查，避免处理二进制文件。
 
