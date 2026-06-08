@@ -1,6 +1,6 @@
 # 配置开发说明
 
-本文记录 `custom-mcp` 的运行配置、阶段 4 全局 workspace 选择、当前开发检查点行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
+本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、阶段 5 env override allowlist 行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
 
 ---
 
@@ -34,6 +34,12 @@
         "buildTimeoutMs": 900000,
         "maxErrorBlockChars": 2500,
         "maxLogTailChars": 4000
+      },
+      "envOverrides": {
+        "allowedFields": [
+          "lineEnding",
+          "android.javaHome"
+        ]
       }
     }
   ]
@@ -42,14 +48,14 @@
 
 ### Workspace 选择
 
-阶段 4 已移除临时 first-workspace bridge。启动时会读取并校验 `workspaces` 中的所有 workspace，然后选择本次进程使用的 workspace：
+启动时会读取并校验 `workspaces` 中的所有 workspace，然后选择本次进程使用的 workspace：
 
 - 显式选择：`custom-mcp --workspace <id>` 或 `custom-mcp --workspace=<id>` 按 workspace `id` 选择；显式选择不要求当前工作目录与该 workspace 的 `rootDir` 匹配。
 - 默认选择：未提供 `--workspace` 时，`process.cwd()` 的 realpath 必须与某个 workspace `rootDir` 的 realpath 等价。
 - 默认选择只接受 cwd 与 root 等价；cwd 位于某个 workspace 的子目录中不会被视为匹配。
 - Windows 下大小写、路径分隔符和尾部分隔符差异不应影响默认匹配。
 - 启动选择成功后会形成 `RuntimeConfigIdentity`，记录 config file path、workspace id、已验证/规范化的 rootDir、port 和 selection mode。
-- `envOverrides.allowedFields` 目前只做 schema 形状校验，实际 allowlist 应用会在阶段 5 实现。
+- Env overrides 在 workspace 选择之后才按 selected workspace 的 allowlist 应用；它们不参与 workspace 选择，也不改变 `RuntimeConfigIdentity`。
 
 ---
 
@@ -72,9 +78,9 @@
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
 | `port` | positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
-| `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。当前阶段会校验数组形状，选中 workspace 构建 snapshot 时还会作为 allowed roots 校验。 |
+| `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。选中 workspace 构建 snapshot 时会作为 allowed roots 校验。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
-| `envOverrides` | object | 否 | 阶段 5 allowlist 的配置位置；当前阶段只接受 `allowedFields` 字段并校验其为 string[]。 |
+| `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
 
 workspace 未知字段会导致启动失败。
 
@@ -111,18 +117,47 @@ workspace 未知字段会导致启动失败。
 
 ## 环境变量覆盖
 
-阶段 4 已移除默认开启的 legacy env override bridge。以下旧环境变量目前不会影响 workspace 选择、`RuntimeConfigIdentity` 或 runtime snapshot：
+字段级 env override 默认禁用。只有当前选中 workspace 的 `envOverrides.allowedFields` 中列出的字段会读取对应环境变量。
 
-- `MCP_ROOT_DIR`
-- `MCP_PORT`
-- `MCP_LINE_ENDING`
-- `ANDROID_WORKSPACE_ROOT`
-- `ANDROID_JAVA_HOME`
-- `ANDROID_BUILD_TIMEOUT_MS`
-- `ANDROID_MAX_ERROR_BLOCK_CHARS`
-- `ANDROID_MAX_LOG_TAIL_CHARS`
+### Allowlist 语义
 
-当前阶段仍接受 `envOverrides.allowedFields` 的 schema 形状，但不应用字段级覆盖。阶段 5 会从这个“默认全禁用”的干净状态实现 selected workspace allowlist；`MCP_ROOT_DIR` 和 `MCP_PORT` 不属于最终模型，也不会通过 allowlist 启用。
+- 没有 `envOverrides`：全部字段级 env override 禁用。
+- `allowedFields: []`：全部字段级 env override 禁用。
+- 只有 selected workspace allowlist 中的字段会读取 env；未选中 workspace 的 allowlist 不影响当前 snapshot。
+- 环境变量值为 `""` 时视为未设置，回退到配置文件值。
+- 环境变量非空但非法时，启动失败。
+- Env override 在 workspace 选择之后应用，不参与 cwd 匹配或 `--workspace` 选择。
+- Env override 不改变 `RuntimeConfigIdentity`；`rootDir`、`port` 等边界字段始终来自配置文件中已验证的 selected workspace。
+- `android.*` allowlist 要求该 workspace 已经显式配置完整 `android` 段；env override 不能创建缺失的 Android 配置。
+
+### 允许覆盖的字段
+
+| 字段 | 环境变量 |
+|-|-|
+| `lineEnding` | `MCP_LINE_ENDING` |
+| `android.workspaceRoot` | `ANDROID_WORKSPACE_ROOT` |
+| `android.javaHome` | `ANDROID_JAVA_HOME` |
+| `android.buildTimeoutMs` | `ANDROID_BUILD_TIMEOUT_MS` |
+| `android.maxErrorBlockChars` | `ANDROID_MAX_ERROR_BLOCK_CHARS` |
+| `android.maxLogTailChars` | `ANDROID_MAX_LOG_TAIL_CHARS` |
+
+### 禁止覆盖的字段
+
+这些字段不能出现在 `envOverrides.allowedFields` 中：
+
+| 字段 | 原因 |
+|-|-|
+| `version` | schema 版本不能由 env 改变。 |
+| `workspaces` | 全局结构不能由 env 改变。 |
+| `id` | workspace identity 不能由 env 改变。 |
+| `rootDir` | primary root 和 workspace 选择边界不能由 env 改变。 |
+| `port` | 端口唯一性、启动端口和 runtime identity 不能由 env 改变。 |
+| `otherRootDirs` | additional roots 会扩大文件访问边界，不能由 env 改变。 |
+| `rules` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
+| `MCP_ROOT_DIR` | 旧环境变量名不属于新模型。 |
+| `MCP_PORT` | 旧环境变量名不属于新模型。 |
+
+未列在允许字段或禁止字段表中的 allowlist 项会作为未知字段导致启动失败。
 
 ---
 
@@ -142,10 +177,14 @@ workspace 未知字段会导致启动失败。
 |-|-|-|
 | 启动报 `Global config file does not exist` | `~/.custom-mcp/config.json` 不存在 | 创建该文件；仓库根目录 `config.json` 不会作为运行配置读取。 |
 | 启动报 `version must be the number 1` | 仍在使用旧 flat schema，或 `version` 缺失/错误 | 将配置迁移为 `version: 1` + `workspaces` 数组。 |
-| 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应阶段实现后再使用。 |
+| 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应功能实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
 | 启动报 selected workspace allowed roots 错误 | 当前选中 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 检查该 workspace 的 allowed roots 是否都是存在的绝对目录，且互不重复/嵌套。 |
+| 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段或旧环境变量名 | 从 allowlist 移除该字段；`rootDir`、`port`、`MCP_ROOT_DIR`、`MCP_PORT` 不能通过 env 覆盖。 |
+| 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |
+| 启动报 `ANDROID_* must be a positive integer` | allowlist 允许了 Android 数值字段，但对应 env 非空且不是正整数 | 修正 env 值，或设为空字符串回退配置文件值。 |
+| 启动报 Android allowlist 但 `android is not configured` | workspace 允许了 `android.*` env override，却没有配置 `android` 段 | 补全该 workspace 的 `android` 段，或移除 `android.*` allowlist 项。 |
 | 工具调用返回 `Path outside workspace` | AI 传了 selected workspace allowed roots 范围外的路径，或用相对路径试图访问 additional root | 检查目标路径和 root 配置；additional root 必须用 drive-absolute 路径访问。 |
-| Android 构建工具返回配置错误 | 当前选中 workspace 没有 runtime Android 配置 | 在该 workspace 中补全 `android` 配置段；阶段 4 不再支持旧 Android 环境变量覆盖。 |
-| 环境变量没有生效 | 阶段 4 已停用默认 legacy env override bridge | 等阶段 5 的 `envOverrides.allowedFields` allowlist 接入后，再使用受控字段级覆盖；边界字段不会允许覆盖。 |
+| Android 构建工具返回配置错误 | 当前选中 workspace 没有 runtime Android 配置 | 在该 workspace 中补全 `android` 配置段；`ANDROID_*` 只能覆盖已有 `android` 配置，不能创建它。 |
+| 环境变量没有生效 | 对应字段未列入 selected workspace 的 `envOverrides.allowedFields`，或 env 值为空字符串 | 添加允许字段，或设置非空且合法的环境变量值。 |

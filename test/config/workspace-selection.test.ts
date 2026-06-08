@@ -80,9 +80,6 @@ function globalConfig(overrides: Record<string, unknown> = {}): Record<string, u
           maxErrorBlockChars: 2500,
           maxLogTailChars: 4000,
         },
-        envOverrides: {
-          allowedFields: ['lineEnding', 'android.javaHome'],
-        },
       }),
       workspace('workspace-b', WORKSPACE_B_DIR, 4502, { lineEnding: 'crlf' }),
     ],
@@ -258,7 +255,7 @@ async function testFirstWorkspaceBridgeIsRemoved(): Promise<void> {
   assertEqual(loadedConfig.snapshot.workspaceId, 'workspace-b', 'Default selection should not fall back to the first workspace');
 }
 
-async function testLegacyEnvDoesNotAffectSelectionIdentityOrSnapshot(): Promise<void> {
+async function testEnvWithoutAllowlistDoesNotAffectSelectionIdentityOrSnapshot(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig());
 
@@ -282,11 +279,11 @@ async function testLegacyEnvDoesNotAffectSelectionIdentityOrSnapshot(): Promise<
   assertEqual(loadedConfig.snapshot.port, 4501, 'MCP_PORT should not affect snapshot port');
   assertEqual(loadedConfig.identity.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not affect runtime identity rootDir');
   assertEqual(loadedConfig.identity.port, 4501, 'MCP_PORT should not affect runtime identity port');
-  assertEqual(loadedConfig.snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not apply before phase 5 allowlist');
+  assertEqual(loadedConfig.snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not apply without a selected workspace allowlist');
   assert(loadedConfig.snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(loadedConfig.snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'ANDROID_WORKSPACE_ROOT should not apply before phase 5 allowlist');
-  assertEqual(loadedConfig.snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'ANDROID_JAVA_HOME should not apply before phase 5 allowlist');
-  assertEqual(loadedConfig.snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not apply before phase 5 allowlist');
+  assertEqual(loadedConfig.snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'ANDROID_WORKSPACE_ROOT should not apply without a selected workspace allowlist');
+  assertEqual(loadedConfig.snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'ANDROID_JAVA_HOME should not apply without a selected workspace allowlist');
+  assertEqual(loadedConfig.snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not apply without a selected workspace allowlist');
 }
 
 async function main(): Promise<void> {
@@ -305,7 +302,7 @@ async function main(): Promise<void> {
       { name: 'default cwd unmatched fails', run: testDefaultCwdUnmatchedFails },
       { name: 'Windows path identity ignores case, separators, and trailing slash', run: testWindowsPathIdentityIgnoresCaseSeparatorsAndTrailingSlash },
       { name: 'first workspace bridge is removed', run: testFirstWorkspaceBridgeIsRemoved },
-      { name: 'legacy env does not affect selection, identity, or snapshot', run: testLegacyEnvDoesNotAffectSelectionIdentityOrSnapshot },
+      { name: 'env without allowlist does not affect selection, identity, or snapshot', run: testEnvWithoutAllowlistDoesNotAffectSelectionIdentityOrSnapshot },
     ],
   });
 }
