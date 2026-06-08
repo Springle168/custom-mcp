@@ -1,8 +1,10 @@
 import * as path from 'node:path';
 import {
   createRuntimeConfigSnapshot,
+  type LoadedRuntimeConfig,
   type LineEnding,
   type RuntimeAndroidConfig,
+  type RuntimeConfigIdentity,
   type RuntimeConfigSnapshot,
 } from '../../src/config.js';
 import { createConfigStore, type ConfigStore } from '../../src/runtime/config-store.js';
@@ -37,10 +39,33 @@ export function createTestRuntimeConfigSnapshot(
   });
 }
 
+export function createTestRuntimeConfigIdentity(
+  snapshot: RuntimeConfigSnapshot,
+): RuntimeConfigIdentity {
+  return Object.freeze({
+    configFilePath: snapshot.configFilePath,
+    workspaceId: snapshot.workspaceId,
+    rootDir: snapshot.rootDir,
+    port: snapshot.port,
+    selectionMode: 'explicit',
+  });
+}
+
+export function createTestLoadedRuntimeConfig(
+  options: TestRuntimeConfigOptions,
+): LoadedRuntimeConfig {
+  const snapshot = createTestRuntimeConfigSnapshot(options);
+
+  return Object.freeze({
+    snapshot,
+    identity: createTestRuntimeConfigIdentity(snapshot),
+  });
+}
+
 export function createTestConfigStore(
   options: TestRuntimeConfigOptions,
 ): ConfigStore {
-  return createConfigStore(createTestRuntimeConfigSnapshot(options));
+  return createConfigStore(createTestLoadedRuntimeConfig(options));
 }
 
 export function createTestToolRuntimeContext(

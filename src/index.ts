@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import express, { type Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -6,7 +8,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { ConfigError, loadRuntimeConfig, type RuntimeConfigSnapshot } from './config.js';
+import { CliError, parseCliArgs } from './cli.js';
+import { ConfigError, loadRuntimeConfigWithIdentity, type RuntimeConfigSnapshot } from './config.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
 import { createToolRuntimeContext } from './runtime/tool-context.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
@@ -88,6 +91,16 @@ function formatConfigStartupError(error: ConfigError): string {
   return lines.join('\n');
 }
 
+function formatCliStartupError(error: CliError): string {
+  const lines = ['Failed to parse command line arguments.', `Reason: ${error.message}`];
+
+  if (error.suggestion) {
+    lines.push('', 'Next step:', indentBlock(error.suggestion));
+  }
+
+  return lines.join('\n');
+}
+
 function indentBlock(text: string): string {
   return text
     .split(/\r?\n/)
@@ -100,8 +113,12 @@ function indentBlock(text: string): string {
 // ================
 
 async function main() {
-  const initialSnapshot = loadRuntimeConfig();
-  const configStore = createConfigStore(initialSnapshot);
+  const cliOptions = parseCliArgs(process.argv.slice(2));
+  const initialConfig = loadRuntimeConfigWithIdentity({
+    ...(cliOptions.workspaceId !== undefined ? { workspaceId: cliOptions.workspaceId } : {}),
+  });
+  const initialSnapshot = initialConfig.snapshot;
+  const configStore = createConfigStore(initialConfig);
   const logger = new Logger();
 
   const app = express();
@@ -281,6 +298,7 @@ async function main() {
     logger.info('MCP Replace Server started');
     logger.info(`  Endpoint: http://localhost:${initialSnapshot.port}/mcp`);
     logger.info(`  Workspace id: ${initialSnapshot.workspaceId}`);
+    logger.info(`  Selection mode: ${initialConfig.identity.selectionMode}`);
     logger.info(`  Snapshot version: ${initialSnapshot.snapshotVersion}`);
     logger.info(`  Config file: ${initialSnapshot.configFilePath}`);
     logWorkspaceRoots(initialSnapshot, logger);
@@ -290,7 +308,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  if (err instanceof ConfigError) {
+  if (err instanceof CliError) {
+    console.error(formatCliStartupError(err));
+  } else if (err instanceof ConfigError) {
     console.error(formatConfigStartupError(err));
   } else {
     console.error('Failed to start server:', err);

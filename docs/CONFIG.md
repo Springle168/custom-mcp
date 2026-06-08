@@ -1,6 +1,6 @@
 # 配置开发说明
 
-本文记录 `custom-mcp` 的运行配置、阶段 3 全局 workspace schema、当前阶段桥接行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
+本文记录 `custom-mcp` 的运行配置、阶段 4 全局 workspace 选择、当前开发检查点行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
 
 ---
 
@@ -40,13 +40,15 @@
 }
 ```
 
-### 当前阶段桥接
+### Workspace 选择
 
-阶段 3 只实现全局 schema 与多 workspace 校验，尚未实现阶段 4 的 workspace 选择：
+阶段 4 已移除临时 first-workspace bridge。启动时会读取并校验 `workspaces` 中的所有 workspace，然后选择本次进程使用的 workspace：
 
-- 启动时会读取并校验 `workspaces` 中的所有 workspace。
-- 当前 runtime snapshot 临时使用数组中的第一个 workspace。
-- `--workspace <id>`、基于 `cwd` 的默认匹配和 `RuntimeConfigIdentity` 会在阶段 4 实现。
+- 显式选择：`custom-mcp --workspace <id>` 或 `custom-mcp --workspace=<id>` 按 workspace `id` 选择；显式选择不要求当前工作目录与该 workspace 的 `rootDir` 匹配。
+- 默认选择：未提供 `--workspace` 时，`process.cwd()` 的 realpath 必须与某个 workspace `rootDir` 的 realpath 等价。
+- 默认选择只接受 cwd 与 root 等价；cwd 位于某个 workspace 的子目录中不会被视为匹配。
+- Windows 下大小写、路径分隔符和尾部分隔符差异不应影响默认匹配。
+- 启动选择成功后会形成 `RuntimeConfigIdentity`，记录 config file path、workspace id、已验证/规范化的 rootDir、port 和 selection mode。
 - `envOverrides.allowedFields` 目前只做 schema 形状校验，实际 allowlist 应用会在阶段 5 实现。
 
 ---
@@ -109,26 +111,18 @@ workspace 未知字段会导致启动失败。
 
 ## 环境变量覆盖
 
-阶段 3 仍保留旧环境变量覆盖行为作为兼容桥接，但只作用于当前临时选中的第一个 workspace。阶段 5 会替换为 `envOverrides.allowedFields` allowlist 语义。
+阶段 4 已移除默认开启的 legacy env override bridge。以下旧环境变量目前不会影响 workspace 选择、`RuntimeConfigIdentity` 或 runtime snapshot：
 
-| 环境变量 | 当前覆盖字段 |
-|-|-|
-| `MCP_ROOT_DIR` | selected workspace `rootDir` |
-| `MCP_LINE_ENDING` | selected workspace `lineEnding` |
-| `MCP_PORT` | selected workspace `port` |
-| `ANDROID_WORKSPACE_ROOT` | selected workspace `android.workspaceRoot` |
-| `ANDROID_JAVA_HOME` | selected workspace `android.javaHome` |
-| `ANDROID_BUILD_TIMEOUT_MS` | selected workspace `android.buildTimeoutMs` |
-| `ANDROID_MAX_ERROR_BLOCK_CHARS` | selected workspace `android.maxErrorBlockChars` |
-| `ANDROID_MAX_LOG_TAIL_CHARS` | selected workspace `android.maxLogTailChars` |
+- `MCP_ROOT_DIR`
+- `MCP_PORT`
+- `MCP_LINE_ENDING`
+- `ANDROID_WORKSPACE_ROOT`
+- `ANDROID_JAVA_HOME`
+- `ANDROID_BUILD_TIMEOUT_MS`
+- `ANDROID_MAX_ERROR_BLOCK_CHARS`
+- `ANDROID_MAX_LOG_TAIL_CHARS`
 
-覆盖规则：
-
-- 非空环境变量优先于 `~/.custom-mcp/config.json` 中当前临时选中 workspace 的字段。
-- 空字符串环境变量视为“未设置”，会回退到配置文件值。
-- 当前不支持 `MCP_OTHER_ROOT_DIRS`；`otherRootDirs` 只从配置文件读取。
-- 环境变量中的正整数同样使用严格解析。
-- 这套默认开启的覆盖规则是迁移期兼容行为；阶段 5 会替换为 allowlist，并禁止边界字段覆盖。
+当前阶段仍接受 `envOverrides.allowedFields` 的 schema 形状，但不应用字段级覆盖。阶段 5 会从这个“默认全禁用”的干净状态实现 selected workspace allowlist；`MCP_ROOT_DIR` 和 `MCP_PORT` 不属于最终模型，也不会通过 allowlist 启用。
 
 ---
 
@@ -151,7 +145,7 @@ workspace 未知字段会导致启动失败。
 | 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应阶段实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
-| 启动报 selected workspace allowed roots 错误 | 当前临时选中的第一个 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 检查第一个 workspace 的 allowed roots 是否都是存在的绝对目录，且互不重复/嵌套。 |
+| 启动报 selected workspace allowed roots 错误 | 当前选中 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 检查该 workspace 的 allowed roots 是否都是存在的绝对目录，且互不重复/嵌套。 |
 | 工具调用返回 `Path outside workspace` | AI 传了 selected workspace allowed roots 范围外的路径，或用相对路径试图访问 additional root | 检查目标路径和 root 配置；additional root 必须用 drive-absolute 路径访问。 |
-| Android 构建工具返回配置错误 | 当前临时选中的 workspace 没有 runtime Android 配置 | 在该 workspace 中补全 `android` 配置段，或使用迁移期 Android 环境变量覆盖。 |
-| 环境变量没有生效 | 环境变量为空字符串、名称不匹配，或字段不在当前阶段兼容列表中 | 确认变量非空，并使用本文列出的变量名；阶段 5 后需改用 allowlist。 |
+| Android 构建工具返回配置错误 | 当前选中 workspace 没有 runtime Android 配置 | 在该 workspace 中补全 `android` 配置段；阶段 4 不再支持旧 Android 环境变量覆盖。 |
+| 环境变量没有生效 | 阶段 4 已停用默认 legacy env override bridge | 等阶段 5 的 `envOverrides.allowedFields` allowlist 接入后，再使用受控字段级覆盖；边界字段不会允许覆盖。 |

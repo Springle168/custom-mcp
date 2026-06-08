@@ -130,17 +130,21 @@ async function createDirectoryLink(
   }
 }
 
-async function testValidGlobalConfigLoadsFirstWorkspaceBridge(): Promise<void> {
+async function testValidGlobalConfigLoadsExplicitWorkspace(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig([
     workspace(0),
     workspace(1, { lineEnding: 'crlf' }),
   ]));
 
-  const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, env: {} });
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'workspace-0',
+    env: {},
+  });
 
-  assertEqual(snapshot.workspaceId, 'workspace-0', 'Phase 3 bridge should use the first workspace until phase 4 selection lands');
-  assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'Snapshot should use the first workspace rootDir');
+  assertEqual(snapshot.workspaceId, 'workspace-0', 'Snapshot should use the explicitly selected workspace');
+  assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'Snapshot should use the selected workspace rootDir');
   assertEqual(snapshot.otherRootDirs.length, 0, 'otherRootDirs should default to an empty array');
   assert(snapshot.android === undefined, 'Android config should be optional');
 }
@@ -159,7 +163,11 @@ async function testCompleteAndroidConfigIsAccepted(): Promise<void> {
     }),
   ]));
 
-  const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, env: {} });
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'workspace-0',
+    env: {},
+  });
 
   assert(snapshot.android !== undefined, 'Complete Android config should be present in the snapshot');
   assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'Android workspaceRoot should be normalized');
@@ -449,7 +457,7 @@ async function main(): Promise<void> {
     title: 'Testing global config schema validation',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'valid global config loads first workspace bridge', run: testValidGlobalConfigLoadsFirstWorkspaceBridge },
+      { name: 'valid global config loads explicit workspace', run: testValidGlobalConfigLoadsExplicitWorkspace },
       { name: 'complete Android config is accepted', run: testCompleteAndroidConfigIsAccepted },
       { name: 'version and workspaces are required', run: testVersionAndWorkspacesAreRequired },
       { name: 'unknown fields are rejected', run: testUnknownFieldsAreRejected },

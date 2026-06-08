@@ -2,7 +2,10 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
-import { createTestRuntimeConfigSnapshot } from '../helpers/runtime-config.js';
+import {
+  createTestLoadedRuntimeConfig,
+  createTestRuntimeConfigSnapshot,
+} from '../helpers/runtime-config.js';
 import {
   assert,
   assertEqual,
@@ -40,20 +43,27 @@ function createSnapshot() {
 }
 
 async function testStoreReturnsInitialSnapshot(): Promise<void> {
-  const snapshot = createSnapshot();
+  const initialConfig = createTestLoadedRuntimeConfig({
+    rootDir: PRIMARY_DIR,
+    otherRootDirs: [ADDITIONAL_DIR],
+  });
   const store = await import('../../src/runtime/config-store.js').then((module) =>
-    module.createConfigStore(snapshot),
+    module.createConfigStore(initialConfig),
   );
 
-  assertEqual(store.getSnapshot(), snapshot, 'ConfigStore should return the initial snapshot');
+  assertEqual(store.getSnapshot(), initialConfig.snapshot, 'ConfigStore should return the initial snapshot');
+  assertEqual(store.getIdentity(), initialConfig.identity, 'ConfigStore should return the initial runtime identity');
   assertEqual(store.getSnapshot().snapshotVersion, 1, 'Initial snapshot version should be 1');
   assertEqual(store.getStatus().state, 'ok', 'Initial ConfigStore status should be ok');
 }
 
 async function testStoreDoesNotExposeMutableSnapshotWriter(): Promise<void> {
-  const snapshot = createSnapshot();
+  const initialConfig = createTestLoadedRuntimeConfig({
+    rootDir: PRIMARY_DIR,
+    otherRootDirs: [ADDITIONAL_DIR],
+  });
   const store = await import('../../src/runtime/config-store.js').then((module) =>
-    module.createConfigStore(snapshot),
+    module.createConfigStore(initialConfig),
   );
   const unsafeStore = store as unknown as Record<string, unknown>;
 

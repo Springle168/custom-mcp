@@ -29,7 +29,7 @@
 
 - 固定执行目录：`android.workspaceRoot`
 - 固定使用：`gradlew.bat`
-- 固定注入：`JAVA_HOME`（值来自当前 workspace 的 `android.javaHome`，或阶段 3 兼容桥接中的 `ANDROID_JAVA_HOME` 覆盖）
+- 固定注入：`JAVA_HOME`（值来自当前 workspace 的 `android.javaHome`）
 - 固定追加：`--no-daemon`
 - 不开放任意 task、任意命令、任意环境变量透传
 
@@ -37,13 +37,7 @@
 
 ## 配置与返回
 
-工具读取 `~/.custom-mcp/config.json` 中当前 workspace 的 `android` 配置段；阶段 3 的配置文件 schema 要求 `android` 一旦出现就必须字段完整。当前仍保留兼容桥接，支持以下旧环境变量覆盖，阶段 5 会替换为 allowlist：
-
-- `ANDROID_WORKSPACE_ROOT`
-- `ANDROID_JAVA_HOME`
-- `ANDROID_BUILD_TIMEOUT_MS`
-- `ANDROID_MAX_ERROR_BLOCK_CHARS`
-- `ANDROID_MAX_LOG_TAIL_CHARS`
+工具读取 `~/.custom-mcp/config.json` 中当前选中 workspace 的 `android` 配置段；当前配置文件 schema 要求 `android` 一旦出现就必须字段完整。阶段 4 已停用默认 legacy Android env bridge；`ANDROID_WORKSPACE_ROOT`、`ANDROID_JAVA_HOME`、`ANDROID_BUILD_TIMEOUT_MS`、`ANDROID_MAX_ERROR_BLOCK_CHARS` 和 `ANDROID_MAX_LOG_TAIL_CHARS` 目前不会覆盖 runtime snapshot。阶段 5 会通过 selected workspace 的 allowlist 重新接入受控字段级 env override。
 
 成功时返回：
 
@@ -84,8 +78,8 @@ BUILD SUCCESSFUL
 2. **失败日志必须保留真实到达顺序**
    - 不能简单用 `stdout + stderr` 重建输出，否则 `firstErrorBlock` 和 `logTail` 可能失真。
 
-3. **空环境变量要视为未设置**
-   - 空字符串不能覆盖全局配置文件中的有效值，必须回退到文件配置。
+3. **环境变量覆盖必须走配置 allowlist**
+   - 阶段 4 不再默认读取旧 Android env；阶段 5 重新接入时，空字符串应视为未设置并回退到文件配置。
 
 4. **不要把危险工作目录路径直接拼进 `cmd.exe /c`**
    - Windows 路径可能包含 `&`、`%...%` 等 `cmd` 敏感字符。
