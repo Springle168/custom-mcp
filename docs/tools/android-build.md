@@ -37,7 +37,7 @@
 
 ## 配置与返回
 
-工具读取 `~/.custom-mcp/config.json` 中当前选中 workspace 的 `android` 配置段；当前配置文件 schema 要求 `android` 一旦出现就必须字段完整。阶段 4 已停用默认 legacy Android env bridge；`ANDROID_WORKSPACE_ROOT`、`ANDROID_JAVA_HOME`、`ANDROID_BUILD_TIMEOUT_MS`、`ANDROID_MAX_ERROR_BLOCK_CHARS` 和 `ANDROID_MAX_LOG_TAIL_CHARS` 目前不会覆盖 runtime snapshot。阶段 5 会通过 selected workspace 的 allowlist 重新接入受控字段级 env override。
+工具读取 `~/.custom-mcp/config.json` 中当前选中 workspace 的 `android` 配置段；当前配置文件 schema 要求 `android` 一旦出现就必须字段完整。`ANDROID_WORKSPACE_ROOT`、`ANDROID_JAVA_HOME`、`ANDROID_BUILD_TIMEOUT_MS`、`ANDROID_MAX_ERROR_BLOCK_CHARS` 和 `ANDROID_MAX_LOG_TAIL_CHARS` 只有在 selected workspace 的 `envOverrides.allowedFields` 中显式允许对应 `android.*` 字段时才会覆盖 runtime snapshot。空字符串 env 会回退到配置文件值；`android.*` env override 不能创建缺失的 `android` 配置段。
 
 成功时返回：
 
@@ -79,7 +79,7 @@ BUILD SUCCESSFUL
    - 不能简单用 `stdout + stderr` 重建输出，否则 `firstErrorBlock` 和 `logTail` 可能失真。
 
 3. **环境变量覆盖必须走配置 allowlist**
-   - 阶段 4 不再默认读取旧 Android env；阶段 5 重新接入时，空字符串应视为未设置并回退到文件配置。
+   - Android env 只在 selected workspace 的 `envOverrides.allowedFields` 允许对应字段时读取；空字符串视为未设置并回退到文件配置。
 
 4. **不要把危险工作目录路径直接拼进 `cmd.exe /c`**
    - Windows 路径可能包含 `&`、`%...%` 等 `cmd` 敏感字符。

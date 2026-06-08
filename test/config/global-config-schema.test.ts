@@ -354,7 +354,7 @@ async function testAndroidCompletenessAndStrictIntegers(): Promise<void> {
   );
 }
 
-async function testEnvOverridesShapeValidationOnly(): Promise<void> {
+async function testEnvOverridesShapeValidation(): Promise<void> {
   await expectValidationError(
     globalConfig([workspace(0, { envOverrides: { allowedFields: [], legacy: true } })]),
     'Unknown config field workspaces[0].envOverrides.legacy',
@@ -466,7 +466,7 @@ async function main(): Promise<void> {
       { name: 'lineEnding validation', run: testLineEndingValidation },
       { name: 'otherRootDirs shape validation', run: testOtherRootDirsShapeValidation },
       { name: 'Android completeness and strict integers', run: testAndroidCompletenessAndStrictIntegers },
-      { name: 'envOverrides shape validation only', run: testEnvOverridesShapeValidationOnly },
+      { name: 'envOverrides shape validation', run: testEnvOverridesShapeValidation },
       { name: 'rootDir path validation', run: testRootDirPathValidation },
       { name: 'rootDir lexical duplicate and nested validation', run: testRootDirLexicalDuplicateAndNestedValidation },
       { name: 'rootDir realpath duplicate validation', run: testRootDirRealpathDuplicateValidation },

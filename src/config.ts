@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { applyEnvOverridesToWorkspace } from './config/env-overrides.js';
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
@@ -67,7 +68,7 @@ export interface RuntimeConfigSnapshotInput {
 export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions {
   readonly workspaceId?: string;
   readonly cwd?: string;
-  /** Reserved for phase 5 allowlisted env overrides; phase 4 intentionally ignores legacy env values. */
+  /** Environment values considered only for the selected workspace allowlist. */
   readonly env?: NodeJS.ProcessEnv;
   readonly snapshotVersion?: number;
 }
@@ -142,7 +143,15 @@ export function loadRuntimeConfigWithIdentity(
       ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     });
-    const workspace = selection.workspace;
+    const selectedWorkspaceIndex = globalConfig.workspaces.findIndex((workspace) =>
+      workspace.id === selection.workspace.id
+    );
+    const workspace = applyEnvOverridesToWorkspace({
+      configFilePath: location.configFilePath,
+      workspace: selection.workspace,
+      workspaceIndex: selectedWorkspaceIndex,
+      env: options.env,
+    });
     const snapshot = createRuntimeConfigSnapshot({
       configFilePath: location.configFilePath,
       workspaceId: workspace.id,

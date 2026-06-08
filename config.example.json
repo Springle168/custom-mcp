@@ -15,6 +15,12 @@
         "buildTimeoutMs": 900000,
         "maxErrorBlockChars": 2500,
         "maxLogTailChars": 4000
+      },
+      "envOverrides": {
+        "allowedFields": [
+          "lineEnding",
+          "android.javaHome"
+        ]
       }
     }
   ]

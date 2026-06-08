@@ -111,7 +111,7 @@ async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
   );
 }
 
-async function testLegacyEnvOverridesAreIgnored(): Promise<void> {
+async function testEnvOverridesAreIgnoredWithoutAllowlist(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(createGlobalConfig());
 
@@ -132,7 +132,7 @@ async function testLegacyEnvOverridesAreIgnored(): Promise<void> {
 
   assertEqual(snapshot.rootDir, PRIMARY_DIR, 'MCP_ROOT_DIR should not affect the selected workspace rootDir');
   assertEqual(snapshot.port, 4321, 'MCP_PORT should not affect the selected workspace port');
-  assertEqual(snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not affect lineEnding before phase 5 allowlist');
+  assertEqual(snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not affect lineEnding without a selected workspace allowlist');
   assert(snapshot.android !== undefined, 'Fixture should include Android config');
   assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'ANDROID_WORKSPACE_ROOT should not override Android config');
   assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'ANDROID_JAVA_HOME should not override Android config');
@@ -238,7 +238,7 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'loads runtime snapshot from home dotdir config', run: testLoadsRuntimeSnapshotFromHomeDotdirConfig },
-      { name: 'legacy env overrides are ignored', run: testLegacyEnvOverridesAreIgnored },
+      { name: 'env overrides are ignored without allowlist', run: testEnvOverridesAreIgnoredWithoutAllowlist },
       { name: 'Android config paths are normalized', run: testAndroidConfigPathsAreNormalized },
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },
