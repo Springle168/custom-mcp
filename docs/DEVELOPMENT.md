@@ -10,7 +10,7 @@
 
 | 主题 | 文档 | 内容 |
 |-|-|-|
-| 配置 | [docs/CONFIG.md](CONFIG.md) | `~/.custom-mcp/config.json`、`version: 1` 全局 workspace schema、阶段 3 桥接行为、行尾符策略、配置相关故障排查 |
+| 配置 | [docs/CONFIG.md](CONFIG.md) | `~/.custom-mcp/config.json`、`version: 1` 全局 workspace schema、阶段 4 workspace 选择、行尾符策略、配置相关故障排查 |
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、添加新工具、schema 设计、返回值、并发模型 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
@@ -47,11 +47,13 @@ custom-mcp/
 │   └── tools/                   # 单工具文档
 ├── src/
 │   ├── index.ts                 # HTTP 入口 + MCP 会话管理
-│   ├── config.ts                # 运行配置加载、阶段 3 workspace 桥接、快照构建
+│   ├── cli.ts                   # CLI 参数解析（如 --workspace）
+│   ├── config.ts                # 运行配置加载 facade、快照构建
 │   ├── config/
 │   │   ├── errors.ts            # 结构化配置错误
 │   │   ├── global-config-path.ts # home-level dotdir 配置路径解析
-│   │   └── schema.ts            # version: 1 全局 workspace schema 校验
+│   │   ├── schema.ts            # version: 1 全局 workspace schema 校验
+│   │   └── workspace-selection.ts # 显式/cwd workspace 选择与 RuntimeConfigIdentity
 │   ├── runtime/
 │   │   ├── config-store.ts      # 运行时配置快照存取
 │   │   └── tool-context.ts      # 工具 handler 消费的运行时上下文
@@ -86,7 +88,7 @@ custom-mcp/
 | 层 | 目录 | 职责 | 原则 |
 |-|-|-|-|
 | 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时不需要改动 |
-| 配置层 | `src/config.ts`, `src/config/` | 读取 `~/.custom-mcp/config.json`、校验 `version: 1` 全局 workspace schema、通过阶段 3 桥接构建运行时快照 | 不在工具层读取配置文件 |
+| 配置层 | `src/config.ts`, `src/config/` | 读取 `~/.custom-mcp/config.json`、校验 `version: 1` 全局 workspace schema、选择 workspace、生成 `RuntimeConfigIdentity` 并构建运行时快照 | 不在工具层读取配置文件 |
 | 运行时层 | `src/runtime/` | 持有配置快照，派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力 |
 | 工具层 | `src/tools/` | 工具定义、参数校验、业务编排 | 每个工具一个文件 |
 | 引擎层 | `src/engine/` | 纯算法逻辑，无 I/O 操作 | 可独立测试，无副作用 |

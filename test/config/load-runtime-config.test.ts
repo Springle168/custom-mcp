@@ -22,6 +22,10 @@ const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const ADDITIONAL_DIR = path.join(FIXTURES_DIR, 'additional');
 const SECONDARY_DIR = path.join(FIXTURES_DIR, 'secondary');
 const OVERRIDE_DIR = path.join(FIXTURES_DIR, 'override-root');
+const ANDROID_WORKSPACE_ROOT = path.join(FIXTURES_DIR, 'android-project');
+const ANDROID_JAVA_HOME = path.join(FIXTURES_DIR, 'jbr');
+const ANDROID_OVERRIDE_ROOT = path.join(FIXTURES_DIR, 'android-override-project');
+const ANDROID_OVERRIDE_JAVA_HOME = path.join(FIXTURES_DIR, 'android-override-jbr');
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
@@ -29,6 +33,10 @@ async function resetFixtures(): Promise<void> {
   await fs.mkdir(ADDITIONAL_DIR, { recursive: true });
   await fs.mkdir(SECONDARY_DIR, { recursive: true });
   await fs.mkdir(OVERRIDE_DIR, { recursive: true });
+  await fs.mkdir(ANDROID_WORKSPACE_ROOT, { recursive: true });
+  await fs.mkdir(ANDROID_JAVA_HOME, { recursive: true });
+  await fs.mkdir(ANDROID_OVERRIDE_ROOT, { recursive: true });
+  await fs.mkdir(ANDROID_OVERRIDE_JAVA_HOME, { recursive: true });
 }
 
 async function cleanupFixtures(): Promise<void> {
@@ -61,6 +69,13 @@ function createGlobalConfig(): unknown {
         otherRootDirs: [ADDITIONAL_DIR],
         port: 4321,
         lineEnding: 'lf',
+        android: {
+          workspaceRoot: ANDROID_WORKSPACE_ROOT,
+          javaHome: ANDROID_JAVA_HOME,
+          buildTimeoutMs: 900000,
+          maxErrorBlockChars: 2500,
+          maxLogTailChars: 4000,
+        },
       },
       {
         id: 'secondary-workspace',
@@ -76,10 +91,14 @@ async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(createGlobalConfig());
 
-  const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, env: {} });
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'primary-workspace',
+    env: {},
+  });
 
   assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the home-level dotdir config path');
-  assertEqual(snapshot.workspaceId, 'primary-workspace', 'Phase 3 bridge should use the first validated workspace');
+  assertEqual(snapshot.workspaceId, 'primary-workspace', 'Snapshot should use the explicitly selected workspace');
   assertEqual(snapshot.rootDir, PRIMARY_DIR, 'Snapshot should use rootDir from the selected workspace');
   assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should keep additional roots from the selected workspace');
   assertEqual(snapshot.otherRootDirs[0], ADDITIONAL_DIR, 'Snapshot should keep the additional root path');
@@ -92,22 +111,32 @@ async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
   );
 }
 
-async function testPhase3BridgeKeepsLegacyEnvOverrides(): Promise<void> {
+async function testLegacyEnvOverridesAreIgnored(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(createGlobalConfig());
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
+    workspaceId: 'primary-workspace',
     env: {
       MCP_ROOT_DIR: OVERRIDE_DIR,
       MCP_PORT: '5432',
       MCP_LINE_ENDING: 'crlf',
+      ANDROID_WORKSPACE_ROOT: ANDROID_OVERRIDE_ROOT,
+      ANDROID_JAVA_HOME: ANDROID_OVERRIDE_JAVA_HOME,
+      ANDROID_BUILD_TIMEOUT_MS: '1234',
+      ANDROID_MAX_ERROR_BLOCK_CHARS: '1235',
+      ANDROID_MAX_LOG_TAIL_CHARS: '1236',
     },
   });
 
-  assertEqual(snapshot.rootDir, OVERRIDE_DIR, 'Phase 3 should still preserve legacy MCP_ROOT_DIR override until phase 5');
-  assertEqual(snapshot.port, 5432, 'Phase 3 should still preserve legacy MCP_PORT override until phase 5');
-  assertEqual(snapshot.lineEnding, 'crlf', 'Phase 3 should still preserve legacy MCP_LINE_ENDING override until phase 5');
+  assertEqual(snapshot.rootDir, PRIMARY_DIR, 'MCP_ROOT_DIR should not affect the selected workspace rootDir');
+  assertEqual(snapshot.port, 4321, 'MCP_PORT should not affect the selected workspace port');
+  assertEqual(snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not affect lineEnding before phase 5 allowlist');
+  assert(snapshot.android !== undefined, 'Fixture should include Android config');
+  assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'ANDROID_WORKSPACE_ROOT should not override Android config');
+  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'ANDROID_JAVA_HOME should not override Android config');
+  assertEqual(snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not override Android config');
 }
 
 async function testMissingConfigThrowsWithoutProcessExit(): Promise<void> {
@@ -177,7 +206,7 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'loads runtime snapshot from home dotdir config', run: testLoadsRuntimeSnapshotFromHomeDotdirConfig },
-      { name: 'phase 3 bridge keeps legacy env overrides', run: testPhase3BridgeKeepsLegacyEnvOverrides },
+      { name: 'legacy env overrides are ignored', run: testLegacyEnvOverridesAreIgnored },
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },
       { name: 'invalid JSON throws structured error', run: testInvalidJsonThrowsStructuredError },
