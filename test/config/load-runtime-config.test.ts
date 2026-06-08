@@ -139,6 +139,38 @@ async function testLegacyEnvOverridesAreIgnored(): Promise<void> {
   assertEqual(snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not override Android config');
 }
 
+async function testAndroidConfigPathsAreNormalized(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig({
+    version: 1,
+    workspaces: [
+      {
+        id: 'primary-workspace',
+        rootDir: PRIMARY_DIR,
+        port: 4321,
+        lineEnding: 'auto',
+        android: {
+          workspaceRoot: 'relative-android-project',
+          javaHome: 'relative-jbr',
+          buildTimeoutMs: 900000,
+          maxErrorBlockChars: 2500,
+          maxLogTailChars: 4000,
+        },
+      },
+    ],
+  });
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'primary-workspace',
+    env: {},
+  });
+
+  assert(snapshot.android !== undefined, 'Fixture should include Android config');
+  assertEqual(snapshot.android.workspaceRoot, path.resolve('relative-android-project'), 'Android workspaceRoot should be normalized even without env overrides');
+  assertEqual(snapshot.android.javaHome, path.resolve('relative-jbr'), 'Android javaHome should be normalized even without env overrides');
+}
+
 async function testMissingConfigThrowsWithoutProcessExit(): Promise<void> {
   await resetFixtures();
   await fs.mkdir(HOME_DIR, { recursive: true });
@@ -207,6 +239,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'loads runtime snapshot from home dotdir config', run: testLoadsRuntimeSnapshotFromHomeDotdirConfig },
       { name: 'legacy env overrides are ignored', run: testLegacyEnvOverridesAreIgnored },
+      { name: 'Android config paths are normalized', run: testAndroidConfigPathsAreNormalized },
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },
       { name: 'invalid JSON throws structured error', run: testInvalidJsonThrowsStructuredError },
