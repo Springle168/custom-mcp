@@ -9,7 +9,7 @@
 ```text
 custom-mcp/test/
 ├── android-build/           # Android 构建相关测试
-├── config/                  # 全局配置路径、schema、workspace selection、env override 与 loadRuntimeConfig 测试
+├── config/                  # 全局配置路径、schema、workspace selection、env override、runtime snapshot 与 loadRuntimeConfig 测试
 ├── fixtures/                # 测试数据文件
 │   └── read-many-files/
 │       ├── setup.ts         # fixtures 生成脚本
@@ -61,6 +61,7 @@ cmd /c npx tsx test/config/global-config-path.test.ts
 cmd /c npx tsx test/config/global-config-schema.test.ts
 cmd /c npx tsx test/config/workspace-selection.test.ts
 cmd /c npx tsx test/config/env-overrides.test.ts
+cmd /c npx tsx test/config/runtime-snapshot.test.ts
 cmd /c npx tsx test/config/load-runtime-config.test.ts
 cmd /c npx tsx test/runtime/config-store.test.ts
 

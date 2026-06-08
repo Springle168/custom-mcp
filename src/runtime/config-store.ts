@@ -20,7 +20,7 @@ export function createConfigStore(
   const identity = initialConfig.identity;
   const status: ConfigStoreStatus = Object.freeze({ state: 'ok' });
 
-  return {
+  return Object.freeze({
     getSnapshot(): RuntimeConfigSnapshot {
       return currentSnapshot;
     },
@@ -30,5 +30,5 @@ export function createConfigStore(
     getStatus(): ConfigStoreStatus {
       return status;
     },
-  };
+  });
 }
