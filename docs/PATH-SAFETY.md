@@ -17,7 +17,7 @@
 - 读取和写入的 realpath / symlink 校验必须保持在同一个 matched root 内，不能落入其它 allowed root。
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。配置加载阶段会创建已验证的 `PathSafetyContext`；工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。配置加载阶段通过 `src/config/runtime-snapshot.ts` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`。
 
 ---
 
@@ -34,7 +34,7 @@
 7. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。
 8. 所有 allowed roots 在 realpath 层也不得重复或互相嵌套。
 
-这些不变量由 `createValidatedPathSafetyContext()` 负责。`SafePath` / `SafeGlobPattern` 会携带 `matchedRoot`，供后续 read/write realpath 校验使用。
+这些不变量由 `createValidatedPathSafetyContext()` 负责，并由 runtime snapshot builder 在启动期包装为结构化 `ConfigError`；selected workspace 的 `otherRootDirs` 错误会尽量定位到具体 `workspaces[i].otherRootDirs[j]`。`SafePath` / `SafeGlobPattern` 会携带 `matchedRoot`，供后续 read/write realpath 校验使用。
 
 ---
 
@@ -209,6 +209,7 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 ```bash
 cmd /c npx tsx test/test-path-safety.ts
 cmd /c npx tsx test/config/global-config-schema.test.ts
+cmd /c npx tsx test/config/runtime-snapshot.test.ts
 cmd /c npx tsx test/config/load-runtime-config.test.ts
 ```
 

@@ -48,15 +48,17 @@ custom-mcp/
 ├── src/
 │   ├── index.ts                 # HTTP 入口 + MCP 会话管理
 │   ├── cli.ts                   # CLI 参数解析（如 --workspace）
-│   ├── config.ts                # 运行配置加载 facade、快照构建
+│   ├── config.ts                # 运行配置加载 public facade
 │   ├── config/
 │   │   ├── env-overrides.ts     # selected workspace 字段级 env override allowlist
 │   │   ├── errors.ts            # 结构化配置错误
 │   │   ├── global-config-path.ts # home-level dotdir 配置路径解析
+│   │   ├── runtime-snapshot.ts  # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
 │   │   ├── schema.ts            # version: 1 全局 workspace schema 校验
 │   │   └── workspace-selection.ts # 显式/cwd workspace 选择与 RuntimeConfigIdentity
 │   ├── runtime/
-│   │   ├── config-store.ts      # 运行时配置快照存取
+│   │   ├── config-store.ts      # current snapshot 与 identity baseline 只读持有者
+│   │   ├── tool-call-handler.ts # 每次工具调用开始时读取 current snapshot 的 handler seam
 │   │   └── tool-context.ts      # 工具 handler 消费的运行时上下文
 │   ├── tools/
 │   │   ├── index.ts             # 工具注册表 + 路由分发
@@ -89,8 +91,8 @@ custom-mcp/
 | 层 | 目录 | 职责 | 原则 |
 |-|-|-|-|
 | 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时不需要改动 |
-| 配置层 | `src/config.ts`, `src/config/` | 读取 `~/.custom-mcp/config.json`、校验 `version: 1` 全局 workspace schema、选择 workspace、应用 selected workspace env override allowlist、生成 `RuntimeConfigIdentity` 并构建运行时快照 | 不在工具层读取配置文件 |
-| 运行时层 | `src/runtime/` | 持有配置快照，派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力 |
+| 配置层 | `src/config.ts`, `src/config/` | 读取 `~/.custom-mcp/config.json`、校验 `version: 1` 全局 workspace schema、选择 workspace、应用 selected workspace env override allowlist、生成 `RuntimeConfigIdentity` 并构建不可变 `RuntimeConfigSnapshot` | public facade 不承载 schema/selection/env/snapshot 细节；不在工具层读取配置文件 |
+| 运行时层 | `src/runtime/` | 只读持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
 | 工具层 | `src/tools/` | 工具定义、参数校验、业务编排 | 每个工具一个文件 |
 | 引擎层 | `src/engine/` | 纯算法逻辑，无 I/O 操作 | 可独立测试，无副作用 |
 | 工具库 | `src/utils/` | 基础设施（日志、路径、锁、文件读取） | 跨工具共用 |

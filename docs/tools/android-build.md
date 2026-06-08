@@ -63,7 +63,7 @@ BUILD SUCCESSFUL
 
 - 当前仅支持 Windows
 - `android.workspaceRoot` 中必须存在 `gradlew.bat`
-- Android 配置缺失不会阻止服务启动，但会在工具调用时报错
+- Android 配置缺失不会阻止服务启动，但会在工具调用时报错，并提示为当前 selected workspace 补充 `android` 段
 - 仓库根目录 `config.json` 不再作为运行配置来源；Android 配置错误会指向当前全局配置文件
 
 ---

@@ -26,7 +26,8 @@ export function createToolRuntimeContext(
     },
     ...(snapshot.android ? { android: snapshot.android } : {}),
     missingAndroidConfigMessage:
-      `Android build config is not configured for workspace "${snapshot.workspaceId}". ` +
-      `Add an android section with workspaceRoot, javaHome, buildTimeoutMs, maxErrorBlockChars, and maxLogTailChars to ${snapshot.configFilePath}.`,
+      `Android build config is not configured for selected workspace "${snapshot.workspaceId}". ` +
+      `Add an android section to that workspace in ${snapshot.configFilePath} ` +
+      'with workspaceRoot, javaHome, buildTimeoutMs, maxErrorBlockChars, and maxLogTailChars.',
   };
 }

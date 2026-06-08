@@ -1,22 +1,19 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { applyEnvOverridesToWorkspace } from './config/env-overrides.js';
+import {
+  buildRuntimeConfigSnapshot,
+  type RuntimeConfigSnapshot,
+} from './config/runtime-snapshot.js';
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
   type DefaultGlobalConfigPathOptions,
 } from './config/global-config-path.js';
-import {
-  parseGlobalConfig,
-} from './config/schema.js';
+import { parseGlobalConfig } from './config/schema.js';
 import {
   selectRuntimeWorkspace,
   type RuntimeConfigIdentity,
 } from './config/workspace-selection.js';
-import {
-  createValidatedPathSafetyContext,
-  type PathSafetyContext,
-} from './utils/paths.js';
+import type { PathSafetyContext } from './utils/paths.js';
 
 export { ConfigError, isConfigError } from './config/errors.js';
 export type { ConfigErrorCode } from './config/errors.js';
@@ -25,45 +22,23 @@ export type {
   DefaultGlobalConfigPathOptions,
   GlobalConfigLocation,
 } from './config/global-config-path.js';
+export {
+  createRuntimeConfigSnapshot,
+} from './config/runtime-snapshot.js';
+export type {
+  BuildRuntimeConfigSnapshotOptions,
+  LineEnding,
+  RuntimeAndroidConfig,
+  RuntimeConfigSnapshot,
+  RuntimeConfigSnapshotErrorContext,
+  RuntimeConfigSnapshotInput,
+} from './config/runtime-snapshot.js';
 export type {
   RuntimeConfigIdentity,
   RuntimeConfigSelectionMode,
   RuntimeWorkspaceSelection,
   SelectRuntimeWorkspaceOptions,
 } from './config/workspace-selection.js';
-
-export type LineEnding = 'auto' | 'lf' | 'crlf';
-
-export interface RuntimeAndroidConfig {
-  readonly workspaceRoot: string;
-  readonly javaHome: string;
-  readonly buildTimeoutMs: number;
-  readonly maxErrorBlockChars: number;
-  readonly maxLogTailChars: number;
-}
-
-export interface RuntimeConfigSnapshot {
-  readonly snapshotVersion: number;
-  readonly configFilePath: string;
-  readonly workspaceId: string;
-  readonly rootDir: string;
-  readonly otherRootDirs: readonly string[];
-  readonly port: number;
-  readonly lineEnding: LineEnding;
-  readonly android?: RuntimeAndroidConfig;
-  readonly pathSafetyContext: PathSafetyContext;
-}
-
-export interface RuntimeConfigSnapshotInput {
-  readonly snapshotVersion?: number;
-  readonly configFilePath: string;
-  readonly workspaceId: string;
-  readonly rootDir: string;
-  readonly otherRootDirs?: readonly string[];
-  readonly port: number;
-  readonly lineEnding: LineEnding;
-  readonly android?: RuntimeAndroidConfig;
-}
 
 export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions {
   readonly workspaceId?: string;
@@ -96,30 +71,6 @@ export function getPathSafetyContext(config: {
   return config.pathSafetyContext;
 }
 
-export function createRuntimeConfigSnapshot(
-  input: RuntimeConfigSnapshotInput,
-): RuntimeConfigSnapshot {
-  const otherRootDirs = [...(input.otherRootDirs ?? [])];
-  const pathSafetyContext = createValidatedPathSafetyContext(
-    input.rootDir,
-    otherRootDirs,
-  );
-
-  const snapshot: RuntimeConfigSnapshot = {
-    snapshotVersion: input.snapshotVersion ?? 1,
-    configFilePath: input.configFilePath,
-    workspaceId: input.workspaceId,
-    rootDir: input.rootDir,
-    otherRootDirs,
-    port: input.port,
-    lineEnding: input.lineEnding,
-    ...(input.android ? { android: { ...input.android } } : {}),
-    pathSafetyContext,
-  };
-
-  return deepFreeze(snapshot);
-}
-
 export function loadRuntimeConfig(
   options: LoadRuntimeConfigOptions = {},
 ): RuntimeConfigSnapshot {
@@ -143,23 +94,16 @@ export function loadRuntimeConfigWithIdentity(
       ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     });
-    const selectedWorkspaceIndex = globalConfig.workspaces.findIndex((workspace) =>
-      workspace.id === selection.workspace.id
+    const selectedWorkspaceIndex = getSelectedWorkspaceIndex(
+      globalConfig.workspaces,
+      selection.identity.workspaceId,
+      location.configFilePath,
     );
-    const workspace = applyEnvOverridesToWorkspace({
+    const snapshot = buildRuntimeConfigSnapshot({
       configFilePath: location.configFilePath,
       workspace: selection.workspace,
       workspaceIndex: selectedWorkspaceIndex,
       env: options.env,
-    });
-    const snapshot = createRuntimeConfigSnapshot({
-      configFilePath: location.configFilePath,
-      workspaceId: workspace.id,
-      rootDir: workspace.rootDir,
-      otherRootDirs: workspace.otherRootDirs,
-      port: workspace.port,
-      lineEnding: workspace.lineEnding,
-      ...normalizeRuntimeAndroidConfig(workspace.android),
       snapshotVersion: options.snapshotVersion ?? 1,
     });
 
@@ -183,20 +127,23 @@ export function loadRuntimeConfigWithIdentity(
   }
 }
 
-function normalizeRuntimeAndroidConfig(
-  android: RuntimeAndroidConfig | undefined,
-): { readonly android?: RuntimeAndroidConfig } {
-  if (android === undefined) {
-    return {};
+function getSelectedWorkspaceIndex(
+  workspaces: readonly { readonly id: string }[],
+  workspaceId: string,
+  configFilePath: string,
+): number {
+  const index = workspaces.findIndex((workspace) => workspace.id === workspaceId);
+  if (index !== -1) {
+    return index;
   }
 
-  return {
-    android: {
-      ...android,
-      workspaceRoot: resolve(android.workspaceRoot),
-      javaHome: resolve(android.javaHome),
-    },
-  };
+  throw new ConfigError({
+    code: 'config_validation_failed',
+    configFilePath,
+    fieldPath: 'workspace',
+    message: `Selected workspace "${workspaceId}" was not found after workspace selection.`,
+    suggestion: 'Restart the server and choose a workspace id that exists in the global config workspaces array.',
+  });
 }
 
 function readConfigFile(configFilePath: string): string {
@@ -240,16 +187,4 @@ function parseConfigFile(raw: string, configFilePath: string): unknown {
       cause: err,
     });
   }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
-    return value;
-  }
-
-  for (const propertyValue of Object.values(value as Record<string, unknown>)) {
-    deepFreeze(propertyValue);
-  }
-
-  return Object.freeze(value);
 }

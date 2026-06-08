@@ -9,9 +9,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { CliError, parseCliArgs } from './cli.js';
-import { ConfigError, loadRuntimeConfigWithIdentity, type RuntimeConfigSnapshot } from './config.js';
+import { ConfigError, loadRuntimeConfigWithIdentity } from './config.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
-import { createToolRuntimeContext } from './runtime/tool-context.js';
+import { createToolCallRequestHandler } from './runtime/tool-call-handler.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
 import { Logger } from './utils/logger.js';
 import { pendingQuestions, generateQuestionForm } from './tools/ask-user.js';
@@ -30,26 +30,16 @@ function createMCPServer(configStore: ConfigStore, logger: Logger): Server {
     tools: getAllToolDefinitions(),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const safeArgs = (args ?? {}) as Record<string, unknown>;
-    const startTime = Date.now();
-    const snapshot = configStore.getSnapshot();
-    const toolContext = createToolRuntimeContext(snapshot);
-
-    logger.logToolCall(name, safeArgs);
-
-    const result = await routeToolCall(name, safeArgs, toolContext);
-
-    logger.logToolResult(name, result, Date.now() - startTime);
-    return result;
-  });
+  server.setRequestHandler(
+    CallToolRequestSchema,
+    createToolCallRequestHandler({ configStore, logger, routeToolCall }),
+  );
 
   return server;
 }
 
-function logWorkspaceRoots(snapshot: RuntimeConfigSnapshot, logger: Logger): void {
-  const { pathSafetyContext } = snapshot;
+function logWorkspaceRoots(configStore: ConfigStore, logger: Logger): void {
+  const { pathSafetyContext } = configStore.getSnapshot();
   const primaryRoot = pathSafetyContext.primaryRoot.rootDir;
   const additionalRoots = pathSafetyContext.allowedRoots
     .filter((root) => root.kind === 'additional')
@@ -301,7 +291,7 @@ async function main() {
     logger.info(`  Selection mode: ${initialConfig.identity.selectionMode}`);
     logger.info(`  Snapshot version: ${initialSnapshot.snapshotVersion}`);
     logger.info(`  Config file: ${initialSnapshot.configFilePath}`);
-    logWorkspaceRoots(initialSnapshot, logger);
+    logWorkspaceRoots(configStore, logger);
     logger.info(`  Line ending: ${initialSnapshot.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
   });

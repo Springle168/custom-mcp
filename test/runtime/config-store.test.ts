@@ -1,9 +1,13 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createConfigStore, type ConfigStore } from '../../src/runtime/config-store.js';
+import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
 import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
+import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   createTestLoadedRuntimeConfig,
+  createTestRuntimeConfigIdentity,
   createTestRuntimeConfigSnapshot,
 } from '../helpers/runtime-config.js';
 import {
@@ -28,10 +32,12 @@ async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
 }
 
-function createSnapshot() {
+function createSnapshot(options: { readonly port?: number; readonly snapshotVersion?: number } = {}) {
   return createTestRuntimeConfigSnapshot({
     rootDir: PRIMARY_DIR,
     otherRootDirs: [ADDITIONAL_DIR],
+    port: options.port ?? 3100,
+    snapshotVersion: options.snapshotVersion ?? 1,
     android: {
       workspaceRoot: PRIMARY_DIR,
       javaHome: path.join(PRIMARY_DIR, 'jbr'),
@@ -47,14 +53,14 @@ async function testStoreReturnsInitialSnapshot(): Promise<void> {
     rootDir: PRIMARY_DIR,
     otherRootDirs: [ADDITIONAL_DIR],
   });
-  const store = await import('../../src/runtime/config-store.js').then((module) =>
-    module.createConfigStore(initialConfig),
-  );
+  const store = createConfigStore(initialConfig);
 
   assertEqual(store.getSnapshot(), initialConfig.snapshot, 'ConfigStore should return the initial snapshot');
   assertEqual(store.getIdentity(), initialConfig.identity, 'ConfigStore should return the initial runtime identity');
   assertEqual(store.getSnapshot().snapshotVersion, 1, 'Initial snapshot version should be 1');
   assertEqual(store.getStatus().state, 'ok', 'Initial ConfigStore status should be ok');
+  assert(Object.isFrozen(store), 'ConfigStore should freeze its public facade');
+  assert(Object.isFrozen(store.getIdentity()), 'Runtime identity baseline should be frozen');
 }
 
 async function testStoreDoesNotExposeMutableSnapshotWriter(): Promise<void> {
@@ -62,9 +68,7 @@ async function testStoreDoesNotExposeMutableSnapshotWriter(): Promise<void> {
     rootDir: PRIMARY_DIR,
     otherRootDirs: [ADDITIONAL_DIR],
   });
-  const store = await import('../../src/runtime/config-store.js').then((module) =>
-    module.createConfigStore(initialConfig),
-  );
+  const store = createConfigStore(initialConfig);
   const unsafeStore = store as unknown as Record<string, unknown>;
 
   assert(
@@ -106,28 +110,71 @@ async function testSnapshotDeepFreeze(): Promise<void> {
   }
 }
 
-async function testToolCallStartGetsOneSnapshot(): Promise<void> {
-  const snapshot = createSnapshot();
+async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
+  const firstSnapshot = createSnapshot({ port: 3101, snapshotVersion: 1 });
+  const secondSnapshot = createSnapshot({ port: 3102, snapshotVersion: 2 });
   let getSnapshotCount = 0;
-  const store = {
+  let now = 1000;
+  const result: ToolCallResult = {
+    content: [{ type: 'text', text: 'ok' }],
+    isError: false,
+  };
+  const loggerEvents: string[] = [];
+  const store: ConfigStore = {
     getSnapshot() {
       getSnapshotCount++;
-      return snapshot;
+      return getSnapshotCount === 1 ? firstSnapshot : secondSnapshot;
+    },
+    getIdentity() {
+      return createTestRuntimeConfigIdentity(firstSnapshot);
     },
     getStatus() {
-      return { state: 'ok' as const };
+      return { state: 'ok' };
     },
   };
+  const handler = createToolCallRequestHandler({
+    configStore: store,
+    logger: {
+      logToolCall(toolName, args) {
+        loggerEvents.push(`call:${toolName}:${String(args.value)}`);
+      },
+      logToolResult(toolName, toolResult, durationMs) {
+        loggerEvents.push(`result:${toolName}:${toolResult.content[0]?.text}:${durationMs}`);
+      },
+    },
+    now: () => {
+      now += 25;
+      return now;
+    },
+    routeToolCall: async (name, args, context) => {
+      assertEqual(name, 'fake_tool', 'Handler should pass the requested tool name to the router');
+      assertEqual(args.value, 42, 'Handler should pass request arguments to the router');
+      assertEqual(getSnapshotCount, 1, 'Router should see exactly one snapshot read at call start');
+      assertEqual(
+        context.pathSafetyContext,
+        firstSnapshot.pathSafetyContext,
+        'Router context should be derived from the snapshot read at call start',
+      );
+      assertEqual(
+        context.askUser.makeUrl('session-1'),
+        'http://localhost:3101/ask/session-1',
+        'Router context should not switch to a later snapshot during the same tool call',
+      );
+      return result;
+    },
+  });
 
-  const callSnapshot = store.getSnapshot();
-  const context = createToolRuntimeContext(callSnapshot);
+  const actual = await handler({
+    params: {
+      name: 'fake_tool',
+      arguments: { value: 42 },
+    },
+  });
 
-  assertEqual(getSnapshotCount, 1, 'Tool call start should read the store once');
-  assertEqual(
-    context.pathSafetyContext,
-    snapshot.pathSafetyContext,
-    'Tool runtime context should remain tied to the snapshot read at call start',
-  );
+  assertEqual(actual, result, 'Handler should return the router result');
+  assertEqual(getSnapshotCount, 1, 'Tool call handler should read the store once per tool call');
+  assertEqual(loggerEvents[0], 'call:fake_tool:42', 'Handler should log the tool call');
+  assertEqual(loggerEvents[1], 'result:fake_tool:ok:25', 'Handler should log the tool result duration');
 }
 
 async function main(): Promise<void> {
@@ -141,7 +188,7 @@ async function main(): Promise<void> {
       { name: 'does not expose mutable snapshot writer', run: testStoreDoesNotExposeMutableSnapshotWriter },
       { name: 'derives tool runtime context from snapshot', run: testToolRuntimeContextDerivesFromSnapshot },
       { name: 'deep-freezes snapshot graph', run: testSnapshotDeepFreeze },
-      { name: 'tool call start reads store once', run: testToolCallStartGetsOneSnapshot },
+      { name: 'tool call handler reads store once', run: testToolCallHandlerReadsStoreOnce },
     ],
   });
 }

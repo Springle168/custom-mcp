@@ -1,6 +1,6 @@
 # 配置开发说明
 
-本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、阶段 5 env override allowlist 行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
+本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、阶段 6 runtime snapshot 整合、env override allowlist 行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
 
 ---
 
@@ -57,6 +57,18 @@
 - 启动选择成功后会形成 `RuntimeConfigIdentity`，记录 config file path、workspace id、已验证/规范化的 rootDir、port 和 selection mode。
 - Env overrides 在 workspace 选择之后才按 selected workspace 的 allowlist 应用；它们不参与 workspace 选择，也不改变 `RuntimeConfigIdentity`。
 
+### Runtime snapshot
+
+选中 workspace 后，配置层会构建 initial `RuntimeConfigSnapshot`，并用它创建 `ConfigStore`：
+
+- initial `snapshotVersion` 为 `1`。
+- snapshot 必含已验证的 `pathSafetyContext`；文件类工具只消费 `ToolRuntimeContext.pathSafetyContext`，不再创建 unchecked fallback。
+- snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
+- snapshot、`android`、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
+- `ConfigStore` 保存 current snapshot 与 `RuntimeConfigIdentity` baseline，但当前阶段不提供 watcher、reload apply 或 snapshot mutation API。
+- 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
+- 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots 和 lineEnding。
+
 ---
 
 ## Schema 速查
@@ -78,7 +90,7 @@
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
 | `port` | positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
-| `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。选中 workspace 构建 snapshot 时会作为 allowed roots 校验。 |
+| `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。选中 workspace 构建 snapshot 时会作为 allowed roots 校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
 
@@ -180,7 +192,7 @@ workspace 未知字段会导致启动失败。
 | 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应功能实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
-| 启动报 selected workspace allowed roots 错误 | 当前选中 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 检查该 workspace 的 allowed roots 是否都是存在的绝对目录，且互不重复/嵌套。 |
+| 启动报 `Selected workspace allowed roots are invalid` | 当前选中 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 按错误中的 `Field` 修复对应 root；allowed roots 必须都是存在的绝对目录，且互不重复/嵌套。 |
 | 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段或旧环境变量名 | 从 allowlist 移除该字段；`rootDir`、`port`、`MCP_ROOT_DIR`、`MCP_PORT` 不能通过 env 覆盖。 |
 | 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |
 | 启动报 `ANDROID_* must be a positive integer` | allowlist 允许了 Android 数值字段，但对应 env 非空且不是正整数 | 修正 env 值，或设为空字符串回退配置文件值。 |
