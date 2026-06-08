@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
@@ -149,7 +150,7 @@ export function loadRuntimeConfigWithIdentity(
       otherRootDirs: workspace.otherRootDirs,
       port: workspace.port,
       lineEnding: workspace.lineEnding,
-      ...(workspace.android ? { android: workspace.android } : {}),
+      ...normalizeRuntimeAndroidConfig(workspace.android),
       snapshotVersion: options.snapshotVersion ?? 1,
     });
 
@@ -171,6 +172,22 @@ export function loadRuntimeConfigWithIdentity(
       cause: err,
     });
   }
+}
+
+function normalizeRuntimeAndroidConfig(
+  android: RuntimeAndroidConfig | undefined,
+): { readonly android?: RuntimeAndroidConfig } {
+  if (android === undefined) {
+    return {};
+  }
+
+  return {
+    android: {
+      ...android,
+      workspaceRoot: resolve(android.workspaceRoot),
+      javaHome: resolve(android.javaHome),
+    },
+  };
 }
 
 function readConfigFile(configFilePath: string): string {
