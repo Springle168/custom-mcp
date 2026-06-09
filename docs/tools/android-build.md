@@ -2,7 +2,7 @@
 
 ## 工具概览
 
-本项目当前提供两个固定边界的 Android 构建工具：
+本项目提供两个固定边界的 Android 构建工具：
 
 - `android.assembleDebug`
 - `android.testDebugUnitTest`
@@ -27,9 +27,9 @@
 
 固定策略：
 
-- 固定执行目录：`android.workspaceRoot`
+- 固定执行目录：`context.android.workspaceRoot`
 - 固定使用：`gradlew.bat`
-- 固定注入：`JAVA_HOME`（值来自当前 workspace 的 `android.javaHome`）
+- 固定注入：`JAVA_HOME`（值来自 `context.android.javaHome`）
 - 固定追加：`--no-daemon`
 - 不开放任意 task、任意命令、任意环境变量透传
 
@@ -37,7 +37,7 @@
 
 ## 配置与返回
 
-工具读取 `~/.custom-mcp/config.json` 中当前选中 workspace 的 `android` 配置段；当前配置文件 schema 要求 `android` 一旦出现就必须字段完整。`ANDROID_WORKSPACE_ROOT`、`ANDROID_JAVA_HOME`、`ANDROID_BUILD_TIMEOUT_MS`、`ANDROID_MAX_ERROR_BLOCK_CHARS` 和 `ANDROID_MAX_LOG_TAIL_CHARS` 只有在 selected workspace 的 `envOverrides.allowedFields` 中显式允许对应 `android.*` 字段时才会覆盖 runtime snapshot。空字符串 env 会回退到配置文件值；`android.*` env override 不能创建缺失的 `android` 配置段。
+工具从 `ToolRuntimeContext.android` 获取已归一化的 Android 配置，不直接读取配置文件或环境变量。配置层负责从当前选中 workspace 构建 runtime snapshot；如果 selected workspace 的 `envOverrides.allowedFields` 允许对应 `android.*` 字段，snapshot 中的 Android 配置可能已应用合法 env override。空字符串 env 会回退到配置文件值；`android.*` env override 不能创建缺失的 `android` 配置段。
 
 成功时返回：
 
@@ -61,16 +61,16 @@ BUILD SUCCESSFUL
 
 ## 限制
 
-- 当前仅支持 Windows
-- `android.workspaceRoot` 中必须存在 `gradlew.bat`
-- Android 配置缺失不会阻止服务启动，但会在工具调用时报错，并提示为当前 selected workspace 补充 `android` 段
-- 仓库根目录 `config.json` 不再作为运行配置来源；Android 配置错误会指向当前全局配置文件
+- 仅支持 Windows
+- `context.android.workspaceRoot` 中必须存在 `gradlew.bat`
+- Android 配置缺失不会阻止服务启动，但会在工具调用时报错，并提示为 selected workspace 补充 `android` 段
+- Android 配置错误会指向当前全局配置文件中的 selected workspace
 
 ---
 
 ## 维护注意事项
 
-这部分记录本次集成中已经踩过、后续不要回退的问题：
+维护时保持以下约束：
 
 1. **超时必须杀整棵进程树**
    - 不能只结束最外层壳进程，否则 Gradle / Java 子进程可能继续在后台运行并持有锁。
@@ -78,12 +78,12 @@ BUILD SUCCESSFUL
 2. **失败日志必须保留真实到达顺序**
    - 不能简单用 `stdout + stderr` 重建输出，否则 `firstErrorBlock` 和 `logTail` 可能失真。
 
-3. **环境变量覆盖必须走配置 allowlist**
-   - Android env 只在 selected workspace 的 `envOverrides.allowedFields` 允许对应字段时读取；空字符串视为未设置并回退到文件配置。
+3. **工具不读取环境变量**
+   - Android env override 由配置层按 selected workspace 的 allowlist 应用；工具只消费 `ToolRuntimeContext.android`。
 
 4. **不要把危险工作目录路径直接拼进 `cmd.exe /c`**
    - Windows 路径可能包含 `&`、`%...%` 等 `cmd` 敏感字符。
-   - 当前做法是通过 `cwd` 切到工作目录，再执行相对路径 `".\\gradlew.bat"`。
+   - 实现通过 `cwd` 切到工作目录，再执行相对路径 `".\\gradlew.bat"`。
 
 ---
 

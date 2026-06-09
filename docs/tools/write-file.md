@@ -6,7 +6,7 @@
 
 `write_file` 用于将完整的文本内容写入目标文件，支持自动创建缺失的父目录，并覆盖已存在文件。它适合新建文件或整文件重写；如果只是局部修改，仍应优先使用 `replace_text`。
 
-该工具只处理文本，不负责二进制文件写入。写入路径必须位于当前配置的 allowed roots 范围内；相对路径基于 primary `rootDir`，additional root 必须通过 drive-absolute 路径访问。
+该工具只处理文本，不负责二进制文件写入。写入路径必须位于当前 `ToolRuntimeContext` 的 allowed roots 范围内；相对路径基于 primary `rootDir`，additional root 必须通过 drive-absolute 路径访问。
 
 ---
 

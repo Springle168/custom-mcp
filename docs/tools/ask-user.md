@@ -125,7 +125,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 参数校验
 
-移植 Gemini CLI 的校验逻辑：
+当前参数校验规则：
 
 - 至少 1 个问题，最多 4 个
 - `type='choice'` 必须有 2-4 个 options
@@ -146,39 +146,12 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ---
 
-## 移植来源
+## 参考来源与设计边界
 
-基于 Gemini CLI 的 `ask_user` 工具移植，主要参考文件：
+`ask_user` 的 schema 结构、问题类型和基础参数校验参考 Gemini CLI 的 `ask_user` 工具定义。本项目的稳定边界如下：
 
-| Gemini CLI 文件 | 参考内容 |
-|-|-|
-| `packages/core/src/tools/ask-user.ts` | 工具实现、参数校验逻辑、执行流程 |
-| `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts` | Schema 定义（`inputSchema`、`description`） |
-| `packages/core/src/tools/definitions/coreTools.ts` | 工具定义结构 |
-| `packages/core/src/tools/tool-names.ts` | 常量定义（参数名、字段名） |
-
-### 移植时的裁剪
-
-| 原版功能 | 处理方式 | 原因 |
-|-|-|-|
-| `MessageBus` 依赖 | 移除，改用全局 Map + Promise | MCP 环境无内部消息总线 |
-| `shouldConfirmExecute()` 机制 | 移除，改用 HTTP + 阻塞 Promise | MCP 协议无内置确认机制 |
-| 遥测（`data` 字段） | 移除 | 本项目不需要遥测 |
-| `returnDisplay` 格式化 | 简化，只返回 JSON | 日志系统已处理显示格式 |
-| "Other" 自动选项 | 移除，改为所有类型支持补充说明 | 更灵活的设计，用户可以为任何答案添加上下文 |
-| 答案格式 | 从字符串改为结构化对象 | 支持 `answer` 和 `note` 分离，语义更清晰 |
-| `AbortSignal` | 移除 | 当前实现无需中止机制 |
-
-### 设计差异说明
-
-**Gemini CLI 的 "Other" 选项**：
-- `choice` 类型自动添加 "Other" 选项
-- 用户选择 "Other" 时输入自定义文本
-- 与预定义选项互斥
-
-**本实现的补充说明**：
-- 所有问题类型都支持附加 `note` 字段
-- 用户可以在选择答案后添加补充说明
-- 不与主答案互斥，是附加信息
-
-这个设计更符合实际使用场景：户可能选择 "OAuth 2.0" 但需要补充 "with PKCE flow"，或选择 "Yes" 但需要说明 "need to check with team first"。
+- 工具通过 HTTP 表单完成交互，使用全局 Map + Promise 管理待回答会话。
+- MCP 调用保持阻塞直到用户提交或取消；当前实现不支持外部 `AbortSignal` 中止。
+- 返回给 AI 的结果是结构化 JSON 文本，答案对象包含 `answer` 和可选 `note`。
+- 所有问题类型都支持补充说明；补充说明不与主答案互斥。
+- 工具不依赖 Gemini CLI 的 `MessageBus`、确认执行机制或遥测事件。

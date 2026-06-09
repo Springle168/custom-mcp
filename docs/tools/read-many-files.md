@@ -171,27 +171,13 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 
 ---
 
-## 移植来源
+## 参考来源与设计边界
 
-基于 Gemini CLI 的 `ReadManyFilesTool` 移植，主要参考文件：
+`read_many_files` 的批量读取流程、默认排除模式、文本截断阈值和二进制扩展名列表参考 Gemini CLI 的 `ReadManyFilesTool` / `fileUtils` / `ignorePatterns` 实现。本项目的稳定边界如下：
 
-| Gemini CLI 文件 | 参考内容 |
-|-|-|
-| `packages/core/src/tools/readManyFiles.ts` | 整体流程：glob 展开 → 安全校验 → 并行读取 → 拼接输出 |
-| `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts` | Schema 参数设计和description 写法 |
-| `packages/core/src/utils/fileUtils.ts` | 文本读取截断逻辑、二进制检测、常量值 |
-| `packages/core/src/utils/ignorePatterns.ts` | 默认排除模式、二进制扩展名列表 |
-| `packages/core/src/utils/constants.ts` | `DEFAULT_MAX_LINES_TEXT_FILE`、`MAX_LINE_LENGTH_TEXT_FILE`、`MAX_FILE_SIZE_MB` |
-
-### 移植时的裁剪
-
-| 原版功能 | 处理方式 | 原因 |
-|-|-|-|
-| 多工作区遍历 | 不移植 Gemini CLI 的自动遍历模型；改为显式 `otherRootDirs` allowed roots | 本项目要求 additional root 必须通过 drive-absolute path / glob 明确访问 |
-| gitignore / geminiignore 过滤 | 移除 | allowed roots 沙箱 + exclude 参数已足够 |
-| 图片 / PDF / 音频读取（base64） | 移除，统一跳过非文本文件 | Android Studio 侧支持不确定，使用场景极少 |
-| JIT 上下文注入 | 移除 | Gemini CLI 专属功能 |
-| 遥测日志 | 移除 | 本项目使用自己的日志系统 |
-| BOM 编码检测 | 未移植，使用 UTF-8 读取 | 目标场景（Kotlin/Java源码）几乎不涉及 BOM |
-| `recursive` 参数 | 移除 | glob 的 `**` 已控制递归，参数无实际作用 |
-| `file_filtering_options` 参数 | 移除 | 依赖 gitignore/geminiignore，已整体去掉 |
+- 不自动遍历多个 workspace；relative 输入只基于 primary root，additional roots 必须通过 drive-absolute path / glob 明确访问。
+- allowed roots 沙箱和 `exclude` 参数共同决定可读文件集合，不读取 gitignore / geminiignore 作为安全边界。
+- 只返回文本内容；图片、PDF、音频和其它二进制内容会被跳过。
+- 使用 UTF-8 读取文本，不做 BOM 编码检测。
+- 递归由 glob 的 `**` 表达，不提供单独的 `recursive` 参数。
+- 工具不注入 JIT 上下文，也不记录遥测事件。

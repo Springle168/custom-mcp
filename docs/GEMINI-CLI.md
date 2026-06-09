@@ -17,6 +17,6 @@
 ## 本项目移植约定
 
 - 工具开发流程和 schema 设计约定见 [docs/TOOLS.md](TOOLS.md)。
-- 单个工具的移植来源优先记录在 `docs/tools/` 下对应工具文档。
+- 单个工具的参考来源与设计边界优先记录在 `docs/tools/` 下对应工具文档。
 - Android Studio 宿主限制见 [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md)，尤其注意嵌套 schema 的 `description` 丢失问题。
 - `ask_user` 的历史实现交接记录见 [docs/ask_user-handoff.md](ask_user-handoff.md)。

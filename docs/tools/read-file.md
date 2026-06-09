@@ -29,7 +29,7 @@
 - **精确读取**：引导 AI 使用 `read_mode`、`start_line` 和 `end_line` 做小范围读取，减少 token 浪费。
 - **模式明确**：通过 `read_mode` 区分行号定位和正则定位，避免把字符串行号误解为数字。
 - **文本限定**：明确当前实现只处理文本文件，二进制文件会返回错误。
-- **读取边界**：说明单文件保留 20MB 体积保护，但不再做返回行数或单行长度截断。
+- **读取边界**：说明单文件保留 20MB 体积保护，且没有返回行数或单行长度截断。
 - **行号提醒**：说明 `show_line_numbers` 只在需要精确引用行号时开启。
 
 ---
@@ -89,7 +89,7 @@ No truncation: all returned file content is complete.
 Partial read: showing lines A-B of N total lines.
 ```
 
-主动范围读取不再输出 `IMPORTANT: The file content has been truncated.`；`read_file` 正常成功结果也不再因为行数或单行长度出现截断提示。
+主动范围读取输出 `Partial read` 摘要；`read_file` 正常成功结果不会因为行数或单行长度出现截断提示。
 
 成功返回固定使用以下结构，避免 summary 与正文混淆：
 
@@ -104,7 +104,7 @@ Partial read: showing lines A-B of N total lines.
 --- End of content ---
 ```
 
-输出中的 `{filePath}` 由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 primary `rootDir` 的路径。工具层不再通过 `path.isAbsolute()` 自行判断显示策略。
+输出中的 `{filePath}` 由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 primary `rootDir` 的路径。工具层不自行通过 `path.isAbsolute()` 判断显示策略。
 
 ### 输出示例
 
@@ -159,7 +159,7 @@ data class Foo(
 
 ## 与 read_many_files 的分工
 
-`read_many_files` 仍然保留批量输出保护：单文件最多返回 2000 行、单行最多 2000 字符，并在发生截断时提示使用 `read_file` 查看完整内容。`read_file` 面向单文件精读，不再应用这些输出截断限制。
+`read_many_files` 使用批量输出保护：单文件最多返回 2000 行、单行最多 2000 字符，并在发生截断时提示使用 `read_file` 查看完整内容。`read_file` 面向单文件精读，不应用这些批量输出截断限制。
 
 ---
 
@@ -174,21 +174,10 @@ data class Foo(
 
 ---
 
-## 移植来源
+## 参考来源与设计边界
 
-参考 Gemini CLI 的 `read_file` schema 和文本文件读取行为：
+`read_file` 的参数命名、行范围语义和截断提示参考 Gemini CLI 的 `read_file` / `fileUtils` 实现。本项目的稳定边界如下：
 
-| Gemini CLI 文件 | 参考内容 |
-|-|-|
-| `packages/core/src/tools/definitions/model-family-sets/gemini-3.ts` | `file_path`、`start_line`、`end_line` 参数设计和 description 写法 |
-| `packages/core/src/tools/read-file.ts` | 行范围校验、截断提示思路 |
-| `packages/core/src/utils/fileUtils.ts` | 文本读取截断逻辑和常量语义 |
-
-### 移植时的裁剪
-
-| 原版功能 | 处理方式 | 原因 |
-|-|-|-|
-| 图片 / PDF / 音频读取 | 不移植，二进制文件直接报错 | 本项目 `ToolCallResult` 目前只建模 text 内容 |
-| JIT 上下文注入 | 移除 | Gemini CLI 专属功能 |
-| 遥测日志 | 移除 | 本项目使用自己的日志系统 |
-| ignore 文件过滤 | 移除 | 本项目以 allowed roots 沙箱作为安全边界 |
+- 只返回 MCP text 内容；图片、PDF、音频和其它二进制内容会被拒绝读取。
+- 路径访问由 allowed roots 沙箱决定，不读取 gitignore / geminiignore 作为安全边界。
+- 工具不注入 JIT 上下文，也不记录遥测事件。
