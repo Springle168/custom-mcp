@@ -18,7 +18,7 @@
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
 | Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、MCP → Gemini 转换层限制 |
 | Gemini CLI 移植 | [docs/GEMINI-CLI.md](GEMINI-CLI.md) | 继续移植 Gemini CLI 能力时的参考路径和裁剪原则 |
-| 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节和移植来源 |
+| 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界和参考来源 |
 | 提交规范 | [docs/commit-guidelines.md](commit-guidelines.md) | Git 提交信息格式与约束 |
 
 ---
@@ -28,8 +28,8 @@
 ```text
 custom-mcp/
 ├── AGENTS.md                    # AI Agent 操作说明
-├── config.example.json          # 全局配置示例模板，可复制到 ~/.custom-mcp/config.json
-├── config.json                  # 本地/历史配置，可能含个人路径；运行时不再读取仓库根配置
+├── config.example.json          # 全局配置示例模板，复制到 ~/.custom-mcp/config.json 前需检查路径和值
+├── config.json                  # 本地配置文件，可能含个人路径；除明确需要外不读取或修改
 ├── package.json                 # npm 包信息与脚本
 ├── tsconfig.json                # TypeScript 编译配置
 ├── logs/                        # 生产日志，每次启动一个日志文件

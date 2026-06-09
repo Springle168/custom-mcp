@@ -28,7 +28,7 @@
 1. `rootDir` 必填，且必须是本地绝对路径。
 2. `otherRootDirs` 可选；空数组等同未配置。
 3. `otherRootDirs` 中每一项必须是非空字符串和本地绝对路径。
-4. 当前不支持 `MCP_OTHER_ROOT_DIRS`；`MCP_ROOT_DIR` 不属于 env override allowlist，allowed roots 只来自当前选中 workspace 的 `rootDir` 与 `otherRootDirs`。
+4. allowed roots 只来自当前选中 workspace 的 `rootDir` 与 `otherRootDirs`；env override allowlist 不能扩大文件访问边界。
 5. 每个 root 必须真实存在且为目录。
 6. root 本身可以是 symlink / junction。
 7. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。
@@ -58,7 +58,7 @@
 | drive-relative | `C:foo.txt` | Windows 会相对当前驱动工作目录解析，语义不稳定 |
 | rooted without drive | `/foo.txt`, `\\foo.txt` | 无法明确表达目标工作区 |
 | repeated rooted without drive | `///foo.txt`, `\\\\\\foo.txt` | 容易被误判为根路径、UNC 或特殊路径 |
-| UNC | `//server/share/file.txt`, `\\\\server\\share\\file.txt` | 当前设计不支持网络共享路径 |
+| UNC | `//server/share/file.txt`, `\\\\server\\share\\file.txt` | 不支持网络共享路径 |
 | namespace path | `\\\\?\\E:\\Repo\\file.txt`, `\\\\.\\C:\\path` | 可能绕过普通路径规范化规则 |
 
 ---

@@ -1,6 +1,6 @@
 # 配置开发说明
 
-本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、阶段 6 runtime snapshot 整合、env override allowlist 行为和配置相关故障排查。公开示例优先参考根目录 `config.example.json`；根目录 `config.json` 可能包含个人路径，当前运行时不再从仓库根目录读取它，除非明确需要，不应读取、泛化或覆盖。
+本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、runtime snapshot、env override allowlist 行为和配置相关故障排查。根目录 `config.example.json` 是全局配置示例模板；复制到 `~/.custom-mcp/config.json` 前需要检查并替换其中的路径、端口和 workspace id。根目录 `config.json` 可能包含个人路径，除非明确需要，不应读取、泛化或覆盖。
 
 ---
 
@@ -12,9 +12,9 @@
 ~/.custom-mcp/config.json
 ```
 
-在 Windows 上通常展开为 `%USERPROFILE%\.custom-mcp\config.json`。可以复制根目录 `config.example.json` 的内容作为模板，但服务启动时只读取 home-level dotdir 的 `config.json`，不会读取仓库根目录或当前工作目录下的 `config.json`。
+在 Windows 上通常展开为 `%USERPROFILE%\.custom-mcp\config.json`。服务启动时只读取这个 home-level dotdir 配置文件。可以复制根目录 `config.example.json` 的内容作为模板；AI Agent 不应主动写入用户 home 下的实际配置文件，除非用户明确要求。
 
-当前阶段已切换到 `version: 1` 全局 workspace schema。文件内容示例：
+运行配置使用 `version: 1` 全局 workspace schema。文件内容示例：
 
 ```json
 {
@@ -62,10 +62,10 @@
 选中 workspace 后，配置层会构建 initial `RuntimeConfigSnapshot`，并用它创建 `ConfigStore`：
 
 - initial `snapshotVersion` 为 `1`。
-- snapshot 必含已验证的 `pathSafetyContext`；文件类工具只消费 `ToolRuntimeContext.pathSafetyContext`，不再创建 unchecked fallback。
+- snapshot 必含已验证的 `pathSafetyContext`；文件类工具通过 `ToolRuntimeContext.pathSafetyContext` 使用这个上下文。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
 - snapshot、`android`、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
-- `ConfigStore` 保存 current snapshot 与 `RuntimeConfigIdentity` baseline，但当前阶段不提供 watcher、reload apply 或 snapshot mutation API。
+- `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
 - 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots 和 lineEnding。
 
@@ -166,10 +166,8 @@ workspace 未知字段会导致启动失败。
 | `port` | 端口唯一性、启动端口和 runtime identity 不能由 env 改变。 |
 | `otherRootDirs` | additional roots 会扩大文件访问边界，不能由 env 改变。 |
 | `rules` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
-| `MCP_ROOT_DIR` | 旧环境变量名不属于新模型。 |
-| `MCP_PORT` | 旧环境变量名不属于新模型。 |
 
-未列在允许字段或禁止字段表中的 allowlist 项会作为未知字段导致启动失败。
+`envOverrides.allowedFields` 必须写配置字段名，而不是环境变量名。环境变量名、边界字段和未知字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。
 
 ---
 
@@ -187,13 +185,13 @@ workspace 未知字段会导致启动失败。
 
 | 现象 | 可能原因 | 解决方案 |
 |-|-|-|
-| 启动报 `Global config file does not exist` | `~/.custom-mcp/config.json` 不存在 | 创建该文件；仓库根目录 `config.json` 不会作为运行配置读取。 |
-| 启动报 `version must be the number 1` | 仍在使用旧 flat schema，或 `version` 缺失/错误 | 将配置迁移为 `version: 1` + `workspaces` 数组。 |
+| 启动报 `Global config file does not exist` | `~/.custom-mcp/config.json` 不存在 | 创建该文件，可先复制 `config.example.json` 并检查其中的路径和值。 |
+| 启动报 `version must be the number 1` | `version` 缺失或不是数字 `1` | 将配置调整为 `version: 1` + `workspaces` 数组。 |
 | 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应功能实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
 | 启动报 `Selected workspace allowed roots are invalid` | 当前选中 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 按错误中的 `Field` 修复对应 root；allowed roots 必须都是存在的绝对目录，且互不重复/嵌套。 |
-| 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段或旧环境变量名 | 从 allowlist 移除该字段；`rootDir`、`port`、`MCP_ROOT_DIR`、`MCP_PORT` 不能通过 env 覆盖。 |
+| 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段 | 从 allowlist 移除该字段；`rootDir`、`port`、`otherRootDirs` 等边界字段不能通过 env 覆盖。 |
 | 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |
 | 启动报 `ANDROID_* must be a positive integer` | allowlist 允许了 Android 数值字段，但对应 env 非空且不是正整数 | 修正 env 值，或设为空字符串回退配置文件值。 |
 | 启动报 Android allowlist 但 `android is not configured` | workspace 允许了 `android.*` env override，却没有配置 `android` 段 | 补全该 workspace 的 `android` 段，或移除 `android.*` allowlist 项。 |
