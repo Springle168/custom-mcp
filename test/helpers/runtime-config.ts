@@ -1,12 +1,12 @@
 import * as path from 'node:path';
-import {
-  createRuntimeConfigSnapshot,
-  type LoadedRuntimeConfig,
-  type LineEnding,
-  type RuntimeAndroidConfig,
-  type RuntimeConfigIdentity,
-  type RuntimeConfigSnapshot,
+import type {
+  LoadedRuntimeConfig,
+  LineEnding,
+  RuntimeAndroidConfig,
+  RuntimeConfigSnapshot,
 } from '../../src/config.js';
+import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
+import type { RuntimeConfigIdentity } from '../../src/config/workspace-selection.js';
 import { createConfigStore, type ConfigStore } from '../../src/runtime/config-store.js';
 import {
   createToolRuntimeContext,

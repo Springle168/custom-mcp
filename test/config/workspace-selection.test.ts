@@ -198,6 +198,28 @@ async function testDefaultCwdSelectionRequiresExactRoot(): Promise<void> {
   assertEqual(loadedConfig.identity.selectionMode, 'cwd', 'Identity should record cwd selection mode');
 }
 
+function testDefaultCwdSelectionUsesRealpathEquivalence(): void {
+  const configuredRoot = '/configured/workspace-link';
+  const cwd = '/actual/workspace';
+  const realRoot = '/real/workspace';
+  const selection = selectRuntimeWorkspace({
+    configFilePath: '/home/test/.custom-mcp/config.json',
+    workspaces: [parsedWorkspace('realpath-workspace', configuredRoot, 4602)],
+    cwd,
+    platform: 'linux',
+    realpath: (targetPath) => {
+      if (targetPath === configuredRoot || targetPath === cwd) {
+        return realRoot;
+      }
+      throw new Error(`Unexpected realpath target: ${targetPath}`);
+    },
+  });
+
+  assertEqual(selection.workspace.id, 'realpath-workspace', 'Default selection should use directory identity, not raw path equality');
+  assertEqual(selection.identity.rootDir, configuredRoot, 'Identity rootDir should keep the validated workspace root, not cwd');
+  assertEqual(selection.identity.selectionMode, 'cwd', 'Realpath-equivalent default selection should use cwd mode');
+}
+
 async function testDefaultCwdSubdirectoryDoesNotMatch(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig());
@@ -298,6 +320,7 @@ async function main(): Promise<void> {
       { name: 'explicit workspace selection', run: testExplicitWorkspaceSelection },
       { name: 'explicit missing workspace fails', run: testExplicitWorkspaceMissingFails },
       { name: 'default cwd selection requires exact root', run: testDefaultCwdSelectionRequiresExactRoot },
+      { name: 'default cwd selection uses realpath equivalence', run: testDefaultCwdSelectionUsesRealpathEquivalence },
       { name: 'default cwd subdirectory does not match', run: testDefaultCwdSubdirectoryDoesNotMatch },
       { name: 'default cwd unmatched fails', run: testDefaultCwdUnmatchedFails },
       { name: 'Windows path identity ignores case, separators, and trailing slash', run: testWindowsPathIdentityIgnoresCaseSeparatorsAndTrailingSlash },

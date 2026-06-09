@@ -387,6 +387,25 @@ async function testRootDirPathValidation(): Promise<void> {
   );
 }
 
+async function testUnselectedWorkspaceInvalidRootDirStillFails(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig([
+    workspace(0),
+    workspace(1, { rootDir: path.join(FIXTURES_DIR, 'missing-unselected') }),
+  ]));
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({
+      homeDir: HOME_DIR,
+      workspaceId: 'workspace-0',
+      env: {},
+    })
+  );
+
+  assertEqual(error.fieldPath, 'workspaces[1].rootDir', 'Global root validation should identify the invalid unselected workspace root');
+  assertIncludes(error.message, 'workspaces[1].rootDir does not exist', 'Global validation should run before explicit workspace selection completes');
+}
+
 async function testRootDirLexicalDuplicateAndNestedValidation(): Promise<void> {
   await expectValidationError(
     globalConfig([
@@ -468,6 +487,7 @@ async function main(): Promise<void> {
       { name: 'Android completeness and strict integers', run: testAndroidCompletenessAndStrictIntegers },
       { name: 'envOverrides shape validation', run: testEnvOverridesShapeValidation },
       { name: 'rootDir path validation', run: testRootDirPathValidation },
+      { name: 'unselected workspace invalid rootDir still fails', run: testUnselectedWorkspaceInvalidRootDirStillFails },
       { name: 'rootDir lexical duplicate and nested validation', run: testRootDirLexicalDuplicateAndNestedValidation },
       { name: 'rootDir realpath duplicate validation', run: testRootDirRealpathDuplicateValidation },
       { name: 'rootDir realpath nested validation', run: testRootDirRealpathNestedValidation },

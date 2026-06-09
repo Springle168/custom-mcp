@@ -51,6 +51,35 @@ async function writeGlobalConfig(config: unknown): Promise<void> {
   await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
 }
 
+async function removeLinkIfExists(linkPath: string): Promise<void> {
+  try {
+    await fs.unlink(linkPath);
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') return;
+    await fs.rm(linkPath, { recursive: true, force: true });
+  }
+}
+
+async function createDirectoryLink(
+  linkPath: string,
+  targetPath: string,
+): Promise<boolean> {
+  await removeLinkIfExists(linkPath);
+  try {
+    await fs.symlink(
+      targetPath,
+      linkPath,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    return true;
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    console.log(`  - Skipped symlink runtime snapshot assertion: ${error.message}`);
+    return false;
+  }
+}
+
 function workspace(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'runtime-workspace',
@@ -172,6 +201,56 @@ async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
   }
 }
 
+async function testOtherRootDirsRealpathDuplicateValidation(): Promise<void> {
+  await resetFixtures();
+  const linkPath = path.join(FIXTURES_DIR, 'link-to-additional-a');
+  const linkCreated = await createDirectoryLink(linkPath, ADDITIONAL_A_DIR);
+  if (!linkCreated) return;
+
+  try {
+    await writeGlobalConfig(globalConfig({ otherRootDirs: [ADDITIONAL_A_DIR, linkPath] }));
+
+    const error = captureConfigError(() =>
+      loadRuntimeConfig({
+        homeDir: HOME_DIR,
+        workspaceId: 'runtime-workspace',
+        env: {},
+      })
+    );
+
+    assertEqual(error.fieldPath, 'workspaces[0].otherRootDirs[1]', 'Realpath duplicate should identify the symlinked additional root');
+    assertIncludes(error.message, 'unique at the real path layer', 'Realpath duplicate additional roots should be rejected');
+    assertIncludes(error.message, 'otherRootDirs[0] and otherRootDirs[1]', 'Realpath duplicate error should mention both additional roots');
+  } finally {
+    await removeLinkIfExists(linkPath);
+  }
+}
+
+async function testOtherRootDirsRealpathNestedValidation(): Promise<void> {
+  await resetFixtures();
+  const linkPath = path.join(FIXTURES_DIR, 'link-to-additional-a-child');
+  const linkCreated = await createDirectoryLink(linkPath, ADDITIONAL_A_CHILD_DIR);
+  if (!linkCreated) return;
+
+  try {
+    await writeGlobalConfig(globalConfig({ otherRootDirs: [ADDITIONAL_A_DIR, linkPath] }));
+
+    const error = captureConfigError(() =>
+      loadRuntimeConfig({
+        homeDir: HOME_DIR,
+        workspaceId: 'runtime-workspace',
+        env: {},
+      })
+    );
+
+    assertEqual(error.fieldPath, 'workspaces[0].otherRootDirs[1]', 'Realpath nested root should identify the symlinked nested additional root');
+    assertIncludes(error.message, 'must not be nested at the real path layer', 'Realpath nested additional roots should be rejected');
+    assertIncludes(error.message, 'otherRootDirs[1]', 'Realpath nested error should mention the nested additional root');
+  } finally {
+    await removeLinkIfExists(linkPath);
+  }
+}
+
 async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig({ otherRootDirs: [ADDITIONAL_A_DIR] }));
@@ -230,6 +309,8 @@ async function main(): Promise<void> {
     tests: [
       { name: 'uses canonical path safety roots', run: testSnapshotUsesCanonicalPathSafetyRoots },
       { name: 'invalid selected otherRootDirs return structured errors', run: testInvalidOtherRootDirsReturnStructuredErrors },
+      { name: 'selected otherRootDirs reject realpath duplicates', run: testOtherRootDirsRealpathDuplicateValidation },
+      { name: 'selected otherRootDirs reject realpath nesting', run: testOtherRootDirsRealpathNestedValidation },
       { name: 'deep-freezes snapshot graph', run: testSnapshotGraphIsDeepFrozen },
       { name: 'tool runtime context uses snapshot Android message', run: testToolRuntimeContextUsesSnapshotAndroidMessage },
     ],

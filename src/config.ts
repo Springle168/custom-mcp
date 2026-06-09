@@ -22,23 +22,11 @@ export type {
   DefaultGlobalConfigPathOptions,
   GlobalConfigLocation,
 } from './config/global-config-path.js';
-export {
-  createRuntimeConfigSnapshot,
-} from './config/runtime-snapshot.js';
 export type {
-  BuildRuntimeConfigSnapshotOptions,
   LineEnding,
   RuntimeAndroidConfig,
   RuntimeConfigSnapshot,
-  RuntimeConfigSnapshotErrorContext,
-  RuntimeConfigSnapshotInput,
 } from './config/runtime-snapshot.js';
-export type {
-  RuntimeConfigIdentity,
-  RuntimeConfigSelectionMode,
-  RuntimeWorkspaceSelection,
-  SelectRuntimeWorkspaceOptions,
-} from './config/workspace-selection.js';
 
 export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions {
   readonly workspaceId?: string;
