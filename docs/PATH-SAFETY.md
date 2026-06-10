@@ -204,16 +204,7 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 ## 测试入口
 
-路径安全核心回归测试位于：
-
-```bash
-cmd /c npx tsx test/test-path-safety.ts
-cmd /c npx tsx test/config/global-config-schema.test.ts
-cmd /c npx tsx test/config/runtime-snapshot.test.ts
-cmd /c npx tsx test/config/load-runtime-config.test.ts
-```
-
-这些测试覆盖：
+路径安全核心回归位于 `test/path-safety/`，配置层 allowed roots 与 snapshot 集成覆盖位于 `test/config/`。这些测试覆盖：
 
 - 配置层 allowed roots 绝对路径、存在性、目录类型、lexical 重复/嵌套和 realpath 重复/嵌套校验。
 - 不支持路径形态的拒绝。

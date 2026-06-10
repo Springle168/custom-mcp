@@ -1,19 +1,19 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
-import replaceTool from '../src/tools/replace.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import replaceTool from '../../src/tools/replace.js';
 import {
   assert,
   assertEqual,
   assertIncludes,
   getResultText,
   runTestSuite,
-} from './test-utils.js';
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'replace-text');
+const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'smoke');
 
 function createToolContext() {
   return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });

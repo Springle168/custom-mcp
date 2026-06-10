@@ -1,10 +1,10 @@
-// test/test-read-file.ts
+// test/read-file/read-file.test.ts
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
-import readFileTool from '../src/tools/read-file.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import readFileTool from '../../src/tools/read-file.js';
 import {
   assert,
   assertEqual,
@@ -12,12 +12,12 @@ import {
   assertNotIncludes,
   getResultText,
   runTestSuite,
-} from './test-utils.js';
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'read-many-files');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'read-many-files');
 
 const testContext = createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
 

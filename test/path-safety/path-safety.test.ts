@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
-import readFileTool from '../src/tools/read-file.js';
-import readManyFilesTool from '../src/tools/read-many-files.js';
-import replaceTool from '../src/tools/replace.js';
-import writeFileTool from '../src/tools/write-file.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import readFileTool from '../../src/tools/read-file.js';
+import readManyFilesTool from '../../src/tools/read-many-files.js';
+import replaceTool from '../../src/tools/replace.js';
+import writeFileTool from '../../src/tools/write-file.js';
 import {
   createPathSafetyContext,
   resolveSafeGlobEntry,
@@ -14,7 +14,7 @@ import {
   resolveSafePath,
   resolveSafePathInContext,
   type PathSafetyErrorCode,
-} from '../src/utils/paths.js';
+} from '../../src/utils/paths.js';
 import {
   assert,
   assertEqual,
@@ -22,13 +22,13 @@ import {
   assertNotIncludes,
   getResultText,
   runTestSuite,
-} from './test-utils.js';
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'path-safety');
-const OUTSIDE_DIR = path.join(__dirname, 'fixtures', 'path-safety-outside');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'path-safety');
+const OUTSIDE_DIR = path.join(__dirname, '..', 'fixtures', 'path-safety-outside');
 
 function createToolContext() {
   return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });

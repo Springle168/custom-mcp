@@ -159,7 +159,7 @@ async function createFixtures() {
 
     console.log('\n✅ All fixtures created successfully!');
     console.log(`\nFixtures location: ${FIXTURES_ROOT}`);
-    console.log('\nYou can now run: npx tsx test/test-read-many-files.ts');
+    console.log('\nYou can now run: npx tsx test/read-many-files/read-many-files.test.ts');
   } catch (error) {
     console.error('❌ Error creating fixtures:', error);
     process.exit(1);

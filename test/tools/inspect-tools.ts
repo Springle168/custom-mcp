@@ -1,4 +1,4 @@
-import { getAllToolDefinitions } from '../src/tools/index.js';
+import { getAllToolDefinitions } from '../../src/tools/index.js';
 
 const tools = getAllToolDefinitions();
 
