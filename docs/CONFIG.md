@@ -1,6 +1,6 @@
 # 配置开发说明
 
-本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、runtime snapshot、env override allowlist 行为和配置相关故障排查。根目录 `config.example.json` 是全局配置示例模板；复制到 `~/.custom-mcp/config.json` 前需要检查并替换其中的路径、端口和 workspace id。根目录 `config.json` 可能包含个人路径，除非明确需要，不应读取、泛化或覆盖。
+本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、runtime snapshot、env override allowlist 行为和配置相关故障排查。根目录 `config.example.json` 是全局配置示例模板；复制到 `~/.custom-mcp/config.json` 前需要检查并替换其中的路径、端口和 workspace id。
 
 ---
 
@@ -12,7 +12,7 @@
 ~/.custom-mcp/config.json
 ```
 
-在 Windows 上通常展开为 `%USERPROFILE%\.custom-mcp\config.json`。服务启动时只读取这个 home-level dotdir 配置文件。可以复制根目录 `config.example.json` 的内容作为模板；AI Agent 不应主动写入用户 home 下的实际配置文件，除非用户明确要求。
+在 Windows 上通常展开为 `%USERPROFILE%\.custom-mcp\config.json`。服务启动时只读取这个 home-level dotdir 配置文件。可以复制根目录 `config.example.json` 的内容作为模板。
 
 运行配置使用 `version: 1` 全局 workspace schema。文件内容示例：
 
@@ -68,6 +68,52 @@
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
 - 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots 和 lineEnding。
+
+---
+
+## 源码与测试布局
+
+配置实现由配置层负责解析、校验和选择 workspace，由运行时层把选中的 snapshot 稳定传递给工具调用。维护时优先按职责修改对应文件，不要在工具层重新读取或理解全局配置结构。
+
+### 源码布局
+
+```text
+src/
+├── cli.ts                       # CLI 参数解析，如 --workspace
+├── config.ts                    # 运行配置加载 public facade
+├── config/
+│   ├── env-overrides.ts         # selected workspace 字段级 env override allowlist
+│   ├── errors.ts                # 结构化配置错误
+│   ├── global-config-path.ts    # home-level dotdir 配置路径解析
+│   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
+│   ├── schema.ts                # version: 1 全局 workspace schema 校验
+│   └── workspace-selection.ts   # 显式/cwd workspace 选择与 RuntimeConfigIdentity
+└── runtime/
+    ├── config-store.ts          # current snapshot 与 identity baseline 只读持有者
+    ├── tool-call-handler.ts     # 每次工具调用开始时读取 current snapshot 的 handler seam
+    └── tool-context.ts          # 工具 handler 消费的运行时上下文
+```
+
+`src/runtime/` 不完全属于配置层，但 `ConfigStore`、tool-call handler seam 和 `ToolRuntimeContext` 是 global workspace 配置进入工具层的边界。配置语义在本文维护；工具如何消费 `ToolRuntimeContext` 见 [docs/TOOLS.md](TOOLS.md)。
+
+### 测试布局
+
+```text
+test/
+├── config/
+│   ├── global-config-path.test.ts      # home-level dotdir config path
+│   ├── global-config-schema.test.ts    # version: 1 schema 与字段校验
+│   ├── workspace-selection.test.ts     # --workspace 与 cwd 选择
+│   ├── env-overrides.test.ts           # selected workspace allowlist 与 env 解析
+│   ├── runtime-snapshot.test.ts        # snapshot canonical roots、deep freeze 和派生上下文
+│   └── load-runtime-config.test.ts     # loadRuntimeConfig 集成行为
+├── runtime/
+│   └── config-store.test.ts            # ConfigStore 与 tool-call handler seam
+└── helpers/
+    └── runtime-config.ts               # 测试用 ToolRuntimeContext / ConfigStore 构造 helper
+```
+
+这些脚本是配置相关回归入口；运行方式见 [docs/TESTING.md](TESTING.md)。
 
 ---
 

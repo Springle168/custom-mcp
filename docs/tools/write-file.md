@@ -10,6 +10,17 @@
 
 ---
 
+## 测试文件
+
+```text
+test/write-file/
+└── write-file.test.ts   # 创建、覆盖、行尾符、二进制拒绝、placeholder warning 和 symlink 写入保护
+```
+
+写入类工具的跨 root 和路径安全回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)；`replace_text` 的写入锁与行尾符并发回归见 [docs/tools/replace-text.md](replace-text.md)。
+
+---
+
 ## Schema
 
 ### 工具名称

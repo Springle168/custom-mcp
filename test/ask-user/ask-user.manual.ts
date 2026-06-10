@@ -3,7 +3,7 @@
  * 
  * 使用方法：
  * 1. 启动服务器：npm start
- * 2. 运行测试：npx tsx test/test-ask-user.ts
+ * 2. 运行测试：npx tsx test/ask-user/ask-user.manual.ts
  * 3. 打开浏览器访问输出的 URL
  * 4. 填写表单并提交
  */

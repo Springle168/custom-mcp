@@ -142,7 +142,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 | `src/index.ts` | HTTP 路由（`/ask`, `/answer`, `/cancel`）、表单数据解析 |
 | `src/tools/index.ts` | 工具注册 |
 | `src/tools/types.ts` | `MCPTool` 接口定义 |
-| `test/test-ask-user.ts` | 测试脚本（模拟 MCP 客户端调用） |
+| `test/ask-user/ask-user.manual.ts` | 人工交互脚本（模拟 MCP 客户端调用） |
 
 ---
 

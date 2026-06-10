@@ -11,17 +11,16 @@
 ## 测试文件
 
 ```text
-test/
-├── test-replace-text.ts                 # replace_text 轻量回归入口
-└── replace-text/
-    ├── helpers.ts                       # fixture、调用封装和结果 JSON 断言
-    ├── schema.test.ts                   # Schema、description 和输出外壳
-    ├── runtime-validation.test.ts       # 参数校验、未知字段和失败默认值
-    ├── default-mode.test.ts             # default 匹配、创建文件、行数与 no-op
-    ├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
-    ├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
-    ├── output-safety.test.ts            # JSON 失败形状、sandbox 和安全写入
-    └── line-ending-concurrency.test.ts  # CRLF/LF 规范化与并发回归
+test/replace-text/
+├── smoke.test.ts                    # replace_text 轻量回归入口
+├── helpers.ts                       # fixture、调用封装和结果 JSON 断言
+├── schema.test.ts                   # Schema、description 和输出外壳
+├── runtime-validation.test.ts       # 参数校验、未知字段和失败默认值
+├── default-mode.test.ts             # default 匹配、创建文件、行数与 no-op
+├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
+├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
+├── output-safety.test.ts            # JSON 失败形状、sandbox 和安全写入
+└── line-ending-concurrency.test.ts  # CRLF/LF 规范化与并发回归
 ```
 
 ---

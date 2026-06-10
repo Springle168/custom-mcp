@@ -1,22 +1,22 @@
-// test/test-write-file.ts
+// test/write-file/write-file.test.ts
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
-import writeFileTool from '../src/tools/write-file.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import writeFileTool from '../../src/tools/write-file.js';
 import {
   assert,
   assertEqual,
   assertIncludes,
   getResultText,
   runTestSuite,
-} from './test-utils.js';
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'write-file');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'write-file');
 
 function createToolContext() {
   return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
@@ -29,7 +29,7 @@ async function prepareFixtures(): Promise<void> {
 
 async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
-  await fs.rm(path.join(__dirname, 'fixtures', 'write-file-outside'), {
+  await fs.rm(path.join(__dirname, '..', 'fixtures', 'write-file-outside'), {
     recursive: true,
     force: true,
   });
@@ -151,7 +151,7 @@ async function testWarnButWritePlaceholderContent() {
 }
 
 async function testRejectSymlinkEscapingWorkspace() {
-  const outsideDir = path.join(__dirname, 'fixtures', 'write-file-outside');
+  const outsideDir = path.join(__dirname, '..', 'fixtures', 'write-file-outside');
   const linkPath = path.join(FIXTURES_DIR, 'escape-link');
   await fs.mkdir(outsideDir, { recursive: true });
 

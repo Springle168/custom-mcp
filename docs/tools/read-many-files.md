@@ -8,6 +8,26 @@
 
 ---
 
+## 测试文件
+
+```text
+test/read-many-files/
+└── read-many-files.test.ts      # include/exclude、glob、shallow_read、行号和二进制跳过
+
+test/fixtures/read-many-files/
+├── setup.ts                     # fixture 生成脚本
+├── src/                         # Kotlin 测试文件
+├── docs/                        # Markdown 测试文件
+├── special-names/               # 文件名含 glob 元字符的字面路径测试
+├── binary/                      # 二进制文件测试
+├── node_modules/                # 默认排除测试
+└── build/                       # 默认排除测试
+```
+
+跨 allowed roots、glob static base、exclude 与 symlink 的横向路径安全回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)。
+
+---
+
 ## Schema
 
 ### 工具名称

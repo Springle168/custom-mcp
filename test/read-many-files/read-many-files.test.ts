@@ -1,22 +1,22 @@
-// test/test-read-many-files.ts
+// test/read-many-files/read-many-files.test.ts
 
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTestToolRuntimeContext } from './helpers/runtime-config.js';
-import readManyFilesTool from '../src/tools/read-many-files.js';
+import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import readManyFilesTool from '../../src/tools/read-many-files.js';
 import {
   assert,
   assertIncludes,
   assertNotIncludes,
   getResultText,
   runTestSuite,
-} from './test-utils.js';
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Fixtures directory
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'read-many-files');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'read-many-files');
 
 // Test config
 const testContext = createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });

@@ -32,6 +32,47 @@ docs/tools/
 
 ---
 
+## 源码布局
+
+工具层只负责工具定义、参数校验、业务编排和结果返回。配置来源由 `ToolRuntimeContext` 提供；文件路径、安全边界、日志、进程执行等共享能力应复用已有基础设施。
+
+```text
+src/tools/
+├── index.ts                         # 工具注册表、tools/list 和路由分发
+├── types.ts                         # MCPTool 与 ToolCallResult 类型
+├── results.ts                       # textResult / textErrorResult 等返回值 helper
+├── replace.ts                       # replace_text 工具
+├── read-file.ts                     # read_file 工具
+├── read-many-files.ts               # read_many_files 工具
+├── write-file.ts                    # write_file 工具
+├── ask-user.ts                      # ask_user 工具
+├── android-build-shared.ts          # Android 构建工具共享逻辑
+├── android-assemble-debug.ts        # android.assembleDebug 工具
+└── android-test-debug-unit-test.ts   # android.testDebugUnitTest 工具
+```
+
+### 共享实现归属
+
+| 区域 | 归属 |
+|-|-|
+| `src/runtime/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
+| `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
+| `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
+| `src/engine/android-gradle-output.ts` | Android Gradle 输出解析，细节见 [docs/tools/android-build.md](tools/android-build.md) |
+| `src/utils/paths.ts` | 文件类工具共享路径安全层，细节见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) |
+| `src/utils/file-read.ts` | 文本读取、二进制检测和截断逻辑，细节见 read 文件类工具文档 |
+| `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
+| `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
+| `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
+
+通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看 MCP `tools/list` 结构：
+
+```bash
+cmd /c npx tsx test/tools/inspect-tools.ts
+```
+
+---
+
 ## 添加新工具
 
 ### 步骤 1：创建工具文件

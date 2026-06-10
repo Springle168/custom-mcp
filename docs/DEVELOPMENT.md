@@ -10,79 +10,34 @@
 
 | 主题 | 文档 | 内容 |
 |-|-|-|
-| 配置 | [docs/CONFIG.md](CONFIG.md) | `~/.custom-mcp/config.json`、`version: 1` 全局 workspace schema、workspace 选择、env override allowlist、行尾符策略、配置相关故障排查 |
-| 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、添加新工具、schema 设计、返回值、并发模型 |
+| 配置 | [docs/CONFIG.md](CONFIG.md) | `~/.custom-mcp/config.json`、`version: 1` 全局 workspace schema、workspace 选择、env override allowlist、runtime snapshot、配置相关源码与测试 |
+| 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、`src/tools/` 源码布局、添加新工具、schema 设计、返回值、并发模型 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
-| 测试 | [docs/TESTING.md](TESTING.md) | 测试目录、脚本测试约定、常用验证命令、测试日志 |
+| 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、脚本测试约定、常用验证命令、测试日志 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
 | Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、MCP → Gemini 转换层限制 |
 | Gemini CLI 移植 | [docs/GEMINI-CLI.md](GEMINI-CLI.md) | 继续移植 Gemini CLI 能力时的参考路径和裁剪原则 |
-| 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界和参考来源 |
+| 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
 | 提交规范 | [docs/commit-guidelines.md](commit-guidelines.md) | Git 提交信息格式与约束 |
 
 ---
 
-## 目录结构
+## 顶层目录
 
 ```text
 custom-mcp/
 ├── AGENTS.md                    # AI Agent 操作说明
 ├── config.example.json          # 全局配置示例模板，复制到 ~/.custom-mcp/config.json 前需检查路径和值
-├── config.json                  # 本地配置文件，可能含个人路径；除明确需要外不读取或修改
 ├── package.json                 # npm 包信息与脚本
 ├── tsconfig.json                # TypeScript 编译配置
-├── logs/                        # 生产日志，每次启动一个日志文件
-├── docs/
-│   ├── DEVELOPMENT.md           # 开发入口与文档导航
-│   ├── CONFIG.md                # 配置开发说明
-│   ├── TOOLS.md                 # 工具开发说明
-│   ├── TOOL-RESULTS.md          # 工具返回结果设计
-│   ├── PATH-SAFETY.md           # 文件路径安全维护说明
-│   ├── TESTING.md               # 测试开发说明
-│   ├── LOGGING.md               # 日志系统开发说明
-│   ├── ANDROID-STUDIO.md        # Android Studio 集成说明
-│   ├── GEMINI-CLI.md            # Gemini CLI 移植参考
-│   ├── commit-guidelines.md     # Git 提交信息规范
-│   └── tools/                   # 单工具文档
-├── src/
-│   ├── index.ts                 # HTTP 入口 + MCP 会话管理
-│   ├── cli.ts                   # CLI 参数解析（如 --workspace）
-│   ├── config.ts                # 运行配置加载 public facade
-│   ├── config/
-│   │   ├── env-overrides.ts     # selected workspace 字段级 env override allowlist
-│   │   ├── errors.ts            # 结构化配置错误
-│   │   ├── global-config-path.ts # home-level dotdir 配置路径解析
-│   │   ├── runtime-snapshot.ts  # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
-│   │   ├── schema.ts            # version: 1 全局 workspace schema 校验
-│   │   └── workspace-selection.ts # 显式/cwd workspace 选择与 RuntimeConfigIdentity
-│   ├── runtime/
-│   │   ├── config-store.ts      # current snapshot 与 identity baseline 只读持有者
-│   │   ├── tool-call-handler.ts # 每次工具调用开始时读取 current snapshot 的 handler seam
-│   │   └── tool-context.ts      # 工具 handler 消费的运行时上下文
-│   ├── tools/
-│   │   ├── index.ts             # 工具注册表 + 路由分发
-│   │   ├── types.ts             # MCPTool 接口定义
-│   │   ├── replace.ts           # replace_text 工具
-│   │   ├── write-file.ts        # write_file 工具
-│   │   ├── read-file.ts         # read_file 工具
-│   │   ├── read-many-files.ts   # read_many_files 工具
-│   │   ├── ask-user.ts          # ask_user 工具
-│   │   ├── android-build-shared.ts         # Android 构建工具共享逻辑
-│   │   ├── android-assemble-debug.ts       # android.assembleDebug 工具
-│   │   └── android-test-debug-unit-test.ts # android.testDebugUnitTest 工具
-│   ├── engine/
-│   │   ├── replacement.ts       # 四级替换策略
-│   │   ├── text-utils.ts        # 文本处理工具集
-│   │   └── android-gradle-output.ts # Gradle 输出解析
-│   └── utils/
-│       ├── paths.ts             # 路径解析 + 沙箱校验
-│       ├── file-lock.ts         # 按文件路径的并发锁
-│       ├── file-read.ts         # 文件读取 + 截断 + 二进制检测
-│       ├── logger.ts            # 日志系统（终端彩色 + 文件纯文本双输出）
-│       └── android-gradle.ts    # Gradle 执行 + 超时控制 + JAVA_HOME 注入
-└── test/                        # 脚本测试、fixtures 与 Android 构建测试
+├── docs/                        # 开发文档、专题文档和单工具文档
+├── src/                         # MCP 服务、配置运行时、工具、引擎和共享基础设施
+├── test/                        # 按主题组织的脚本测试、fixtures、helpers 和测试日志
+└── logs/                        # 生产日志，每次启动一个日志文件
 ```
+
+`docs/DEVELOPMENT.md` 只保留入口级导航和架构地图。目录或文件的维护细节优先放到对应专题文档，避免高层文档和专题文档重复展开同一份结构。
 
 ---
 
@@ -90,12 +45,31 @@ custom-mcp/
 
 | 层 | 目录 | 职责 | 原则 |
 |-|-|-|-|
-| 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时不需要改动 |
-| 配置层 | `src/config.ts`, `src/config/` | 读取 `~/.custom-mcp/config.json`、校验 `version: 1` 全局 workspace schema、选择 workspace、应用 selected workspace env override allowlist、生成 `RuntimeConfigIdentity` 并构建不可变 `RuntimeConfigSnapshot` | public facade 不承载 schema/selection/env/snapshot 细节；不在工具层读取配置文件 |
-| 运行时层 | `src/runtime/` | 只读持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
-| 工具层 | `src/tools/` | 工具定义、参数校验、业务编排 | 每个工具一个文件 |
-| 引擎层 | `src/engine/` | 纯算法逻辑，无 I/O 操作 | 可独立测试，无副作用 |
-| 工具库 | `src/utils/` | 基础设施（日志、路径、锁、文件读取） | 跨工具共用 |
+| 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时通常不需要改动 |
+| CLI 层 | `src/cli.ts` | 解析启动参数，如 `--workspace` | 只负责命令行输入，不承载配置 schema 细节 |
+| 配置层 | `src/config.ts`, `src/config/` | 读取全局配置、校验 `version: 1` workspace schema、选择 workspace、应用 selected workspace env override allowlist、构建 runtime snapshot | public facade 不承载 schema/selection/env/snapshot 细节；不在工具层读取配置文件 |
+| 运行时层 | `src/runtime/` | 持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
+| 工具层 | `src/tools/` | 工具定义、参数校验、业务编排、工具注册与返回值 helper | 每个工具一个文件，单工具细节优先写入 `docs/tools/` |
+| 引擎层 | `src/engine/` | 纯算法逻辑，如文本替换、行尾符处理和 Gradle 输出解析 | 无 I/O 副作用，可独立测试；按使用场景由对应工具文档承接细节 |
+| 工具库 | `src/utils/` | 基础设施，如路径安全、文件锁、文件读取、日志、Gradle 进程执行 | 跨工具复用；按不变量归属由路径安全、日志、工具或单工具文档承接 |
+
+---
+
+## 源码细节归属
+
+| 源码区域 | 主要维护入口 |
+|-|-|
+| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md) |
+| `src/runtime/config-store.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts` | 配置 runtime 语义见 [docs/CONFIG.md](CONFIG.md)；工具 handler 消费方式见 [docs/TOOLS.md](TOOLS.md) |
+| `src/tools/` | [docs/TOOLS.md](TOOLS.md) 和 [docs/tools/](tools/) 下对应单工具文档 |
+| `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |
+| `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
+| `src/engine/android-gradle-output.ts` | [docs/tools/android-build.md](tools/android-build.md) |
+| `src/utils/paths.ts` | [docs/PATH-SAFETY.md](PATH-SAFETY.md) |
+| `src/utils/file-read.ts` | [docs/tools/read-file.md](tools/read-file.md)、[docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `src/utils/file-lock.ts` | [docs/TOOLS.md](TOOLS.md) 的并发模型，以及写入类工具文档 |
+| `src/utils/logger.ts` | [docs/LOGGING.md](LOGGING.md) |
+| `src/utils/android-gradle.ts` | [docs/tools/android-build.md](tools/android-build.md) |
 
 ---
 
@@ -112,11 +86,7 @@ npm run start
 npm run dev
 
 # 单个脚本测试
-npx tsx test/test-read-file.ts
-
-# 安装新依赖
-npm install <package>
-npm install -D <package>    # 仅开发依赖
+cmd /c npx tsx test/read-file/read-file.test.ts
 ```
 
 更多测试命令见 [docs/TESTING.md](TESTING.md)。
@@ -125,7 +95,8 @@ npm install -D <package>    # 仅开发依赖
 
 ## 故障排查入口
 
-- 配置和路径相关问题见 [docs/CONFIG.md](CONFIG.md)。
+- 配置和 workspace 选择相关问题见 [docs/CONFIG.md](CONFIG.md)。
+- 文件路径边界、allowed roots、glob 和 symlink 行为见 [docs/PATH-SAFETY.md](PATH-SAFETY.md)。
 - 工具替换、读取、写入等行为优先查看 [docs/tools/](tools/) 下对应工具文档。
 - Android Studio 连接和宿主限制见 [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md)。
 - Android 构建工具问题见 [docs/tools/android-build.md](tools/android-build.md)。

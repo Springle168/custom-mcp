@@ -83,7 +83,7 @@ properties
 ### 新增工具时的检查项
 
 - 若工具 schema 含有嵌套对象数组（`array` of `object`），必须将嵌套字段的说明上提到顶层 `description`。
-- 可运行 `npx tsx test/inspect-tools.ts` 查看原始 schema 结构，但该脚本无法模拟 Android Studio 的转换行为，需在宿主中实际验证。
+- 可运行 `cmd /c npx tsx test/tools/inspect-tools.ts` 查看原始 schema 结构，但该脚本无法模拟 Android Studio 的转换行为，需在宿主中实际验证。
 
 工具开发总则见 [docs/TOOLS.md](TOOLS.md)。
 

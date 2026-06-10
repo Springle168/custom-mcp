@@ -1,9 +1,9 @@
-import { Logger } from '../src/utils/logger.js';
-import { isVerboseTestOutput } from './test-utils.js';
+import { Logger } from '../../src/utils/logger.js';
+import { isVerboseTestOutput } from '../test-utils.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const testLogsDir = join(__dirname, 'logs');
+const testLogsDir = join(__dirname, '..', 'logs');
 const logger = new Logger(testLogsDir);
 
 console.log('Testing logger with colors...\n');
