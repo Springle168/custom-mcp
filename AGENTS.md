@@ -72,7 +72,7 @@
 - 除非用户特殊要求，否则 Git 操作不得输出作者名或作者邮箱；使用 `git log` 时选择不含作者字段的格式，使用 `git blame` 时优先使用 `git blame -s`。
 - 未经用户明确同意和授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
 - 如果用户明确允许或要求创建提交：
-  * **按需读取**：当下一步是进行提交时，阅读 [docs/commit-guidelines.md](docs/commit-guidelines.md) 并遵循其中对于“约定式提交”的指引；避免不必要的提前读取。
+  * **按需读取**：当下一步是进行提交时，阅读 [docs/guidelines/commit-guidelines.md](docs/guidelines/commit-guidelines.md) 并遵循其中对于“约定式提交”的指引；避免不必要的提前读取。
   * 提交修改：基于实际改动生成提交信息。
 - 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式**提权**流程运行 `git commit`，因为提交需要写入 `.git/`（如 `.git/index.lock`）。
 - 未经用户明确授权，不要执行历史改写或破坏性操作，包括但不限于 `git commit --amend`、`git rebase`、`git reset`、`git clean`、`git stash`、`git cherry-pick`。
@@ -82,5 +82,5 @@
 ## sub-agent 的使用
 
 - 仅当用户明确表示允许使用时主 Agent 才考虑创建 sub-agent。
-- [docs/sub-agent-guidelines.md](docs/sub-agent-guidelines.md)
-- **注意：`docs/sub-agent-guidelines.md` 的内容默认只允许主 Agent（Parent Thread）查看，任何未受到明确授权的 sub-agent 禁止查看。**
+- [docs/guidelines/sub-agent-guidelines.md](docs/guidelines/sub-agent-guidelines.md)
+- **注意：`docs/sub-agent-guidelines.md` 的内容默认只允许拥有能够创建 sub-agent 的 Agent 查看，任何无创建 sub-agent 能力的 Agent / 未受到明确授权的 sub-agent 禁止查看。**
