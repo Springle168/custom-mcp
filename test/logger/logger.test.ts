@@ -1,10 +1,105 @@
 import { Logger } from '../../src/utils/logger.js';
 import { isVerboseTestOutput } from '../test-utils.js';
 import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+function pad(value: number, length = 2): string {
+  return String(value).padStart(length, '0');
+}
+
+function logFileStem(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const testLogsDir = join(__dirname, '..', 'logs');
+
+async function withFixedNow<T>(fixedNow: Date, run: () => Promise<T>): Promise<T> {
+  const RealDate = Date;
+  class FixedDate extends RealDate {
+    constructor();
+    constructor(value: string | number);
+    constructor(
+      year: number,
+      monthIndex: number,
+      date?: number,
+      hours?: number,
+      minutes?: number,
+      seconds?: number,
+      ms?: number,
+    );
+    constructor(
+      ...args:
+        | []
+        | [string | number]
+        | [number, number, number?, number?, number?, number?, number?]
+    ) {
+      if (args.length === 0) {
+        super(fixedNow.getTime());
+        return;
+      }
+
+      if (args.length === 1) {
+        super(args[0]);
+        return;
+      }
+
+      super(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+    }
+
+    static override now(): number {
+      return fixedNow.getTime();
+    }
+  }
+
+  globalThis.Date = FixedDate as DateConstructor;
+  try {
+    return await run();
+  } finally {
+    globalThis.Date = RealDate;
+  }
+}
+
+async function assertLogFileOpenFailureSurfaces(): Promise<void> {
+  await mkdir(testLogsDir, { recursive: true });
+  const blockedLogsDir = await mkdtemp(join(testLogsDir, 'blocked-open-'));
+
+  try {
+    const fixedNow = new Date(2026, 0, 2, 3, 4, 5, 678);
+    const blockedLogFile = join(blockedLogsDir, `${logFileStem(fixedNow)}.log`);
+    await mkdir(blockedLogFile, { recursive: true });
+
+    await withFixedNow(fixedNow, async () => {
+      try {
+        const unexpectedLogger = new Logger(blockedLogsDir);
+        await unexpectedLogger.close();
+        await rm(unexpectedLogger.logFile, { recursive: true, force: true });
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          error instanceof Error &&
+          error.message.includes('Log file path is not a regular file')
+        ) {
+          return;
+        }
+
+        if (code === 'EISDIR' || code === 'EPERM' || code === 'EACCES') {
+          return;
+        }
+
+        throw error;
+      }
+
+      throw new Error('Expected Logger construction to fail when the target log file cannot be opened');
+    });
+  } finally {
+    await rm(blockedLogsDir, { recursive: true, force: true });
+  }
+}
+
+await assertLogFileOpenFailureSurfaces();
 const logger = new Logger(testLogsDir);
 
 console.log('Testing logger with colors...\n');

@@ -1,4 +1,11 @@
-import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs';
+import {
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  createWriteStream,
+  type WriteStream,
+} from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import type { ToolCallResult } from '../tools/types.js';
@@ -25,7 +32,9 @@ function ts(): string {
 
 export class Logger {
   private stream: WriteStream;
+  private streamError: Error | undefined;
   readonly logFile: string;
+
   constructor(logsDir: string) {
     mkdirSync(logsDir, { recursive: true });
     const name = ts()
@@ -33,8 +42,26 @@ export class Logger {
       .replace(/:/g, '-')
       .replace(/\..+/, '');
     this.logFile = join(logsDir, `${name}.log`);
-    this.stream = createWriteStream(this.logFile, { flags: 'a' });
+    // Open synchronously so user-configured logsDir failures stay in startup.
+    const fd = openSync(this.logFile, 'a');
+    try {
+      // Windows can open a directory handle here; logging needs a regular file.
+      if (!fstatSync(fd).isFile()) {
+        throw new Error(`Log file path is not a regular file: ${this.logFile}`);
+      }
+
+      this.stream = createWriteStream(this.logFile, { flags: 'a', fd });
+    } catch (error) {
+      closeSync(fd);
+      throw error;
+    }
+    this.stream.on('error', this.handleRuntimeStreamError);
   }
+
+  private handleRuntimeStreamError = (error: Error) => {
+    this.streamError = error;
+    process.stderr.write(`Logger stream error (${this.logFile}): ${error.message}\n`);
+  };
 
   private write(consoleText: string, fileText: string) {
     process.stdout.write(consoleText);
@@ -132,6 +159,10 @@ export class Logger {
   }
 
   close(): Promise<void> {
+    if (this.streamError) {
+      return Promise.reject(this.streamError);
+    }
+
     if (this.stream.closed || this.stream.destroyed) {
       return Promise.resolve();
     }
