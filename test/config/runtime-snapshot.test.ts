@@ -26,6 +26,8 @@ const ADDITIONAL_A_CHILD_DIR = path.join(ADDITIONAL_A_DIR, 'child');
 const ADDITIONAL_B_DIR = path.join(FIXTURES_DIR, 'additional-b');
 const NOT_DIRECTORY_FILE = path.join(FIXTURES_DIR, 'not-a-directory.txt');
 const MISSING_DIR = path.join(FIXTURES_DIR, 'missing');
+const CONFIGURED_LOGS_DIR = path.join(FIXTURES_DIR, 'configured-logs');
+const OVERRIDE_LOGS_DIR = path.join(FIXTURES_DIR, 'override-logs');
 
 interface InvalidOtherRootCase {
   readonly name: string;
@@ -125,6 +127,7 @@ async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
   assertEqual(snapshot.snapshotVersion, 1, 'Initial runtime snapshot version should be 1');
   assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the config file path');
   assertEqual(snapshot.workspaceId, 'runtime-workspace', 'Snapshot should record selected workspace id');
+  assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'Snapshot should use the default home dotdir logs dir');
   assertEqual(snapshot.rootDir, path.resolve(PRIMARY_DIR), 'Snapshot rootDir should use canonical path safety primary root');
   assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should include canonical additional roots');
   assertEqual(snapshot.otherRootDirs[0], path.resolve(ADDITIONAL_A_DIR), 'Snapshot otherRootDirs should come from path safety roots');
@@ -134,6 +137,62 @@ async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
     snapshot.otherRootDirs[0],
     'Snapshot otherRootDirs should match pathSafetyContext additional roots',
   );
+}
+
+async function testSnapshotUsesConfiguredLogsDir(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({ logsDir: CONFIGURED_LOGS_DIR }));
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: {},
+  });
+
+  assertEqual(snapshot.logsDir, path.resolve(CONFIGURED_LOGS_DIR), 'Configured logsDir should override the default logs dir');
+}
+
+async function testSnapshotUsesAllowedLogsDirEnvOverride(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({
+    logsDir: CONFIGURED_LOGS_DIR,
+    envOverrides: { allowedFields: ['logsDir'] },
+  }));
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: { MCP_LOGS_DIR: OVERRIDE_LOGS_DIR },
+  });
+
+  assertEqual(snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Allowed MCP_LOGS_DIR should override configured logsDir');
+}
+
+async function testEmptyLogsDirEnvFallsBackByPriority(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({
+    logsDir: CONFIGURED_LOGS_DIR,
+    envOverrides: { allowedFields: ['logsDir'] },
+  }));
+
+  const configuredFallback = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: { MCP_LOGS_DIR: '' },
+  });
+  assertEqual(configuredFallback.logsDir, path.resolve(CONFIGURED_LOGS_DIR), 'Empty MCP_LOGS_DIR should fall back to configured logsDir');
+
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({
+    envOverrides: { allowedFields: ['logsDir'] },
+  }));
+
+  const defaultFallback = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: { MCP_LOGS_DIR: '' },
+  });
+  assertEqual(defaultFallback.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'Empty MCP_LOGS_DIR should fall back to the default logs dir');
 }
 
 async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
@@ -262,6 +321,13 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   });
 
   assert(Object.isFrozen(snapshot), 'Snapshot should be frozen');
+  const unsafeSnapshot = snapshot as unknown as { logsDir: string };
+  try {
+    unsafeSnapshot.logsDir = path.join(FIXTURES_DIR, 'mutated-logs');
+  } catch {
+    // Frozen objects throw in strict mode; either way the assertion below checks the observable value.
+  }
+  assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'Frozen snapshot should keep logsDir immutable');
   assert(Object.isFrozen(snapshot.otherRootDirs), 'Snapshot otherRootDirs should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext), 'PathSafetyContext should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot), 'Primary root should be frozen');
@@ -283,7 +349,9 @@ async function testToolRuntimeContextUsesSnapshotAndroidMessage(): Promise<void>
     env: {},
   });
   const context = createToolRuntimeContext(snapshot);
+  const contextRecord = context as unknown as Record<string, unknown>;
 
+  assert(!('logsDir' in contextRecord), 'ToolRuntimeContext should not expose logsDir');
   assertEqual(context.android, undefined, 'Fixture should not configure Android');
   assertIncludes(
     context.missingAndroidConfigMessage,
@@ -308,6 +376,9 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'uses canonical path safety roots', run: testSnapshotUsesCanonicalPathSafetyRoots },
+      { name: 'uses configured logsDir', run: testSnapshotUsesConfiguredLogsDir },
+      { name: 'uses allowed logsDir env override', run: testSnapshotUsesAllowedLogsDirEnvOverride },
+      { name: 'empty logsDir env falls back by priority', run: testEmptyLogsDirEnvFallsBackByPriority },
       { name: 'invalid selected otherRootDirs return structured errors', run: testInvalidOtherRootDirsReturnStructuredErrors },
       { name: 'selected otherRootDirs reject realpath duplicates', run: testOtherRootDirsRealpathDuplicateValidation },
       { name: 'selected otherRootDirs reject realpath nesting', run: testOtherRootDirsRealpathNestedValidation },

@@ -16,8 +16,9 @@
 - 所有普通路径、glob static base 和 glob 展开结果都必须命中唯一 matched root。
 - 读取和写入的 realpath / symlink 校验必须保持在同一个 matched root 内，不能落入其它 allowed root。
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
+- 服务日志目录 `logsDir` 不属于 allowed roots，即使配置在 workspace 外也不会扩大文件工具访问边界。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。配置加载阶段通过 `src/config/runtime-snapshot.ts` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。配置加载阶段通过 `src/config/runtime-snapshot.ts` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
 
 ---
 
@@ -28,7 +29,7 @@
 1. `rootDir` 必填，且必须是本地绝对路径。
 2. `otherRootDirs` 可选；空数组等同未配置。
 3. `otherRootDirs` 中每一项必须是非空字符串和本地绝对路径。
-4. allowed roots 只来自当前选中 workspace 的 `rootDir` 与 `otherRootDirs`；env override allowlist 不能扩大文件访问边界。
+4. allowed roots 只来自 selected workspace 的 `rootDir` 与 `otherRootDirs`；env override allowlist 和 `logsDir` 不能扩大文件访问边界。
 5. 每个 root 必须真实存在且为目录。
 6. root 本身可以是 symlink / junction。
 7. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。

@@ -6,6 +6,7 @@ import {
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
+  getDefaultGlobalLogsDir,
   type DefaultGlobalConfigPathOptions,
 } from './config/global-config-path.js';
 import { parseGlobalConfig } from './config/schema.js';
@@ -17,7 +18,7 @@ import type { PathSafetyContext } from './utils/paths.js';
 
 export { ConfigError, isConfigError } from './config/errors.js';
 export type { ConfigErrorCode } from './config/errors.js';
-export { getDefaultGlobalConfigPath } from './config/global-config-path.js';
+export { getDefaultGlobalConfigPath, getDefaultGlobalLogsDir } from './config/global-config-path.js';
 export type {
   DefaultGlobalConfigPathOptions,
   GlobalConfigLocation,
@@ -69,6 +70,7 @@ export function loadRuntimeConfigWithIdentity(
   options: LoadRuntimeConfigOptions = {},
 ): LoadedRuntimeConfig {
   const location = getDefaultGlobalConfigPath(options);
+  const defaultLogsDir = getDefaultGlobalLogsDir(options);
   const raw = readConfigFile(location.configFilePath);
   const parsed = parseConfigFile(raw, location.configFilePath);
 
@@ -91,6 +93,7 @@ export function loadRuntimeConfigWithIdentity(
       configFilePath: location.configFilePath,
       workspace: selection.workspace,
       workspaceIndex: selectedWorkspaceIndex,
+      defaultLogsDir,
       env: options.env,
       snapshotVersion: options.snapshotVersion ?? 1,
     });

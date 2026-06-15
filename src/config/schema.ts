@@ -1,4 +1,5 @@
 import { ConfigError } from './errors.js';
+import { normalizeLogsDirPath } from './path-validation.js';
 import { validateWorkspaceRootPathSet } from '../utils/paths.js';
 
 export type ParsedLineEnding = 'auto' | 'lf' | 'crlf';
@@ -20,6 +21,7 @@ export interface ParsedWorkspaceConfig {
   readonly rootDir: string;
   readonly port: number;
   readonly lineEnding: ParsedLineEnding;
+  readonly logsDir?: string;
   readonly otherRootDirs: readonly string[];
   readonly android?: ParsedAndroidConfig;
   readonly envOverrides?: ParsedEnvOverridesConfig;
@@ -44,6 +46,7 @@ const WORKSPACE_FIELDS = new Set([
   'rootDir',
   'port',
   'lineEnding',
+  'logsDir',
   'otherRootDirs',
   'android',
   'envOverrides',
@@ -145,10 +148,32 @@ function parseWorkspace(
       rangeDescription: `between 1 and ${MAX_PORT}`,
     }),
     lineEnding: readRequiredLineEnding(context, rawWorkspace, 'lineEnding', fieldPath),
+    ...readOptionalLogsDir(context, rawWorkspace.logsDir, `${fieldPath}.logsDir`),
     otherRootDirs: readOptionalStringArray(context, rawWorkspace.otherRootDirs, `${fieldPath}.otherRootDirs`),
     ...readOptionalAndroidConfig(context, rawWorkspace.android, `${fieldPath}.android`),
     ...readOptionalEnvOverridesConfig(context, rawWorkspace.envOverrides, `${fieldPath}.envOverrides`),
   };
+}
+
+function readOptionalLogsDir(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+): { readonly logsDir?: string } {
+  if (value === undefined) {
+    return {};
+  }
+
+  if (typeof value !== 'string') {
+    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
+  }
+
+  try {
+    return { logsDir: normalizeLogsDirPath(value, fieldPath) };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(context, fieldPath, message);
+  }
 }
 
 function readOptionalAndroidConfig(

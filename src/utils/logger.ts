@@ -1,10 +1,7 @@
 import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import chalk from 'chalk';
 import type { ToolCallResult } from '../tools/types.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function pad(value: number, length = 2): string {
   return String(value).padStart(length, '0');
@@ -29,14 +26,13 @@ function ts(): string {
 export class Logger {
   private stream: WriteStream;
   readonly logFile: string;
-  constructor(logsDir?: string) {
-    const dir = logsDir ?? join(__dirname, '..', '..', 'logs');
-    mkdirSync(dir, { recursive: true });
+  constructor(logsDir: string) {
+    mkdirSync(logsDir, { recursive: true });
     const name = ts()
       .replace(/T/, '_')
       .replace(/:/g, '-')
       .replace(/\..+/, '');
-    this.logFile = join(dir, `${name}.log`);
+    this.logFile = join(logsDir, `${name}.log`);
     this.stream = createWriteStream(this.logFile, { flags: 'a' });
   }
 
@@ -135,7 +131,28 @@ export class Logger {
     this.write(consoleText, fileText);
   }
 
-  close() {
-    this.stream.end();
+  close(): Promise<void> {
+    if (this.stream.closed || this.stream.destroyed) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        this.stream.off('error', onError);
+        this.stream.off('finish', onFinish);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const onFinish = () => {
+        cleanup();
+        resolve();
+      };
+
+      this.stream.once('error', onError);
+      this.stream.once('finish', onFinish);
+      this.stream.end();
+    });
   }
 }

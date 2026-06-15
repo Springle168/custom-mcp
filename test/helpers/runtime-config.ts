@@ -19,6 +19,7 @@ export interface TestRuntimeConfigOptions {
   readonly lineEnding?: LineEnding;
   readonly port?: number;
   readonly android?: RuntimeAndroidConfig;
+  readonly logsDir?: string;
   readonly configFilePath?: string;
   readonly workspaceId?: string;
   readonly snapshotVersion?: number;
@@ -34,6 +35,7 @@ export function createTestRuntimeConfigSnapshot(
     otherRootDirs: options.otherRootDirs ?? [],
     port: options.port ?? 3100,
     lineEnding: options.lineEnding ?? 'auto',
+    logsDir: options.logsDir ?? path.join(options.rootDir, '.custom-mcp-test-logs'),
     ...(options.android ? { android: options.android } : {}),
     snapshotVersion: options.snapshotVersion ?? 1,
   });
