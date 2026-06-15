@@ -33,8 +33,7 @@ custom-mcp/
 ├── tsconfig.json                # TypeScript 编译配置
 ├── docs/                        # 开发文档、专题文档和单工具文档
 ├── src/                         # MCP 服务、配置运行时、工具、引擎和共享基础设施
-├── test/                        # 按主题组织的脚本测试、fixtures、helpers 和测试日志
-└── logs/                        # 生产日志，每次启动一个日志文件
+└── test/                        # 按主题组织的脚本测试、fixtures、helpers 和测试日志
 ```
 
 `docs/DEVELOPMENT.md` 只保留入口级导航和架构地图。目录或文件的维护细节优先放到对应专题文档，避免高层文档和专题文档重复展开同一份结构。

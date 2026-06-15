@@ -9,6 +9,7 @@
       ],
       "lineEnding": "auto",
       "port": 3100,
+      "logsDir": "E:/path/to/custom-mcp/logs",
       "android": {
         "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
         "javaHome": "E:/Android_Studio/jbr",
@@ -19,6 +20,7 @@
       "envOverrides": {
         "allowedFields": [
           "lineEnding",
+          "logsDir",
           "android.javaHome"
         ]
       }

@@ -25,6 +25,7 @@ const NESTED_A_DIR = path.join(WORKSPACE_A_DIR, 'nested');
 const NOT_DIRECTORY_PATH = path.join(FIXTURES_DIR, 'not-a-directory.txt');
 const ANDROID_WORKSPACE_ROOT = path.join(FIXTURES_DIR, 'android-project');
 const ANDROID_JAVA_HOME = path.join(FIXTURES_DIR, 'jbr');
+const LOGS_DIR = path.join(FIXTURES_DIR, 'service-logs');
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
@@ -133,7 +134,7 @@ async function createDirectoryLink(
 async function testValidGlobalConfigLoadsExplicitWorkspace(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig([
-    workspace(0),
+    workspace(0, { logsDir: LOGS_DIR }),
     workspace(1, { lineEnding: 'crlf' }),
   ]));
 
@@ -145,6 +146,7 @@ async function testValidGlobalConfigLoadsExplicitWorkspace(): Promise<void> {
 
   assertEqual(snapshot.workspaceId, 'workspace-0', 'Snapshot should use the explicitly selected workspace');
   assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'Snapshot should use the selected workspace rootDir');
+  assertEqual(snapshot.logsDir, path.resolve(LOGS_DIR), 'Snapshot should use the selected workspace logsDir');
   assertEqual(snapshot.otherRootDirs.length, 0, 'otherRootDirs should default to an empty array');
   assert(snapshot.android === undefined, 'Android config should be optional');
 }
@@ -313,6 +315,46 @@ async function testOtherRootDirsShapeValidation(): Promise<void> {
   );
 }
 
+async function testLogsDirShapeAndPathValidation(): Promise<void> {
+  await expectValidationError(
+    globalConfig([workspace(0, { logsDir: '' })]),
+    'workspaces[0].logsDir must be a non-empty string',
+    'workspaces[0].logsDir',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, { logsDir: 42 })]),
+    'workspaces[0].logsDir must be a non-empty string',
+    'workspaces[0].logsDir',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, { logsDir: 'relative/logs' })]),
+    'workspaces[0].logsDir must be an absolute local path',
+    'workspaces[0].logsDir',
+  );
+
+  if (process.platform !== 'win32') {
+    return;
+  }
+
+  const unsupportedWindowsPaths = [
+    { name: 'UNC slash path', value: '//server/share/logs' },
+    { name: 'UNC backslash path', value: '\\\\server\\share\\logs' },
+    { name: 'namespace path', value: '\\\\?\\E:\\Logs' },
+    { name: 'device namespace path', value: '\\\\.\\C:\\Logs' },
+    { name: 'drive-relative path', value: 'C:logs' },
+    { name: 'rooted without drive slash path', value: '/logs' },
+    { name: 'rooted without drive backslash path', value: '\\logs' },
+  ];
+
+  for (const testCase of unsupportedWindowsPaths) {
+    await expectValidationError(
+      globalConfig([workspace(0, { logsDir: testCase.value })]),
+      'workspaces[0].logsDir must be an absolute local path',
+      'workspaces[0].logsDir',
+    );
+  }
+}
+
 async function testAndroidCompletenessAndStrictIntegers(): Promise<void> {
   await expectValidationError(
     globalConfig([workspace(0, {
@@ -406,6 +448,25 @@ async function testUnselectedWorkspaceInvalidRootDirStillFails(): Promise<void> 
   assertIncludes(error.message, 'workspaces[1].rootDir does not exist', 'Global validation should run before explicit workspace selection completes');
 }
 
+async function testUnselectedWorkspaceInvalidLogsDirStillFails(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig([
+    workspace(0),
+    workspace(1, { logsDir: 'relative-unselected-logs' }),
+  ]));
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({
+      homeDir: HOME_DIR,
+      workspaceId: 'workspace-0',
+      env: {},
+    })
+  );
+
+  assertEqual(error.fieldPath, 'workspaces[1].logsDir', 'Global schema validation should identify the invalid unselected workspace logsDir');
+  assertIncludes(error.message, 'workspaces[1].logsDir must be an absolute local path', 'Global schema validation should run before explicit workspace selection completes');
+}
+
 async function testRootDirLexicalDuplicateAndNestedValidation(): Promise<void> {
   await expectValidationError(
     globalConfig([
@@ -484,10 +545,12 @@ async function main(): Promise<void> {
       { name: 'workspace port validation', run: testWorkspacePortValidation },
       { name: 'lineEnding validation', run: testLineEndingValidation },
       { name: 'otherRootDirs shape validation', run: testOtherRootDirsShapeValidation },
+      { name: 'logsDir shape and path validation', run: testLogsDirShapeAndPathValidation },
       { name: 'Android completeness and strict integers', run: testAndroidCompletenessAndStrictIntegers },
       { name: 'envOverrides shape validation', run: testEnvOverridesShapeValidation },
       { name: 'rootDir path validation', run: testRootDirPathValidation },
       { name: 'unselected workspace invalid rootDir still fails', run: testUnselectedWorkspaceInvalidRootDirStillFails },
+      { name: 'unselected workspace invalid logsDir still fails', run: testUnselectedWorkspaceInvalidLogsDirStillFails },
       { name: 'rootDir lexical duplicate and nested validation', run: testRootDirLexicalDuplicateAndNestedValidation },
       { name: 'rootDir realpath duplicate validation', run: testRootDirRealpathDuplicateValidation },
       { name: 'rootDir realpath nested validation', run: testRootDirRealpathNestedValidation },

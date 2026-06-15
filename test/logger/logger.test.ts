@@ -1,5 +1,6 @@
 import { Logger } from '../../src/utils/logger.js';
 import { isVerboseTestOutput } from '../test-utils.js';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -111,6 +112,10 @@ if (isVerboseTestOutput()) {
 }
 
 logger.info('Test completed. Check terminal colors and log file.');
-logger.close();
+await logger.close();
+
+if (!existsSync(logger.logFile)) {
+  throw new Error(`Expected logger to create a log file at ${logger.logFile}`);
+}
 
 console.log(`\nLog file: ${logger.logFile}`);

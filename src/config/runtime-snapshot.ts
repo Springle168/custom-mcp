@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { applyEnvOverridesToWorkspace } from './env-overrides.js';
 import { ConfigError } from './errors.js';
+import { normalizeLogsDirPath } from './path-validation.js';
 import type { ParsedAndroidConfig, ParsedWorkspaceConfig } from './schema.js';
 import {
   createValidatedPathSafetyContext,
@@ -25,6 +26,7 @@ export interface RuntimeConfigSnapshot {
   readonly otherRootDirs: readonly string[];
   readonly port: number;
   readonly lineEnding: LineEnding;
+  readonly logsDir: string;
   readonly android?: RuntimeAndroidConfig;
   readonly pathSafetyContext: PathSafetyContext;
 }
@@ -37,6 +39,7 @@ export interface RuntimeConfigSnapshotInput {
   readonly otherRootDirs?: readonly string[];
   readonly port: number;
   readonly lineEnding: LineEnding;
+  readonly logsDir: string;
   readonly android?: RuntimeAndroidConfig;
 }
 
@@ -48,6 +51,7 @@ export interface BuildRuntimeConfigSnapshotOptions {
   readonly configFilePath: string;
   readonly workspace: ParsedWorkspaceConfig;
   readonly workspaceIndex: number;
+  readonly defaultLogsDir: string;
   /** Environment values considered only for the selected workspace allowlist. */
   readonly env?: NodeJS.ProcessEnv;
   readonly snapshotVersion?: number;
@@ -71,6 +75,7 @@ export function buildRuntimeConfigSnapshot(
       otherRootDirs: workspace.otherRootDirs,
       port: workspace.port,
       lineEnding: workspace.lineEnding,
+      logsDir: workspace.logsDir ?? options.defaultLogsDir,
       ...normalizeRuntimeAndroidConfig(workspace.android),
       snapshotVersion: options.snapshotVersion ?? 1,
     },
@@ -91,6 +96,7 @@ export function createRuntimeConfigSnapshot(
   const otherRootDirs = pathSafetyContext.allowedRoots
     .filter((root) => root.kind === 'additional')
     .map((root) => root.rootDir);
+  const logsDir = normalizeLogsDirForSnapshot(input, errorContext);
 
   const snapshot: RuntimeConfigSnapshot = {
     snapshotVersion: input.snapshotVersion ?? 1,
@@ -100,11 +106,39 @@ export function createRuntimeConfigSnapshot(
     otherRootDirs,
     port: input.port,
     lineEnding: input.lineEnding,
+    logsDir,
     ...(input.android ? { android: { ...input.android } } : {}),
     pathSafetyContext,
   };
 
   return deepFreeze(snapshot);
+}
+
+function normalizeLogsDirForSnapshot(
+  input: RuntimeConfigSnapshotInput,
+  errorContext: RuntimeConfigSnapshotErrorContext,
+): string {
+  const fieldPath = logsDirFieldPath(errorContext.workspaceIndex);
+
+  try {
+    return normalizeLogsDirPath(input.logsDir, fieldPath);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ConfigError({
+      code: 'config_validation_failed',
+      configFilePath: input.configFilePath,
+      fieldPath,
+      message,
+      suggestion:
+        `Fix ${fieldPath} in ${input.configFilePath}. ` +
+        'logsDir must be a local absolute path and is created by the logger at startup if missing.',
+      cause: err,
+    });
+  }
+}
+
+function logsDirFieldPath(workspaceIndex: number | undefined): string {
+  return workspaceIndex === undefined ? 'logsDir' : `workspaces[${workspaceIndex}].logsDir`;
 }
 
 function normalizeRuntimeAndroidConfig(

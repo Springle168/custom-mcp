@@ -28,6 +28,7 @@
       ],
       "lineEnding": "auto",
       "port": 3100,
+      "logsDir": "E:/Logs/custom-mcp",
       "android": {
         "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
         "javaHome": "E:/Android_Studio/jbr",
@@ -38,6 +39,7 @@
       "envOverrides": {
         "allowedFields": [
           "lineEnding",
+          "logsDir",
           "android.javaHome"
         ]
       }
@@ -57,8 +59,8 @@ parseCliArgs()
         ▼
 loadRuntimeConfigWithIdentity()
         │
-        ├─► getDefaultGlobalConfigPath()
-        │     - 固定解析到 ~/.custom-mcp/config.json
+        ├─► getDefaultGlobalConfigPath() + getDefaultGlobalLogsDir()
+        │     - 固定解析到 ~/.custom-mcp/config.json 和 ~/.custom-mcp/logs
         │
         ├─► readConfigFile() + JSON.parse
         │     - 读取并解析受信全局配置文件
@@ -80,12 +82,13 @@ loadRuntimeConfigWithIdentity()
         │     ├─ applyEnvOverridesToWorkspace()
         │     │   - 只作用于 selected workspace 的 allowlist 字段
         │     │   - 不允许覆盖 rootDir / port / otherRootDirs 等边界字段
+        │     │   - allowedFields 包含 logsDir 时允许 MCP_LOGS_DIR 覆盖日志目录
         │     │
         │     ├─ createValidatedPathSafetyContext()
         │     │   - 校验 selected workspace 的 rootDir + otherRootDirs
         │     │   - 生成 canonical allowed roots
         │     │
-        │     └─ deep-freeze RuntimeConfigSnapshot
+        │     └─ 计算最终 logsDir 并 deep-freeze RuntimeConfigSnapshot
         │
         ▼
 createConfigStore()
@@ -100,12 +103,12 @@ createConfigStore()
 | 阶段 | 主要入口 | 输出 | 失败含义 |
 |-|-|-|-|
 | CLI 参数 | `parseCliArgs()` | 可选 `workspaceId` | 启动参数非法，例如重复或空的 `--workspace`。 |
-| 配置路径 | `getDefaultGlobalConfigPath()` | home-level dotdir config path | 当前进程没有可用 home 目录。 |
+| 配置路径 | `getDefaultGlobalConfigPath()` / `getDefaultGlobalLogsDir()` | home-level dotdir config path / default logs dir | 进程没有可用 home 目录。 |
 | 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
 | 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
 | Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | `--workspace` 不存在，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
 | Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 非法，或被允许的 env 值非法。 |
-| Runtime snapshot | `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context。 |
+| Runtime snapshot | `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context，或日志目录路径形态非法。 |
 | 工具调用上下文 | `createToolRuntimeContext()` | `ToolRuntimeContext` | 不重新加载配置；工具只消费 snapshot 派生出的运行时能力。 |
 
 维护不变量：
@@ -115,7 +118,9 @@ createConfigStore()
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
 - Env override 默认关闭，只读取 selected workspace 的 `envOverrides.allowedFields`；未选中 workspace 的 allowlist 不影响当前进程。
 - `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
+- `logsDir` 是服务日志目录，默认值为 `~/.custom-mcp/logs`；selected workspace 可配置本地绝对路径，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
+- `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
 - `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
 - 工具层只能通过 `ToolRuntimeContext` 消费配置能力，不应读取 `~/.custom-mcp/config.json`、解析全局 schema 或遍历 `otherRootDirs`。
 
@@ -136,11 +141,12 @@ createConfigStore()
 
 - initial `snapshotVersion` 为 `1`。
 - snapshot 必含已验证的 `pathSafetyContext`；文件类工具通过 `ToolRuntimeContext.pathSafetyContext` 使用这个上下文。
+- snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
 - snapshot、`android`、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
-- 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots 和 lineEnding。
+- 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。
 
 ---
 
@@ -158,6 +164,7 @@ src/
 │   ├── env-overrides.ts         # selected workspace 字段级 env override allowlist
 │   ├── errors.ts                # 结构化配置错误
 │   ├── global-config-path.ts    # home-level dotdir 配置路径解析
+│   ├── path-validation.ts       # 配置层日志目录路径形态校验
 │   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
 │   └── workspace-selection.ts   # 显式/cwd workspace 选择与 RuntimeConfigIdentity
@@ -209,6 +216,7 @@ test/
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
 | `port` | positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
+| `logsDir` | string | 否 | 服务日志目录；缺省为 `~/.custom-mcp/logs`，必须是本地绝对路径，目录由日志器启动时创建。 |
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。选中 workspace 构建 snapshot 时会作为 allowed roots 校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
@@ -237,6 +245,7 @@ workspace 未知字段会导致启动失败。
 - workspace `id` 必须非空且全局唯一。
 - workspace `port` 必须是 `1..65535` 的正整数且全局唯一。
 - workspace `rootDir` 必须是本地绝对路径、真实存在且为目录。
+- workspace `logsDir` 若提供，必须是本地绝对路径；Windows 下必须是 drive-absolute path，不支持相对路径、UNC、namespace path 或 `~` 展开，且不要求预先存在。
 - 所有 workspace `rootDir` 在 lexical normalized path 层不得重复或互相嵌套。
 - 所有 workspace `rootDir` 在 realpath 层不得重复或互相嵌套。
 - `lineEnding` 只接受 `auto` / `lf` / `crlf`。
@@ -266,6 +275,7 @@ workspace 未知字段会导致启动失败。
 | 字段 | 环境变量 |
 |-|-|
 | `lineEnding` | `MCP_LINE_ENDING` |
+| `logsDir` | `MCP_LOGS_DIR` |
 | `android.workspaceRoot` | `ANDROID_WORKSPACE_ROOT` |
 | `android.javaHome` | `ANDROID_JAVA_HOME` |
 | `android.buildTimeoutMs` | `ANDROID_BUILD_TIMEOUT_MS` |
@@ -288,6 +298,8 @@ workspace 未知字段会导致启动失败。
 
 `envOverrides.allowedFields` 必须写配置字段名，而不是环境变量名。环境变量名、边界字段和未知字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。
 
+`logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 为空字符串时回退到配置文件值或默认日志目录；非空值必须是本地绝对路径，错误字段定位到 selected workspace 的 `logsDir`。
+
 ---
 
 ## 行尾符策略
@@ -309,6 +321,7 @@ workspace 未知字段会导致启动失败。
 | 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应功能实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
+| 启动报 `logsDir must be an absolute local path` | workspace `logsDir` 或 allowlisted `MCP_LOGS_DIR` 使用了相对路径、UNC、namespace path、`~` 或 Windows 非 drive-absolute path | 改为展开后的本地绝对路径；日志目录无需预先创建。 |
 | 启动报 `Selected workspace allowed roots are invalid` | 当前选中 workspace 的 `rootDir` / `otherRootDirs` 无法构建 path safety context | 按错误中的 `Field` 修复对应 root；allowed roots 必须都是存在的绝对目录，且互不重复/嵌套。 |
 | 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段 | 从 allowlist 移除该字段；`rootDir`、`port`、`otherRootDirs` 等边界字段不能通过 env 覆盖。 |
 | 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |

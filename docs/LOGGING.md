@@ -7,7 +7,9 @@
 ## 输出位置
 
 - **终端（stdout）**：实时查看，带颜色高亮。
-- **日志文件**：`logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式。
+- **日志文件**：默认写入 `~/.custom-mcp/logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式。
+
+日志文件目录来自启动期 `RuntimeConfigSnapshot.logsDir`：selected workspace 可配置 `logsDir`，也可在 `envOverrides.allowedFields` 包含 `logsDir` 后通过 `MCP_LOGS_DIR` 覆盖。`logsDir` 和 `MCP_LOGS_DIR` 必须是本地绝对路径；Windows 下使用 drive-absolute path，例如 `E:/Logs/custom-mcp`。目录不存在时由 `Logger` 递归创建。
 
 ---
 
@@ -61,4 +63,4 @@ cmd /c npx tsx test/logger/logger.test.ts
 cmd /c npx tsx test/logger/logger.test.ts --verbose
 ```
 
-测试生成的日志文件保存在 `test/logs/` 目录下。更多测试约定见 [docs/TESTING.md](TESTING.md)。
+测试生成的日志文件显式写入 `test/logs/` 目录。更多测试约定见 [docs/TESTING.md](TESTING.md)。

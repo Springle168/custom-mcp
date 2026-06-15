@@ -109,7 +109,7 @@ async function main() {
   });
   const initialSnapshot = initialConfig.snapshot;
   const configStore = createConfigStore(initialConfig);
-  const logger = new Logger();
+  const logger = new Logger(initialSnapshot.logsDir);
 
   const app = express();
   app.use(express.json());

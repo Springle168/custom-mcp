@@ -1,4 +1,5 @@
 import { ConfigError } from './errors.js';
+import { normalizeLogsDirPath } from './path-validation.js';
 import type {
   ParsedAndroidConfig,
   ParsedLineEnding,
@@ -16,6 +17,7 @@ type EnvOverrideField = keyof typeof ALLOWED_FIELD_ENV_VARS;
 
 const ALLOWED_FIELD_ENV_VARS = {
   lineEnding: 'MCP_LINE_ENDING',
+  logsDir: 'MCP_LOGS_DIR',
   'android.workspaceRoot': 'ANDROID_WORKSPACE_ROOT',
   'android.javaHome': 'ANDROID_JAVA_HOME',
   'android.buildTimeoutMs': 'ANDROID_BUILD_TIMEOUT_MS',
@@ -50,11 +52,13 @@ export function applyEnvOverridesToWorkspace(
 
   const env = options.env ?? process.env;
   const lineEnding = readLineEndingOverride(options, env, validatedFields) ?? options.workspace.lineEnding;
+  const logsDir = readLogsDirOverride(options, env, validatedFields);
   const android = applyAndroidOverrides(options, env, validatedFields);
 
   return {
     ...options.workspace,
     lineEnding,
+    ...(logsDir !== undefined ? { logsDir } : {}),
     ...(android ? { android } : {}),
   };
 }
@@ -152,6 +156,28 @@ function applyAndroidOverrides(
     maxLogTailChars:
       readPositiveIntegerOverride(options, env, allowedFields, 'android.maxLogTailChars') ?? android.maxLogTailChars,
   };
+}
+
+function readLogsDirOverride(
+  options: ApplyEnvOverridesOptions,
+  env: NodeJS.ProcessEnv,
+  allowedFields: readonly EnvOverrideField[],
+): string | undefined {
+  if (!allowedFields.includes('logsDir')) {
+    return undefined;
+  }
+
+  const rawValue = readEnvValue(env, ALLOWED_FIELD_ENV_VARS.logsDir);
+  if (rawValue === undefined) {
+    return undefined;
+  }
+
+  try {
+    return normalizeLogsDirPath(rawValue, ALLOWED_FIELD_ENV_VARS.logsDir);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(options, `${workspaceFieldPath(options)}.logsDir`, message);
+  }
 }
 
 function readStringOverride(
