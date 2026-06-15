@@ -46,6 +46,79 @@
 }
 ```
 
+### 启动期配置管线
+
+配置加载的主入口是 `loadRuntimeConfigWithIdentity()`。启动期处理是线性管线：先建立受信配置来源，再校验全局 schema，再选择 workspace，最后把 selected workspace 归一化为不可变 runtime snapshot。维护时应按管线阶段定位职责，不要在工具层重新读取或理解全局配置结构。
+
+```text
+parseCliArgs()
+  - 只解析 --workspace <id> / --workspace=<id>
+        │
+        ▼
+loadRuntimeConfigWithIdentity()
+        │
+        ├─► getDefaultGlobalConfigPath()
+        │     - 固定解析到 ~/.custom-mcp/config.json
+        │
+        ├─► readConfigFile() + JSON.parse
+        │     - 读取并解析受信全局配置文件
+        │
+        ├─► parseGlobalConfig()
+        │     - 校验 version / workspaces / 未知字段
+        │     - 校验所有 workspace 的 id / port 唯一性
+        │     - 校验所有 workspace.rootDir 存在且互不重复/嵌套
+        │
+        ├─► selectRuntimeWorkspace()
+        │     - explicit: 按 --workspace id 选择
+        │     - cwd: process.cwd() realpath 必须等于某个 rootDir realpath
+        │
+        ├─► RuntimeConfigIdentity
+        │     - 记录 config file、workspace id、rootDir、port、selection mode
+        │     - 不受 env override 影响
+        │
+        ├─► buildRuntimeConfigSnapshot()
+        │     ├─ applyEnvOverridesToWorkspace()
+        │     │   - 只作用于 selected workspace 的 allowlist 字段
+        │     │   - 不允许覆盖 rootDir / port / otherRootDirs 等边界字段
+        │     │
+        │     ├─ createValidatedPathSafetyContext()
+        │     │   - 校验 selected workspace 的 rootDir + otherRootDirs
+        │     │   - 生成 canonical allowed roots
+        │     │
+        │     └─ deep-freeze RuntimeConfigSnapshot
+        │
+        ▼
+createConfigStore()
+  - 只读保存 initial snapshot 与 identity baseline
+        │
+        ▼
+每次 tool call 开始
+  - ConfigStore.getSnapshot() 读取一次 current snapshot
+  - createToolRuntimeContext() 派生本次调用上下文
+```
+
+| 阶段 | 主要入口 | 输出 | 失败含义 |
+|-|-|-|-|
+| CLI 参数 | `parseCliArgs()` | 可选 `workspaceId` | 启动参数非法，例如重复或空的 `--workspace`。 |
+| 配置路径 | `getDefaultGlobalConfigPath()` | home-level dotdir config path | 当前进程没有可用 home 目录。 |
+| 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
+| 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
+| Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | `--workspace` 不存在，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
+| Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 非法，或被允许的 env 值非法。 |
+| Runtime snapshot | `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context。 |
+| 工具调用上下文 | `createToolRuntimeContext()` | `ToolRuntimeContext` | 不重新加载配置；工具只消费 snapshot 派生出的运行时能力。 |
+
+维护不变量：
+
+- `parseGlobalConfig()` 在 workspace 选择前运行，并校验所有 workspace；显式 `--workspace` 不会跳过未选中 workspace 的全局 schema / `rootDir` 校验。
+- 默认 workspace 选择只接受 `process.cwd()` realpath 与某个 workspace `rootDir` realpath 等价；cwd 位于 workspace 子目录内会启动失败并提示显式选择。
+- `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
+- Env override 默认关闭，只读取 selected workspace 的 `envOverrides.allowedFields`；未选中 workspace 的 allowlist 不影响当前进程。
+- `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
+- selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
+- `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
+- 工具层只能通过 `ToolRuntimeContext` 消费配置能力，不应读取 `~/.custom-mcp/config.json`、解析全局 schema 或遍历 `otherRootDirs`。
+
 ### Workspace 选择
 
 启动时会读取并校验 `workspaces` 中的所有 workspace，然后选择本次进程使用的 workspace：
