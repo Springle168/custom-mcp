@@ -5,8 +5,8 @@
 ## 项目上下文
 
 - 这是一个 TypeScript / Node.js MCP 工具集，通过 Streamable HTTP 协议提供工具能力。
-- 当任务目标涉及本项目的代码、配置、构建或测试时，请在操作前阅读 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 及与当前任务相关的文档。
-- 根目录 `config.json` 是本地运行配置，可能包含个人路径；除非任务明确需要，否则优先参考 `config.example.json`。
+- 当任务目标涉及本项目的代码、配置、构建或测试时，请在操作前阅读 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、更深层目录下的 `AGENTS.md` 以及与当前任务相关的文档。
+- `~/.custom-mcp/config.json` 是本地运行配置，可能包含个人路径；除非任务明确需要，否则优先参考根目录的 `config.example.json`。
 
 ## 操作边界
 
@@ -31,7 +31,6 @@
 ## 代码与工具约定
 
 - 保持现有 TypeScript 风格：ESM / NodeNext、严格类型、相对导入使用 `.js` 后缀、避免不必要的 `any`。
-- 新增工具时，默认在 `src/tools/` 新建单独文件，默认导出 `MCPTool`，并在 `src/tools/index.ts` 注册。
 - 工具 schema 的 `description` 是给 AI 看的 prompt，应简洁说明能力边界、参数约束、常见误用和与其他工具的配合方式。
 - 添加或调整工具后，同步维护 `docs/tools/` 中的工具文档；必要时更新 `docs/DEVELOPMENT.md` 的工具列表或开发说明。
 
