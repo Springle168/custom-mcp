@@ -7,9 +7,9 @@
 ## 输出位置
 
 - **终端（stdout）**：实时查看，带颜色高亮。
-- **日志文件**：默认写入 `~/.custom-mcp/logs/YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式。
+- **日志文件**：默认写入 `~/.custom-mcp/logs/YYYY/MM/DD/YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式。
 
-日志文件目录来自启动期 `RuntimeConfigSnapshot.logsDir`：selected workspace 可配置 `logsDir`，也可在 `envOverrides.allowedFields` 包含 `logsDir` 后通过 `MCP_LOGS_DIR` 覆盖。`logsDir` 和 `MCP_LOGS_DIR` 必须是本地绝对路径；Windows 下使用 drive-absolute path，例如 `E:/Logs/custom-mcp`。目录不存在时由 `Logger` 递归创建。
+日志文件根目录来自启动期 `RuntimeConfigSnapshot.logsDir`：selected workspace 可配置 `logsDir`，也可在 `envOverrides.allowedFields` 包含 `logsDir` 后通过 `MCP_LOGS_DIR` 覆盖。`logsDir` 表示日志根目录；`Logger` 在该根目录下按系统本地时间创建 `YYYY/MM/DD/` 日期子目录和日志文件。`logsDir` 和 `MCP_LOGS_DIR` 必须是本地绝对路径；Windows 下使用 drive-absolute path，例如 `E:/Logs/custom-mcp`。目录不存在时由 `Logger` 递归创建。
 
 ---
 

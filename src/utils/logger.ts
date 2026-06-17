@@ -24,10 +24,15 @@ function timezoneOffset(date: Date): string {
   return `${sign}${pad(hours)}:${pad(minutes)}`;
 }
 
-function ts(): string {
-  const now = new Date();
+function ts(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}${timezoneOffset(date)}`;
+}
 
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${pad(now.getMilliseconds(), 3)}${timezoneOffset(now)}`;
+function logFileStem(date: Date): string {
+  return ts(date)
+    .replace(/T/, '_')
+    .replace(/:/g, '-')
+    .replace(/\..+/, '');
 }
 
 export class Logger {
@@ -36,12 +41,14 @@ export class Logger {
   readonly logFile: string;
 
   constructor(logsDir: string) {
-    mkdirSync(logsDir, { recursive: true });
-    const name = ts()
-      .replace(/T/, '_')
-      .replace(/:/g, '-')
-      .replace(/\..+/, '');
-    this.logFile = join(logsDir, `${name}.log`);
+    const createdAt = new Date();
+    const yearDir = String(createdAt.getFullYear());
+    const monthDir = pad(createdAt.getMonth() + 1);
+    const dayDir = pad(createdAt.getDate());
+    const dateDir = join(logsDir, yearDir, monthDir, dayDir);
+
+    mkdirSync(dateDir, { recursive: true });
+    this.logFile = join(dateDir, `${logFileStem(createdAt)}.log`);
     // Open synchronously so user-configured logsDir failures stay in startup.
     const fd = openSync(this.logFile, 'a');
     try {
