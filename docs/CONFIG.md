@@ -118,7 +118,7 @@ createConfigStore()
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
 - Env override 默认关闭，只读取 selected workspace 的 `envOverrides.allowedFields`；未选中 workspace 的 allowlist 不影响当前进程。
 - `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
-- `logsDir` 是服务日志目录，默认值为 `~/.custom-mcp/logs`；selected workspace 可配置本地绝对路径，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。
+- `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；selected workspace 可配置本地绝对路径，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/YYYY-MM-DD_HH-MM-SS.log` 创建。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
 - `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
 - `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
@@ -141,7 +141,7 @@ createConfigStore()
 
 - initial `snapshotVersion` 为 `1`。
 - snapshot 必含已验证的 `pathSafetyContext`；文件类工具通过 `ToolRuntimeContext.pathSafetyContext` 使用这个上下文。
-- snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`。
+- snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示日志根目录。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
 - snapshot、`android`、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
@@ -216,7 +216,7 @@ test/
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
 | `port` | positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
-| `logsDir` | string | 否 | 服务日志目录；缺省为 `~/.custom-mcp/logs`，必须是本地绝对路径，目录由日志器启动时创建。 |
+| `logsDir` | string | 否 | 服务日志根目录；缺省为 `~/.custom-mcp/logs`，必须是本地绝对路径。Logger 在该根目录下按 `YYYY/MM/DD/YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。选中 workspace 构建 snapshot 时会作为 allowed roots 校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
@@ -298,7 +298,7 @@ workspace 未知字段会导致启动失败。
 
 `envOverrides.allowedFields` 必须写配置字段名，而不是环境变量名。环境变量名、边界字段和未知字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。
 
-`logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 为空字符串时回退到配置文件值或默认日志目录；非空值必须是本地绝对路径，错误字段定位到 selected workspace 的 `logsDir`。
+`logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 为空字符串时回退到配置文件值或默认日志根目录；非空值必须是本地绝对路径，错误字段定位到 selected workspace 的 `logsDir`。
 
 ---
 
