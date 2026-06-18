@@ -13,13 +13,13 @@ function logFileStem(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
 }
 
-function expectedLogFilePath(logsDir: string, date: Date): string {
+function expectedLogFilePath(logsDir: string, date: Date, workspaceId: string): string {
   return join(
     logsDir,
     String(date.getFullYear()),
     pad(date.getMonth() + 1),
     pad(date.getDate()),
-    `${logFileStem(date)}.log`,
+    `${workspaceId}_${logFileStem(date)}.log`,
   );
 }
 
@@ -78,12 +78,14 @@ async function assertLogFileOpenFailureSurfaces(): Promise<void> {
 
   try {
     const fixedNow = new Date(2026, 0, 2, 3, 4, 5, 678);
-    const blockedLogFile = expectedLogFilePath(blockedLogsDir, fixedNow);
+    const blockedLogFile = expectedLogFilePath(blockedLogsDir, fixedNow, 'blocked-workspace');
     await mkdir(blockedLogFile, { recursive: true });
 
     await withFixedNow(fixedNow, async () => {
       try {
-        const unexpectedLogger = new Logger(blockedLogsDir);
+        const unexpectedLogger = new Logger(blockedLogsDir, {
+          workspaceId: 'blocked-workspace',
+        });
         await unexpectedLogger.close();
         await rm(unexpectedLogger.logFile, { recursive: true, force: true });
       } catch (error) {
@@ -112,8 +114,9 @@ async function assertLogFileOpenFailureSurfaces(): Promise<void> {
 await assertLogFileOpenFailureSurfaces();
 const fixedNow = new Date(2026, 5, 17, 8, 9, 10, 123);
 await withFixedNow(fixedNow, async () => {
-  const logger = new Logger(testLogsDir);
-  const expectedLogFile = expectedLogFilePath(testLogsDir, fixedNow);
+  const workspaceId = 'custom-mcp';
+  const logger = new Logger(testLogsDir, { workspaceId });
+  const expectedLogFile = expectedLogFilePath(testLogsDir, fixedNow, workspaceId);
 
   if (logger.logFile !== expectedLogFile) {
     throw new Error(
