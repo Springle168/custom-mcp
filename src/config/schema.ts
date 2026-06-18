@@ -61,6 +61,9 @@ const ANDROID_FIELDS = new Set([
 const ENV_OVERRIDES_FIELDS = new Set(['allowedFields']);
 const LINE_ENDINGS = new Set<ParsedLineEnding>(['auto', 'lf', 'crlf']);
 const MAX_PORT = 65535;
+const WORKSPACE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const WORKSPACE_ID_DESCRIPTION =
+  '1-64 characters, start with a lowercase letter or digit, and contain only lowercase letters, digits, hyphens, or underscores';
 
 export function parseGlobalConfig(
   value: unknown,
@@ -141,7 +144,7 @@ function parseWorkspace(
   assertKnownFields(context, rawWorkspace, WORKSPACE_FIELDS, fieldPath);
 
   return {
-    id: readRequiredString(context, rawWorkspace, 'id', fieldPath),
+    id: readRequiredWorkspaceId(context, rawWorkspace, 'id', fieldPath),
     rootDir: readRequiredString(context, rawWorkspace, 'rootDir', fieldPath),
     port: readRequiredPositiveInteger(context, rawWorkspace, 'port', fieldPath, {
       max: MAX_PORT,
@@ -313,6 +316,33 @@ function readRequiredString(
   }
 
   return trimmed;
+}
+
+function readRequiredWorkspaceId(
+  context: ParseContext,
+  value: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): string {
+  const fieldPath = joinFieldPath(parentPath, key);
+  if (!hasOwn(value, key)) {
+    fail(context, fieldPath, `${fieldPath} is required.`);
+  }
+
+  const rawValue = value[key];
+  if (typeof rawValue !== 'string') {
+    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
+  }
+
+  if (rawValue.length === 0 || rawValue.trim().length === 0) {
+    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
+  }
+
+  if (!WORKSPACE_ID_RE.test(rawValue)) {
+    fail(context, fieldPath, `${fieldPath} must be ${WORKSPACE_ID_DESCRIPTION}.`);
+  }
+
+  return rawValue;
 }
 
 function readOptionalStringArray(

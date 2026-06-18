@@ -243,6 +243,34 @@ async function testWorkspaceIdValidation(): Promise<void> {
     'workspaces[0].id must be a non-empty string',
     'workspaces[0].id',
   );
+
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig([workspace(0, { id: 'workspace_0' })]));
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'workspace_0',
+    env: {},
+  });
+  assertEqual(snapshot.workspaceId, 'workspace_0', 'Workspace id should allow underscores');
+
+  for (const invalidId of [
+    'Workspace-0',
+    '_workspace',
+    '-workspace',
+    'team/alpha',
+    'team.alpha',
+    'team alpha',
+    ' workspace_0',
+    'workspace_0 ',
+    'a'.repeat(65),
+  ]) {
+    await expectValidationError(
+      globalConfig([workspace(0, { id: invalidId })]),
+      'workspaces[0].id must be 1-64 characters, start with a lowercase letter or digit',
+      'workspaces[0].id',
+    );
+  }
+
   await expectValidationError(
     globalConfig([
       workspace(0, { id: 'duplicate' }),

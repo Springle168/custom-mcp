@@ -118,7 +118,7 @@ createConfigStore()
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
 - Env override 默认关闭，只读取 selected workspace 的 `envOverrides.allowedFields`；未选中 workspace 的 allowlist 不影响当前进程。
 - `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
-- `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；selected workspace 可配置本地绝对路径，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/YYYY-MM-DD_HH-MM-SS.log` 创建。
+- `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；selected workspace 可配置本地绝对路径，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
 - `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
 - `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
@@ -212,11 +212,11 @@ test/
 
 | 字段 | 类型 | 必填 | 说明 |
 |-|-|-|-|
-| `id` | string | 是 | workspace 稳定标识；必须非空且全局唯一。 |
+| `id` | string | 是 | workspace 稳定标识；必须全局唯一，长度 `1..64`，以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`；日志文件名直接使用该 id 作为前缀。 |
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
 | `port` | positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
-| `logsDir` | string | 否 | 服务日志根目录；缺省为 `~/.custom-mcp/logs`，必须是本地绝对路径。Logger 在该根目录下按 `YYYY/MM/DD/YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
+| `logsDir` | string | 否 | 服务日志根目录；缺省为 `~/.custom-mcp/logs`，必须是本地绝对路径。Logger 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。选中 workspace 构建 snapshot 时会作为 allowed roots 校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
@@ -242,7 +242,7 @@ workspace 未知字段会导致启动失败。
 - `version` 必须存在且为 `1`。
 - `workspaces` 必须是非空数组。
 - 未知字段会失败，不会静默忽略。
-- workspace `id` 必须非空且全局唯一。
+- workspace `id` 必须全局唯一，长度 `1..64`，以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`。
 - workspace `port` 必须是 `1..65535` 的正整数且全局唯一。
 - workspace `rootDir` 必须是本地绝对路径、真实存在且为目录。
 - workspace `logsDir` 若提供，必须是本地绝对路径；Windows 下必须是 drive-absolute path，不支持相对路径、UNC、namespace path 或 `~` 展开，且不要求预先存在。

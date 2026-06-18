@@ -109,7 +109,9 @@ async function main() {
   });
   const initialSnapshot = initialConfig.snapshot;
   const configStore = createConfigStore(initialConfig);
-  const logger = new Logger(initialSnapshot.logsDir);
+  const logger = new Logger(initialSnapshot.logsDir, {
+    workspaceId: initialSnapshot.workspaceId,
+  });
 
   const app = express();
   app.use(express.json());

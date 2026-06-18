@@ -28,11 +28,15 @@ function ts(date: Date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}${timezoneOffset(date)}`;
 }
 
-function logFileStem(date: Date): string {
+function logFileTimestampStem(date: Date): string {
   return ts(date)
     .replace(/T/, '_')
     .replace(/:/g, '-')
     .replace(/\..+/, '');
+}
+
+export interface LoggerOptions {
+  readonly workspaceId: string;
 }
 
 export class Logger {
@@ -40,7 +44,7 @@ export class Logger {
   private streamError: Error | undefined;
   readonly logFile: string;
 
-  constructor(logsDir: string) {
+  constructor(logsDir: string, options: LoggerOptions) {
     const createdAt = new Date();
     const yearDir = String(createdAt.getFullYear());
     const monthDir = pad(createdAt.getMonth() + 1);
@@ -48,7 +52,7 @@ export class Logger {
     const dateDir = join(logsDir, yearDir, monthDir, dayDir);
 
     mkdirSync(dateDir, { recursive: true });
-    this.logFile = join(dateDir, `${logFileStem(createdAt)}.log`);
+    this.logFile = join(dateDir, `${options.workspaceId}_${logFileTimestampStem(createdAt)}.log`);
     // Open synchronously so user-configured logsDir failures stay in startup.
     const fd = openSync(this.logFile, 'a');
     try {
