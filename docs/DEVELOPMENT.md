@@ -78,12 +78,6 @@ custom-mcp/
 # 编译
 npm run build
 
-# 启动
-npm run start
-
-# 编译并启动
-npm run dev
-
 # 单个脚本测试
 cmd /c npx tsx test/read-file/read-file.test.ts
 ```
