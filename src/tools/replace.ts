@@ -59,7 +59,7 @@ export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text',
   description: `Replaces text within a file and returns a JSON payload in content[0].text.
 
-- Do NOT use omission placeholders like '(rest of methods ...)', '...', or 'unchanged code'. Possible placeholders are written but reported as warnings in note.
+- When writing code, do NOT use omission placeholders to represent existing code, such as '(rest of methods ...)', '...', or 'unchanged code'. Write the complete replacement content explicitly. Possible placeholders are written but reported as warnings in note.
 - allow_multiple: If true, replace all matches. If false or omitted, exactly one match is required.
 - match_mode: 'default' or 'regex'. Defaults to 'default'.
 - regex_flags: Optional in regex mode. Controls only 'm' and 's'; 'g' is always enabled. Defaults to 'ms'.
@@ -78,9 +78,14 @@ Mode boundaries:
 - Empty target is allowed only in default mode when the file does not exist, to create a new file. Prefer write_file for new file creation.
 - Any unknown field is rejected.
 
+Parallel calls:
+- Parallel replace_text calls may target the same file.
+- Same-file calls in a single parallel call batch are applied in listed order; each call matches against the file content produced by previous same-file calls in that batch.
+
 Best practices:
 - Always use read_file to examine file content before making replacements.
 - Prefer multiple small, atomic replacements over one large replacement.
+- For multiple same-file edits in one change set, put the replace_text calls in a single parallel call batch ordered by application sequence; place prerequisite replacements before dependent replacements, and write each target against the content at that step.
 - If the target file requires extensive refactoring, it is recommended to first perform a full overwrite of the file using \`write_file\` or a similar file-writing tool, and then perform partial replacements based on needs and subsequent plan adjustments.
 - Verify file content after changes.`,
   inputSchema: {
