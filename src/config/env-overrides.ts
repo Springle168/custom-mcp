@@ -1,9 +1,11 @@
 import { ConfigError } from './errors.js';
 import { normalizeLogsDirPath } from './path-validation.js';
-import type {
-  ParsedAndroidConfig,
-  ParsedLineEnding,
-  ParsedWorkspaceConfig,
+import {
+  ENV_OVERRIDE_FIELD_ENV_VARS,
+  type ParsedAndroidConfig,
+  type ParsedEnvOverrideField,
+  type ParsedLineEnding,
+  type ParsedWorkspaceConfig,
 } from './schema.js';
 
 export interface ApplyEnvOverridesOptions {
@@ -13,30 +15,9 @@ export interface ApplyEnvOverridesOptions {
   readonly env?: NodeJS.ProcessEnv;
 }
 
-type EnvOverrideField = keyof typeof ALLOWED_FIELD_ENV_VARS;
+type EnvOverrideField = ParsedEnvOverrideField;
 
-const ALLOWED_FIELD_ENV_VARS = {
-  lineEnding: 'MCP_LINE_ENDING',
-  logsDir: 'MCP_LOGS_DIR',
-  'android.workspaceRoot': 'ANDROID_WORKSPACE_ROOT',
-  'android.javaHome': 'ANDROID_JAVA_HOME',
-  'android.buildTimeoutMs': 'ANDROID_BUILD_TIMEOUT_MS',
-  'android.maxErrorBlockChars': 'ANDROID_MAX_ERROR_BLOCK_CHARS',
-  'android.maxLogTailChars': 'ANDROID_MAX_LOG_TAIL_CHARS',
-} as const;
-
-const FORBIDDEN_FIELDS = new Set([
-  'version',
-  'workspaces',
-  'id',
-  'rootDir',
-  'port',
-  'otherRootDirs',
-  'rules',
-  'MCP_ROOT_DIR',
-  'MCP_PORT',
-]);
-
+const ALLOWED_FIELD_ENV_VARS = ENV_OVERRIDE_FIELD_ENV_VARS;
 const LINE_ENDINGS = new Set<ParsedLineEnding>(['auto', 'lf', 'crlf']);
 
 export function applyEnvOverridesToWorkspace(
@@ -65,22 +46,13 @@ export function applyEnvOverridesToWorkspace(
 
 function validateAllowedFields(
   options: ApplyEnvOverridesOptions,
-  allowedFields: readonly string[],
+  allowedFields: readonly ParsedEnvOverrideField[],
 ): EnvOverrideField[] {
   return allowedFields.map((field, index) => {
-    const fieldPath = allowedFieldPath(options, index);
-    if (FORBIDDEN_FIELDS.has(field)) {
-      fail(
-        options,
-        fieldPath,
-        `envOverrides.allowedFields contains forbidden field "${field}". Boundary fields cannot be overridden by environment variables.`,
-      );
-    }
-
     if (!isEnvOverrideField(field)) {
       fail(
         options,
-        fieldPath,
+        allowedFieldPath(options, index),
         `envOverrides.allowedFields contains unknown field "${field}". Allowed fields are: ${Object.keys(ALLOWED_FIELD_ENV_VARS).join(', ')}.`,
       );
     }

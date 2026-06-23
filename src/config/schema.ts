@@ -1,5 +1,12 @@
 import { ConfigError } from './errors.js';
-import { normalizeLogsDirPath } from './path-validation.js';
+import { readExistingDirectoryPath } from './path-policy.js';
+import {
+  readJsonPositiveInteger,
+  readLineEndingToken,
+  readTypedString,
+  readWorkspaceIdToken,
+  type ValuePolicyResult,
+} from './value-policy.js';
 import { validateWorkspaceRootPathSet } from '../utils/paths.js';
 
 export type ParsedLineEnding = 'auto' | 'lf' | 'crlf';
@@ -12,8 +19,20 @@ export interface ParsedAndroidConfig {
   readonly maxLogTailChars: number;
 }
 
+export const ENV_OVERRIDE_FIELD_ENV_VARS = {
+  lineEnding: 'MCP_LINE_ENDING',
+  logsDir: 'MCP_LOGS_DIR',
+  'android.workspaceRoot': 'ANDROID_WORKSPACE_ROOT',
+  'android.javaHome': 'ANDROID_JAVA_HOME',
+  'android.buildTimeoutMs': 'ANDROID_BUILD_TIMEOUT_MS',
+  'android.maxErrorBlockChars': 'ANDROID_MAX_ERROR_BLOCK_CHARS',
+  'android.maxLogTailChars': 'ANDROID_MAX_LOG_TAIL_CHARS',
+} as const;
+
+export type ParsedEnvOverrideField = keyof typeof ENV_OVERRIDE_FIELD_ENV_VARS;
+
 export interface ParsedEnvOverridesConfig {
-  readonly allowedFields: readonly string[];
+  readonly allowedFields: readonly ParsedEnvOverrideField[];
 }
 
 export interface ParsedWorkspaceConfig {
@@ -59,11 +78,23 @@ const ANDROID_FIELDS = new Set([
   'maxLogTailChars',
 ]);
 const ENV_OVERRIDES_FIELDS = new Set(['allowedFields']);
-const LINE_ENDINGS = new Set<ParsedLineEnding>(['auto', 'lf', 'crlf']);
 const MAX_PORT = 65535;
-const WORKSPACE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const WORKSPACE_ID_DESCRIPTION =
-  '1-64 characters, start with a lowercase letter or digit, and contain only lowercase letters, digits, hyphens, or underscores';
+const ENV_OVERRIDE_FIELD_NAMES = Object.keys(ENV_OVERRIDE_FIELD_ENV_VARS) as ParsedEnvOverrideField[];
+const ENV_OVERRIDE_FIELDS = new Set<ParsedEnvOverrideField>(ENV_OVERRIDE_FIELD_NAMES);
+const ENV_VAR_SELECTOR_HINTS = new Map<string, string>([
+  ...ENV_OVERRIDE_FIELD_NAMES.map((field) => [ENV_OVERRIDE_FIELD_ENV_VARS[field], field] as const),
+  ['MCP_ROOT_DIR', 'rootDir'],
+  ['MCP_PORT', 'port'],
+]);
+const FORBIDDEN_ENV_OVERRIDE_FIELDS = new Set([
+  'version',
+  'workspaces',
+  'id',
+  'rootDir',
+  'port',
+  'otherRootDirs',
+  'rules',
+]);
 
 export function parseGlobalConfig(
   value: unknown,
@@ -117,14 +148,11 @@ export function parseGlobalConfig(
     return workspace;
   });
 
-  const normalizedWorkspaceRoots = validateGlobalWorkspaceRoots(context, workspaces);
+  validateGlobalWorkspaceRoots(context, workspaces);
 
   return {
     version: 1,
-    workspaces: workspaces.map((workspace, index) => ({
-      ...workspace,
-      rootDir: normalizedWorkspaceRoots[index],
-    })),
+    workspaces,
   };
 }
 
@@ -143,18 +171,26 @@ function parseWorkspace(
 
   assertKnownFields(context, rawWorkspace, WORKSPACE_FIELDS, fieldPath);
 
+  const android = readOptionalAndroidConfig(context, rawWorkspace.android, `${fieldPath}.android`);
+  const envOverrides = readOptionalEnvOverridesConfig(
+    context,
+    rawWorkspace.envOverrides,
+    `${fieldPath}.envOverrides`,
+    android !== undefined,
+  );
+
   return {
     id: readRequiredWorkspaceId(context, rawWorkspace, 'id', fieldPath),
-    rootDir: readRequiredString(context, rawWorkspace, 'rootDir', fieldPath),
+    rootDir: readRequiredExistingDirectoryPath(context, rawWorkspace, 'rootDir', fieldPath),
     port: readRequiredPositiveInteger(context, rawWorkspace, 'port', fieldPath, {
       max: MAX_PORT,
       rangeDescription: `between 1 and ${MAX_PORT}`,
     }),
     lineEnding: readRequiredLineEnding(context, rawWorkspace, 'lineEnding', fieldPath),
     ...readOptionalLogsDir(context, rawWorkspace.logsDir, `${fieldPath}.logsDir`),
-    otherRootDirs: readOptionalStringArray(context, rawWorkspace.otherRootDirs, `${fieldPath}.otherRootDirs`),
-    ...readOptionalAndroidConfig(context, rawWorkspace.android, `${fieldPath}.android`),
-    ...readOptionalEnvOverridesConfig(context, rawWorkspace.envOverrides, `${fieldPath}.envOverrides`),
+    otherRootDirs: readOptionalExistingDirectoryPathArray(context, rawWorkspace.otherRootDirs, `${fieldPath}.otherRootDirs`),
+    ...(android !== undefined ? { android } : {}),
+    ...(envOverrides !== undefined ? { envOverrides } : {}),
   };
 }
 
@@ -167,25 +203,16 @@ function readOptionalLogsDir(
     return {};
   }
 
-  if (typeof value !== 'string') {
-    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
-  }
-
-  try {
-    return { logsDir: normalizeLogsDirPath(value, fieldPath) };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    fail(context, fieldPath, message);
-  }
+  return { logsDir: readConfigExistingDirectoryPath(context, value, fieldPath) };
 }
 
 function readOptionalAndroidConfig(
   context: ParseContext,
   value: unknown,
   fieldPath: string,
-): { readonly android?: ParsedAndroidConfig } {
+): ParsedAndroidConfig | undefined {
   if (value === undefined) {
-    return {};
+    return undefined;
   }
 
   const rawAndroid = readObject(
@@ -197,13 +224,11 @@ function readOptionalAndroidConfig(
   assertKnownFields(context, rawAndroid, ANDROID_FIELDS, fieldPath);
 
   return {
-    android: {
-      workspaceRoot: readRequiredString(context, rawAndroid, 'workspaceRoot', fieldPath),
-      javaHome: readRequiredString(context, rawAndroid, 'javaHome', fieldPath),
-      buildTimeoutMs: readRequiredPositiveInteger(context, rawAndroid, 'buildTimeoutMs', fieldPath),
-      maxErrorBlockChars: readRequiredPositiveInteger(context, rawAndroid, 'maxErrorBlockChars', fieldPath),
-      maxLogTailChars: readRequiredPositiveInteger(context, rawAndroid, 'maxLogTailChars', fieldPath),
-    },
+    workspaceRoot: readRequiredExistingDirectoryPath(context, rawAndroid, 'workspaceRoot', fieldPath),
+    javaHome: readRequiredExistingDirectoryPath(context, rawAndroid, 'javaHome', fieldPath),
+    buildTimeoutMs: readRequiredPositiveInteger(context, rawAndroid, 'buildTimeoutMs', fieldPath),
+    maxErrorBlockChars: readRequiredPositiveInteger(context, rawAndroid, 'maxErrorBlockChars', fieldPath),
+    maxLogTailChars: readRequiredPositiveInteger(context, rawAndroid, 'maxLogTailChars', fieldPath),
   };
 }
 
@@ -211,9 +236,10 @@ function readOptionalEnvOverridesConfig(
   context: ParseContext,
   value: unknown,
   fieldPath: string,
-): { readonly envOverrides?: ParsedEnvOverridesConfig } {
+  hasAndroidConfig: boolean,
+): ParsedEnvOverridesConfig | undefined {
   if (value === undefined) {
-    return {};
+    return undefined;
   }
 
   const rawEnvOverrides = readObject(
@@ -229,23 +255,87 @@ function readOptionalEnvOverridesConfig(
   }
 
   return {
-    envOverrides: {
-      allowedFields: readStringArray(context, rawEnvOverrides.allowedFields, `${fieldPath}.allowedFields`),
-    },
+    allowedFields: readAllowedFields(
+      context,
+      rawEnvOverrides.allowedFields,
+      `${fieldPath}.allowedFields`,
+      hasAndroidConfig,
+    ),
   };
+}
+
+function readAllowedFields(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+  hasAndroidConfig: boolean,
+): ParsedEnvOverrideField[] {
+  if (!Array.isArray(value)) {
+    fail(context, fieldPath, `${fieldPath} must be an array of non-empty strings.`);
+  }
+
+  const seen = new Set<ParsedEnvOverrideField>();
+  return value.map((item, index) => {
+    const itemPath = `${fieldPath}[${index}]`;
+    const selector = unwrapPolicy(context, readTypedString(item, { fieldPath: itemPath }));
+    const envVarSelectorHint = ENV_VAR_SELECTOR_HINTS.get(selector);
+
+    if (envVarSelectorHint !== undefined) {
+      fail(
+        context,
+        itemPath,
+        `envOverrides.allowedFields contains environment variable name "${selector}". Use config field selector "${envVarSelectorHint}" instead.`,
+      );
+    }
+
+    if (FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector)) {
+      fail(
+        context,
+        itemPath,
+        `envOverrides.allowedFields contains forbidden field "${selector}". Boundary fields cannot be overridden by environment variables.`,
+      );
+    }
+
+    if (!isEnvOverrideField(selector)) {
+      fail(
+        context,
+        itemPath,
+        `envOverrides.allowedFields contains unknown field "${selector}". Allowed fields are: ${ENV_OVERRIDE_FIELD_NAMES.join(', ')}.`,
+      );
+    }
+
+    if (seen.has(selector)) {
+      fail(
+        context,
+        itemPath,
+        `envOverrides.allowedFields contains duplicate field "${selector}". Remove duplicate allowlist entries.`,
+      );
+    }
+    seen.add(selector);
+
+    if (selector.startsWith('android.') && !hasAndroidConfig) {
+      fail(
+        context,
+        itemPath,
+        `envOverrides.allowedFields contains Android field "${selector}", but the same workspace android is not configured. Android env overrides can only override an existing complete android config block.`,
+      );
+    }
+
+    return selector;
+  });
 }
 
 function validateGlobalWorkspaceRoots(
   context: ParseContext,
   workspaces: readonly ParsedWorkspaceConfig[],
-): string[] {
+): void {
   try {
-    return validateWorkspaceRootPathSet(
+    validateWorkspaceRootPathSet(
       workspaces.map((workspace, index) => ({
         label: `workspaces[${index}].rootDir`,
         rootDir: workspace.rootDir,
       })),
-    ).map((root) => root.rootDir);
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ConfigError({
@@ -294,30 +384,6 @@ function assertKnownFields(
   }
 }
 
-function readRequiredString(
-  context: ParseContext,
-  value: Record<string, unknown>,
-  key: string,
-  parentPath: string,
-): string {
-  const fieldPath = joinFieldPath(parentPath, key);
-  if (!hasOwn(value, key)) {
-    fail(context, fieldPath, `${fieldPath} is required.`);
-  }
-
-  const rawValue = value[key];
-  if (typeof rawValue !== 'string') {
-    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
-  }
-
-  const trimmed = rawValue.trim();
-  if (trimmed.length === 0) {
-    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
-  }
-
-  return trimmed;
-}
-
 function readRequiredWorkspaceId(
   context: ParseContext,
   value: Record<string, unknown>,
@@ -325,27 +391,30 @@ function readRequiredWorkspaceId(
   parentPath: string,
 ): string {
   const fieldPath = joinFieldPath(parentPath, key);
-  if (!hasOwn(value, key)) {
-    fail(context, fieldPath, `${fieldPath} is required.`);
-  }
-
-  const rawValue = value[key];
-  if (typeof rawValue !== 'string') {
-    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
-  }
-
-  if (rawValue.length === 0 || rawValue.trim().length === 0) {
-    fail(context, fieldPath, `${fieldPath} must be a non-empty string.`);
-  }
-
-  if (!WORKSPACE_ID_RE.test(rawValue)) {
-    fail(context, fieldPath, `${fieldPath} must be ${WORKSPACE_ID_DESCRIPTION}.`);
-  }
-
-  return rawValue;
+  assertRequired(context, value, key, fieldPath);
+  return unwrapPolicy(context, readWorkspaceIdToken(value[key], { fieldPath }));
 }
 
-function readOptionalStringArray(
+function readRequiredExistingDirectoryPath(
+  context: ParseContext,
+  value: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): string {
+  const fieldPath = joinFieldPath(parentPath, key);
+  assertRequired(context, value, key, fieldPath);
+  return readConfigExistingDirectoryPath(context, value[key], fieldPath);
+}
+
+function readConfigExistingDirectoryPath(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+): string {
+  return unwrapPolicy(context, readExistingDirectoryPath(value, { fieldPath }));
+}
+
+function readOptionalExistingDirectoryPathArray(
   context: ParseContext,
   value: unknown,
   fieldPath: string,
@@ -354,31 +423,13 @@ function readOptionalStringArray(
     return [];
   }
 
-  return readStringArray(context, value, fieldPath);
-}
-
-function readStringArray(
-  context: ParseContext,
-  value: unknown,
-  fieldPath: string,
-): string[] {
   if (!Array.isArray(value)) {
     fail(context, fieldPath, `${fieldPath} must be an array of non-empty strings.`);
   }
 
-  return value.map((item, index) => {
-    const itemPath = `${fieldPath}[${index}]`;
-    if (typeof item !== 'string') {
-      fail(context, itemPath, `${itemPath} must be a non-empty string.`);
-    }
-
-    const trimmed = item.trim();
-    if (trimmed.length === 0) {
-      fail(context, itemPath, `${itemPath} must be a non-empty string.`);
-    }
-
-    return trimmed;
-  });
+  return value.map((item, index) =>
+    readConfigExistingDirectoryPath(context, item, `${fieldPath}[${index}]`)
+  );
 }
 
 function readRequiredLineEnding(
@@ -388,20 +439,8 @@ function readRequiredLineEnding(
   parentPath: string,
 ): ParsedLineEnding {
   const fieldPath = joinFieldPath(parentPath, key);
-  if (!hasOwn(value, key)) {
-    fail(context, fieldPath, `${fieldPath} is required.`);
-  }
-
-  const rawValue = value[key];
-  if (rawValue === 'auto' || rawValue === 'lf' || rawValue === 'crlf') {
-    return rawValue;
-  }
-
-  fail(
-    context,
-    fieldPath,
-    `${fieldPath} must be one of: ${Array.from(LINE_ENDINGS).join(', ')}.`,
-  );
+  assertRequired(context, value, key, fieldPath);
+  return unwrapPolicy(context, readLineEndingToken(value[key], { fieldPath }));
 }
 
 function readRequiredPositiveInteger(
@@ -412,42 +451,31 @@ function readRequiredPositiveInteger(
   options: { readonly max?: number; readonly rangeDescription?: string } = {},
 ): number {
   const fieldPath = joinFieldPath(parentPath, key);
+  assertRequired(context, value, key, fieldPath);
+  return unwrapPolicy(context, readJsonPositiveInteger(value[key], { fieldPath, ...options }));
+}
+
+function assertRequired(
+  context: ParseContext,
+  value: Record<string, unknown>,
+  key: string,
+  fieldPath: string,
+): void {
   if (!hasOwn(value, key)) {
     fail(context, fieldPath, `${fieldPath} is required.`);
   }
-
-  return readPositiveInteger(context, value[key], fieldPath, options);
 }
 
-function readPositiveInteger(
-  context: ParseContext,
-  value: unknown,
-  fieldPath: string,
-  options: { readonly max?: number; readonly rangeDescription?: string } = {},
-): number {
-  let parsed: number;
-
-  if (typeof value === 'number') {
-    parsed = value;
-  } else if (typeof value === 'string' && /^[1-9]\d*$/.test(value.trim())) {
-    parsed = Number(value.trim());
-  } else {
-    fail(context, fieldPath, `${fieldPath} must be a positive integer${describeRange(options)}.`);
+function unwrapPolicy<T>(context: ParseContext, result: ValuePolicyResult<T>): T {
+  if (!result.ok) {
+    fail(context, result.error.fieldPath, result.error.message);
   }
 
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    fail(context, fieldPath, `${fieldPath} must be a positive integer${describeRange(options)}.`);
-  }
-
-  if (options.max !== undefined && parsed > options.max) {
-    fail(context, fieldPath, `${fieldPath} must be a positive integer ${options.rangeDescription ?? `no greater than ${options.max}`}.`);
-  }
-
-  return parsed;
+  return result.value;
 }
 
-function describeRange(options: { readonly rangeDescription?: string }): string {
-  return options.rangeDescription ? ` ${options.rangeDescription}` : '';
+function isEnvOverrideField(field: string): field is ParsedEnvOverrideField {
+  return ENV_OVERRIDE_FIELDS.has(field as ParsedEnvOverrideField);
 }
 
 function joinFieldPath(parentPath: string | undefined, key: string): string {

@@ -139,7 +139,7 @@ async function testEnvOverridesAreIgnoredWithoutAllowlist(): Promise<void> {
   assertEqual(snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not override Android config');
 }
 
-async function testAndroidConfigPathsAreNormalized(): Promise<void> {
+async function testAndroidConfigRelativePathsFailStartup(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig({
     version: 1,
@@ -151,7 +151,7 @@ async function testAndroidConfigPathsAreNormalized(): Promise<void> {
         lineEnding: 'auto',
         android: {
           workspaceRoot: 'relative-android-project',
-          javaHome: 'relative-jbr',
+          javaHome: ANDROID_JAVA_HOME,
           buildTimeoutMs: 900000,
           maxErrorBlockChars: 2500,
           maxLogTailChars: 4000,
@@ -160,15 +160,16 @@ async function testAndroidConfigPathsAreNormalized(): Promise<void> {
     ],
   });
 
-  const snapshot = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'primary-workspace',
-    env: {},
-  });
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({
+      homeDir: HOME_DIR,
+      workspaceId: 'primary-workspace',
+      env: {},
+    })
+  );
 
-  assert(snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(snapshot.android.workspaceRoot, path.resolve('relative-android-project'), 'Android workspaceRoot should be normalized even without env overrides');
-  assertEqual(snapshot.android.javaHome, path.resolve('relative-jbr'), 'Android javaHome should be normalized even without env overrides');
+  assertEqual(error.fieldPath, 'workspaces[0].android.workspaceRoot', 'Relative Android path should identify the invalid field');
+  assertIncludes(error.message, 'must be an absolute local path', 'Android paths should use typed path policy');
 }
 
 async function testMissingConfigThrowsWithoutProcessExit(): Promise<void> {
@@ -239,7 +240,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'loads runtime snapshot from home dotdir config', run: testLoadsRuntimeSnapshotFromHomeDotdirConfig },
       { name: 'env overrides are ignored without allowlist', run: testEnvOverridesAreIgnoredWithoutAllowlist },
-      { name: 'Android config paths are normalized', run: testAndroidConfigPathsAreNormalized },
+      { name: 'Android config relative paths fail startup', run: testAndroidConfigRelativePathsFailStartup },
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },
       { name: 'invalid JSON throws structured error', run: testInvalidJsonThrowsStructuredError },
