@@ -48,6 +48,8 @@ async function resetFixtures(): Promise<void> {
   await fs.mkdir(ANDROID_JAVA_HOME, { recursive: true });
   await fs.mkdir(ANDROID_OVERRIDE_WORKSPACE_ROOT, { recursive: true });
   await fs.mkdir(ANDROID_OVERRIDE_JAVA_HOME, { recursive: true });
+  await fs.mkdir(LOGS_DIR, { recursive: true });
+  await fs.mkdir(OVERRIDE_LOGS_DIR, { recursive: true });
 }
 
 async function cleanupFixtures(): Promise<void> {
@@ -312,7 +314,7 @@ async function testForbiddenAndUnknownAllowlistFieldsFailStartup(): Promise<void
   const mcpPortError = captureConfigError(() =>
     loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: envValues() })
   );
-  assertIncludes(mcpPortError.message, 'forbidden field "MCP_PORT"', 'MCP_PORT should not be enabled through allowlist');
+  assertIncludes(mcpPortError.message, 'environment variable name "MCP_PORT"', 'MCP_PORT should not be used as an allowlist selector');
 
   await resetFixtures();
   await writeGlobalConfig(globalConfig([
@@ -324,7 +326,7 @@ async function testForbiddenAndUnknownAllowlistFieldsFailStartup(): Promise<void
   const mcpRootDirError = captureConfigError(() =>
     loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: envValues() })
   );
-  assertIncludes(mcpRootDirError.message, 'forbidden field "MCP_ROOT_DIR"', 'MCP_ROOT_DIR should not be enabled through allowlist');
+  assertIncludes(mcpRootDirError.message, 'environment variable name "MCP_ROOT_DIR"', 'MCP_ROOT_DIR should not be used as an allowlist selector');
 
   await resetFixtures();
   await writeGlobalConfig(globalConfig([
@@ -348,7 +350,7 @@ async function testForbiddenAndUnknownAllowlistFieldsFailStartup(): Promise<void
   const mcpLogsDirError = captureConfigError(() =>
     loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: envValues() })
   );
-  assertIncludes(mcpLogsDirError.message, 'unknown field "MCP_LOGS_DIR"', 'MCP_LOGS_DIR should not be enabled through allowlist');
+  assertIncludes(mcpLogsDirError.message, 'environment variable name "MCP_LOGS_DIR"', 'MCP_LOGS_DIR should not be used as an allowlist selector');
 }
 
 async function testAndroidAllowlistCannotCreateMissingAndroidConfig(): Promise<void> {

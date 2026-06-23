@@ -18,24 +18,26 @@
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 - 服务日志目录 `logsDir` 不属于 allowed roots，即使配置在 workspace 外也不会扩大文件工具访问边界。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。配置加载阶段通过 `src/config/runtime-snapshot.ts` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；该 policy 覆盖 `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome`，但不决定文件工具 allowed roots。配置加载阶段再通过 `src/config/runtime-snapshot.ts` 为 selected workspace 的 `rootDir + otherRootDirs` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
 
 ---
 
 ## root 配置校验
 
-配置加载阶段会集中创建并校验 `PathSafetyContext`：
+配置加载阶段分两层处理路径：
 
-1. `rootDir` 必填，且必须是本地绝对路径。
-2. `otherRootDirs` 可选；空数组等同未配置。
-3. `otherRootDirs` 中每一项必须是非空字符串和本地绝对路径。
-4. allowed roots 只来自 selected workspace 的 `rootDir` 与 `otherRootDirs`；env override allowlist 和 `logsDir` 不能扩大文件访问边界。
-5. 每个 root 必须真实存在且为目录。
-6. root 本身可以是 symlink / junction。
-7. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。
-8. 所有 allowed roots 在 realpath 层也不得重复或互相嵌套。
+1. `parseGlobalConfig()` 通过 `src/config/path-policy.ts` 校验所有 workspace 的 path-like 配置字段。该层负责 typed string whitespace、本地绝对路径形态、Windows drive-absolute 要求、UNC / namespace / drive-relative / rooted-without-drive / `~` 拒绝，以及路径真实存在且为目录。
+2. `buildRuntimeConfigSnapshot()` 对 selected workspace 的 `rootDir + otherRootDirs` 创建并校验 `PathSafetyContext`。该层只处理文件工具 allowed roots 集合安全，不处理 `logsDir` 或 Android paths。
 
-这些不变量由 `createValidatedPathSafetyContext()` 负责，并由 runtime snapshot builder 在启动期包装为结构化 `ConfigError`；selected workspace 的 `otherRootDirs` 错误会尽量定位到具体 `workspaces[i].otherRootDirs[j]`。`SafePath` / `SafeGlobPattern` 会携带 `matchedRoot`，供后续 read/write realpath 校验使用。
+`PathSafetyContext` 的不变量：
+
+1. allowed roots 只来自 selected workspace 的 `rootDir` 与 `otherRootDirs`；env override allowlist、`logsDir` 和 Android paths 不能扩大文件访问边界。
+2. 每个 root 必须真实存在且为目录。
+3. root 本身可以是 symlink / junction。
+4. 所有 allowed roots 在 lexical normalized path 层不得重复或互相嵌套。
+5. 所有 allowed roots 在 realpath 层也不得重复或互相嵌套。
+
+这些集合安全不变量由 `createValidatedPathSafetyContext()` 负责，并由 runtime snapshot builder 在启动期包装为结构化 `ConfigError`；selected workspace 的 `otherRootDirs` 错误会尽量定位到具体 `workspaces[i].otherRootDirs[j]`。`SafePath` / `SafeGlobPattern` 会携带 `matchedRoot`，供后续 read/write realpath 校验使用。
 
 ---
 

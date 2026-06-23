@@ -41,6 +41,8 @@ async function resetFixtures(): Promise<void> {
   await fs.mkdir(PRIMARY_CHILD_DIR, { recursive: true });
   await fs.mkdir(ADDITIONAL_A_CHILD_DIR, { recursive: true });
   await fs.mkdir(ADDITIONAL_B_DIR, { recursive: true });
+  await fs.mkdir(CONFIGURED_LOGS_DIR, { recursive: true });
+  await fs.mkdir(OVERRIDE_LOGS_DIR, { recursive: true });
   await fs.writeFile(NOT_DIRECTORY_FILE, 'not a directory', 'utf-8');
 }
 
@@ -197,24 +199,6 @@ async function testEmptyLogsDirEnvFallsBackByPriority(): Promise<void> {
 
 async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
   const cases: InvalidOtherRootCase[] = [
-    {
-      name: 'relative path',
-      otherRootDirs: ['relative-other-root'],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
-      expectedMessage: 'must be an absolute local path',
-    },
-    {
-      name: 'missing directory',
-      otherRootDirs: [MISSING_DIR],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
-      expectedMessage: 'does not exist or cannot be accessed',
-    },
-    {
-      name: 'file path',
-      otherRootDirs: [NOT_DIRECTORY_FILE],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
-      expectedMessage: 'must point to an existing directory',
-    },
     {
       name: 'duplicates primary root',
       otherRootDirs: [`${PRIMARY_DIR}${path.sep}`],

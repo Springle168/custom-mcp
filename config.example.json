@@ -3,16 +3,16 @@
   "workspaces": [
     {
       "id": "your-workspace",
-      "rootDir": "E:/path/to/your/workspace",
+      "rootDir": "E:/ExistingWorkspaces/YourProject",
       "otherRootDirs": [
-        "E:/path/to/another/workspace"
+        "E:/ExistingWorkspaces/AnotherProject"
       ],
       "lineEnding": "auto",
       "port": 3100,
-      "logsDir": "E:/path/to/custom-mcp/logs",
+      "logsDir": "E:/ExistingLogs/custom-mcp",
       "android": {
-        "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
-        "javaHome": "E:/Android_Studio/jbr",
+        "workspaceRoot": "E:/ExistingAndroidProjects/YourProject",
+        "javaHome": "E:/ExistingAndroidStudio/jbr",
         "buildTimeoutMs": 900000,
         "maxErrorBlockChars": 2500,
         "maxLogTailChars": 4000
