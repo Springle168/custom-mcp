@@ -98,6 +98,16 @@ function captureCliError(run: () => unknown): CliError {
   throw new Error('Expected CLI parsing to throw.');
 }
 
+function assertCliErrorIncludes(
+  argv: readonly string[],
+  expectedMessage: string,
+  message: string,
+): void {
+  const error = captureCliError(() => parseCliArgs(argv));
+
+  assertIncludes(error.message, expectedMessage, message);
+}
+
 function captureConfigError(run: () => unknown): ConfigError {
   try {
     run();
@@ -135,10 +145,101 @@ function testCliParserSupportsEqualsWorkspace(): void {
   assertEqual(options.workspaceId, 'workspace-b', 'CLI parser should read --workspace=<id>');
 }
 
+function testCliParserReturnsLegalTokenUnchanged(): void {
+  const options = parseCliArgs(['--workspace', 'workspace_1-alpha']);
+
+  assertEqual(
+    options.workspaceId,
+    'workspace_1-alpha',
+    'CLI parser should return the original legal workspace token without normalization',
+  );
+}
+
 function testCliParserRejectsMissingWorkspaceValue(): void {
   const error = captureCliError(() => parseCliArgs(['--workspace']));
 
   assertIncludes(error.message, 'requires a non-empty workspace id', 'Missing --workspace value should fail');
+}
+
+function testCliParserRejectsInvalidWorkspaceValues(): void {
+  const tooLongId = `a${'b'.repeat(64)}`;
+  const invalidCases: Array<{
+    readonly argv: readonly string[];
+    readonly expectedMessage: string;
+    readonly message: string;
+  }> = [
+    {
+      argv: ['--workspace='],
+      expectedMessage: 'must be a non-empty string',
+      message: '--workspace= with an empty value should fail lexical parsing',
+    },
+    {
+      argv: ['--workspace', '--config'],
+      expectedMessage: 'requires a non-empty workspace id',
+      message: '--workspace followed by another option should be treated as a missing value',
+    },
+    {
+      argv: ['--workspace', '   '],
+      expectedMessage: 'must be a non-empty string',
+      message: 'Whitespace-only --workspace values should fail before grammar checks',
+    },
+    {
+      argv: ['--workspace', ' workspace-a'],
+      expectedMessage: 'must not contain leading or trailing whitespace',
+      message: 'Leading whitespace should be rejected instead of trimmed',
+    },
+    {
+      argv: ['--workspace=workspace-a '],
+      expectedMessage: 'must not contain leading or trailing whitespace',
+      message: 'Trailing whitespace should be rejected instead of trimmed',
+    },
+    {
+      argv: ['--workspace=Workspace-a'],
+      expectedMessage: 'must be 1-64 characters',
+      message: 'Uppercase workspace ids should fail the lexical grammar',
+    },
+    {
+      argv: ['--workspace=workspace/a'],
+      expectedMessage: 'must be 1-64 characters',
+      message: 'Slashes should fail the workspace id lexical grammar',
+    },
+    {
+      argv: ['--workspace=workspace.a'],
+      expectedMessage: 'must be 1-64 characters',
+      message: 'Dots should fail the workspace id lexical grammar',
+    },
+    {
+      argv: ['--workspace', 'workspace a'],
+      expectedMessage: 'must be 1-64 characters',
+      message: 'Internal spaces should fail the workspace id lexical grammar',
+    },
+    {
+      argv: ['--workspace', tooLongId],
+      expectedMessage: 'must be 1-64 characters',
+      message: 'Workspace ids longer than 64 characters should fail the lexical grammar',
+    },
+    {
+      argv: ['--workspace', 'workspace-a', '--workspace=Workspace-b'],
+      expectedMessage: 'must be 1-64 characters',
+      message: 'An invalid repeated --workspace value should still fail lexical parsing as a CliError',
+    },
+  ];
+
+  for (const invalidCase of invalidCases) {
+    assertCliErrorIncludes(
+      invalidCase.argv,
+      invalidCase.expectedMessage,
+      invalidCase.message,
+    );
+  }
+}
+
+function testCliParserRejectsDuplicateWorkspaceArguments(): void {
+  const error = captureCliError(() =>
+    parseCliArgs(['--workspace', 'workspace-a', '--workspace=workspace-b'])
+  );
+
+  assertIncludes(error.message, 'can only be provided once', 'Duplicate --workspace arguments should fail');
 }
 
 function testCliParserRejectsUnknownArguments(): void {
@@ -182,6 +283,22 @@ async function testExplicitWorkspaceMissingFails(): Promise<void> {
 
   assertIncludes(error.message, 'missing-workspace', 'Missing explicit workspace id should be reported');
   assertEqual(error.fieldPath, 'workspace', 'Workspace selection errors should identify the selection field');
+}
+
+async function testDirectWorkspaceIdLexicalErrorIsConfigError(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig());
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfigWithIdentity({
+      homeDir: HOME_DIR,
+      workspaceId: 'workspace-a ',
+      env: {},
+    })
+  );
+
+  assertIncludes(error.message, 'must not contain leading or trailing whitespace', 'Direct workspaceId seam should reject rather than trim invalid ids');
+  assertEqual(error.fieldPath, 'workspace', 'Direct workspaceId lexical errors should identify the selection field');
 }
 
 async function testDefaultCwdSelectionRequiresExactRoot(): Promise<void> {
@@ -315,10 +432,14 @@ async function main(): Promise<void> {
     tests: [
       { name: 'CLI parser supports --workspace <id>', run: testCliParserSupportsSeparatedWorkspace },
       { name: 'CLI parser supports --workspace=<id>', run: testCliParserSupportsEqualsWorkspace },
+      { name: 'CLI parser returns legal token unchanged', run: testCliParserReturnsLegalTokenUnchanged },
       { name: 'CLI parser rejects missing workspace value', run: testCliParserRejectsMissingWorkspaceValue },
+      { name: 'CLI parser rejects invalid workspace values', run: testCliParserRejectsInvalidWorkspaceValues },
+      { name: 'CLI parser rejects duplicate workspace arguments', run: testCliParserRejectsDuplicateWorkspaceArguments },
       { name: 'CLI parser rejects unknown arguments', run: testCliParserRejectsUnknownArguments },
       { name: 'explicit workspace selection', run: testExplicitWorkspaceSelection },
       { name: 'explicit missing workspace fails', run: testExplicitWorkspaceMissingFails },
+      { name: 'direct workspaceId lexical error is ConfigError', run: testDirectWorkspaceIdLexicalErrorIsConfigError },
       { name: 'default cwd selection requires exact root', run: testDefaultCwdSelectionRequiresExactRoot },
       { name: 'default cwd selection uses realpath equivalence', run: testDefaultCwdSelectionUsesRealpathEquivalence },
       { name: 'default cwd subdirectory does not match', run: testDefaultCwdSubdirectoryDoesNotMatch },

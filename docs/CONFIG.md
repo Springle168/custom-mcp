@@ -54,7 +54,9 @@
 
 ```text
 parseCliArgs()
-  - 只解析 --workspace <id> / --workspace=<id>
+  - 解析 --workspace <id> / --workspace=<id>
+  - 按 workspace id lexical grammar 校验参数值，不判断配置中是否存在该 workspace
+  - 缺失、空字符串、whitespace-only、首尾 whitespace 或 grammar 非法时抛出 CliError
         │
         ▼
 loadRuntimeConfigWithIdentity()
@@ -104,11 +106,11 @@ createConfigStore()
 
 | 阶段 | 主要入口 | 输出 | 失败含义 |
 |-|-|-|-|
-| CLI 参数 | `parseCliArgs()` | 可选 `workspaceId` | 启动参数非法，例如重复或空的 `--workspace`。 |
+| CLI 参数 | `parseCliArgs()` | 可选 `workspaceId`，值为已验证 lexical token | 启动参数非法，例如重复、缺失、空值、首尾 whitespace 或 grammar 非法的 `--workspace`。 |
 | 配置路径 | `getDefaultGlobalConfigPath()` / `getDefaultGlobalLogsDir()` | home-level dotdir config path / default logs dir | 进程没有可用 home 目录。 |
 | 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
 | 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
-| Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | `--workspace` 不存在，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
+| Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | 已通过 lexical 校验的 `--workspace` 不存在，直接调用配置 loader 时传入非法 `workspaceId`，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
 | Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 非法，或被允许的 env 值非法。 |
 | Runtime snapshot | `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context，或日志目录路径形态非法。 |
 | 工具调用上下文 | `createToolRuntimeContext()` | `ToolRuntimeContext` | 不重新加载配置；工具只消费 snapshot 派生出的运行时能力。 |
@@ -130,7 +132,8 @@ createConfigStore()
 
 启动时会读取并校验 `workspaces` 中的所有 workspace，然后选择本次进程使用的 workspace：
 
-- 显式选择：`custom-mcp --workspace <id>` 或 `custom-mcp --workspace=<id>` 按 workspace `id` 选择；显式选择不要求当前工作目录与该 workspace 的 `rootDir` 匹配。
+- 显式选择：`custom-mcp --workspace <id>` 或 `custom-mcp --workspace=<id>` 的参数值先由 CLI parser 按 workspace id lexical grammar 校验，selection 阶段只判断该 id 是否存在于已解析 workspace；显式选择不要求当前工作目录与该 workspace 的 `rootDir` 匹配。
+- 直接通过配置 loader seam 传入 `workspaceId` 时，selection 层会执行同一 workspace id lexical grammar 的防御性校验，并使用 `ConfigError` 报告非法内部输入。
 - 默认选择：未提供 `--workspace` 时，`process.cwd()` 的 realpath 必须与某个 workspace `rootDir` 的 realpath 等价。
 - 默认选择只接受 cwd 与 root 等价；cwd 位于某个 workspace 的子目录中不会被视为匹配。
 - Windows 下大小写、路径分隔符和尾部分隔符差异不应影响默认匹配。
@@ -330,6 +333,7 @@ workspace 未知字段会导致启动失败。
 | 启动报 `version must be the number 1` | `version` 缺失或不是数字 `1` | 将配置调整为 `version: 1` + `workspaces` 数组。 |
 | 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应功能实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
+| 启动报 `--workspace` 参数非法 | CLI 参数缺失、重复、为空、包含首尾 whitespace，或不符合 workspace id lexical grammar | 使用 `--workspace <id>` 或 `--workspace=<id>`，并传入配置中存在的 lowercase workspace id。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
 | 启动报 `must be a JSON number positive integer` | 配置文件 numeric 字段使用了 numeric string、`0`、负数、`1.5` 或 unsafe integer | 将字段改为 JSON number，例如 `3100`，不要写成 `"3100"`。 |
 | 启动报 `must be an absolute local path` 或 `does not exist or cannot be accessed` | 配置文件中的 path-like 字段使用了相对路径、UNC、namespace path、`~`、Windows 非 drive-absolute path，或目录不存在 | 改为已展开的本地绝对路径，并提前创建配置文件中写入的 `rootDir`、`otherRootDirs[]`、`logsDir` 和 Android 目录。默认 logs root existing-directory 校验在阶段 4 开发检查点补齐。 |
