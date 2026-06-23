@@ -179,6 +179,18 @@ function testPosixAbsolutePathSeam(): void {
     'rootDir must be an absolute local path',
     'UNC-like POSIX paths should not be accepted as local paths',
   );
+
+  const backslashRooted = '\\project';
+  expectError(
+    readExistingDirectoryPath(backslashRooted, {
+      fieldPath: 'rootDir',
+      platform,
+      stat: createFakeStat(new Map([[path.posix.resolve(backslashRooted), 'dir']])),
+    }),
+    'rootDir must be an absolute local path',
+    'A POSIX path with a single leading backslash should stay classified as relative',
+  );
+
   expectError(
     readExistingDirectoryPath('C:/project', { fieldPath: 'rootDir', platform, stat }),
     'rootDir must be an absolute local path',

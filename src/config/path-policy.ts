@@ -101,7 +101,7 @@ function validateLocalAbsolutePathShape(
     return failAbsoluteLocalPath(options.fieldPath);
   }
 
-  if (options.allowPosixAbsolute && path.posix.isAbsolute(normalized)) {
+  if (options.allowPosixAbsolute && path.posix.isAbsolute(value)) {
     return ok(value);
   }
 
