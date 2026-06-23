@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { ConfigError } from './errors.js';
 import type { ParsedWorkspaceConfig } from './schema.js';
+import { readWorkspaceIdToken } from './value-policy.js';
 
 export type RuntimeConfigSelectionMode = 'explicit' | 'cwd';
 
@@ -54,18 +55,19 @@ function readRequestedWorkspaceId(
     return undefined;
   }
 
-  const requestedWorkspaceId = workspaceId.trim();
-  if (requestedWorkspaceId.length === 0) {
+  const result = readWorkspaceIdToken(workspaceId, { fieldPath: 'workspace' });
+  if (!result.ok) {
     throw new ConfigError({
       code: 'config_validation_failed',
       configFilePath,
-      fieldPath: 'workspace',
-      message: '--workspace must be a non-empty workspace id.',
-      suggestion: 'Pass --workspace <id> using an id that exists in the global config workspaces array.',
+      fieldPath: result.error.fieldPath,
+      message: result.error.message,
+      suggestion:
+        'Pass --workspace <id> using a valid workspace id token that exists in the global config workspaces array.',
     });
   }
 
-  return requestedWorkspaceId;
+  return result.value;
 }
 
 function selectExplicitWorkspace(

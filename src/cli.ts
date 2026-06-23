@@ -1,3 +1,5 @@
+import { readWorkspaceIdToken } from './config/value-policy.js';
+
 export interface CliOptions {
   readonly workspaceId?: string;
 }
@@ -46,10 +48,18 @@ function readWorkspaceIdValue(
   value: string | undefined,
   currentWorkspaceId: string | undefined,
 ): string {
-  if (value === undefined || value.startsWith('--') || value.trim().length === 0) {
+  if (value === undefined || value.startsWith('--')) {
     throw new CliError(
       '--workspace requires a non-empty workspace id.',
       'Use --workspace <id> or --workspace=<id> to select a workspace from the global config.',
+    );
+  }
+
+  const workspaceIdResult = readWorkspaceIdToken(value, { fieldPath: '--workspace' });
+  if (!workspaceIdResult.ok) {
+    throw new CliError(
+      workspaceIdResult.error.message,
+      'Use a workspace id from the global config. Workspace ids must be lowercase lexical tokens without leading or trailing whitespace.',
     );
   }
 
@@ -60,5 +70,5 @@ function readWorkspaceIdValue(
     );
   }
 
-  return value.trim();
+  return workspaceIdResult.value;
 }
