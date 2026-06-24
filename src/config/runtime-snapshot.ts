@@ -1,7 +1,8 @@
 import { resolve } from 'node:path';
 import { ConfigError } from './errors.js';
-import { normalizeLogsDirPath } from './path-validation.js';
+import { readExistingDirectoryPath } from './path-policy.js';
 import type { ParsedAndroidConfig, ParsedWorkspaceConfig } from './schema.js';
+import { readTypedString } from './value-policy.js';
 import {
   createValidatedPathSafetyContext,
   type PathSafetyContext,
@@ -58,6 +59,7 @@ export function buildRuntimeConfigSnapshot(
   options: BuildRuntimeConfigSnapshotOptions,
 ): RuntimeConfigSnapshot {
   const { workspace } = options;
+  const logsDir = readRuntimeLogsDir(options);
 
   return createRuntimeConfigSnapshot(
     {
@@ -67,8 +69,8 @@ export function buildRuntimeConfigSnapshot(
       otherRootDirs: workspace.otherRootDirs,
       port: workspace.port,
       lineEnding: workspace.lineEnding,
-      logsDir: workspace.logsDir ?? options.defaultLogsDir,
-      ...normalizeRuntimeAndroidConfig(workspace.android),
+      logsDir,
+      ...(workspace.android ? { android: workspace.android } : {}),
       snapshotVersion: options.snapshotVersion ?? 1,
     },
     { workspaceIndex: options.workspaceIndex },
@@ -79,6 +81,8 @@ export function createRuntimeConfigSnapshot(
   input: RuntimeConfigSnapshotInput,
   errorContext: RuntimeConfigSnapshotErrorContext = {},
 ): RuntimeConfigSnapshot {
+  assertRuntimeConfigSnapshotInputPreconditions(input, errorContext);
+
   const configuredOtherRootDirs = [...(input.otherRootDirs ?? [])];
   const pathSafetyContext = createPathSafetyContextOrThrowConfigError(
     input,
@@ -88,7 +92,8 @@ export function createRuntimeConfigSnapshot(
   const otherRootDirs = pathSafetyContext.allowedRoots
     .filter((root) => root.kind === 'additional')
     .map((root) => root.rootDir);
-  const logsDir = normalizeLogsDirForSnapshot(input, errorContext);
+  const logsDir = resolve(input.logsDir);
+  const android = resolveRuntimeAndroidConfig(input.android);
 
   const snapshot: RuntimeConfigSnapshot = {
     snapshotVersion: input.snapshotVersion ?? 1,
@@ -99,53 +104,120 @@ export function createRuntimeConfigSnapshot(
     port: input.port,
     lineEnding: input.lineEnding,
     logsDir,
-    ...(input.android ? { android: { ...input.android } } : {}),
+    ...(android ? { android } : {}),
     pathSafetyContext,
   };
 
   return deepFreeze(snapshot);
 }
 
-function normalizeLogsDirForSnapshot(
+function readRuntimeLogsDir(options: BuildRuntimeConfigSnapshotOptions): string {
+  if (options.workspace.logsDir !== undefined) {
+    return options.workspace.logsDir;
+  }
+
+  const fieldPath = logsDirFieldPath(options.workspaceIndex);
+  const result = readExistingDirectoryPath(options.defaultLogsDir, { fieldPath });
+  if (result.ok) {
+    return result.value;
+  }
+
+  throw new ConfigError({
+    code: 'config_validation_failed',
+    configFilePath: options.configFilePath,
+    fieldPath: result.error.fieldPath,
+    message: result.error.message,
+    suggestion:
+      `Create the default logs root at ${resolve(options.defaultLogsDir)}, ` +
+      `or configure ${fieldPath} / allowlisted MCP_LOGS_DIR to an existing local absolute directory.`,
+  });
+}
+
+function assertRuntimeConfigSnapshotInputPreconditions(
   input: RuntimeConfigSnapshotInput,
   errorContext: RuntimeConfigSnapshotErrorContext,
-): string {
-  const fieldPath = logsDirFieldPath(errorContext.workspaceIndex);
+): void {
+  assertSnapshotPathValue(input, input.rootDir, rootDirFieldPath(errorContext.workspaceIndex));
 
-  try {
-    return normalizeLogsDirPath(input.logsDir, fieldPath);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new ConfigError({
-      code: 'config_validation_failed',
-      configFilePath: input.configFilePath,
-      fieldPath,
-      message,
-      suggestion:
-        `Fix ${fieldPath} in ${input.configFilePath}. ` +
-        'logsDir must be a local absolute path and is created by the logger at startup if missing.',
-      cause: err,
-    });
+  input.otherRootDirs?.forEach((otherRootDir, index) => {
+    assertSnapshotPathValue(
+      input,
+      otherRootDir,
+      otherRootDirFieldPath(errorContext.workspaceIndex, index),
+    );
+  });
+
+  assertSnapshotPathValue(input, input.logsDir, logsDirFieldPath(errorContext.workspaceIndex));
+
+  if (input.android === undefined) {
+    return;
   }
+
+  assertSnapshotPathValue(
+    input,
+    input.android.workspaceRoot,
+    androidFieldPath(errorContext.workspaceIndex, 'workspaceRoot'),
+  );
+  assertSnapshotPathValue(
+    input,
+    input.android.javaHome,
+    androidFieldPath(errorContext.workspaceIndex, 'javaHome'),
+  );
+}
+
+function assertSnapshotPathValue(
+  input: RuntimeConfigSnapshotInput,
+  value: string,
+  fieldPath: string,
+): void {
+  const result = readTypedString(value, { fieldPath });
+  if (result.ok) {
+    return;
+  }
+
+  throw new ConfigError({
+    code: 'config_validation_failed',
+    configFilePath: input.configFilePath,
+    fieldPath: result.error.fieldPath,
+    message: result.error.message,
+    suggestion:
+      `Fix ${result.error.fieldPath} before building the runtime snapshot. ` +
+      'Snapshot path-like inputs must already be validated values without leading or trailing whitespace.',
+  });
+}
+
+function rootDirFieldPath(workspaceIndex: number | undefined): string {
+  return workspaceIndex === undefined ? 'rootDir' : `workspaces[${workspaceIndex}].rootDir`;
+}
+
+function otherRootDirFieldPath(workspaceIndex: number | undefined, index: number): string {
+  const fieldPath = `otherRootDirs[${index}]`;
+  return workspaceIndex === undefined ? fieldPath : `workspaces[${workspaceIndex}].${fieldPath}`;
 }
 
 function logsDirFieldPath(workspaceIndex: number | undefined): string {
   return workspaceIndex === undefined ? 'logsDir' : `workspaces[${workspaceIndex}].logsDir`;
 }
 
-function normalizeRuntimeAndroidConfig(
-  android: ParsedAndroidConfig | undefined,
-): { readonly android?: RuntimeAndroidConfig } {
+function androidFieldPath(
+  workspaceIndex: number | undefined,
+  field: 'workspaceRoot' | 'javaHome',
+): string {
+  const fieldPath = `android.${field}`;
+  return workspaceIndex === undefined ? fieldPath : `workspaces[${workspaceIndex}].${fieldPath}`;
+}
+
+function resolveRuntimeAndroidConfig(
+  android: ParsedAndroidConfig | RuntimeAndroidConfig | undefined,
+): RuntimeAndroidConfig | undefined {
   if (android === undefined) {
-    return {};
+    return undefined;
   }
 
   return {
-    android: {
-      ...android,
-      workspaceRoot: resolve(android.workspaceRoot),
-      javaHome: resolve(android.javaHome),
-    },
+    ...android,
+    workspaceRoot: resolve(android.workspaceRoot),
+    javaHome: resolve(android.javaHome),
   };
 }
 

@@ -18,7 +18,7 @@
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 - 服务日志目录 `logsDir` 不属于 allowed roots，即使配置在 workspace 外也不会扩大文件工具访问边界。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；该 policy 覆盖 `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome`，但不决定文件工具 allowed roots。配置加载阶段再通过 `src/config/runtime-snapshot.ts` 为 selected workspace 的 `rootDir + otherRootDirs` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；该 policy 覆盖 `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome`，但不决定文件工具 allowed roots。默认 `~/.custom-mcp/logs` 也使用 existing-directory policy 校验。配置加载阶段再通过 `src/config/runtime-snapshot.ts` 为 selected workspace 的 `rootDir + otherRootDirs` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
 
 ---
 
@@ -27,7 +27,7 @@
 配置加载阶段分两层处理路径：
 
 1. `parseGlobalConfig()` 通过 `src/config/path-policy.ts` 校验所有 workspace 的 path-like 配置字段。该层负责 typed string whitespace、本地绝对路径形态、Windows drive-absolute 要求、UNC / namespace / drive-relative / rooted-without-drive / `~` 拒绝，以及路径真实存在且为目录。
-2. `buildRuntimeConfigSnapshot()` 对 selected workspace 的 `rootDir + otherRootDirs` 创建并校验 `PathSafetyContext`。该层只处理文件工具 allowed roots 集合安全，不处理 `logsDir` 或 Android paths。
+2. `buildRuntimeConfigSnapshot()` 对 selected workspace 的 `rootDir + otherRootDirs` 创建并校验 `PathSafetyContext`。该层只把文件工具 allowed roots 交给 path safety；`logsDir` 和 Android paths 只写入 snapshot runtime path，不进入 `PathSafetyContext`。
 
 `PathSafetyContext` 的不变量：
 

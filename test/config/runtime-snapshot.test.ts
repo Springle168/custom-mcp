@@ -5,6 +5,7 @@ import {
   ConfigError,
   loadRuntimeConfig,
 } from '../../src/config.js';
+import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
 import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
 import {
   assert,
@@ -19,6 +20,7 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'runtime-snapshot');
 const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const PRIMARY_CHILD_DIR = path.join(PRIMARY_DIR, 'child');
 const ADDITIONAL_A_DIR = path.join(FIXTURES_DIR, 'additional-a');
@@ -28,6 +30,8 @@ const NOT_DIRECTORY_FILE = path.join(FIXTURES_DIR, 'not-a-directory.txt');
 const MISSING_DIR = path.join(FIXTURES_DIR, 'missing');
 const CONFIGURED_LOGS_DIR = path.join(FIXTURES_DIR, 'configured-logs');
 const OVERRIDE_LOGS_DIR = path.join(FIXTURES_DIR, 'override-logs');
+const ANDROID_WORKSPACE_DIR = path.join(FIXTURES_DIR, 'android-project');
+const ANDROID_JAVA_HOME_DIR = path.join(FIXTURES_DIR, 'jbr');
 
 interface InvalidOtherRootCase {
   readonly name: string;
@@ -38,11 +42,14 @@ interface InvalidOtherRootCase {
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
+  await fs.mkdir(DEFAULT_LOGS_DIR, { recursive: true });
   await fs.mkdir(PRIMARY_CHILD_DIR, { recursive: true });
   await fs.mkdir(ADDITIONAL_A_CHILD_DIR, { recursive: true });
   await fs.mkdir(ADDITIONAL_B_DIR, { recursive: true });
   await fs.mkdir(CONFIGURED_LOGS_DIR, { recursive: true });
   await fs.mkdir(OVERRIDE_LOGS_DIR, { recursive: true });
+  await fs.mkdir(ANDROID_WORKSPACE_DIR, { recursive: true });
+  await fs.mkdir(ANDROID_JAVA_HOME_DIR, { recursive: true });
   await fs.writeFile(NOT_DIRECTORY_FILE, 'not a directory', 'utf-8');
 }
 
@@ -129,7 +136,7 @@ async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
   assertEqual(snapshot.snapshotVersion, 1, 'Initial runtime snapshot version should be 1');
   assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the config file path');
   assertEqual(snapshot.workspaceId, 'runtime-workspace', 'Snapshot should record selected workspace id');
-  assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'Snapshot should use the default home dotdir logs dir');
+  assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Snapshot should use the default home dotdir logs dir');
   assertEqual(snapshot.rootDir, path.resolve(PRIMARY_DIR), 'Snapshot rootDir should use canonical path safety primary root');
   assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should include canonical additional roots');
   assertEqual(snapshot.otherRootDirs[0], path.resolve(ADDITIONAL_A_DIR), 'Snapshot otherRootDirs should come from path safety roots');
@@ -188,6 +195,154 @@ async function testEmptyLogsDirEnvFailsBeforeSnapshot(): Promise<void> {
   assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'Empty MCP_LOGS_DIR should identify the target config field');
   assertIncludes(error.message, 'MCP_LOGS_DIR must be a non-empty string', 'Empty MCP_LOGS_DIR should fail as an env value');
   assertIncludes(error.suggestion, 'Fix MCP_LOGS_DIR', 'Empty MCP_LOGS_DIR suggestion should point at the environment');
+}
+
+async function testMissingDefaultLogsDirFailsStartup(): Promise<void> {
+  await resetFixtures();
+  await fs.rm(DEFAULT_LOGS_DIR, { recursive: true, force: true });
+  await writeGlobalConfig(globalConfig());
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({
+      homeDir: HOME_DIR,
+      workspaceId: 'runtime-workspace',
+      env: {},
+    })
+  );
+
+  assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'Missing default logs root should identify the effective logsDir field');
+  assertIncludes(error.message, 'does not exist or cannot be accessed', 'Missing default logs root should fail existing-directory policy');
+  assertIncludes(error.suggestion, 'Create the default logs root', 'Missing default logs root suggestion should ask for directory creation');
+}
+
+async function testDefaultLogsDirMustBeDirectory(): Promise<void> {
+  await resetFixtures();
+  await fs.rm(DEFAULT_LOGS_DIR, { recursive: true, force: true });
+  await fs.writeFile(DEFAULT_LOGS_DIR, 'not a directory', 'utf-8');
+  await writeGlobalConfig(globalConfig());
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({
+      homeDir: HOME_DIR,
+      workspaceId: 'runtime-workspace',
+      env: {},
+    })
+  );
+
+  assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'File default logs root should identify the effective logsDir field');
+  assertIncludes(error.message, 'must point to an existing directory', 'File default logs root should fail directory policy');
+  assertIncludes(error.suggestion, 'Create the default logs root', 'File default logs root suggestion should ask for a directory');
+}
+
+async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
+  await resetFixtures();
+  const baseInput = {
+    configFilePath: CONFIG_FILE,
+    workspaceId: 'runtime-workspace',
+    rootDir: PRIMARY_DIR,
+    otherRootDirs: [ADDITIONAL_A_DIR],
+    port: 4801,
+    lineEnding: 'lf' as const,
+    logsDir: DEFAULT_LOGS_DIR,
+    android: {
+      workspaceRoot: ANDROID_WORKSPACE_DIR,
+      javaHome: ANDROID_JAVA_HOME_DIR,
+      buildTimeoutMs: 900000,
+      maxErrorBlockChars: 2500,
+      maxLogTailChars: 4000,
+    },
+  };
+  const cases = [
+    {
+      name: 'rootDir',
+      run: () =>
+        createRuntimeConfigSnapshot(
+          { ...baseInput, rootDir: `${PRIMARY_DIR} ` },
+          { workspaceIndex: 0 },
+        ),
+      expectedFieldPath: 'workspaces[0].rootDir',
+    },
+    {
+      name: 'otherRootDirs',
+      run: () =>
+        createRuntimeConfigSnapshot(
+          { ...baseInput, otherRootDirs: [`${ADDITIONAL_A_DIR} `] },
+          { workspaceIndex: 0 },
+        ),
+      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
+    },
+    {
+      name: 'logsDir',
+      run: () =>
+        createRuntimeConfigSnapshot(
+          { ...baseInput, logsDir: `${DEFAULT_LOGS_DIR} ` },
+          { workspaceIndex: 0 },
+        ),
+      expectedFieldPath: 'workspaces[0].logsDir',
+    },
+    {
+      name: 'android.workspaceRoot',
+      run: () =>
+        createRuntimeConfigSnapshot(
+          {
+            ...baseInput,
+            android: { ...baseInput.android, workspaceRoot: `${ANDROID_WORKSPACE_DIR} ` },
+          },
+          { workspaceIndex: 0 },
+        ),
+      expectedFieldPath: 'workspaces[0].android.workspaceRoot',
+    },
+    {
+      name: 'android.javaHome',
+      run: () =>
+        createRuntimeConfigSnapshot(
+          {
+            ...baseInput,
+            android: { ...baseInput.android, javaHome: `${ANDROID_JAVA_HOME_DIR} ` },
+          },
+          { workspaceIndex: 0 },
+        ),
+      expectedFieldPath: 'workspaces[0].android.javaHome',
+    },
+  ];
+
+  for (const testCase of cases) {
+    const error = captureConfigError(testCase.run);
+
+    assertEqual(error.fieldPath, testCase.expectedFieldPath, `${testCase.name} precondition should identify the offending field`);
+    assertIncludes(error.message, 'must not contain leading or trailing whitespace', `${testCase.name} precondition should reject whitespace instead of trimming`);
+    assertIncludes(error.suggestion, 'Snapshot path-like inputs', `${testCase.name} precondition should explain the snapshot seam contract`);
+  }
+}
+
+async function testLogsAndAndroidPathsStayOutsideAllowedRoots(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({
+    logsDir: CONFIGURED_LOGS_DIR,
+    otherRootDirs: [ADDITIONAL_A_DIR],
+    android: {
+      workspaceRoot: ANDROID_WORKSPACE_DIR,
+      javaHome: ANDROID_JAVA_HOME_DIR,
+      buildTimeoutMs: 900000,
+      maxErrorBlockChars: 2500,
+      maxLogTailChars: 4000,
+    },
+  }));
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: {},
+  });
+  const allowedRootPaths = snapshot.pathSafetyContext.allowedRoots.map((root) => root.rootDir);
+
+  assertEqual(snapshot.logsDir, path.resolve(CONFIGURED_LOGS_DIR), 'Snapshot should resolve configured logsDir for runtime use');
+  assert(snapshot.android !== undefined, 'Fixture should include Android config');
+  assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_DIR), 'Snapshot should resolve Android workspaceRoot');
+  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME_DIR), 'Snapshot should resolve Android javaHome');
+  assert(!allowedRootPaths.includes(path.resolve(CONFIGURED_LOGS_DIR)), 'logsDir should not become an allowed root');
+  assert(!allowedRootPaths.includes(path.resolve(ANDROID_WORKSPACE_DIR)), 'android.workspaceRoot should not become an allowed root');
+  assert(!allowedRootPaths.includes(path.resolve(ANDROID_JAVA_HOME_DIR)), 'android.javaHome should not become an allowed root');
 }
 
 async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
@@ -304,7 +459,7 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   } catch {
     // Frozen objects throw in strict mode; either way the assertion below checks the observable value.
   }
-  assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'Frozen snapshot should keep logsDir immutable');
+  assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Frozen snapshot should keep logsDir immutable');
   assert(Object.isFrozen(snapshot.otherRootDirs), 'Snapshot otherRootDirs should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext), 'PathSafetyContext should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot), 'Primary root should be frozen');
@@ -356,6 +511,10 @@ async function main(): Promise<void> {
       { name: 'uses configured logsDir', run: testSnapshotUsesConfiguredLogsDir },
       { name: 'uses allowed logsDir env override', run: testSnapshotUsesAllowedLogsDirEnvOverride },
       { name: 'empty logsDir env fails before snapshot', run: testEmptyLogsDirEnvFailsBeforeSnapshot },
+      { name: 'missing default logsDir fails startup', run: testMissingDefaultLogsDirFailsStartup },
+      { name: 'default logsDir must be a directory', run: testDefaultLogsDirMustBeDirectory },
+      { name: 'snapshot rejects whitespace path preconditions', run: testSnapshotRejectsWhitespacePathPreconditions },
+      { name: 'logsDir and Android paths stay outside allowed roots', run: testLogsAndAndroidPathsStayOutsideAllowedRoots },
       { name: 'invalid selected otherRootDirs return structured errors', run: testInvalidOtherRootDirsReturnStructuredErrors },
       { name: 'selected otherRootDirs reject realpath duplicates', run: testOtherRootDirsRealpathDuplicateValidation },
       { name: 'selected otherRootDirs reject realpath nesting', run: testOtherRootDirsRealpathNestedValidation },

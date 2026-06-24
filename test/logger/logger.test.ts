@@ -1,7 +1,7 @@
 import { Logger } from '../../src/utils/logger.js';
 import { isVerboseTestOutput } from '../test-utils.js';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +25,59 @@ function expectedLogFilePath(logsDir: string, date: Date, workspaceId: string): 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const testLogsDir = join(__dirname, '..', 'logs');
+
+async function assertMissingLogsRootFails(): Promise<void> {
+  await mkdir(testLogsDir, { recursive: true });
+  const missingLogsRoot = join(testLogsDir, 'missing-root');
+  await rm(missingLogsRoot, { recursive: true, force: true });
+
+  try {
+    const unexpectedLogger = new Logger(missingLogsRoot, {
+      workspaceId: 'missing-root-workspace',
+    });
+    await unexpectedLogger.close();
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      error.message.includes('Logger logsDir must be an existing directory')
+    ) {
+      return;
+    }
+
+    throw error;
+  }
+
+  throw new Error('Expected Logger construction to fail when logsDir root is missing');
+}
+
+async function assertFileLogsRootFails(): Promise<void> {
+  await mkdir(testLogsDir, { recursive: true });
+  const fileLogsRoot = join(testLogsDir, 'file-root.log');
+
+  try {
+    await writeFile(fileLogsRoot, 'not a directory', 'utf-8');
+
+    try {
+      const unexpectedLogger = new Logger(fileLogsRoot, {
+        workspaceId: 'file-root-workspace',
+      });
+      await unexpectedLogger.close();
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        error.message.includes('Logger logsDir must be an existing directory')
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+
+    throw new Error('Expected Logger construction to fail when logsDir root is a file');
+  } finally {
+    await rm(fileLogsRoot, { force: true });
+  }
+}
 
 async function withFixedNow<T>(fixedNow: Date, run: () => Promise<T>): Promise<T> {
   const RealDate = Date;
@@ -111,6 +164,8 @@ async function assertLogFileOpenFailureSurfaces(): Promise<void> {
   }
 }
 
+await assertMissingLogsRootFails();
+await assertFileLogsRootFails();
 await assertLogFileOpenFailureSurfaces();
 const fixedNow = new Date(2026, 5, 17, 8, 9, 10, 123);
 await withFixedNow(fixedNow, async () => {

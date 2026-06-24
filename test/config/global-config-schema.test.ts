@@ -18,6 +18,7 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'global-config-schem
 const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const WORKSPACE_A_DIR = path.join(FIXTURES_DIR, 'workspace-a');
 const WORKSPACE_B_DIR = path.join(FIXTURES_DIR, 'workspace-b');
 const WORKSPACE_C_DIR = path.join(FIXTURES_DIR, 'workspace-c');
@@ -31,6 +32,7 @@ const LOGS_WITH_SPACE_DIR = path.join(FIXTURES_DIR, 'service logs with spaces');
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
+  await fs.mkdir(DEFAULT_LOGS_DIR, { recursive: true });
   await fs.mkdir(NESTED_A_DIR, { recursive: true });
   await fs.mkdir(WORKSPACE_B_DIR, { recursive: true });
   await fs.mkdir(WORKSPACE_C_DIR, { recursive: true });
