@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ConfigError,
   loadRuntimeConfig,
+  loadRuntimeConfigWithIdentity,
 } from '../../src/config.js';
 import {
   assert,
@@ -22,6 +23,7 @@ const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const ADDITIONAL_DIR = path.join(FIXTURES_DIR, 'additional');
 const SECONDARY_DIR = path.join(FIXTURES_DIR, 'secondary');
 const OVERRIDE_DIR = path.join(FIXTURES_DIR, 'override-root');
+const OVERRIDE_LOGS_DIR = path.join(FIXTURES_DIR, 'override-logs');
 const ANDROID_WORKSPACE_ROOT = path.join(FIXTURES_DIR, 'android-project');
 const ANDROID_JAVA_HOME = path.join(FIXTURES_DIR, 'jbr');
 const ANDROID_OVERRIDE_ROOT = path.join(FIXTURES_DIR, 'android-override-project');
@@ -33,6 +35,7 @@ async function resetFixtures(): Promise<void> {
   await fs.mkdir(ADDITIONAL_DIR, { recursive: true });
   await fs.mkdir(SECONDARY_DIR, { recursive: true });
   await fs.mkdir(OVERRIDE_DIR, { recursive: true });
+  await fs.mkdir(OVERRIDE_LOGS_DIR, { recursive: true });
   await fs.mkdir(ANDROID_WORKSPACE_ROOT, { recursive: true });
   await fs.mkdir(ANDROID_JAVA_HOME, { recursive: true });
   await fs.mkdir(ANDROID_OVERRIDE_ROOT, { recursive: true });
@@ -139,6 +142,60 @@ async function testEnvOverridesAreIgnoredWithoutAllowlist(): Promise<void> {
   assertEqual(snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not override Android config');
 }
 
+async function testEnvOverridesApplyAfterWorkspaceSelectionBeforeSnapshot(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig({
+    version: 1,
+    workspaces: [
+      {
+        id: 'primary-workspace',
+        rootDir: PRIMARY_DIR,
+        otherRootDirs: [ADDITIONAL_DIR],
+        port: 4321,
+        lineEnding: 'lf',
+        android: {
+          workspaceRoot: ANDROID_WORKSPACE_ROOT,
+          javaHome: ANDROID_JAVA_HOME,
+          buildTimeoutMs: 900000,
+          maxErrorBlockChars: 2500,
+          maxLogTailChars: 4000,
+        },
+        envOverrides: {
+          allowedFields: ['lineEnding', 'logsDir', 'android.buildTimeoutMs'],
+        },
+      },
+      {
+        id: 'secondary-workspace',
+        rootDir: SECONDARY_DIR,
+        port: 4322,
+        lineEnding: 'auto',
+      },
+    ],
+  });
+
+  const loaded = loadRuntimeConfigWithIdentity({
+    homeDir: HOME_DIR,
+    workspaceId: 'primary-workspace',
+    env: {
+      MCP_ROOT_DIR: SECONDARY_DIR,
+      MCP_PORT: '4322',
+      MCP_LINE_ENDING: 'crlf',
+      MCP_LOGS_DIR: OVERRIDE_LOGS_DIR,
+      ANDROID_BUILD_TIMEOUT_MS: '1234',
+    },
+  });
+
+  assertEqual(loaded.identity.workspaceId, 'primary-workspace', 'Selection should run before env overrides are applied');
+  assertEqual(loaded.identity.rootDir, PRIMARY_DIR, 'Runtime identity should keep the selected config rootDir');
+  assertEqual(loaded.identity.port, 4321, 'Runtime identity should keep the selected config port');
+  assertEqual(loaded.snapshot.rootDir, PRIMARY_DIR, 'Boundary rootDir should not be overridden by env');
+  assertEqual(loaded.snapshot.port, 4321, 'Boundary port should not be overridden by env');
+  assertEqual(loaded.snapshot.lineEnding, 'crlf', 'Snapshot should include the allowlisted lineEnding env override');
+  assertEqual(loaded.snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Snapshot should include the allowlisted logsDir env override');
+  assert(loaded.snapshot.android !== undefined, 'Fixture should include Android config');
+  assertEqual(loaded.snapshot.android.buildTimeoutMs, 1234, 'Snapshot should include the allowlisted Android numeric env override');
+}
+
 async function testAndroidConfigRelativePathsFailStartup(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig({
@@ -240,6 +297,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'loads runtime snapshot from home dotdir config', run: testLoadsRuntimeSnapshotFromHomeDotdirConfig },
       { name: 'env overrides are ignored without allowlist', run: testEnvOverridesAreIgnoredWithoutAllowlist },
+      { name: 'env overrides apply after workspace selection before snapshot', run: testEnvOverridesApplyAfterWorkspaceSelectionBeforeSnapshot },
       { name: 'Android config relative paths fail startup', run: testAndroidConfigRelativePathsFailStartup },
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },

@@ -1,5 +1,4 @@
 import { resolve } from 'node:path';
-import { applyEnvOverridesToWorkspace } from './env-overrides.js';
 import { ConfigError } from './errors.js';
 import { normalizeLogsDirPath } from './path-validation.js';
 import type { ParsedAndroidConfig, ParsedWorkspaceConfig } from './schema.js';
@@ -52,20 +51,13 @@ export interface BuildRuntimeConfigSnapshotOptions {
   readonly workspace: ParsedWorkspaceConfig;
   readonly workspaceIndex: number;
   readonly defaultLogsDir: string;
-  /** Environment values considered only for the selected workspace allowlist. */
-  readonly env?: NodeJS.ProcessEnv;
   readonly snapshotVersion?: number;
 }
 
 export function buildRuntimeConfigSnapshot(
   options: BuildRuntimeConfigSnapshotOptions,
 ): RuntimeConfigSnapshot {
-  const workspace = applyEnvOverridesToWorkspace({
-    configFilePath: options.configFilePath,
-    workspace: options.workspace,
-    workspaceIndex: options.workspaceIndex,
-    env: options.env,
-  });
+  const { workspace } = options;
 
   return createRuntimeConfigSnapshot(
     {

@@ -3,6 +3,7 @@ import {
   buildRuntimeConfigSnapshot,
   type RuntimeConfigSnapshot,
 } from './config/runtime-snapshot.js';
+import { applyEnvOverridesToWorkspace } from './config/env-overrides.js';
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
@@ -89,12 +90,17 @@ export function loadRuntimeConfigWithIdentity(
       selection.identity.workspaceId,
       location.configFilePath,
     );
-    const snapshot = buildRuntimeConfigSnapshot({
+    const workspace = applyEnvOverridesToWorkspace({
       configFilePath: location.configFilePath,
       workspace: selection.workspace,
       workspaceIndex: selectedWorkspaceIndex,
-      defaultLogsDir,
       env: options.env,
+    });
+    const snapshot = buildRuntimeConfigSnapshot({
+      configFilePath: location.configFilePath,
+      workspace,
+      workspaceIndex: selectedWorkspaceIndex,
+      defaultLogsDir,
       snapshotVersion: options.snapshotVersion ?? 1,
     });
 
