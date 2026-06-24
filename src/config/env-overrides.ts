@@ -1,5 +1,10 @@
+import { readExistingDirectoryPath } from './path-policy.js';
 import { ConfigError } from './errors.js';
-import { normalizeLogsDirPath } from './path-validation.js';
+import {
+  readEnvPositiveInteger,
+  readLineEndingToken,
+  type ValuePolicyResult,
+} from './value-policy.js';
 import {
   ENV_OVERRIDE_FIELD_ENV_VARS,
   type ParsedAndroidConfig,
@@ -18,7 +23,6 @@ export interface ApplyEnvOverridesOptions {
 type EnvOverrideField = ParsedEnvOverrideField;
 
 const ALLOWED_FIELD_ENV_VARS = ENV_OVERRIDE_FIELD_ENV_VARS;
-const LINE_ENDINGS = new Set<ParsedLineEnding>(['auto', 'lf', 'crlf']);
 
 export function applyEnvOverridesToWorkspace(
   options: ApplyEnvOverridesOptions,
@@ -33,7 +37,7 @@ export function applyEnvOverridesToWorkspace(
 
   const env = options.env ?? process.env;
   const lineEnding = readLineEndingOverride(options, env, validatedFields) ?? options.workspace.lineEnding;
-  const logsDir = readLogsDirOverride(options, env, validatedFields);
+  const logsDir = readPathOverride(options, env, validatedFields, 'logsDir');
   const android = applyAndroidOverrides(options, env, validatedFields);
 
   return {
@@ -50,7 +54,7 @@ function validateAllowedFields(
 ): EnvOverrideField[] {
   return allowedFields.map((field, index) => {
     if (!isEnvOverrideField(field)) {
-      fail(
+      failConfig(
         options,
         allowedFieldPath(options, index),
         `envOverrides.allowedFields contains unknown field "${field}". Allowed fields are: ${Object.keys(ALLOWED_FIELD_ENV_VARS).join(', ')}.`,
@@ -74,7 +78,7 @@ function assertAndroidOverridesHaveBaseConfig(
     return;
   }
 
-  fail(
+  failConfig(
     options,
     allowedFieldPath(options, androidFieldIndex),
     `envOverrides.allowedFields contains Android field "${allowedFields[androidFieldIndex]}", but workspaces[${options.workspaceIndex}].android is not configured. Android env overrides can only override an existing complete android config block.`,
@@ -86,23 +90,21 @@ function readLineEndingOverride(
   env: NodeJS.ProcessEnv,
   allowedFields: readonly EnvOverrideField[],
 ): ParsedLineEnding | undefined {
-  if (!allowedFields.includes('lineEnding')) {
+  const field: EnvOverrideField = 'lineEnding';
+  if (!allowedFields.includes(field)) {
     return undefined;
   }
 
-  const rawValue = readEnvValue(env, ALLOWED_FIELD_ENV_VARS.lineEnding);
+  const envVar = ALLOWED_FIELD_ENV_VARS[field];
+  const rawValue = readAuthorizedEnvValue(env, envVar);
   if (rawValue === undefined) {
     return undefined;
   }
 
-  if (isLineEnding(rawValue)) {
-    return rawValue;
-  }
-
-  fail(
+  return unwrapEnvPolicy(
     options,
-    `${workspaceFieldPath(options)}.lineEnding`,
-    `${ALLOWED_FIELD_ENV_VARS.lineEnding} must be one of: ${Array.from(LINE_ENDINGS).join(', ')}.`,
+    field,
+    readLineEndingToken(rawValue, { fieldPath: envVar }),
   );
 }
 
@@ -118,9 +120,9 @@ function applyAndroidOverrides(
 
   return {
     workspaceRoot:
-      readStringOverride(env, allowedFields, 'android.workspaceRoot') ?? android.workspaceRoot,
+      readPathOverride(options, env, allowedFields, 'android.workspaceRoot') ?? android.workspaceRoot,
     javaHome:
-      readStringOverride(env, allowedFields, 'android.javaHome') ?? android.javaHome,
+      readPathOverride(options, env, allowedFields, 'android.javaHome') ?? android.javaHome,
     buildTimeoutMs:
       readPositiveIntegerOverride(options, env, allowedFields, 'android.buildTimeoutMs') ?? android.buildTimeoutMs,
     maxErrorBlockChars:
@@ -130,29 +132,8 @@ function applyAndroidOverrides(
   };
 }
 
-function readLogsDirOverride(
+function readPathOverride(
   options: ApplyEnvOverridesOptions,
-  env: NodeJS.ProcessEnv,
-  allowedFields: readonly EnvOverrideField[],
-): string | undefined {
-  if (!allowedFields.includes('logsDir')) {
-    return undefined;
-  }
-
-  const rawValue = readEnvValue(env, ALLOWED_FIELD_ENV_VARS.logsDir);
-  if (rawValue === undefined) {
-    return undefined;
-  }
-
-  try {
-    return normalizeLogsDirPath(rawValue, ALLOWED_FIELD_ENV_VARS.logsDir);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    fail(options, `${workspaceFieldPath(options)}.logsDir`, message);
-  }
-}
-
-function readStringOverride(
   env: NodeJS.ProcessEnv,
   allowedFields: readonly EnvOverrideField[],
   field: EnvOverrideField,
@@ -161,7 +142,17 @@ function readStringOverride(
     return undefined;
   }
 
-  return readEnvValue(env, ALLOWED_FIELD_ENV_VARS[field]);
+  const envVar = ALLOWED_FIELD_ENV_VARS[field];
+  const rawValue = readAuthorizedEnvValue(env, envVar);
+  if (rawValue === undefined) {
+    return undefined;
+  }
+
+  return unwrapEnvPolicy(
+    options,
+    field,
+    readExistingDirectoryPath(rawValue, { fieldPath: envVar }),
+  );
 }
 
 function readPositiveIntegerOverride(
@@ -175,58 +166,51 @@ function readPositiveIntegerOverride(
   }
 
   const envVar = ALLOWED_FIELD_ENV_VARS[field];
-  const rawValue = readEnvValue(env, envVar);
+  const rawValue = readAuthorizedEnvValue(env, envVar);
   if (rawValue === undefined) {
     return undefined;
   }
 
-  const trimmed = rawValue.trim();
-  if (!/^[1-9]\d*$/.test(trimmed)) {
-    fail(
-      options,
-      `${workspaceFieldPath(options)}.${field}`,
-      `${envVar} must be a positive integer.`,
-    );
-  }
-
-  const parsed = Number(trimmed);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    fail(
-      options,
-      `${workspaceFieldPath(options)}.${field}`,
-      `${envVar} must be a positive integer.`,
-    );
-  }
-
-  return parsed;
+  return unwrapEnvPolicy(
+    options,
+    field,
+    readEnvPositiveInteger(rawValue, { fieldPath: envVar, label: envVar }),
+  );
 }
 
-function readEnvValue(env: NodeJS.ProcessEnv, envVar: string): string | undefined {
-  const rawValue = env[envVar];
-  if (rawValue === undefined || rawValue === '') {
-    return undefined;
+function readAuthorizedEnvValue(env: NodeJS.ProcessEnv, envVar: string): string | undefined {
+  return env[envVar];
+}
+
+function unwrapEnvPolicy<T>(
+  options: ApplyEnvOverridesOptions,
+  field: EnvOverrideField,
+  result: ValuePolicyResult<T>,
+): T {
+  if (!result.ok) {
+    failEnvValue(options, field, result.error.message);
   }
 
-  return rawValue;
+  return result.value;
 }
 
 function isEnvOverrideField(field: string): field is EnvOverrideField {
   return Object.prototype.hasOwnProperty.call(ALLOWED_FIELD_ENV_VARS, field);
 }
 
-function isLineEnding(value: string): value is ParsedLineEnding {
-  return LINE_ENDINGS.has(value as ParsedLineEnding);
-}
-
 function workspaceFieldPath(options: ApplyEnvOverridesOptions): string {
   return `workspaces[${options.workspaceIndex}]`;
+}
+
+function targetFieldPath(options: ApplyEnvOverridesOptions, field: EnvOverrideField): string {
+  return `${workspaceFieldPath(options)}.${field}`;
 }
 
 function allowedFieldPath(options: ApplyEnvOverridesOptions, index: number): string {
   return `${workspaceFieldPath(options)}.envOverrides.allowedFields[${index}]`;
 }
 
-function fail(
+function failConfig(
   options: ApplyEnvOverridesOptions,
   fieldPath: string,
   message: string,
@@ -237,5 +221,20 @@ function fail(
     fieldPath,
     message,
     suggestion: `Fix ${fieldPath} in ${options.configFilePath}, or remove that field from envOverrides.allowedFields.`,
+  });
+}
+
+function failEnvValue(
+  options: ApplyEnvOverridesOptions,
+  field: EnvOverrideField,
+  message: string,
+): never {
+  const envVar = ALLOWED_FIELD_ENV_VARS[field];
+  throw new ConfigError({
+    code: 'config_validation_failed',
+    configFilePath: options.configFilePath,
+    fieldPath: targetFieldPath(options, field),
+    message,
+    suggestion: `Fix ${envVar} in the server environment, or remove ${field} from envOverrides.allowedFields.`,
   });
 }

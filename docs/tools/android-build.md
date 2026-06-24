@@ -37,7 +37,7 @@
 
 ## 配置与返回
 
-工具从 `ToolRuntimeContext.android` 获取已归一化的 Android 配置，不直接读取配置文件或环境变量。配置层负责从当前选中 workspace 构建 runtime snapshot；如果 selected workspace 的 `envOverrides.allowedFields` 允许对应 `android.*` 字段，snapshot 中的 Android 配置可能已应用合法 env override。空字符串 env 会回退到配置文件值；`android.*` env override 不能创建缺失的 `android` 配置段。
+工具从 `ToolRuntimeContext.android` 获取已归一化的 Android 配置，不直接读取配置文件或环境变量。配置层负责从当前选中 workspace 构建 runtime snapshot；如果 selected workspace 的 `envOverrides.allowedFields` 允许对应 `android.*` 字段，snapshot 中的 Android 配置可能已应用合法 env override。Android env var 不存在时不覆盖；存在但为空字符串、whitespace-only、含首尾 whitespace、path 不存在或 numeric grammar 非法时启动失败。`android.*` env override 不能创建缺失的 `android` 配置段。
 
 成功时返回：
 

@@ -50,7 +50,7 @@
 
 ### 启动期配置管线
 
-配置加载的主入口是 `loadRuntimeConfigWithIdentity()`。启动期处理是线性管线：先建立受信配置来源，再校验全局 schema，再选择 workspace，最后把 selected workspace 归一化为不可变 runtime snapshot。维护时应按管线阶段定位职责，不要在工具层重新读取或理解全局配置结构。
+配置加载的主入口是 `loadRuntimeConfigWithIdentity()`。启动期处理是线性管线：先建立受信配置来源，再校验全局 schema，再选择 workspace，再按 selected workspace allowlist 应用 env override，最后把 selected workspace 归一化为不可变 runtime snapshot。维护时应按管线阶段定位职责，不要在工具层重新读取或理解全局配置结构。
 
 ```text
 parseCliArgs()
@@ -82,12 +82,13 @@ loadRuntimeConfigWithIdentity()
         │     - 记录 config file、workspace id、rootDir、port、selection mode
         │     - 不受 env override 影响
         │
+        ├─► applyEnvOverridesToWorkspace()
+        │     - 只作用于 selected workspace 的 allowlist 字段
+        │     - 只读取 selected workspace allowlist 授权的 env var
+        │     - env var 不存在时不覆盖；存在但值非法时启动失败
+        │     - 不允许覆盖 rootDir / port / otherRootDirs 等边界字段
+        │
         ├─► buildRuntimeConfigSnapshot()
-        │     ├─ applyEnvOverridesToWorkspace()
-        │     │   - 只作用于 selected workspace 的 allowlist 字段
-        │     │   - 不允许覆盖 rootDir / port / otherRootDirs 等边界字段
-        │     │   - allowedFields 包含 logsDir 时允许 MCP_LOGS_DIR 覆盖日志目录
-        │     │
         │     ├─ createValidatedPathSafetyContext()
         │     │   - 校验 selected workspace 的 rootDir + otherRootDirs
         │     │   - 生成 canonical allowed roots
@@ -111,7 +112,7 @@ createConfigStore()
 | 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
 | 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
 | Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | 已通过 lexical 校验的 `--workspace` 不存在，直接调用配置 loader 时传入非法 `workspaceId`，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
-| Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 非法，或被允许的 env 值非法。 |
+| Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 防御性校验失败，或被允许的 env 值为空、含首尾 whitespace、grammar 非法、path 不存在或不是目录。 |
 | Runtime snapshot | `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context，或日志目录路径形态非法。 |
 | 工具调用上下文 | `createToolRuntimeContext()` | `ToolRuntimeContext` | 不重新加载配置；工具只消费 snapshot 派生出的运行时能力。 |
 
@@ -120,7 +121,7 @@ createConfigStore()
 - `parseGlobalConfig()` 在 workspace 选择前运行，并校验所有 workspace；显式 `--workspace` 不会跳过未选中 workspace 的全局 schema / `rootDir` 校验。
 - 默认 workspace 选择只接受 `process.cwd()` realpath 与某个 workspace `rootDir` realpath 等价；cwd 位于 workspace 子目录内会启动失败并提示显式选择。
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
-- Env override 默认关闭；`envOverrides.allowedFields` 的结构、selector、重复项、环境变量名误填和 Android base config 要求由 schema 覆盖所有 workspace 校验；env 值读取只作用于 selected workspace allowlist。
+- Env override 默认关闭；`envOverrides.allowedFields` 的结构、selector、重复项、环境变量名误填和 Android base config 要求由 schema 覆盖所有 workspace 校验；env 值读取只作用于 selected workspace allowlist。env var 不存在表示不覆盖；env var 存在但为空字符串、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
 - `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
 - `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；selected workspace 配置的 `logsDir` 必须是已存在的本地绝对目录，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。默认 logs root 的 existing-directory 校验在阶段 4 开发检查点补齐。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
@@ -170,7 +171,7 @@ src/
 │   ├── errors.ts                # 结构化配置错误
 │   ├── global-config-path.ts    # home-level dotdir 配置路径解析
 │   ├── path-policy.ts           # 配置 path-like 字段本地绝对 existing-directory policy
-│   ├── path-validation.ts       # default/env logsDir runtime 路径形态校验（阶段 3/4 前保留）
+│   ├── path-validation.ts       # logsDir snapshot runtime 路径形态校验（阶段 4 前保留）
 │   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
 │   ├── value-policy.ts          # typed/free-form 字符串、token、JSON/env positive integer reader
@@ -267,7 +268,7 @@ workspace 未知字段会导致启动失败。
 
 ## 环境变量覆盖
 
-字段级 env override 默认禁用。只有 selected workspace 的 `envOverrides.allowedFields` 中列出的字段会读取对应环境变量。阶段 1 开发检查点已将 allowlist selector 校验迁入 schema；env value 的空字符串、path existing-directory 和 numeric raw grammar 语义在阶段 3 开发检查点补齐。
+字段级 env override 默认禁用。只有 selected workspace 的 `envOverrides.allowedFields` 中列出的字段会读取对应环境变量。allowlist selector 由 schema 覆盖所有 workspace 校验；env value 按目标字段 value policy 解析。
 
 ### Allowlist 语义
 
@@ -279,7 +280,8 @@ workspace 未知字段会导致启动失败。
 - forbidden field、unknown field 和环境变量名误填会在 schema 阶段失败；该校验覆盖所有 workspace，不跳过未选中 workspace。
 - `android.*` allowlist 要求同一个 workspace 已经显式配置完整 `android` 段；env override 不能创建缺失的 Android 配置。
 - 只有 selected workspace allowlist 中的字段会读取 env value；未授权 env var 即使存在也不会参与 snapshot。
-- 阶段 1 保留 selected workspace env value parser 的既有运行期行为：环境变量值为 `""` 时视为未设置，回退到配置文件值；非空但非法时启动失败。阶段 3 开发检查点会补齐 env 空字符串非法、env path existing-directory 和 env numeric raw grammar。
+- 环境变量只有不存在时表示不覆盖；存在但值为 `""`、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
+- `MCP_LINE_ENDING` 使用 `auto` / `lf` / `crlf` token grammar；`MCP_LOGS_DIR`、`ANDROID_WORKSPACE_ROOT` 和 `ANDROID_JAVA_HOME` 必须指向已存在的本地绝对目录；Android numeric env var 必须精确匹配十进制正整数字符串 grammar。
 - Env override 在 workspace 选择之后应用，不参与 cwd 匹配或 `--workspace` 选择。
 - Env override 不改变 `RuntimeConfigIdentity`；`rootDir`、`port` 等边界字段始终来自配置文件中已验证的 selected workspace。
 
@@ -311,7 +313,7 @@ workspace 未知字段会导致启动失败。
 
 `envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。
 
-`logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。阶段 1 开发检查点中，`MCP_LOGS_DIR` 为空字符串时仍回退到配置文件值或默认日志根目录；非空值必须是本地绝对路径，错误字段定位到 selected workspace 的 `logsDir`。env path existing-directory 语义在阶段 3 开发检查点补齐。
+`logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 不存在时不覆盖；存在时必须是非空、无首尾 whitespace、已存在的本地绝对目录，错误字段定位到 selected workspace 的 `logsDir`。
 
 ---
 
@@ -341,8 +343,8 @@ workspace 未知字段会导致启动失败。
 | 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段 | 从 allowlist 移除该字段；`rootDir`、`port`、`otherRootDirs` 等边界字段不能通过 env 覆盖。 |
 | 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |
 | 启动报 `envOverrides.allowedFields contains environment variable name ...` | allowlist 写了 `MCP_LOGS_DIR`、`ANDROID_JAVA_HOME` 等环境变量名 | 改写为配置字段 selector，例如 `logsDir` 或 `android.javaHome`。 |
-| 启动报 `ANDROID_* must be a positive integer` | allowlist 允许了 Android 数值字段，但对应 env 非空且不是正整数 | 修正 env 值，或设为空字符串回退配置文件值。 |
+| 启动报 `ANDROID_* must be a positive integer` 或 `ANDROID_* must be a non-empty string` | allowlist 允许了 Android 数值字段，但对应 env 为空、包含首尾 whitespace、不是十进制正整数或超过 safe integer 范围 | 修正 env 值，或从 `envOverrides.allowedFields` 移除对应字段。 |
 | 启动报 Android allowlist 但 `android is not configured` | workspace 允许了 `android.*` env override，却没有配置 `android` 段 | 补全该 workspace 的 `android` 段，或移除 `android.*` allowlist 项。 |
 | 工具调用返回 `Path outside workspace` | AI 传了 selected workspace allowed roots 范围外的路径，或用相对路径试图访问 additional root | 检查目标路径和 root 配置；additional root 必须用 drive-absolute 路径访问。 |
 | Android 构建工具返回配置错误 | 当前选中 workspace 没有 runtime Android 配置 | 在该 workspace 中补全 `android` 配置段；`ANDROID_*` 只能覆盖已有 `android` 配置，不能创建它。 |
-| 环境变量没有生效 | 对应字段未列入 selected workspace 的 `envOverrides.allowedFields`，或 env 值为空字符串 | 添加允许字段，或设置非空且合法的环境变量值。 |
+| 环境变量没有生效 | 对应字段未列入 selected workspace 的 `envOverrides.allowedFields`，或 env var 不存在 | 添加允许字段，并设置合法的环境变量值。 |

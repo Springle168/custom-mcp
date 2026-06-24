@@ -170,31 +170,24 @@ async function testSnapshotUsesAllowedLogsDirEnvOverride(): Promise<void> {
   assertEqual(snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Allowed MCP_LOGS_DIR should override configured logsDir');
 }
 
-async function testEmptyLogsDirEnvFallsBackByPriority(): Promise<void> {
+async function testEmptyLogsDirEnvFailsBeforeSnapshot(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig({
     logsDir: CONFIGURED_LOGS_DIR,
     envOverrides: { allowedFields: ['logsDir'] },
   }));
 
-  const configuredFallback = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'runtime-workspace',
-    env: { MCP_LOGS_DIR: '' },
-  });
-  assertEqual(configuredFallback.logsDir, path.resolve(CONFIGURED_LOGS_DIR), 'Empty MCP_LOGS_DIR should fall back to configured logsDir');
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({
+      homeDir: HOME_DIR,
+      workspaceId: 'runtime-workspace',
+      env: { MCP_LOGS_DIR: '' },
+    })
+  );
 
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    envOverrides: { allowedFields: ['logsDir'] },
-  }));
-
-  const defaultFallback = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'runtime-workspace',
-    env: { MCP_LOGS_DIR: '' },
-  });
-  assertEqual(defaultFallback.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'Empty MCP_LOGS_DIR should fall back to the default logs dir');
+  assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'Empty MCP_LOGS_DIR should identify the target config field');
+  assertIncludes(error.message, 'MCP_LOGS_DIR must be a non-empty string', 'Empty MCP_LOGS_DIR should fail as an env value');
+  assertIncludes(error.suggestion, 'Fix MCP_LOGS_DIR', 'Empty MCP_LOGS_DIR suggestion should point at the environment');
 }
 
 async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
@@ -362,7 +355,7 @@ async function main(): Promise<void> {
       { name: 'uses canonical path safety roots', run: testSnapshotUsesCanonicalPathSafetyRoots },
       { name: 'uses configured logsDir', run: testSnapshotUsesConfiguredLogsDir },
       { name: 'uses allowed logsDir env override', run: testSnapshotUsesAllowedLogsDirEnvOverride },
-      { name: 'empty logsDir env falls back by priority', run: testEmptyLogsDirEnvFallsBackByPriority },
+      { name: 'empty logsDir env fails before snapshot', run: testEmptyLogsDirEnvFailsBeforeSnapshot },
       { name: 'invalid selected otherRootDirs return structured errors', run: testInvalidOtherRootDirsReturnStructuredErrors },
       { name: 'selected otherRootDirs reject realpath duplicates', run: testOtherRootDirsRealpathDuplicateValidation },
       { name: 'selected otherRootDirs reject realpath nesting', run: testOtherRootDirsRealpathNestedValidation },
