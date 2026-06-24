@@ -54,10 +54,12 @@ async function testStoreReturnsInitialSnapshot(): Promise<void> {
     otherRootDirs: [ADDITIONAL_DIR],
   });
   const store = createConfigStore(initialConfig);
+  const logsRootStats = await fs.stat(initialConfig.snapshot.logsDir);
 
   assertEqual(store.getSnapshot(), initialConfig.snapshot, 'ConfigStore should return the initial snapshot');
   assertEqual(store.getIdentity(), initialConfig.identity, 'ConfigStore should return the initial runtime identity');
   assertEqual(store.getSnapshot().snapshotVersion, 1, 'Initial snapshot version should be 1');
+  assert(logsRootStats.isDirectory(), 'Test runtime snapshot helper should provide an existing logs root');
   assertEqual(store.getStatus().state, 'ok', 'Initial ConfigStore status should be ok');
   assert(Object.isFrozen(store), 'ConfigStore should freeze its public facade');
   assert(Object.isFrozen(store.getIdentity()), 'Runtime identity baseline should be frozen');

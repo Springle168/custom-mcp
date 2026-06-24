@@ -1,3 +1,4 @@
+import { mkdirSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import type {
   LoadedRuntimeConfig,
@@ -28,6 +29,8 @@ export interface TestRuntimeConfigOptions {
 export function createTestRuntimeConfigSnapshot(
   options: TestRuntimeConfigOptions,
 ): RuntimeConfigSnapshot {
+  const logsDir = options.logsDir ?? getDefaultTestLogsDir(options.rootDir);
+
   return createRuntimeConfigSnapshot({
     configFilePath: options.configFilePath ?? path.join(options.rootDir, 'config.json'),
     workspaceId: options.workspaceId ?? 'test-workspace',
@@ -35,10 +38,27 @@ export function createTestRuntimeConfigSnapshot(
     otherRootDirs: options.otherRootDirs ?? [],
     port: options.port ?? 3100,
     lineEnding: options.lineEnding ?? 'auto',
-    logsDir: options.logsDir ?? path.join(options.rootDir, '.custom-mcp-test-logs'),
+    logsDir,
     ...(options.android ? { android: options.android } : {}),
     snapshotVersion: options.snapshotVersion ?? 1,
   });
+}
+
+function getDefaultTestLogsDir(rootDir: string): string {
+  const logsDir = path.join(rootDir, '.custom-mcp-test-logs');
+
+  try {
+    if (statSync(rootDir).isDirectory()) {
+      mkdirSync(logsDir, { recursive: true });
+    }
+  } catch (error: unknown) {
+    const fsError = error as NodeJS.ErrnoException;
+    if (fsError.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  return logsDir;
 }
 
 export function createTestRuntimeConfigIdentity(
