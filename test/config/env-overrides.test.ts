@@ -19,6 +19,7 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'env-overrides');
 const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const WORKSPACE_A_DIR = path.join(FIXTURES_DIR, 'workspace-a');
 const WORKSPACE_B_DIR = path.join(FIXTURES_DIR, 'workspace-b');
 const OVERRIDE_ROOT_DIR = path.join(FIXTURES_DIR, 'override-root');
@@ -43,6 +44,7 @@ const ALL_ALLOWED_FIELDS = [
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
+  await fs.mkdir(DEFAULT_LOGS_DIR, { recursive: true });
   await fs.mkdir(WORKSPACE_A_DIR, { recursive: true });
   await fs.mkdir(WORKSPACE_B_DIR, { recursive: true });
   await fs.mkdir(OVERRIDE_ROOT_DIR, { recursive: true });

@@ -19,6 +19,7 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'load-runtime-config
 const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const ADDITIONAL_DIR = path.join(FIXTURES_DIR, 'additional');
 const SECONDARY_DIR = path.join(FIXTURES_DIR, 'secondary');
@@ -31,6 +32,7 @@ const ANDROID_OVERRIDE_JAVA_HOME = path.join(FIXTURES_DIR, 'android-override-jbr
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
+  await fs.mkdir(DEFAULT_LOGS_DIR, { recursive: true });
   await fs.mkdir(PRIMARY_DIR, { recursive: true });
   await fs.mkdir(ADDITIONAL_DIR, { recursive: true });
   await fs.mkdir(SECONDARY_DIR, { recursive: true });

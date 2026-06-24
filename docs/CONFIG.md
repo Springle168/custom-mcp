@@ -93,7 +93,7 @@ loadRuntimeConfigWithIdentity()
         │     │   - 校验 selected workspace 的 rootDir + otherRootDirs
         │     │   - 生成 canonical allowed roots
         │     │
-        │     └─ 计算最终 logsDir 并 deep-freeze RuntimeConfigSnapshot
+        │     └─ 校验默认 logs root，写入 resolved logsDir / Android paths，并 deep-freeze RuntimeConfigSnapshot
         │
         ▼
 createConfigStore()
@@ -113,7 +113,7 @@ createConfigStore()
 | 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
 | Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | 已通过 lexical 校验的 `--workspace` 不存在，直接调用配置 loader 时传入非法 `workspaceId`，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
 | Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 防御性校验失败，或被允许的 env 值为空、含首尾 whitespace、grammar 非法、path 不存在或不是目录。 |
-| Runtime snapshot | `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context，或日志目录路径形态非法。 |
+| Runtime snapshot | `buildRuntimeConfigSnapshot()` / `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context、默认 logs root 不存在/不是目录，或 direct snapshot seam 收到含首尾 whitespace 的 path-like 输入。 |
 | 工具调用上下文 | `createToolRuntimeContext()` | `ToolRuntimeContext` | 不重新加载配置；工具只消费 snapshot 派生出的运行时能力。 |
 
 维护不变量：
@@ -123,7 +123,7 @@ createConfigStore()
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
 - Env override 默认关闭；`envOverrides.allowedFields` 的结构、selector、重复项、环境变量名误填和 Android base config 要求由 schema 覆盖所有 workspace 校验；env 值读取只作用于 selected workspace allowlist。env var 不存在表示不覆盖；env var 存在但为空字符串、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
 - `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
-- `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；selected workspace 配置的 `logsDir` 必须是已存在的本地绝对目录，且只有 allowlist 包含 `logsDir` 时 `MCP_LOGS_DIR` 才会覆盖。默认 logs root 的 existing-directory 校验在阶段 4 开发检查点补齐。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
+- `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；默认值、selected workspace 配置的 `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
 - `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
 - `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
@@ -147,8 +147,10 @@ createConfigStore()
 
 - initial `snapshotVersion` 为 `1`。
 - snapshot 必含已验证的 `pathSafetyContext`；文件类工具通过 `ToolRuntimeContext.pathSafetyContext` 使用这个上下文。
-- snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示日志根目录。
+- snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示已存在的日志根目录。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
+- snapshot 的 `logsDir` 和 Android path 写入 resolved runtime path，但不加入 `pathSafetyContext.allowedRoots`；文件工具 allowed roots 只来自 selected workspace 的 `rootDir + otherRootDirs`。
+- `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路。
 - snapshot、`android`、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
@@ -171,7 +173,6 @@ src/
 │   ├── errors.ts                # 结构化配置错误
 │   ├── global-config-path.ts    # home-level dotdir 配置路径解析
 │   ├── path-policy.ts           # 配置 path-like 字段本地绝对 existing-directory policy
-│   ├── path-validation.ts       # logsDir snapshot runtime 路径形态校验（阶段 4 前保留）
 │   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
 │   ├── value-policy.ts          # typed/free-form 字符串、token、JSON/env positive integer reader
@@ -226,7 +227,7 @@ test/
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
 | `port` | JSON number positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一；numeric string 非法。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
-| `logsDir` | string | 否 | 服务日志根目录；配置文件中提供时必须是已存在的本地绝对目录。缺省值为 `~/.custom-mcp/logs`，默认 logs root 的 existing-directory 校验在阶段 4 开发检查点补齐。Logger 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
+| `logsDir` | string | 否 | 服务日志根目录；配置文件中提供时必须是已存在的本地绝对目录。缺省值为 `~/.custom-mcp/logs`，该默认日志根目录也必须预先存在且为目录。Logger 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。每一项必须是已存在的本地绝对目录。选中 workspace 构建 snapshot 时会作为 allowed roots 集合校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
@@ -257,7 +258,7 @@ workspace 未知字段会导致启动失败。
 - `lineEnding` 只接受精确的 `auto` / `lf` / `crlf`，不做大小写宽容。
 - 配置文件 numeric 字段只接受 JSON number positive integer；numeric string（包括 `"3100"`、`" 3100"`、`"3100 "`）、`0`、负数、`1.5` 和 unsafe integer 都会失败。
 - workspace `port` 必须是 JSON number positive integer `1..65535`，且全局唯一。
-- `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome` 必须是已存在的本地绝对目录；Windows 下必须是 drive-absolute path，不支持相对路径、UNC、namespace path、drive-relative path、rooted-without-drive path 或 `~` 展开。
+- `rootDir`、`otherRootDirs[]`、configured `logsDir`、默认 logs root、`android.workspaceRoot` 和 `android.javaHome` 必须是已存在的本地绝对目录；Windows 下必须是 drive-absolute path，不支持相对路径、UNC、namespace path、drive-relative path、rooted-without-drive path 或 `~` 展开。
 - 所有 workspace `rootDir` 在 lexical normalized path 层不得重复或互相嵌套。
 - 所有 workspace `rootDir` 在 realpath 层不得重复或互相嵌套。
 - selected workspace 的 `rootDir + otherRootDirs` 集合安全由 runtime snapshot / path safety 继续校验。
@@ -338,7 +339,7 @@ workspace 未知字段会导致启动失败。
 | 启动报 `--workspace` 参数非法 | CLI 参数缺失、重复、为空、包含首尾 whitespace，或不符合 workspace id lexical grammar | 使用 `--workspace <id>` 或 `--workspace=<id>`，并传入配置中存在的 lowercase workspace id。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
 | 启动报 `must be a JSON number positive integer` | 配置文件 numeric 字段使用了 numeric string、`0`、负数、`1.5` 或 unsafe integer | 将字段改为 JSON number，例如 `3100`，不要写成 `"3100"`。 |
-| 启动报 `must be an absolute local path` 或 `does not exist or cannot be accessed` | 配置文件中的 path-like 字段使用了相对路径、UNC、namespace path、`~`、Windows 非 drive-absolute path，或目录不存在 | 改为已展开的本地绝对路径，并提前创建配置文件中写入的 `rootDir`、`otherRootDirs[]`、`logsDir` 和 Android 目录。默认 logs root existing-directory 校验在阶段 4 开发检查点补齐。 |
+| 启动报 `must be an absolute local path` 或 `does not exist or cannot be accessed` | 配置文件中的 path-like 字段、默认 logs root 或 env path override 使用了相对路径、UNC、namespace path、`~`、Windows 非 drive-absolute path，或目录不存在 | 改为已展开的本地绝对路径，并提前创建配置文件中写入的 `rootDir`、`otherRootDirs[]`、`logsDir`、默认 `~/.custom-mcp/logs` 和 Android 目录。 |
 | 启动报 `Selected workspace allowed roots are invalid` | selected workspace 的 `rootDir + otherRootDirs` 集合无法构建 path safety context | 按错误中的 `Field` 修复对应 root；allowed roots 必须互不重复/嵌套。 |
 | 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段 | 从 allowlist 移除该字段；`rootDir`、`port`、`otherRootDirs` 等边界字段不能通过 env 覆盖。 |
 | 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |

@@ -3,6 +3,7 @@ import {
   fstatSync,
   mkdirSync,
   openSync,
+  statSync,
   createWriteStream,
   type WriteStream,
 } from 'node:fs';
@@ -39,12 +40,27 @@ export interface LoggerOptions {
   readonly workspaceId: string;
 }
 
+function assertExistingLogsRoot(logsDir: string): void {
+  try {
+    if (statSync(logsDir).isDirectory()) {
+      return;
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Logger logsDir must be an existing directory: ${logsDir}. ${message}`);
+  }
+
+  throw new Error(`Logger logsDir must be an existing directory: ${logsDir}.`);
+}
+
 export class Logger {
   private stream: WriteStream;
   private streamError: Error | undefined;
   readonly logFile: string;
 
   constructor(logsDir: string, options: LoggerOptions) {
+    assertExistingLogsRoot(logsDir);
+
     const createdAt = new Date();
     const yearDir = String(createdAt.getFullYear());
     const monthDir = pad(createdAt.getMonth() + 1);
