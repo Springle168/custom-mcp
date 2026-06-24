@@ -1,5 +1,6 @@
-import { mkdirSync, statSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type {
   LoadedRuntimeConfig,
   LineEnding,
@@ -13,6 +14,10 @@ import {
   createToolRuntimeContext,
   type ToolRuntimeContext,
 } from '../../src/runtime/tool-context.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEFAULT_TEST_LOGS_DIR = path.join(__dirname, '..', 'logs', 'runtime-config-helper');
 
 export interface TestRuntimeConfigOptions {
   readonly rootDir: string;
@@ -29,7 +34,7 @@ export interface TestRuntimeConfigOptions {
 export function createTestRuntimeConfigSnapshot(
   options: TestRuntimeConfigOptions,
 ): RuntimeConfigSnapshot {
-  const logsDir = options.logsDir ?? getDefaultTestLogsDir(options.rootDir);
+  const logsDir = options.logsDir ?? getDefaultTestLogsDir();
 
   return createRuntimeConfigSnapshot({
     configFilePath: options.configFilePath ?? path.join(options.rootDir, 'config.json'),
@@ -44,21 +49,9 @@ export function createTestRuntimeConfigSnapshot(
   });
 }
 
-function getDefaultTestLogsDir(rootDir: string): string {
-  const logsDir = path.join(rootDir, '.custom-mcp-test-logs');
-
-  try {
-    if (statSync(rootDir).isDirectory()) {
-      mkdirSync(logsDir, { recursive: true });
-    }
-  } catch (error: unknown) {
-    const fsError = error as NodeJS.ErrnoException;
-    if (fsError.code !== 'ENOENT') {
-      throw error;
-    }
-  }
-
-  return logsDir;
+function getDefaultTestLogsDir(): string {
+  mkdirSync(DEFAULT_TEST_LOGS_DIR, { recursive: true });
+  return DEFAULT_TEST_LOGS_DIR;
 }
 
 export function createTestRuntimeConfigIdentity(
