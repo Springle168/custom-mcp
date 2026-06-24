@@ -3,6 +3,7 @@ import {
   readFreeFormString,
   readJsonPositiveInteger,
   readLineEndingToken,
+  readSelectorToken,
   readTypedString,
   readWorkspaceIdToken,
   type ValuePolicyResult,
@@ -57,6 +58,11 @@ function testTypedStringWhitespacePriority(): void {
     'field must not contain leading or trailing whitespace',
     'Trailing whitespace should fail before grammar checks',
   );
+  expectError(
+    readTypedString('\tvalue\n', { fieldPath: 'field' }),
+    'field must not contain leading or trailing whitespace',
+    'ECMAScript trim whitespace should be rejected at typed string boundaries',
+  );
 
   assertEqual(
     expectOk(readTypedString('value with internal spaces', { fieldPath: 'field' }), 'Internal spaces should be preserved'),
@@ -91,6 +97,31 @@ function testTokenGrammar(): void {
     readLineEndingToken('CRLF', { fieldPath: 'lineEnding' }),
     'must be one of: auto, lf, crlf',
     'lineEnding should be case-sensitive',
+  );
+}
+
+function testSelectorTokenBoundary(): void {
+  assertEqual(
+    expectOk(
+      readSelectorToken('android.javaHome', { fieldPath: 'envOverrides.allowedFields[0]' }),
+      'Selector token should parse',
+    ),
+    'android.javaHome',
+    'Selector reader should preserve the original legal selector',
+  );
+  expectError(
+    readSelectorToken('logsDir ', { fieldPath: 'envOverrides.allowedFields[0]' }),
+    'must not contain leading or trailing whitespace',
+    'Selector reader should reject trailing whitespace before domain checks',
+  );
+  expectError(
+    readSelectorToken('rootDir', {
+      fieldPath: 'envOverrides.allowedFields[0]',
+      allowedValues: ['logsDir'],
+      description: 'one of: logsDir',
+    }),
+    'must be one of: logsDir',
+    'Selector reader should support exact allowed selector sets',
   );
 }
 
@@ -184,6 +215,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'typed string whitespace priority', run: testTypedStringWhitespacePriority },
       { name: 'token grammar', run: testTokenGrammar },
+      { name: 'selector token boundary', run: testSelectorTokenBoundary },
       { name: 'JSON positive integer', run: testJsonPositiveInteger },
       { name: 'env positive integer', run: testEnvPositiveInteger },
       { name: 'free-form string preserves whitespace', run: testFreeFormStringPreservesWhitespace },

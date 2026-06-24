@@ -273,6 +273,11 @@ async function testAllowedFieldsOverrideSnapshotOnly(): Promise<void> {
   assertEqual(loaded.snapshot.android.buildTimeoutMs, 1234, 'Allowed ANDROID_BUILD_TIMEOUT_MS should override buildTimeoutMs');
   assertEqual(loaded.snapshot.android.maxErrorBlockChars, 1235, 'Allowed ANDROID_MAX_ERROR_BLOCK_CHARS should override maxErrorBlockChars');
   assertEqual(loaded.snapshot.android.maxLogTailChars, 1236, 'Allowed ANDROID_MAX_LOG_TAIL_CHARS should override maxLogTailChars');
+
+  const allowedRootPaths = loaded.snapshot.pathSafetyContext.allowedRoots.map((root) => root.rootDir);
+  assert(!allowedRootPaths.includes(path.resolve(OVERRIDE_LOGS_DIR)), 'Env-overridden logsDir should not become an allowed root');
+  assert(!allowedRootPaths.includes(path.resolve(ANDROID_OVERRIDE_WORKSPACE_ROOT)), 'Env-overridden android.workspaceRoot should not become an allowed root');
+  assert(!allowedRootPaths.includes(path.resolve(ANDROID_OVERRIDE_JAVA_HOME)), 'Env-overridden android.javaHome should not become an allowed root');
 }
 
 async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<void> {
@@ -438,14 +443,69 @@ async function testAndroidPathEnvOverridesRequireExistingDirectories(): Promise<
 }
 
 async function testNumericEnvOverridesUseRawPositiveIntegerGrammar(): Promise<void> {
-  const invalidValues = ['', '   ', ' 1234', '1234 ', '+123', '001', '1.5', '123abc', `${Number.MAX_SAFE_INTEGER + 1}`];
+  const cases = [
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: '',
+      message: 'must be a non-empty string',
+    },
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: '   ',
+      message: 'must be a non-empty string',
+    },
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: ' 1234',
+      message: 'must not contain leading or trailing whitespace',
+    },
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: '1234 ',
+      message: 'must not contain leading or trailing whitespace',
+    },
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: '+123',
+      message: 'must be a positive integer',
+    },
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: '001',
+      message: 'must be a positive integer',
+    },
+    {
+      selector: 'android.buildTimeoutMs',
+      envVar: 'ANDROID_BUILD_TIMEOUT_MS',
+      value: '123abc',
+      message: 'must be a positive integer',
+    },
+    {
+      selector: 'android.maxErrorBlockChars',
+      envVar: 'ANDROID_MAX_ERROR_BLOCK_CHARS',
+      value: '1.5',
+      message: 'must be a positive integer',
+    },
+    {
+      selector: 'android.maxLogTailChars',
+      envVar: 'ANDROID_MAX_LOG_TAIL_CHARS',
+      value: `${Number.MAX_SAFE_INTEGER + 1}`,
+      message: 'must be a positive integer',
+    },
+  ] as const;
 
-  for (const value of invalidValues) {
+  for (const testCase of cases) {
     await resetFixtures();
     await writeGlobalConfig(globalConfig([
       workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
         android: androidConfig(),
-        envOverrides: { allowedFields: ['android.buildTimeoutMs'] },
+        envOverrides: { allowedFields: [testCase.selector] },
       }),
     ]));
 
@@ -453,16 +513,16 @@ async function testNumericEnvOverridesUseRawPositiveIntegerGrammar(): Promise<vo
       loadRuntimeConfig({
         homeDir: HOME_DIR,
         workspaceId: 'workspace-a',
-        env: { ANDROID_BUILD_TIMEOUT_MS: value },
+        env: { [testCase.envVar]: testCase.value },
       })
     );
 
     assertEnvValueError(
       error,
-      'workspaces[0].android.buildTimeoutMs',
-      'ANDROID_BUILD_TIMEOUT_MS',
-      value.trim().length === 0 ? 'must be a non-empty string' : 'must',
-      'android.buildTimeoutMs',
+      `workspaces[0].${testCase.selector}`,
+      testCase.envVar,
+      testCase.message,
+      testCase.selector,
     );
   }
 }

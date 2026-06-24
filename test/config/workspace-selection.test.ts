@@ -291,16 +291,31 @@ async function testDirectWorkspaceIdLexicalErrorIsConfigError(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig());
 
-  const error = captureConfigError(() =>
-    loadRuntimeConfigWithIdentity({
-      homeDir: HOME_DIR,
+  const cases = [
+    {
       workspaceId: 'workspace-a ',
-      env: {},
-    })
-  );
+      message: 'must not contain leading or trailing whitespace',
+      assertion: 'Direct workspaceId seam should reject rather than trim invalid ids',
+    },
+    {
+      workspaceId: 'Workspace-a',
+      message: 'must be 1-64 characters',
+      assertion: 'Direct workspaceId seam should reject grammar-invalid ids as ConfigError',
+    },
+  ];
 
-  assertIncludes(error.message, 'must not contain leading or trailing whitespace', 'Direct workspaceId seam should reject rather than trim invalid ids');
-  assertEqual(error.fieldPath, 'workspace', 'Direct workspaceId lexical errors should identify the selection field');
+  for (const testCase of cases) {
+    const error = captureConfigError(() =>
+      loadRuntimeConfigWithIdentity({
+        homeDir: HOME_DIR,
+        workspaceId: testCase.workspaceId,
+        env: {},
+      })
+    );
+
+    assertIncludes(error.message, testCase.message, testCase.assertion);
+    assertEqual(error.fieldPath, 'workspace', 'Direct workspaceId lexical errors should identify the selection field');
+  }
 }
 
 async function testDefaultCwdSelectionRequiresExactRoot(): Promise<void> {

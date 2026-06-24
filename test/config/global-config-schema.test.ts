@@ -29,6 +29,11 @@ const ANDROID_WORKSPACE_ROOT = path.join(FIXTURES_DIR, 'android-project');
 const ANDROID_JAVA_HOME = path.join(FIXTURES_DIR, 'jbr');
 const LOGS_DIR = path.join(FIXTURES_DIR, 'service-logs');
 const LOGS_WITH_SPACE_DIR = path.join(FIXTURES_DIR, 'service logs with spaces');
+const ANDROID_NUMERIC_FIELDS = [
+  'buildTimeoutMs',
+  'maxErrorBlockChars',
+  'maxLogTailChars',
+] as const;
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
@@ -206,6 +211,10 @@ async function testCompleteAndroidConfigIsAccepted(): Promise<void> {
 
 async function testVersionAndWorkspacesAreRequired(): Promise<void> {
   await expectValidationError(
+    [],
+    'Config file must contain a JSON object',
+  );
+  await expectValidationError(
     { workspaces: [workspace(0)] },
     'version must be the number 1',
     'version',
@@ -217,6 +226,16 @@ async function testVersionAndWorkspacesAreRequired(): Promise<void> {
   );
   await expectValidationError(
     globalConfig([workspace(0)], { version: 2 }),
+    'version must be the number 1',
+    'version',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0)], { version: 1.1 }),
+    'version must be the number 1',
+    'version',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0)], { version: true }),
     'version must be the number 1',
     'version',
   );
@@ -234,6 +253,11 @@ async function testVersionAndWorkspacesAreRequired(): Promise<void> {
     { version: 1, workspaces: [] },
     'workspaces must contain at least one workspace',
     'workspaces',
+  );
+  await expectValidationError(
+    globalConfig([42]),
+    'workspaces[0] must be a JSON object',
+    'workspaces[0]',
   );
 }
 
@@ -514,6 +538,11 @@ async function testLogsDirShapeAndPathValidation(): Promise<void> {
 
 async function testAndroidCompletenessAndStrictIntegers(): Promise<void> {
   await expectValidationError(
+    globalConfig([workspace(0, { android: 'enabled' })]),
+    'workspaces[0].android must be a JSON object when configured',
+    'workspaces[0].android',
+  );
+  await expectValidationError(
     globalConfig([workspace(0, {
       android: {
         workspaceRoot: ANDROID_WORKSPACE_ROOT,
@@ -541,6 +570,19 @@ async function testAndroidCompletenessAndStrictIntegers(): Promise<void> {
   await expectValidationError(
     globalConfig([workspace(0, {
       android: {
+        workspaceRoot: `${ANDROID_WORKSPACE_ROOT} `,
+        javaHome: ANDROID_JAVA_HOME,
+        buildTimeoutMs: 900000,
+        maxErrorBlockChars: 2500,
+        maxLogTailChars: 4000,
+      },
+    })]),
+    'workspaces[0].android.workspaceRoot must not contain leading or trailing whitespace',
+    'workspaces[0].android.workspaceRoot',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, {
+      android: {
         workspaceRoot: ANDROID_WORKSPACE_ROOT,
         javaHome: path.join(FIXTURES_DIR, 'missing-jbr'),
         buildTimeoutMs: 900000,
@@ -555,28 +597,37 @@ async function testAndroidCompletenessAndStrictIntegers(): Promise<void> {
     globalConfig([workspace(0, {
       android: {
         workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        javaHome: ANDROID_JAVA_HOME,
-        buildTimeoutMs: '900000',
+        javaHome: NOT_DIRECTORY_PATH,
+        buildTimeoutMs: 900000,
         maxErrorBlockChars: 2500,
         maxLogTailChars: 4000,
       },
     })]),
-    'workspaces[0].android.buildTimeoutMs must be a JSON number positive integer',
-    'workspaces[0].android.buildTimeoutMs',
+    'workspaces[0].android.javaHome must point to an existing directory',
+    'workspaces[0].android.javaHome',
   );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        javaHome: ANDROID_JAVA_HOME,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 1.5,
-        maxLogTailChars: 4000,
-      },
-    })]),
-    'workspaces[0].android.maxErrorBlockChars must be a JSON number positive integer',
-    'workspaces[0].android.maxErrorBlockChars',
-  );
+
+  const invalidNumericValues: Record<typeof ANDROID_NUMERIC_FIELDS[number], unknown> = {
+    buildTimeoutMs: '900000',
+    maxErrorBlockChars: 1.5,
+    maxLogTailChars: 0,
+  };
+  for (const field of ANDROID_NUMERIC_FIELDS) {
+    await expectValidationError(
+      globalConfig([workspace(0, {
+        android: {
+          workspaceRoot: ANDROID_WORKSPACE_ROOT,
+          javaHome: ANDROID_JAVA_HOME,
+          buildTimeoutMs: 900000,
+          maxErrorBlockChars: 2500,
+          maxLogTailChars: 4000,
+          [field]: invalidNumericValues[field],
+        },
+      })]),
+      `workspaces[0].android.${field} must be a JSON number positive integer`,
+      `workspaces[0].android.${field}`,
+    );
+  }
 }
 
 async function testEnvOverridesSelectorValidation(): Promise<void> {
@@ -584,6 +635,11 @@ async function testEnvOverridesSelectorValidation(): Promise<void> {
     globalConfig([workspace(0, { envOverrides: { allowedFields: [], legacy: true } })]),
     'Unknown config field workspaces[0].envOverrides.legacy',
     'workspaces[0].envOverrides.legacy',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, { envOverrides: 'lineEnding' })]),
+    'workspaces[0].envOverrides must be a JSON object when configured',
+    'workspaces[0].envOverrides',
   );
   await expectValidationError(
     globalConfig([workspace(0, { envOverrides: {} })]),
@@ -612,6 +668,11 @@ async function testEnvOverridesSelectorValidation(): Promise<void> {
   );
   await expectValidationError(
     globalConfig([workspace(0, { envOverrides: { allowedFields: [' logsDir'] } })]),
+    'workspaces[0].envOverrides.allowedFields[0] must not contain leading or trailing whitespace',
+    'workspaces[0].envOverrides.allowedFields[0]',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, { envOverrides: { allowedFields: ['logsDir '] } })]),
     'workspaces[0].envOverrides.allowedFields[0] must not contain leading or trailing whitespace',
     'workspaces[0].envOverrides.allowedFields[0]',
   );
@@ -667,6 +728,16 @@ async function testUnselectedWorkspaceInvalidAllowlistStillFails(): Promise<void
 }
 
 async function testRootDirPathValidation(): Promise<void> {
+  await expectValidationError(
+    globalConfig([workspace(0, { rootDir: 42 })]),
+    'workspaces[0].rootDir must be a string',
+    'workspaces[0].rootDir',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, { rootDir: '' })]),
+    'workspaces[0].rootDir must be a non-empty string',
+    'workspaces[0].rootDir',
+  );
   await expectValidationError(
     globalConfig([workspace(0, { rootDir: ` ${WORKSPACE_A_DIR}` })]),
     'workspaces[0].rootDir must not contain leading or trailing whitespace',

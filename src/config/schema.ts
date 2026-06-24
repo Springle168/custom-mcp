@@ -3,7 +3,7 @@ import { readExistingDirectoryPath } from './path-policy.js';
 import {
   readJsonPositiveInteger,
   readLineEndingToken,
-  readTypedString,
+  readSelectorToken,
   readWorkspaceIdToken,
   type ValuePolicyResult,
 } from './value-policy.js';
@@ -277,7 +277,7 @@ function readAllowedFields(
   const seen = new Set<ParsedEnvOverrideField>();
   return value.map((item, index) => {
     const itemPath = `${fieldPath}[${index}]`;
-    const selector = unwrapPolicy(context, readTypedString(item, { fieldPath: itemPath }));
+    const selector = unwrapPolicy(context, readSelectorToken(item, { fieldPath: itemPath }));
     const envVarSelectorHint = ENV_VAR_SELECTOR_HINTS.get(selector);
 
     if (envVarSelectorHint !== undefined) {

@@ -17,6 +17,11 @@ export interface TokenOptions<T extends string> extends TypedStringOptions {
   readonly description: string;
 }
 
+export interface SelectorOptions<T extends string = string> extends TypedStringOptions {
+  readonly allowedValues?: readonly T[];
+  readonly description?: string;
+}
+
 export interface PositiveIntegerOptions {
   readonly fieldPath: string;
   readonly max?: number;
@@ -97,6 +102,28 @@ export function readLineEndingToken(
     allowedValues: LINE_ENDING_VALUES,
     description: `one of: ${LINE_ENDING_VALUES.join(', ')}`,
   });
+}
+
+export function readSelectorToken<T extends string = string>(
+  value: unknown,
+  options: SelectorOptions<T>,
+): ValuePolicyResult<T> {
+  const stringResult = readTypedString(value, options);
+  if (!stringResult.ok) return stringResult;
+
+  const selector = stringResult.value;
+  if (options.allowedValues === undefined) {
+    return ok(selector as T);
+  }
+
+  if ((options.allowedValues as readonly string[]).includes(selector)) {
+    return ok(selector as T);
+  }
+
+  return fail(
+    options.fieldPath,
+    `${options.fieldPath} must be ${options.description ?? 'a supported config field selector'}.`,
+  );
 }
 
 export function readJsonPositiveInteger(
