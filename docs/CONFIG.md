@@ -69,7 +69,8 @@ loadRuntimeConfigWithIdentity()
         │
         ├─► parseGlobalConfig()
         │     - 校验 version / workspaces / 未知字段
-        │     - 按集中 value policy 校验 workspace id、lineEnding、numeric 字段和 allowlist selector
+        │     - 按集中 value policy 校验 workspace id、lineEnding、allowlist selector 和 numeric 字段
+        │     - 按 schema 规则处理 allowlist duplicate、forbidden、unknown、环境变量名误填和 Android base config 要求
         │     - 按配置 path policy 校验所有 path-like 字段是已存在目录
         │     - 校验所有 workspace 的 id / port 唯一性
         │     - 校验所有 workspace.rootDir 存在且互不重复/嵌套
@@ -112,7 +113,7 @@ createConfigStore()
 | 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
 | 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
 | Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | 已通过 lexical 校验的 `--workspace` 不存在，直接调用配置 loader 时传入非法 `workspaceId`，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
-| Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 防御性校验失败，或被允许的 env 值为空、含首尾 whitespace、grammar 非法、path 不存在或不是目录。 |
+| Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 防御性校验失败，或被允许的 env 值为空、whitespace-only、含首尾 whitespace、grammar 非法、path 不存在或不是目录。 |
 | Runtime snapshot | `buildRuntimeConfigSnapshot()` / `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context、默认 logs root 不存在/不是目录，或 direct snapshot seam 收到含首尾 whitespace 的 path-like 输入。 |
 | 工具调用上下文 | `createToolRuntimeContext()` | `ToolRuntimeContext` | 不重新加载配置；工具只消费 snapshot 派生出的运行时能力。 |
 
@@ -121,7 +122,7 @@ createConfigStore()
 - `parseGlobalConfig()` 在 workspace 选择前运行，并校验所有 workspace；显式 `--workspace` 不会跳过未选中 workspace 的全局 schema / `rootDir` 校验。
 - 默认 workspace 选择只接受 `process.cwd()` realpath 与某个 workspace `rootDir` realpath 等价；cwd 位于 workspace 子目录内会启动失败并提示显式选择。
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
-- Env override 默认关闭；`envOverrides.allowedFields` 的结构、selector、重复项、环境变量名误填和 Android base config 要求由 schema 覆盖所有 workspace 校验；env 值读取只作用于 selected workspace allowlist。env var 不存在表示不覆盖；env var 存在但为空字符串、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
+- Env override 默认关闭；`envOverrides.allowedFields` 的基础 selector typed 边界由集中 value policy 读取，重复项、forbidden/unknown 字段、环境变量名误填和 Android base config 要求由 schema 覆盖所有 workspace 校验；env 值读取只作用于 selected workspace allowlist。env var 不存在表示不覆盖；env var 存在但为空字符串、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
 - `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
 - `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；默认值、selected workspace 配置的 `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
@@ -175,7 +176,7 @@ src/
 │   ├── path-policy.ts           # 配置 path-like 字段本地绝对 existing-directory policy
 │   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
-│   ├── value-policy.ts          # typed/free-form 字符串、token、JSON/env positive integer reader
+│   ├── value-policy.ts          # typed/free-form 字符串、token/selector、JSON/env positive integer reader
 │   └── workspace-selection.ts   # 显式/cwd workspace 选择与 RuntimeConfigIdentity
 └── runtime/
     ├── config-store.ts          # current snapshot 与 identity baseline 只读持有者
@@ -191,7 +192,7 @@ src/
 test/
 ├── config/
 │   ├── global-config-path.test.ts      # home-level dotdir config path
-│   ├── value-policy.test.ts            # typed/free-form 值、token、JSON/env positive integer reader
+│   ├── value-policy.test.ts            # typed/free-form 值、token/selector、JSON/env positive integer reader
 │   ├── path-policy.test.ts             # 配置 path-like 字段 existing-directory policy 与 platform/filesystem seam
 │   ├── global-config-schema.test.ts    # version: 1 schema、字段值语义、path-like 字段和 allowlist selector 校验
 │   ├── workspace-selection.test.ts     # --workspace 与 cwd 选择
@@ -253,7 +254,7 @@ workspace 未知字段会导致启动失败。
 - `version` 必须存在且为 `1`。
 - `workspaces` 必须是非空数组。
 - 未知字段会失败，不会静默忽略。
-- typed string 使用 `String.prototype.trim()` 检测空值和首尾 whitespace；检测后保留原始合法值，不使用 trim 后的值继续解析。
+- typed string 使用 `String.prototype.trim()` 检测空值和首尾 whitespace；空字符串和 whitespace-only 使用稳定错误片段 `must be a non-empty string`，首尾 whitespace 使用 `must not contain leading or trailing whitespace`；检测后保留原始合法值，不使用 trim 后的值继续解析。
 - workspace `id` 必须全局唯一，长度 `1..64`，以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`；首尾 whitespace 会以 whitespace 错误失败。
 - `lineEnding` 只接受精确的 `auto` / `lf` / `crlf`，不做大小写宽容。
 - 配置文件 numeric 字段只接受 JSON number positive integer；numeric string（包括 `"3100"`、`" 3100"`、`"3100 "`）、`0`、负数、`1.5` 和 unsafe integer 都会失败。
@@ -263,19 +264,19 @@ workspace 未知字段会导致启动失败。
 - 所有 workspace `rootDir` 在 realpath 层不得重复或互相嵌套。
 - selected workspace 的 `rootDir + otherRootDirs` 集合安全由 runtime snapshot / path safety 继续校验。
 - `android` 若提供，必须是对象且字段完整。
-- `envOverrides.allowedFields[]` 是 selector token，schema 会校验空值、首尾 whitespace、重复项、forbidden field、unknown field、环境变量名误填和 Android base config 要求。
+- `envOverrides.allowedFields[]` 是 selector token；基础 typed 边界由 `readSelectorToken()` 读取，schema 继续校验重复项、forbidden field、unknown field、环境变量名误填和 Android base config 要求。
 
 ---
 
 ## 环境变量覆盖
 
-字段级 env override 默认禁用。只有 selected workspace 的 `envOverrides.allowedFields` 中列出的字段会读取对应环境变量。allowlist selector 由 schema 覆盖所有 workspace 校验；env value 按目标字段 value policy 解析。
+字段级 env override 默认禁用。只有 selected workspace 的 `envOverrides.allowedFields` 中列出的字段会读取对应环境变量。allowlist selector 的基础 typed 边界由 value policy 读取，duplicate、forbidden、unknown、环境变量名误填和 Android base config 等领域规则由 schema 覆盖所有 workspace 校验；env value 按目标字段 value policy 解析。
 
 ### Allowlist 语义
 
 - 没有 `envOverrides`：全部字段级 env override 禁用。
 - `envOverrides` 出现时，`allowedFields` 必填且必须是数组；`allowedFields: []` 合法，表示全部字段级 env override 禁用。
-- `allowedFields[]` entry 必须是非空 string，且不能包含首尾 whitespace。
+- `allowedFields[]` entry 必须是非空 string，且不能包含首尾 whitespace；空字符串和 whitespace-only 使用 `must be a non-empty string` 错误片段。
 - `allowedFields[]` duplicate entry 会失败。
 - `allowedFields[]` 必须写配置字段 selector，不能写环境变量名，例如写 `logsDir` 而不是 `MCP_LOGS_DIR`。
 - forbidden field、unknown field 和环境变量名误填会在 schema 阶段失败；该校验覆盖所有 workspace，不跳过未选中 workspace。
