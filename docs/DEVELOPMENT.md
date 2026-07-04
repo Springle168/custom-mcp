@@ -58,7 +58,7 @@ custom-mcp/
 
 | 源码区域 | 主要维护入口 |
 |-|-|
-| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md)，其中 `src/config/value-policy.ts` 维护 typed/free-form 值语义，`src/config/path-policy.ts` 维护配置 path-like 字段的 existing-directory 输入策略 |
+| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md)，其中 `src/config/value-policy.ts` 维护 typed/free-form、token/selector 和 JSON/env positive integer 值语义，`src/config/path-policy.ts` 维护配置 path-like 字段的 existing-directory 输入策略 |
 | `src/runtime/config-store.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts` | 配置 runtime 语义见 [docs/CONFIG.md](CONFIG.md)；工具 handler 消费方式见 [docs/TOOLS.md](TOOLS.md) |
 | `src/tools/` | [docs/TOOLS.md](TOOLS.md) 和 [docs/tools/](tools/) 下对应单工具文档 |
 | `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |

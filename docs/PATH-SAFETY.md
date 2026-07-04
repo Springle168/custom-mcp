@@ -18,7 +18,7 @@
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 - 服务日志目录 `logsDir` 不属于 allowed roots，即使配置在 workspace 外也不会扩大文件工具访问边界。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；该 policy 覆盖 `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome`，但不决定文件工具 allowed roots。默认 `~/.custom-mcp/logs` 也使用 existing-directory policy 校验。配置加载阶段再通过 `src/config/runtime-snapshot.ts` 为 selected workspace 的 `rootDir + otherRootDirs` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
+文件类工具入口统一由 `src/utils/paths.ts` 处理。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；对应 env path override（`MCP_LOGS_DIR`、`ANDROID_WORKSPACE_ROOT`、`ANDROID_JAVA_HOME`）在 selected workspace allowlist 授权后也通过同一 policy 校验。该 policy 覆盖 `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome` 的输入合法性，但不决定文件工具 allowed roots。默认 `~/.custom-mcp/logs` 也使用 existing-directory policy 校验。配置加载阶段再通过 `src/config/runtime-snapshot.ts` 为 selected workspace 的 `rootDir + otherRootDirs` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
 
 ---
 

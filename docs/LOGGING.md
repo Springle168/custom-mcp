@@ -9,7 +9,7 @@
 - **终端（stdout）**：实时查看，带颜色高亮。
 - **日志文件**：默认写入 `~/.custom-mcp/logs/YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式。
 
-日志文件根目录来自启动期 `RuntimeConfigSnapshot.logsDir`：selected workspace 可配置 `logsDir`，也可在 `envOverrides.allowedFields` 包含 `logsDir` 后通过 `MCP_LOGS_DIR` 覆盖。`logsDir` 表示日志根目录；默认 `~/.custom-mcp/logs`、configured `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。Windows 下使用 drive-absolute path，例如 `E:/Logs/custom-mcp`。`Logger` 构造时先确认日志根目录已存在且为目录，然后在该根目录下按系统本地时间创建 `YYYY/MM/DD/` 日期子目录和 `<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 日志文件。文件名前缀直接使用 selected workspace id；配置 schema 要求 workspace id 以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`。
+日志文件根目录来自启动期 `RuntimeConfigSnapshot.logsDir`：selected workspace 可配置 `logsDir`，也可在 `envOverrides.allowedFields` 包含 `logsDir` 后通过 `MCP_LOGS_DIR` 覆盖。`logsDir` 表示日志根目录；默认 `~/.custom-mcp/logs`、configured `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。`MCP_LOGS_DIR` 不存在时不覆盖；存在但为空字符串、whitespace-only、含首尾 whitespace、相对路径或不存在目录时，配置加载失败。Windows 下使用 drive-absolute path，例如 `E:/Logs/custom-mcp`。`Logger` 构造时先确认日志根目录已存在且为目录，然后在该根目录下按系统本地时间创建 `YYYY/MM/DD/` 日期子目录和 `<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 日志文件。文件名前缀直接使用 selected workspace id；配置 schema 要求 workspace id 以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`。
 
 ---
 

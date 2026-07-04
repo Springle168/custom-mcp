@@ -37,7 +37,15 @@
 
 ## 配置与返回
 
-工具从 `ToolRuntimeContext.android` 获取已归一化的 Android 配置，不直接读取配置文件或环境变量。配置层负责从当前选中 workspace 构建 runtime snapshot；如果 selected workspace 的 `envOverrides.allowedFields` 允许对应 `android.*` 字段，snapshot 中的 Android 配置可能已应用合法 env override。Android env var 不存在时不覆盖；存在但为空字符串、whitespace-only、含首尾 whitespace、path 不存在或 numeric grammar 非法时启动失败。`android.*` env override 不能创建缺失的 `android` 配置段。
+工具从 `ToolRuntimeContext.android` 获取已归一化的 Android 配置，不直接读取配置文件或环境变量。配置层负责从当前选中 workspace 构建 runtime snapshot；如果 selected workspace 的 `envOverrides.allowedFields` 允许对应 `android.*` 字段，snapshot 中的 Android 配置可能已应用合法 env override。
+
+Android 配置边界：
+
+- `android.workspaceRoot` 和 `android.javaHome` 使用 Typed Path existing-directory 语义；配置文件值和 allowlisted env override 都必须是已存在的本地绝对目录。
+- Android env var 不存在时不覆盖；存在但为空字符串、whitespace-only、含首尾 whitespace、path 不存在或 numeric grammar 非法时启动失败。
+- Android numeric env var 必须精确匹配十进制正整数 grammar；配置文件中的 numeric 字段只接受 JSON number。
+- `android.*` env override 只作用于 selected workspace allowlist，且不能创建缺失的 `android` 配置段。
+- `gradlew.bat` readiness 不属于配置值语义；配置加载只确认 `android.workspaceRoot` 是已存在目录，具体 wrapper 检查仍在工具调用阶段执行。
 
 成功时返回：
 
