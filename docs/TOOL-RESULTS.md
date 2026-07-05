@@ -40,6 +40,45 @@
 
 ---
 
+## `structuredContent` 适配
+
+`structuredContent` 是 `tools/call` 统一出口根据 request header policy 执行的兼容适配，不是单个工具 handler 的返回契约。工具 handler 只返回项目标准 `ToolCallResult`，不读取 request headers，不判断 request policy，也不自行构造 `structuredContent`。
+
+命中 `structuredContent` feature 时，runtime adapter 返回一个新对象：
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Operation completed."
+    }
+  ],
+  "isError": false,
+  "structuredContent": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Operation completed."
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+适配规则：
+
+- 未启用 `structuredContent` 时返回 handler 的原始 result 对象，不添加扩展字段。
+- 启用 `structuredContent` 时返回新对象，不修改 handler 返回对象。
+- wrapper 只包含 `content` 和 `isError`，不复制顶层其它扩展字段。
+- wrapper 不解析 `content[0].text`，不读取工具私有 JSON payload。
+- `structuredContent.isError` 只把 `result.isError === true` 判定为错误。
+- handler 返回中已有同名扩展字段时，统一出口用规范 wrapper 覆盖 adapted result 中的 `structuredContent`，原对象保持不变。
+- `tools/list` 的工具 definition 保持不变，不为该兼容能力暴露或动态添加 `outputSchema`。
+
+---
+
 ## 统一 helper
 
 文本结果统一通过 `src/tools/results.ts` 构造：

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import express, { type Request } from 'express';
+import express, { type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
@@ -11,10 +12,38 @@ import {
 import { CliError, parseCliArgs } from './cli.js';
 import { ConfigError, loadRuntimeConfigWithIdentity } from './config.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
+import { runWithRequestHeaderContext } from './runtime/request-context.js';
+import { createStrictRequestHeaderView } from './runtime/request-header-view.js';
 import { createToolCallRequestHandler } from './runtime/tool-call-handler.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
 import { Logger } from './utils/logger.js';
 import { pendingQuestions, generateQuestionForm } from './tools/ask-user.js';
+
+export interface McpPostTransport {
+  readonly sessionId?: string;
+  handleRequest(req: Request, res: Response, body?: unknown): Promise<void> | void;
+}
+
+export interface McpPostServer {
+  close(): Promise<void> | void;
+}
+
+export interface McpPostSession {
+  readonly transport: McpPostTransport;
+  readonly server: McpPostServer;
+}
+
+export interface McpPostLogger {
+  info(message: string): void;
+}
+
+export interface HandleMcpPostRequestOptions {
+  readonly req: Request;
+  readonly res: Response;
+  readonly sessions: Map<string, McpPostSession>;
+  readonly logger: McpPostLogger;
+  readonly createSession: () => Promise<McpPostSession> | McpPostSession;
+}
 
 // ================
 // MCP Server Factory
@@ -61,6 +90,42 @@ function logWorkspaceRoots(configStore: ConfigStore, logger: Logger): void {
 function getMcpSessionId(req: Request): string | undefined {
   const header = req.headers['mcp-session-id'];
   return Array.isArray(header) ? header[0] : header;
+}
+
+export async function handleMcpPostRequest(
+  options: HandleMcpPostRequestOptions,
+): Promise<void> {
+  const { req, res, sessions, logger } = options;
+  const sessionId = getMcpSessionId(req);
+
+  if (sessionId) {
+    const session = sessions.get(sessionId);
+    if (session) {
+      await handleTransportRequestWithHeaderContext(session.transport, req, res);
+      return;
+    }
+
+    logger.info(`Unknown MCP session on POST: ${sessionId}`);
+    res.status(404).end();
+    return;
+  }
+
+  const session = await options.createSession();
+  await handleTransportRequestWithHeaderContext(session.transport, req, res);
+
+  if (session.transport.sessionId) {
+    sessions.set(session.transport.sessionId, session);
+    logger.info(`New session: ${session.transport.sessionId}`);
+  }
+}
+
+async function handleTransportRequestWithHeaderContext(
+  transport: McpPostTransport,
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const view = createStrictRequestHeaderView(req.rawHeaders);
+  await runWithRequestHeaderContext(view, () => transport.handleRequest(req, res, req.body));
 }
 
 function formatConfigStartupError(error: ConfigError): string {
@@ -118,50 +183,36 @@ async function main() {
   // 解析表单数据
   app.use(express.urlencoded({ extended: true }));
 
-  const sessions = new Map<
-    string,
-    { transport: StreamableHTTPServerTransport; server: Server }
-  >();
+  const sessions = new Map<string, McpPostSession>();
 
   // Unknown session IDs return 404 so Streamable HTTP clients can treat them as
   // stale and reinitialize after a server restart.
 
   // POST /mcp — JSON-RPC 请求
   app.post('/mcp', async (req, res) => {
-    const sessionId = getMcpSessionId(req);
+    await handleMcpPostRequest({
+      req,
+      res,
+      sessions,
+      logger,
+      createSession: async () => {
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+        });
 
-    if (sessionId) {
-      const session = sessions.get(sessionId);
-      if (session) {
-        await session.transport.handleRequest(req, res, req.body);
-        return;
-      }
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid) {
+            logger.info(`Session disconnected: ${sid}`);
+            sessions.delete(sid);
+          }
+        };
 
-      logger.info(`Unknown MCP session on POST: ${sessionId}`);
-      res.status(404).end();
-      return;
-    }
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
+        const server = createMCPServer(configStore, logger);
+        await server.connect(transport);
+        return { transport, server };
+      },
     });
-
-    transport.onclose = () => {
-      const sid = transport.sessionId;
-      if (sid) {
-        logger.info(`Session disconnected: ${sid}`);
-        sessions.delete(sid);
-      }
-    };
-
-    const server = createMCPServer(configStore, logger);
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-
-    if (transport.sessionId) {
-      sessions.set(transport.sessionId, { transport, server });
-      logger.info(`New session: ${transport.sessionId}`);
-    }
   });
 
   // GET /mcp — SSE 通道
@@ -299,14 +350,20 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  if (err instanceof CliError) {
-    console.error(formatCliStartupError(err));
-  } else if (err instanceof ConfigError) {
-    console.error(formatConfigStartupError(err));
-  } else {
-    console.error('Failed to start server:', err);
-  }
+if (isDirectRun()) {
+  main().catch((err) => {
+    if (err instanceof CliError) {
+      console.error(formatCliStartupError(err));
+    } else if (err instanceof ConfigError) {
+      console.error(formatConfigStartupError(err));
+    } else {
+      console.error('Failed to start server:', err);
+    }
 
-  process.exit(1);
-});
+    process.exit(1);
+  });
+}
+
+function isDirectRun(): boolean {
+  return process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+}

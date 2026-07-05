@@ -29,6 +29,15 @@ export type {
   RuntimeAndroidConfig,
   RuntimeConfigSnapshot,
 } from './config/runtime-snapshot.js';
+export {
+  createEmptyRuntimeRulesConfig,
+} from './config/request-header-rules.js';
+export type {
+  RuntimeRequestFeature,
+  RuntimeRequestHeaderMatchCondition,
+  RuntimeRequestHeaderRule,
+  RuntimeRulesConfig,
+} from './config/request-header-rules.js';
 
 export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions {
   readonly workspaceId?: string;

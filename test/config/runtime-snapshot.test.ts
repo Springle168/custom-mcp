@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ConfigError,
+  createEmptyRuntimeRulesConfig,
   loadRuntimeConfig,
 } from '../../src/config.js';
 import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
@@ -244,6 +245,7 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
     port: 4801,
     lineEnding: 'lf' as const,
     logsDir: DEFAULT_LOGS_DIR,
+    rules: createEmptyRuntimeRulesConfig(),
     android: {
       workspaceRoot: ANDROID_WORKSPACE_DIR,
       javaHome: ANDROID_JAVA_HOME_DIR,
@@ -442,9 +444,43 @@ async function testOtherRootDirsRealpathNestedValidation(): Promise<void> {
   }
 }
 
+async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({
+    rules: {
+      requestHeaders: [
+        {
+          match: { 'X-Client': 'android-studio' },
+          enable: ['structuredContent'],
+        },
+      ],
+    },
+  }));
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: {},
+  });
+
+  assertEqual(snapshot.rules.requestHeaders.length, 1, 'Snapshot should hold selected workspace request header rules');
+  assertEqual(snapshot.rules.requestHeaders[0]?.match[0]?.name, 'x-client', 'Snapshot rules should contain normalized header names');
+  assertEqual(snapshot.rules.requestHeaders[0]?.enable[0], 'structuredContent', 'Snapshot rules should preserve enabled features');
+}
+
 async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({ otherRootDirs: [ADDITIONAL_A_DIR] }));
+  await writeGlobalConfig(globalConfig({
+    otherRootDirs: [ADDITIONAL_A_DIR],
+    rules: {
+      requestHeaders: [
+        {
+          match: { 'X-Client': 'android-studio' },
+          enable: ['structuredContent'],
+        },
+      ],
+    },
+  }));
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -461,6 +497,14 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   }
   assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Frozen snapshot should keep logsDir immutable');
   assert(Object.isFrozen(snapshot.otherRootDirs), 'Snapshot otherRootDirs should be frozen');
+  assert(Object.isFrozen(snapshot.rules), 'Snapshot rules object should be frozen');
+  assert(Object.isFrozen(snapshot.rules.requestHeaders), 'Snapshot requestHeaders array should be frozen');
+  const firstRule = snapshot.rules.requestHeaders[0];
+  assert(firstRule !== undefined, 'Fixture should include a request header rule');
+  assert(Object.isFrozen(firstRule), 'Each request header rule should be frozen');
+  assert(Object.isFrozen(firstRule.match), 'Rule match array should be frozen');
+  assert(Object.isFrozen(firstRule.match[0]), 'Each rule match condition should be frozen');
+  assert(Object.isFrozen(firstRule.enable), 'Rule enable array should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext), 'PathSafetyContext should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot), 'Primary root should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot.permissions), 'Primary root permissions should be frozen');
@@ -518,6 +562,7 @@ async function main(): Promise<void> {
       { name: 'invalid selected otherRootDirs return structured errors', run: testInvalidOtherRootDirsReturnStructuredErrors },
       { name: 'selected otherRootDirs reject realpath duplicates', run: testOtherRootDirsRealpathDuplicateValidation },
       { name: 'selected otherRootDirs reject realpath nesting', run: testOtherRootDirsRealpathNestedValidation },
+      { name: 'snapshot holds request header rules', run: testSnapshotHoldsRequestHeaderRules },
       { name: 'deep-freezes snapshot graph', run: testSnapshotGraphIsDeepFrozen },
       { name: 'tool runtime context uses snapshot Android message', run: testToolRuntimeContextUsesSnapshotAndroidMessage },
     ],

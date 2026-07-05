@@ -7,6 +7,10 @@ import {
   readWorkspaceIdToken,
   type ValuePolicyResult,
 } from './value-policy.js';
+import {
+  readOptionalRulesConfig,
+  type RuntimeRulesConfig,
+} from './request-header-rules.js';
 import { validateWorkspaceRootPathSet } from '../utils/paths.js';
 
 export type ParsedLineEnding = 'auto' | 'lf' | 'crlf';
@@ -44,6 +48,7 @@ export interface ParsedWorkspaceConfig {
   readonly otherRootDirs: readonly string[];
   readonly android?: ParsedAndroidConfig;
   readonly envOverrides?: ParsedEnvOverridesConfig;
+  readonly rules: RuntimeRulesConfig;
 }
 
 export interface ParsedGlobalConfig {
@@ -69,6 +74,7 @@ const WORKSPACE_FIELDS = new Set([
   'otherRootDirs',
   'android',
   'envOverrides',
+  'rules',
 ]);
 const ANDROID_FIELDS = new Set([
   'workspaceRoot',
@@ -191,6 +197,7 @@ function parseWorkspace(
     otherRootDirs: readOptionalExistingDirectoryPathArray(context, rawWorkspace.otherRootDirs, `${fieldPath}.otherRootDirs`),
     ...(android !== undefined ? { android } : {}),
     ...(envOverrides !== undefined ? { envOverrides } : {}),
+    rules: readOptionalRulesConfig(context, rawWorkspace.rules, `${fieldPath}.rules`),
   };
 }
 
@@ -288,7 +295,7 @@ function readAllowedFields(
       );
     }
 
-    if (FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector)) {
+    if (isForbiddenEnvOverrideField(selector)) {
       fail(
         context,
         itemPath,
@@ -476,6 +483,10 @@ function unwrapPolicy<T>(context: ParseContext, result: ValuePolicyResult<T>): T
 
 function isEnvOverrideField(field: string): field is ParsedEnvOverrideField {
   return ENV_OVERRIDE_FIELDS.has(field as ParsedEnvOverrideField);
+}
+
+function isForbiddenEnvOverrideField(selector: string): boolean {
+  return FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector) || selector === 'rules' || selector.startsWith('rules.');
 }
 
 function joinFieldPath(parentPath: string | undefined, key: string): string {

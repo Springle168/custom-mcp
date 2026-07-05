@@ -151,10 +151,11 @@ createConfigStore()
 - snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示已存在的日志根目录。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
 - snapshot 的 `logsDir` 和 Android path 写入 resolved runtime path，但不加入 `pathSafetyContext.allowedRoots`；文件工具 allowed roots 只来自 selected workspace 的 `rootDir + otherRootDirs`。
-- `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路。
-- snapshot、`android`、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
+- snapshot 必含归一化后的 `rules`；未配置 request header rules 时写入 `{ requestHeaders: [] }`，只有 selected workspace 的规则进入 runtime snapshot。
+- `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路；调用方必须显式传入已归一化的 `rules`。
+- snapshot、`android`、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
-- 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
+- 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；request header policy 使用 snapshot rules 与 request-scoped strict header view 计算，不进入 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
 - 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。
 
 ---
@@ -174,14 +175,19 @@ src/
 │   ├── errors.ts                # 结构化配置错误
 │   ├── global-config-path.ts    # home-level dotdir 配置路径解析
 │   ├── path-policy.ts           # 配置 path-like 字段本地绝对 existing-directory policy
-│   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots 与 deep freeze
+│   ├── request-header-rules.ts  # workspace rules.requestHeaders schema、值语义和 runtime rules 类型
+│   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots、rules 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
 │   ├── value-policy.ts          # typed/free-form 字符串、token/selector、JSON/env positive integer reader
 │   └── workspace-selection.ts   # 显式/cwd workspace 选择与 RuntimeConfigIdentity
 └── runtime/
     ├── config-store.ts          # current snapshot 与 identity baseline 只读持有者
+    ├── request-context.ts       # 单次 HTTP request 的 strict header view AsyncLocalStorage carrier
+    ├── request-header-policy.ts # request header rules 纯匹配与 request policy 计算
+    ├── request-header-view.ts   # 基于 Request.rawHeaders 构造 strict header view
     ├── tool-call-handler.ts     # 每次工具调用开始时读取 current snapshot 的 handler seam
-    └── tool-context.ts          # 工具 handler 消费的运行时上下文
+    ├── tool-context.ts          # 工具 handler 消费的运行时上下文
+    └── tool-result-adapter.ts   # request policy 驱动的 ToolCallResult 非破坏性适配
 ```
 
 `src/runtime/` 不完全属于配置层，但 `ConfigStore`、tool-call handler seam 和 `ToolRuntimeContext` 是 global workspace 配置进入工具层的边界。配置语义在本文维护；工具如何消费 `ToolRuntimeContext` 见 [docs/TOOLS.md](TOOLS.md)。
@@ -197,10 +203,17 @@ test/
 │   ├── global-config-schema.test.ts    # version: 1 schema、字段值语义、path-like 字段和 allowlist selector 校验
 │   ├── workspace-selection.test.ts     # --workspace 与 cwd 选择
 │   ├── env-overrides.test.ts           # selected workspace allowlist 与 env 解析
-│   ├── runtime-snapshot.test.ts        # snapshot canonical roots、deep freeze 和派生上下文
+│   ├── request-header-rules.test.ts    # rules.requestHeaders schema、归一化、env override 禁止和 snapshot 接入
+│   ├── runtime-snapshot.test.ts        # snapshot canonical roots、rules、deep freeze 和派生上下文
 │   └── load-runtime-config.test.ts     # loadRuntimeConfig 集成行为
 ├── runtime/
-│   └── config-store.test.ts            # ConfigStore 与 tool-call handler seam
+│   ├── config-store.test.ts            # ConfigStore 与 tool-call handler seam
+│   ├── mcp-post-request-context.test.ts # POST /mcp request context seam
+│   ├── request-context.test.ts         # request-scoped strict header view carrier
+│   ├── request-header-policy.test.ts   # request header rules 匹配语义
+│   ├── request-header-view.test.ts     # rawHeaders strict view 构造
+│   ├── tool-call-handler.test.ts       # tools/call 统一出口 request policy 适配
+│   └── tool-result-adapter.test.ts     # structuredContent wrapper 适配
 └── helpers/
     └── runtime-config.ts               # 测试用 ToolRuntimeContext / ConfigStore 构造 helper
 ```
@@ -232,8 +245,40 @@ test/
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。每一项必须是已存在的本地绝对目录。选中 workspace 构建 snapshot 时会作为 allowed roots 集合校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
+| `rules` | object | 否 | workspace 级请求兼容规则；阶段 1 支持 `rules.requestHeaders` exact 匹配以启用 `structuredContent` 适配。 |
 
 workspace 未知字段会导致启动失败。
+
+### `rules.requestHeaders`
+
+`rules` 是 workspace 级可选对象，只允许 `requestHeaders` 字段。未配置 `rules`、配置 `rules: {}`、未配置 `rules.requestHeaders` 或配置 `rules.requestHeaders: []`，都会归一化为 `{ requestHeaders: [] }`。
+
+`rules.requestHeaders` 若出现，必须是 array。每条 rule 必须是 JSON object，只允许 `match` 和 `enable` 字段，且两者必填：
+
+```json
+{
+  "rules": {
+    "requestHeaders": [
+      {
+        "match": {
+          "x-custom-mcp-client": "android-studio"
+        },
+        "enable": ["structuredContent"]
+      }
+    ]
+  }
+}
+```
+
+`match` 必须是非空 JSON object。key 是 HTTP header name，使用 ``^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$`` 校验，通过后按 lowercase 保存；同一条 rule 内 header name lowercase 后重复会失败。`mcp-session-id` 没有业务 denylist，作为普通 header name 参与 exact 匹配。
+
+`match` value 必须先通过 typed string 语义：必须是非空 string，不能是 whitespace-only，也不能包含首尾 whitespace。随后执行 request header rules 专用 HTTP field value 校验：拒绝 ASCII control characters `U+0000..U+001F`，但允许内部 HTAB `U+0009`；拒绝 `U+007F`。合法 value 按原始字符串保存，内部空格和内部 HTAB 保留。配置错误消息不输出配置中的期望 header value。
+
+`enable` 必须是非空数组。entry 使用 token 语义，合法值只允许精确 `structuredContent`，大小写敏感，同一条 rule 内不能重复。
+
+HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，不使用 `req.headers` 作为 request header rules 匹配输入。strict view 中，同一个 lowercase header name 出现多次会得到 `duplicate` 状态；只有 `single` 且 value exact match 的 header 条件才成立。rule 之间是 OR，同一 rule 内条件是 AND。duplicate 或 missing header 只使引用该 name 的条件失败，不影响其它 rule 未引用的 header。
+
+阶段 1 开发检查点中，命中 `structuredContent` 后，`tools/call` 统一出口返回非破坏性的 `structuredContent` wrapper；工具 handler、工具 definition、`ToolRuntimeContext`、MCP session、transport/server 不保存 request policy 或 strict header view。响应日志 `Rules:` 行在阶段 2 补齐；阶段 1 日志仍按既有格式记录最终 adapted result。
 
 ### `android` 配置段
 
@@ -264,6 +309,7 @@ workspace 未知字段会导致启动失败。
 - 所有 workspace `rootDir` 在 realpath 层不得重复或互相嵌套。
 - selected workspace 的 `rootDir + otherRootDirs` 集合安全由 runtime snapshot / path safety 继续校验。
 - `android` 若提供，必须是对象且字段完整。
+- `rules` 若提供，必须是对象且只允许 `requestHeaders`；`rules.requestHeaders` rule 的 header name、header value、feature token 和重复项会在 schema 阶段校验，所有 workspace 都参与校验。
 - `envOverrides.allowedFields[]` 是 selector token；基础 typed 边界由 `readSelectorToken()` 读取，schema 继续校验重复项、forbidden field、unknown field、环境变量名误填和 Android base config 要求。
 
 ---
@@ -311,9 +357,9 @@ workspace 未知字段会导致启动失败。
 | `rootDir` | primary root 和 workspace 选择边界不能由 env 改变。 |
 | `port` | 端口唯一性、启动端口和 runtime identity 不能由 env 改变。 |
 | `otherRootDirs` | additional roots 会扩大文件访问边界，不能由 env 改变。 |
-| `rules` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
+| `rules` / `rules.*` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
 
-`envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。
+`envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。`rules` 和以 `rules.` 开头的 selector 均在 schema 阶段按 forbidden field 失败，不会读取任何 env value。
 
 `logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 不存在时不覆盖；存在时必须是非空、无首尾 whitespace、已存在的本地绝对目录，错误字段定位到 selected workspace 的 `logsDir`。
 

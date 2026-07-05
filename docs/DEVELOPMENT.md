@@ -58,8 +58,8 @@ custom-mcp/
 
 | 源码区域 | 主要维护入口 |
 |-|-|
-| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md)，其中 `src/config/value-policy.ts` 维护 typed/free-form、token/selector 和 JSON/env positive integer 值语义，`src/config/path-policy.ts` 维护配置 path-like 字段的 existing-directory 输入策略 |
-| `src/runtime/config-store.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts` | 配置 runtime 语义见 [docs/CONFIG.md](CONFIG.md)；工具 handler 消费方式见 [docs/TOOLS.md](TOOLS.md) |
+| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md)，其中 `src/config/value-policy.ts` 维护 typed/free-form、token/selector 和 JSON/env positive integer 值语义，`src/config/path-policy.ts` 维护配置 path-like 字段的 existing-directory 输入策略，`src/config/request-header-rules.ts` 维护 `rules.requestHeaders` schema、HTTP header name/value 校验和 runtime rules 类型 |
+| `src/runtime/config-store.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts`, `src/runtime/request-context.ts`, `src/runtime/request-header-policy.ts`, `src/runtime/request-header-view.ts`, `src/runtime/tool-result-adapter.ts` | 配置 runtime、request header rules policy 和 `structuredContent` 适配语义见 [docs/CONFIG.md](CONFIG.md)；工具 handler 消费方式见 [docs/TOOLS.md](TOOLS.md)，工具返回结果适配见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
 | `src/tools/` | [docs/TOOLS.md](TOOLS.md) 和 [docs/tools/](tools/) 下对应单工具文档 |
 | `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
