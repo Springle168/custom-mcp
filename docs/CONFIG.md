@@ -210,10 +210,13 @@ test/
 │   ├── config-store.test.ts            # ConfigStore 与 tool-call handler seam
 │   ├── mcp-post-request-context.test.ts # POST /mcp request context seam
 │   ├── request-context.test.ts         # request-scoped strict header view carrier
-│   ├── request-header-policy.test.ts   # request header rules 匹配语义
+│   ├── request-context-concurrency.test.ts # request context 并发隔离和同 context 多次 tools/call
+│   ├── request-header-policy.test.ts   # request header rules 匹配语义和日志 metadata
 │   ├── request-header-view.test.ts     # rawHeaders strict view 构造
-│   ├── tool-call-handler.test.ts       # tools/call 统一出口 request policy 适配
+│   ├── tool-call-handler.test.ts       # tools/call 统一出口 request policy 适配和日志 metadata
 │   └── tool-result-adapter.test.ts     # structuredContent wrapper 适配
+├── logger/
+│   └── request-header-rules-logging.test.ts # request header rules 响应日志格式和隐私边界
 └── helpers/
     └── runtime-config.ts               # 测试用 ToolRuntimeContext / ConfigStore 构造 helper
 ```
@@ -245,7 +248,7 @@ test/
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。每一项必须是已存在的本地绝对目录。选中 workspace 构建 snapshot 时会作为 allowed roots 集合校验，并在 snapshot 中保存为 canonical root 路径。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
-| `rules` | object | 否 | workspace 级请求兼容规则；阶段 1 支持 `rules.requestHeaders` exact 匹配以启用 `structuredContent` 适配。 |
+| `rules` | object | 否 | workspace 级请求兼容规则；支持 `rules.requestHeaders` exact 匹配以启用 `structuredContent` 适配。 |
 
 workspace 未知字段会导致启动失败。
 
@@ -278,7 +281,7 @@ workspace 未知字段会导致启动失败。
 
 HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，不使用 `req.headers` 作为 request header rules 匹配输入。strict view 中，同一个 lowercase header name 出现多次会得到 `duplicate` 状态；只有 `single` 且 value exact match 的 header 条件才成立。rule 之间是 OR，同一 rule 内条件是 AND。duplicate 或 missing header 只使引用该 name 的条件失败，不影响其它 rule 未引用的 header。
 
-阶段 1 开发检查点中，命中 `structuredContent` 后，`tools/call` 统一出口返回非破坏性的 `structuredContent` wrapper；工具 handler、工具 definition、`ToolRuntimeContext`、MCP session、transport/server 不保存 request policy 或 strict header view。响应日志 `Rules:` 行在阶段 2 补齐；阶段 1 日志仍按既有格式记录最终 adapted result。
+命中 `structuredContent` 后，`tools/call` 统一出口返回非破坏性的 `structuredContent` wrapper；工具 handler、工具 definition、`ToolRuntimeContext`、MCP session、transport/server 不保存 request policy 或 strict header view。selected workspace 配置非空 request header rules 时，工具响应日志在状态行后输出 `Rules:` 行；命中时只记录 `rules.requestHeaders[n]` 相对规则位置和 enabled feature，未命中时记录 `Rules: no match`，未配置规则时不输出该行。响应日志不记录请求 header name/value、配置 header name/value 或匹配字符串。
 
 ### `android` 配置段
 

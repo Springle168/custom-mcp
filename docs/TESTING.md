@@ -63,7 +63,7 @@ cmd /c npx tsx test/read-file/read-file.test.ts
 
 单个脚本测试直接用 `npx tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
 
-Request header rules 与 `structuredContent` 阶段 1 开发检查点的 focused tests：
+Request header rules 与 `structuredContent` focused tests：
 
 ```bash
 cmd /c npx tsx test/config/request-header-rules.test.ts
@@ -74,10 +74,12 @@ cmd /c npx tsx test/runtime/request-header-policy.test.ts
 cmd /c npx tsx test/runtime/tool-result-adapter.test.ts
 cmd /c npx tsx test/runtime/tool-call-handler.test.ts
 cmd /c npx tsx test/runtime/mcp-post-request-context.test.ts
+cmd /c npx tsx test/logger/request-header-rules-logging.test.ts
+cmd /c npx tsx test/runtime/request-context-concurrency.test.ts
 cmd /c npx tsx test/tools/tool-definitions.test.ts
 ```
 
-阶段 1 覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam 和 `tools/list` 不暴露 `outputSchema`。`Rules:` 响应日志测试与 request context 并发隔离硬化测试在阶段 2 补齐。
+这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离和 `tools/list` 不暴露 `outputSchema`。
 
 ---
 

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { RuntimeRulesConfig } from '../../src/config.js';
 import type { ConfigStore } from '../../src/runtime/config-store.js';
 import { runWithRequestHeaderContext } from '../../src/runtime/request-context.js';
+import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
 import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
 import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
@@ -75,6 +76,20 @@ function assertContextHasNoRequestPolicyFields(context: ToolRuntimeContext): voi
   assert(record.requestPolicy === undefined, 'ToolRuntimeContext should not expose request policy');
 }
 
+function assertMatchedMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
+  assert(metadata !== undefined, 'Logger should receive request header rules metadata');
+  assertEqual(metadata.rulesConfigured, true, 'Metadata should report configured request header rules');
+  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Metadata should include matched rule locations');
+  assertEqual(metadata.enabledFeatures.join(','), 'structuredContent', 'Metadata should include enabled features');
+}
+
+function assertNoMatchMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
+  assert(metadata !== undefined, 'Logger should receive request header rules metadata');
+  assertEqual(metadata.rulesConfigured, true, 'Metadata should report configured request header rules');
+  assertEqual(metadata.matchedRuleLocations.length, 0, 'No-match metadata should not include matched rule locations');
+  assertEqual(metadata.enabledFeatures.length, 0, 'No-match metadata should not include enabled features');
+}
+
 function textResult(text: string): ToolCallResult {
   return {
     content: [{ type: 'text', text }],
@@ -95,13 +110,15 @@ async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
   const { store, getCount } = createCountingStore(matchingRules());
   const routerResult = textResult('ok');
   let loggedResult: ToolCallResult | undefined;
+  let loggedMetadata: RequestHeaderPolicyLogMetadata | undefined;
   let routerContext: ToolRuntimeContext | undefined;
   const handler = createToolCallRequestHandler({
     configStore: store,
     logger: {
       logToolCall() {},
-      logToolResult(_toolName, result) {
+      logToolResult(_toolName, result, _durationMs, rulesMetadata) {
         loggedResult = result;
+        loggedMetadata = rulesMetadata;
       },
     },
     routeToolCall: async (_name, _args, context) => {
@@ -119,6 +136,7 @@ async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
 
   assert(returned !== routerResult, 'Matched policy should return an adapted result object');
   assertEqual(loggedResult, returned, 'Logger should receive the same adapted result returned to the transport');
+  assertMatchedMetadata(loggedMetadata);
   assertEqual(wrapper.content, routerResult.content, 'Wrapper should contain the router result content');
   assertEqual(wrapper.isError, false, 'Wrapper should use normalized success status');
   assert(routerContext !== undefined, 'Router should receive a ToolRuntimeContext');
@@ -130,12 +148,14 @@ async function testHandlerWithoutRequestContextDoesNotAdapt(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
   const routerResult = textResult('ok');
   let loggedResult: ToolCallResult | undefined;
+  let loggedMetadata: RequestHeaderPolicyLogMetadata | undefined;
   const handler = createToolCallRequestHandler({
     configStore: store,
     logger: {
       logToolCall() {},
-      logToolResult(_toolName, result) {
+      logToolResult(_toolName, result, _durationMs, rulesMetadata) {
         loggedResult = result;
+        loggedMetadata = rulesMetadata;
       },
     },
     routeToolCall: async () => routerResult,
@@ -145,7 +165,32 @@ async function testHandlerWithoutRequestContextDoesNotAdapt(): Promise<void> {
 
   assertEqual(returned, routerResult, 'Missing request context should return the original router result');
   assertEqual(loggedResult, routerResult, 'Logger should receive the original result when no policy feature is enabled');
+  assertNoMatchMetadata(loggedMetadata);
   assert(!('structuredContent' in returned), 'Missing request context should not add structuredContent');
+}
+
+async function testHandlerInvalidRequestViewLogsNoMatchMetadata(): Promise<void> {
+  const { store } = createCountingStore(matchingRules());
+  const routerResult = textResult('ok');
+  let loggedMetadata: RequestHeaderPolicyLogMetadata | undefined;
+  const handler = createToolCallRequestHandler({
+    configStore: store,
+    logger: {
+      logToolCall() {},
+      logToolResult(_toolName, _result, _durationMs, rulesMetadata) {
+        loggedMetadata = rulesMetadata;
+      },
+    },
+    routeToolCall: async () => routerResult,
+  });
+
+  const returned = await runWithRequestHeaderContext(
+    createStrictRequestHeaderView(['X-Client']),
+    () => handler({ params: { name: 'fake_tool', arguments: {} } }),
+  );
+
+  assertEqual(returned, routerResult, 'Invalid strict view should return the original router result');
+  assertNoMatchMetadata(loggedMetadata);
 }
 
 async function testHandlerOrderUsesAdaptedResultForLogger(): Promise<void> {
@@ -185,6 +230,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'handler adapts and logs matched result', run: testHandlerAdaptsAndLogsMatchedResult },
       { name: 'handler without request context does not adapt', run: testHandlerWithoutRequestContextDoesNotAdapt },
+      { name: 'handler invalid request view logs no-match metadata', run: testHandlerInvalidRequestViewLogsNoMatchMetadata },
       { name: 'handler order uses adapted result for logger', run: testHandlerOrderUsesAdaptedResultForLogger },
     ],
   });

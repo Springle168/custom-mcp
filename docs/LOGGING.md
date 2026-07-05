@@ -29,11 +29,39 @@
   {"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":10,"end_line":10},"replacement_line_count":1,"file_line_count":{"previous":120,"current":120}}
 ```
 
+### Request Header Rules 响应元信息
+
+当 selected workspace 的 `rules.requestHeaders` 非空时，每条工具响应日志都会在状态行之后、结果正文之前输出一行 `Rules:` 元信息。
+
+命中规则时，文件日志格式为：
+
+```text
+[2026-07-05T10:20:30.000+08:00] → OK read_file (12ms)
+  Rules: matched rules.requestHeaders[0]; enabled structuredContent
+  Succeeded.
+```
+
+多条规则命中时，规则位置按 policy 输出顺序稳定列出，例如：
+
+```text
+  Rules: matched rules.requestHeaders[0], rules.requestHeaders[1]; enabled structuredContent
+```
+
+配置了 request header rules 但未命中时，输出：
+
+```text
+  Rules: no match
+```
+
+未配置 request header rules 时，不输出 `Rules:` 行。`Rules:` 行是响应日志元信息，不写入 `ToolCallResult.content` 或 `structuredContent`。
+
+日志层只接收脱敏 metadata：是否配置规则、命中的 `rules.requestHeaders[n]` 相对位置和 enabled feature。响应日志不记录原始 header 列表、请求 header name/value、配置 header name/value、配置期望 value 或匹配字符串。
+
 ---
 
 ## 颜色高亮
 
-终端输出使用多种颜色区分不同信息类型（时间戳、调用方向、工具名、状态等），提升可读性。每次工具调用前会输出分隔线，便于区分不同调用。
+终端输出使用多种颜色区分不同信息类型（时间戳、调用方向、工具名、状态等），提升可读性。`Rules:` 响应元信息会高亮 `Rules:` 前缀、命中状态和 enabled feature。每次工具调用前会输出分隔线，便于区分不同调用。
 
 **JSON 语法高亮**：参数和结果中的 JSON 内容会进行语法着色（键名、字符串、数字、布尔值等使用不同颜色）。当 JSON 内容超过 50KB 时，自动降级为无高亮输出以保证性能。
 
@@ -55,6 +83,12 @@
 
 ```bash
 cmd /c npx tsx test/logger/logger.test.ts
+```
+
+运行 `test/logger/request-header-rules-logging.test.ts` 可以测试 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界：
+
+```bash
+cmd /c npx tsx test/logger/request-header-rules-logging.test.ts
 ```
 
 默认会跳过超大 JSON 演示，避免 Agent 或自动化运行时输出大量噪音；需要验证 50KB 阈值下的大输出降级行为时，追加 `--verbose`：
