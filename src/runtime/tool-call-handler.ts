@@ -1,5 +1,9 @@
 import { getCurrentRequestHeaderView } from './request-context.js';
-import { evaluateRequestHeaderPolicy } from './request-header-policy.js';
+import {
+  evaluateRequestHeaderPolicy,
+  toRequestHeaderPolicyLogMetadata,
+  type RequestHeaderPolicyLogMetadata,
+} from './request-header-policy.js';
 import { adaptToolCallResultForRequestPolicy } from './tool-result-adapter.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
 import type { ConfigStore } from './config-store.js';
@@ -14,7 +18,12 @@ export interface ToolCallRequestLike {
 
 export interface ToolCallLogger {
   logToolCall(toolName: string, args: Record<string, unknown>): void;
-  logToolResult(toolName: string, result: ToolCallResult, durationMs: number): void;
+  logToolResult(
+    toolName: string,
+    result: ToolCallResult,
+    durationMs: number,
+    rulesMetadata?: RequestHeaderPolicyLogMetadata,
+  ): void;
 }
 
 export type ToolCallRouter = (
@@ -52,8 +61,9 @@ export function createToolCallRequestHandler(
 
     const result = await options.routeToolCall(name, safeArgs, toolContext);
     const adaptedResult = adaptToolCallResultForRequestPolicy(result, requestPolicy);
+    const rulesMetadata = toRequestHeaderPolicyLogMetadata(requestPolicy);
 
-    options.logger.logToolResult(name, adaptedResult, now() - startTime);
+    options.logger.logToolResult(name, adaptedResult, now() - startTime, rulesMetadata);
     return adaptedResult;
   };
 }

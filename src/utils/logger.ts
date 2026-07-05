@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
+import type { RequestHeaderPolicyLogMetadata } from '../runtime/request-header-policy.js';
 import type { ToolCallResult } from '../tools/types.js';
 
 function pad(value: number, length = 2): string {
@@ -156,11 +157,14 @@ export class Logger {
     toolName: string,
     result: ToolCallResult,
     durationMs?: number,
+    rulesMetadata?: RequestHeaderPolicyLogMetadata,
   ) {
     const timestamp = ts();
     const isError = result.isError === true;
     const status = isError ? 'FAIL' : 'OK';
     const duration = durationMs !== undefined ? ` (${durationMs}ms)` : '';
+    const rulesFileLine = this.formatRulesFileLine(rulesMetadata);
+    const rulesConsoleLine = this.formatRulesConsoleLine(rulesMetadata);
     const text = result.content
       .map((c) => c.text ?? '')
       .filter(Boolean)
@@ -179,10 +183,45 @@ export class Logger {
     );
 
     const statusColor = isError ? chalk.red : chalk.green;
-    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleBody}\n`;
-    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileBody}\n`;
+    const consoleRules = rulesConsoleLine === undefined ? '' : `  ${rulesConsoleLine}\n`;
+    const fileRules = rulesFileLine === undefined ? '' : `  ${rulesFileLine}\n`;
+    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleRules}${consoleBody}\n`;
+    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileRules}${fileBody}\n`;
 
     this.write(consoleText, fileText);
+  }
+
+  private formatRulesFileLine(
+    metadata: RequestHeaderPolicyLogMetadata | undefined,
+  ): string | undefined {
+    if (metadata?.rulesConfigured !== true) {
+      return undefined;
+    }
+
+    if (metadata.matchedRuleLocations.length === 0) {
+      return 'Rules: no match';
+    }
+
+    return `Rules: matched ${metadata.matchedRuleLocations.join(', ')}; enabled ${metadata.enabledFeatures.join(', ')}`;
+  }
+
+  private formatRulesConsoleLine(
+    metadata: RequestHeaderPolicyLogMetadata | undefined,
+  ): string | undefined {
+    if (metadata?.rulesConfigured !== true) {
+      return undefined;
+    }
+
+    if (metadata.matchedRuleLocations.length === 0) {
+      return `${chalk.cyan('Rules:')} ${chalk.dim('no match')}`;
+    }
+
+    const matchedLocations = metadata.matchedRuleLocations.join(chalk.dim(', '));
+    const enabledFeatures = metadata.enabledFeatures
+      .map((feature) => chalk.magenta(feature))
+      .join(chalk.dim(', '));
+
+    return `${chalk.cyan('Rules:')} ${chalk.green('matched')} ${matchedLocations}; ${chalk.cyan('enabled')} ${enabledFeatures}`;
   }
 
   close(): Promise<void> {

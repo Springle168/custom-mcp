@@ -10,6 +10,12 @@ export interface RequestHeaderPolicy {
   readonly enabledFeatures: readonly RuntimeRequestFeature[];
 }
 
+export interface RequestHeaderPolicyLogMetadata {
+  readonly rulesConfigured: boolean;
+  readonly matchedRuleLocations: readonly string[];
+  readonly enabledFeatures: readonly RuntimeRequestFeature[];
+}
+
 export function evaluateRequestHeaderPolicy(
   rules: RuntimeRulesConfig,
   view: StrictRequestHeaderView | undefined,
@@ -51,6 +57,23 @@ export function evaluateRequestHeaderPolicy(
   return freezePolicy({
     rulesConfigured,
     matchedRuleIndexes,
+    enabledFeatures,
+  });
+}
+
+export function toRequestHeaderPolicyLogMetadata(
+  policy: RequestHeaderPolicy,
+): RequestHeaderPolicyLogMetadata {
+  const matchedRuleLocations = policy.matchedRuleIndexes.map((index) => (
+    `rules.requestHeaders[${index}]`
+  ));
+  const enabledFeatures = [...policy.enabledFeatures];
+
+  Object.freeze(matchedRuleLocations);
+  Object.freeze(enabledFeatures);
+  return Object.freeze({
+    rulesConfigured: policy.rulesConfigured,
+    matchedRuleLocations,
     enabledFeatures,
   });
 }

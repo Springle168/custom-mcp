@@ -1,5 +1,8 @@
 import type { RuntimeRulesConfig } from '../../src/config.js';
-import { evaluateRequestHeaderPolicy } from '../../src/runtime/request-header-policy.js';
+import {
+  evaluateRequestHeaderPolicy,
+  toRequestHeaderPolicyLogMetadata,
+} from '../../src/runtime/request-header-policy.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
 import {
   assertEqual,
@@ -126,6 +129,28 @@ function testMatchedIndexesStableAndFeaturesDeduped(): void {
   assertEqual(policy.enabledFeatures.join(','), 'structuredContent', 'Enabled features should be deduplicated');
 }
 
+function testLogMetadataContainsOnlyRuleLocationsAndFeatures(): void {
+  const policy = evaluateRequestHeaderPolicy(
+    rulesConfig([
+      {
+        match: [{ name: 'x-secret-client', value: 'sensitive-request-value' }],
+        enable: ['structuredContent'],
+      },
+    ]),
+    createStrictRequestHeaderView(['X-Secret-Client', 'sensitive-request-value']),
+  );
+
+  const metadata = toRequestHeaderPolicyLogMetadata(policy);
+  const serialized = JSON.stringify(metadata);
+
+  assertEqual(metadata.rulesConfigured, true, 'Metadata should preserve rulesConfigured');
+  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Metadata should expose relative rule locations');
+  assertEqual(metadata.enabledFeatures.join(','), 'structuredContent', 'Metadata should expose enabled features');
+  assertEqual(serialized.includes('x-secret-client'), false, 'Metadata should not include config header names');
+  assertEqual(serialized.includes('X-Secret-Client'), false, 'Metadata should not include request header names');
+  assertEqual(serialized.includes('sensitive-request-value'), false, 'Metadata should not include header values');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing request header policy evaluation',
@@ -135,6 +160,7 @@ async function main(): Promise<void> {
       { name: 'duplicate, missing, invalid view, and missing context do not match', run: testDuplicateMissingInvalidAndMissingContextDoNotMatch },
       { name: 'unreferenced duplicate does not affect match', run: testUnreferencedDuplicateDoesNotAffectMatch },
       { name: 'matched indexes are stable and features are deduped', run: testMatchedIndexesStableAndFeaturesDeduped },
+      { name: 'log metadata contains only rule locations and features', run: testLogMetadataContainsOnlyRuleLocationsAndFeatures },
     ],
   });
 }
