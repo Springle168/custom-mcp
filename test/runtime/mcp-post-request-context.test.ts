@@ -3,7 +3,7 @@ import {
   handleMcpPostRequest,
   type McpPostSession,
   type McpPostTransport,
-} from '../../src/index.js';
+} from '../../src/runtime/mcp-post-handler.js';
 import { getCurrentRequestHeaderView } from '../../src/runtime/request-context.js';
 import {
   assert,
