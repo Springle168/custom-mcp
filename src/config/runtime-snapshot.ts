@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { ConfigError } from './errors.js';
 import { readExistingDirectoryPath } from './path-policy.js';
+import type { RuntimeRulesConfig } from './request-header-rules.js';
 import type { ParsedAndroidConfig, ParsedWorkspaceConfig } from './schema.js';
 import { readTypedString } from './value-policy.js';
 import {
@@ -28,6 +29,7 @@ export interface RuntimeConfigSnapshot {
   readonly lineEnding: LineEnding;
   readonly logsDir: string;
   readonly android?: RuntimeAndroidConfig;
+  readonly rules: RuntimeRulesConfig;
   readonly pathSafetyContext: PathSafetyContext;
 }
 
@@ -41,6 +43,7 @@ export interface RuntimeConfigSnapshotInput {
   readonly lineEnding: LineEnding;
   readonly logsDir: string;
   readonly android?: RuntimeAndroidConfig;
+  readonly rules: RuntimeRulesConfig;
 }
 
 export interface RuntimeConfigSnapshotErrorContext {
@@ -71,6 +74,7 @@ export function buildRuntimeConfigSnapshot(
       lineEnding: workspace.lineEnding,
       logsDir,
       ...(workspace.android ? { android: workspace.android } : {}),
+      rules: workspace.rules,
       snapshotVersion: options.snapshotVersion ?? 1,
     },
     { workspaceIndex: options.workspaceIndex },
@@ -94,6 +98,7 @@ export function createRuntimeConfigSnapshot(
     .map((root) => root.rootDir);
   const logsDir = resolve(input.logsDir);
   const android = resolveRuntimeAndroidConfig(input.android);
+  const rules = cloneRuntimeRulesConfig(input.rules);
 
   const snapshot: RuntimeConfigSnapshot = {
     snapshotVersion: input.snapshotVersion ?? 1,
@@ -105,6 +110,7 @@ export function createRuntimeConfigSnapshot(
     lineEnding: input.lineEnding,
     logsDir,
     ...(android ? { android } : {}),
+    rules,
     pathSafetyContext,
   };
 
@@ -218,6 +224,15 @@ function resolveRuntimeAndroidConfig(
     ...android,
     workspaceRoot: resolve(android.workspaceRoot),
     javaHome: resolve(android.javaHome),
+  };
+}
+
+function cloneRuntimeRulesConfig(rules: RuntimeRulesConfig): RuntimeRulesConfig {
+  return {
+    requestHeaders: rules.requestHeaders.map((rule) => ({
+      match: rule.match.map((condition) => ({ ...condition })),
+      enable: [...rule.enable],
+    })),
   };
 }
 

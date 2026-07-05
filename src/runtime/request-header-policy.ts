@@ -1,0 +1,66 @@
+import type {
+  RuntimeRequestFeature,
+  RuntimeRulesConfig,
+} from '../config.js';
+import type { StrictRequestHeaderView } from './request-header-view.js';
+
+export interface RequestHeaderPolicy {
+  readonly rulesConfigured: boolean;
+  readonly matchedRuleIndexes: readonly number[];
+  readonly enabledFeatures: readonly RuntimeRequestFeature[];
+}
+
+export function evaluateRequestHeaderPolicy(
+  rules: RuntimeRulesConfig,
+  view: StrictRequestHeaderView | undefined,
+): RequestHeaderPolicy {
+  const rulesConfigured = rules.requestHeaders.length > 0;
+  if (!rulesConfigured || view === undefined || view.kind === 'invalid') {
+    return freezePolicy({
+      rulesConfigured,
+      matchedRuleIndexes: [],
+      enabledFeatures: [],
+    });
+  }
+
+  const matchedRuleIndexes: number[] = [];
+  const enabledFeatures: RuntimeRequestFeature[] = [];
+  const seenFeatures = new Set<RuntimeRequestFeature>();
+
+  rules.requestHeaders.forEach((rule, index) => {
+    const matched = rule.match.every((condition) => {
+      const state = view.headers.get(condition.name);
+      return state?.kind === 'single' && state.value === condition.value;
+    });
+
+    if (!matched) {
+      return;
+    }
+
+    matchedRuleIndexes.push(index);
+    for (const feature of rule.enable) {
+      if (seenFeatures.has(feature)) {
+        continue;
+      }
+
+      seenFeatures.add(feature);
+      enabledFeatures.push(feature);
+    }
+  });
+
+  return freezePolicy({
+    rulesConfigured,
+    matchedRuleIndexes,
+    enabledFeatures,
+  });
+}
+
+function freezePolicy(policy: {
+  readonly rulesConfigured: boolean;
+  readonly matchedRuleIndexes: number[];
+  readonly enabledFeatures: RuntimeRequestFeature[];
+}): RequestHeaderPolicy {
+  Object.freeze(policy.matchedRuleIndexes);
+  Object.freeze(policy.enabledFeatures);
+  return Object.freeze(policy);
+}

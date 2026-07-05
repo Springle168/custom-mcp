@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { CliError, parseCliArgs } from '../../src/cli.js';
 import {
   ConfigError,
+  createEmptyRuntimeRulesConfig,
   loadRuntimeConfigWithIdentity,
 } from '../../src/config.js';
 import { selectRuntimeWorkspace } from '../../src/config/workspace-selection.js';
@@ -132,6 +133,7 @@ function parsedWorkspace(
     port,
     lineEnding: 'auto',
     otherRootDirs: [],
+    rules: createEmptyRuntimeRulesConfig(),
   };
 }
 

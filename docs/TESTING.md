@@ -31,8 +31,8 @@ custom-mcp/test/
 ├── read-file/                  # read_file 工具测试，见 docs/tools/read-file.md
 ├── read-many-files/            # read_many_files 工具测试，见 docs/tools/read-many-files.md
 ├── replace-text/               # replace_text 工具测试，见 docs/tools/replace-text.md
-├── runtime/                    # ConfigStore 等运行时测试，见 docs/CONFIG.md
-├── tools/                      # tools/list 检查脚本，见 docs/TOOLS.md
+├── runtime/                    # ConfigStore、request context、request header policy 和 tool-call handler 测试，见 docs/CONFIG.md
+├── tools/                      # tools/list 检查脚本和 definition shape 回归，见 docs/TOOLS.md
 ├── write-file/                 # write_file 工具测试，见 docs/tools/write-file.md
 └── test-utils.ts               # 脚本测试公共断言与 runner
 ```
@@ -62,6 +62,22 @@ cmd /c npx tsx test/read-file/read-file.test.ts
 ```
 
 单个脚本测试直接用 `npx tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+
+Request header rules 与 `structuredContent` 阶段 1 开发检查点的 focused tests：
+
+```bash
+cmd /c npx tsx test/config/request-header-rules.test.ts
+cmd /c npx tsx test/config/runtime-snapshot.test.ts
+cmd /c npx tsx test/runtime/request-header-view.test.ts
+cmd /c npx tsx test/runtime/request-context.test.ts
+cmd /c npx tsx test/runtime/request-header-policy.test.ts
+cmd /c npx tsx test/runtime/tool-result-adapter.test.ts
+cmd /c npx tsx test/runtime/tool-call-handler.test.ts
+cmd /c npx tsx test/runtime/mcp-post-request-context.test.ts
+cmd /c npx tsx test/tools/tool-definitions.test.ts
+```
+
+阶段 1 覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam 和 `tools/list` 不暴露 `outputSchema`。`Rules:` 响应日志测试与 request context 并发隔离硬化测试在阶段 2 补齐。
 
 ---
 

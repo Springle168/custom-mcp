@@ -1,11 +1,13 @@
 import { mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type {
-  LoadedRuntimeConfig,
-  LineEnding,
-  RuntimeAndroidConfig,
-  RuntimeConfigSnapshot,
+import {
+  createEmptyRuntimeRulesConfig,
+  type LoadedRuntimeConfig,
+  type LineEnding,
+  type RuntimeAndroidConfig,
+  type RuntimeConfigSnapshot,
+  type RuntimeRulesConfig,
 } from '../../src/config.js';
 import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
 import type { RuntimeConfigIdentity } from '../../src/config/workspace-selection.js';
@@ -29,6 +31,7 @@ export interface TestRuntimeConfigOptions {
   readonly configFilePath?: string;
   readonly workspaceId?: string;
   readonly snapshotVersion?: number;
+  readonly rules?: RuntimeRulesConfig;
 }
 
 export function createTestRuntimeConfigSnapshot(
@@ -45,6 +48,7 @@ export function createTestRuntimeConfigSnapshot(
     lineEnding: options.lineEnding ?? 'auto',
     logsDir,
     ...(options.android ? { android: options.android } : {}),
+    rules: options.rules ?? createEmptyRuntimeRulesConfig(),
     snapshotVersion: options.snapshotVersion ?? 1,
   });
 }

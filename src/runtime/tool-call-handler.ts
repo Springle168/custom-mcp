@@ -1,3 +1,6 @@
+import { getCurrentRequestHeaderView } from './request-context.js';
+import { evaluateRequestHeaderPolicy } from './request-header-policy.js';
+import { adaptToolCallResultForRequestPolicy } from './tool-result-adapter.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
 import type { ConfigStore } from './config-store.js';
 import type { ToolCallResult } from '../tools/types.js';
@@ -41,13 +44,16 @@ export function createToolCallRequestHandler(
     const safeArgs = (args ?? {}) as Record<string, unknown>;
     const startTime = now();
     const snapshot = options.configStore.getSnapshot();
+    const requestHeaderView = getCurrentRequestHeaderView();
+    const requestPolicy = evaluateRequestHeaderPolicy(snapshot.rules, requestHeaderView);
     const toolContext = createToolRuntimeContext(snapshot);
 
     options.logger.logToolCall(name, safeArgs);
 
     const result = await options.routeToolCall(name, safeArgs, toolContext);
+    const adaptedResult = adaptToolCallResultForRequestPolicy(result, requestPolicy);
 
-    options.logger.logToolResult(name, result, now() - startTime);
-    return result;
+    options.logger.logToolResult(name, adaptedResult, now() - startTime);
+    return adaptedResult;
   };
 }
