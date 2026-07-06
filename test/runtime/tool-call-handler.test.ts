@@ -8,7 +8,7 @@ import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-h
 import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
 import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
 import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
-import type { ToolCallResult } from '../../src/tools/types.js';
+import type { JsonValue, ToolCallResult } from '../../src/tools/types.js';
 import {
   createTestRuntimeConfigIdentity,
   createTestRuntimeConfigSnapshot,
@@ -97,13 +97,19 @@ function textResult(text: string): ToolCallResult {
   };
 }
 
-function getStructuredContent(result: ToolCallResult): Record<string, unknown> {
-  const structuredContent = result.structuredContent;
-  assert(
-    typeof structuredContent === 'object' && structuredContent !== null,
-    'Expected adapted result to include structuredContent',
-  );
-  return structuredContent as Record<string, unknown>;
+function reservedResult(text: string, payload: JsonValue): ToolCallResult {
+  return {
+    content: [{ type: 'text', text }],
+    isError: false,
+    structuredPayload: payload,
+    structuredContent: { stale: true },
+    marker: `marker:${text}`,
+  };
+}
+
+function assertNoReservedFields(result: ToolCallResult, message: string): void {
+  assert(!('structuredPayload' in result), `${message}: structuredPayload should be removed`);
+  assert(!('structuredContent' in result), `${message}: handler-supplied structuredContent should be removed`);
 }
 
 async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
@@ -132,21 +138,23 @@ async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
     createStrictRequestHeaderView(['X-Client', 'android-studio']),
     () => handler({ params: { name: 'fake_tool', arguments: {} } }),
   );
-  const wrapper = getStructuredContent(returned);
 
-  assert(returned !== routerResult, 'Matched policy should return an adapted result object');
+  assert(returned !== routerResult, 'Matched policy should return an adapted public result object');
   assertEqual(loggedResult, returned, 'Logger should receive the same adapted result returned to the transport');
   assertMatchedMetadata(loggedMetadata);
-  assertEqual(wrapper.content, routerResult.content, 'Wrapper should contain the router result content');
-  assertEqual(wrapper.isError, false, 'Wrapper should use normalized success status');
+  assertEqual(returned.content, routerResult.content, 'Adapted result should keep router result content');
+  assertEqual(returned.isError, false, 'Adapted result should keep success status');
+  assertEqual(returned.structuredContent, '\nok\n', 'Matched text result should use fixed text fallback');
+  assert(!('structuredPayload' in returned), 'Matched text fallback should not expose structuredPayload');
   assert(routerContext !== undefined, 'Router should receive a ToolRuntimeContext');
   assertContextHasNoRequestPolicyFields(routerContext);
   assertEqual(getCount(), 1, 'Handler should read snapshot once per tool call');
 }
 
-async function testHandlerWithoutRequestContextDoesNotAdapt(): Promise<void> {
+async function testHandlerWithoutRequestContextCleansReservedFields(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
-  const routerResult = textResult('ok');
+  const payload = { ok: true };
+  const routerResult = reservedResult('ok', payload);
   let loggedResult: ToolCallResult | undefined;
   let loggedMetadata: RequestHeaderPolicyLogMetadata | undefined;
   const handler = createToolCallRequestHandler({
@@ -163,21 +171,31 @@ async function testHandlerWithoutRequestContextDoesNotAdapt(): Promise<void> {
 
   const returned = await handler({ params: { name: 'fake_tool', arguments: {} } });
 
-  assertEqual(returned, routerResult, 'Missing request context should return the original router result');
-  assertEqual(loggedResult, routerResult, 'Logger should receive the original result when no policy feature is enabled');
+  assert(returned !== routerResult, 'Missing request context should return a cleaned public result object');
+  assertEqual(loggedResult, returned, 'Logger should receive the cleaned public result');
+  assertEqual(returned.content, routerResult.content, 'Cleaned result should keep content');
+  assertEqual(returned.marker, routerResult.marker, 'Cleaned result should keep unrelated extensions');
+  assertNoReservedFields(returned, 'Missing request context result');
   assertNoMatchMetadata(loggedMetadata);
-  assert(!('structuredContent' in returned), 'Missing request context should not add structuredContent');
+  assertEqual(routerResult.structuredPayload, payload, 'Router result should remain unchanged');
+  assertEqual(
+    (routerResult.structuredContent as { stale?: boolean }).stale,
+    true,
+    'Router stale structuredContent should remain unchanged',
+  );
 }
 
-async function testHandlerInvalidRequestViewLogsNoMatchMetadata(): Promise<void> {
+async function testHandlerInvalidRequestViewCleansReservedFieldsAndLogsNoMatchMetadata(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
-  const routerResult = textResult('ok');
+  const routerResult = reservedResult('ok', { ok: true });
+  let loggedResult: ToolCallResult | undefined;
   let loggedMetadata: RequestHeaderPolicyLogMetadata | undefined;
   const handler = createToolCallRequestHandler({
     configStore: store,
     logger: {
       logToolCall() {},
-      logToolResult(_toolName, _result, _durationMs, rulesMetadata) {
+      logToolResult(_toolName, result, _durationMs, rulesMetadata) {
+        loggedResult = result;
         loggedMetadata = rulesMetadata;
       },
     },
@@ -189,8 +207,47 @@ async function testHandlerInvalidRequestViewLogsNoMatchMetadata(): Promise<void>
     () => handler({ params: { name: 'fake_tool', arguments: {} } }),
   );
 
-  assertEqual(returned, routerResult, 'Invalid strict view should return the original router result');
+  assertEqual(loggedResult, returned, 'Logger should receive cleaned result for invalid strict view');
+  assertNoReservedFields(returned, 'Invalid strict view result');
   assertNoMatchMetadata(loggedMetadata);
+}
+
+async function testHandlerCleansReservedFieldsForMatchedAndUnmatchedPolicies(): Promise<void> {
+  const { store } = createCountingStore(matchingRules());
+  const matchedPayload = { matched: true };
+  const unmatchedPayload = { matched: false };
+  const loggedResults = new Map<string, ToolCallResult>();
+  const handler = createToolCallRequestHandler({
+    configStore: store,
+    logger: {
+      logToolCall() {},
+      logToolResult(toolName, result) {
+        loggedResults.set(toolName, result);
+      },
+    },
+    routeToolCall: async (name) => (
+      name === 'matched_tool'
+        ? reservedResult('matched', matchedPayload)
+        : reservedResult('unmatched', unmatchedPayload)
+    ),
+  });
+
+  const matched = await runWithRequestHeaderContext(
+    createStrictRequestHeaderView(['X-Client', 'android-studio']),
+    () => handler({ params: { name: 'matched_tool', arguments: {} } }),
+  );
+  const unmatched = await runWithRequestHeaderContext(
+    createStrictRequestHeaderView(['X-Client', 'other-client']),
+    () => handler({ params: { name: 'unmatched_tool', arguments: {} } }),
+  );
+
+  assertEqual(matched.structuredContent, matchedPayload, 'Matched policy should expose adapter-generated payload');
+  assert(!('structuredPayload' in matched), 'Matched policy should remove internal structuredPayload');
+  assertEqual(matched.marker, 'marker:matched', 'Matched policy should keep unrelated extensions');
+  assertNoReservedFields(unmatched, 'Unmatched policy result');
+  assertEqual(unmatched.marker, 'marker:unmatched', 'Unmatched policy should keep unrelated extensions');
+  assertEqual(loggedResults.get('matched_tool'), matched, 'Matched logger result should equal returned public result');
+  assertEqual(loggedResults.get('unmatched_tool'), unmatched, 'Unmatched logger result should equal returned public result');
 }
 
 async function testHandlerOrderUsesAdaptedResultForLogger(): Promise<void> {
@@ -219,7 +276,7 @@ async function testHandlerOrderUsesAdaptedResultForLogger(): Promise<void> {
   );
 
   assertEqual(events.join('>'), 'call:fake_tool>route>logger:true', 'Handler should route, adapt, then log the adapted result');
-  assert('structuredContent' in returned, 'Returned result should be the adapted result');
+  assertEqual(returned.structuredContent, '\nok\n', 'Returned result should be the adapted result');
 }
 
 async function main(): Promise<void> {
@@ -229,8 +286,9 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'handler adapts and logs matched result', run: testHandlerAdaptsAndLogsMatchedResult },
-      { name: 'handler without request context does not adapt', run: testHandlerWithoutRequestContextDoesNotAdapt },
-      { name: 'handler invalid request view logs no-match metadata', run: testHandlerInvalidRequestViewLogsNoMatchMetadata },
+      { name: 'handler without request context cleans reserved fields', run: testHandlerWithoutRequestContextCleansReservedFields },
+      { name: 'handler invalid request view cleans reserved fields and logs no-match metadata', run: testHandlerInvalidRequestViewCleansReservedFieldsAndLogsNoMatchMetadata },
+      { name: 'handler cleans reserved fields for matched and unmatched policies', run: testHandlerCleansReservedFieldsForMatchedAndUnmatchedPolicies },
       { name: 'handler order uses adapted result for logger', run: testHandlerOrderUsesAdaptedResultForLogger },
     ],
   });

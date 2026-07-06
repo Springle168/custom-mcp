@@ -75,10 +75,12 @@ function createCountingStore(rules: RuntimeRulesConfig): {
   };
 }
 
-function textResult(text: string): ToolCallResult {
+function reservedResult(text: string): ToolCallResult {
   return {
     content: [{ type: 'text', text }],
     isError: false,
+    structuredPayload: { toolName: text },
+    structuredContent: { stale: true },
   };
 }
 
@@ -90,6 +92,19 @@ function delay(ms: number): Promise<void> {
 
 function hasStructuredContent(result: ToolCallResult): boolean {
   return 'structuredContent' in result;
+}
+
+function hasStructuredPayload(result: ToolCallResult): boolean {
+  return 'structuredPayload' in result;
+}
+
+function getStructuredContentRecord(result: ToolCallResult): Record<string, unknown> {
+  const structuredContent = result.structuredContent;
+  assert(
+    typeof structuredContent === 'object' && structuredContent !== null && !Array.isArray(structuredContent),
+    'Expected structuredContent payload object',
+  );
+  return structuredContent as Record<string, unknown>;
 }
 
 function assertMatchedMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
@@ -119,7 +134,7 @@ async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
     },
     routeToolCall: async (name) => {
       await delay(name === 'matching_tool' ? 20 : 5);
-      return textResult(name);
+      return reservedResult(name);
     },
   });
 
@@ -136,6 +151,9 @@ async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
 
   assert(hasStructuredContent(matchedResult), 'Matched concurrent request should receive structuredContent');
   assert(!hasStructuredContent(unmatchedResult), 'Unmatched concurrent request should not receive structuredContent');
+  assertEqual(getStructuredContentRecord(matchedResult).toolName, 'matching_tool', 'Matched concurrent request should receive its own payload');
+  assert(!hasStructuredPayload(matchedResult), 'Matched concurrent request should not leak structuredPayload');
+  assert(!hasStructuredPayload(unmatchedResult), 'Unmatched concurrent request should not leak structuredPayload');
   assertMatchedMetadata(loggedResults.get('matching_tool')?.metadata);
   assertNoMatchMetadata(loggedResults.get('unmatched_tool')?.metadata);
   assertEqual(loggedResults.get('matching_tool')?.result, matchedResult, 'Matched logger result should equal returned result');
@@ -150,7 +168,7 @@ async function testSameContextSharesViewAndReadsSnapshotPerCall(): Promise<void>
       logToolCall() {},
       logToolResult() {},
     },
-    routeToolCall: async (name) => textResult(name),
+    routeToolCall: async (name) => reservedResult(name),
   });
   const view = createStrictRequestHeaderView(['X-Client', 'android-studio']);
 
@@ -162,6 +180,10 @@ async function testSameContextSharesViewAndReadsSnapshotPerCall(): Promise<void>
 
   assert(hasStructuredContent(firstResult), 'First call in the same request context should match shared strict view');
   assert(hasStructuredContent(secondResult), 'Second call in the same request context should match shared strict view');
+  assertEqual(getStructuredContentRecord(firstResult).toolName, 'first_tool', 'First call should use first payload');
+  assertEqual(getStructuredContentRecord(secondResult).toolName, 'second_tool', 'Second call should use second payload');
+  assert(!hasStructuredPayload(firstResult), 'First call should not leak structuredPayload');
+  assert(!hasStructuredPayload(secondResult), 'Second call should not leak structuredPayload');
   assertEqual(getCount(), 2, 'Each tools/call should read the snapshot at call start');
 }
 

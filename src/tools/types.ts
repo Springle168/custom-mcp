@@ -1,8 +1,12 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
 export interface ToolCallResult {
   content: Array<{ type: 'text'; text: string }>;
   isError: boolean;
+  structuredPayload?: JsonValue;
   [key: string]: unknown;
 }
 

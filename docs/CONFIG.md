@@ -214,7 +214,7 @@ test/
 │   ├── request-header-policy.test.ts   # request header rules 匹配语义和日志 metadata
 │   ├── request-header-view.test.ts     # rawHeaders strict view 构造
 │   ├── tool-call-handler.test.ts       # tools/call 统一出口 request policy 适配和日志 metadata
-│   └── tool-result-adapter.test.ts     # structuredContent wrapper 适配
+│   └── tool-result-adapter.test.ts     # structuredContent payload / string fallback 适配
 ├── logger/
 │   └── request-header-rules-logging.test.ts # request header rules 响应日志格式和隐私边界
 └── helpers/
@@ -281,7 +281,7 @@ workspace 未知字段会导致启动失败。
 
 HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，不使用 `req.headers` 作为 request header rules 匹配输入。strict view 中，同一个 lowercase header name 出现多次会得到 `duplicate` 状态；只有 `single` 且 value exact match 的 header 条件才成立。rule 之间是 OR，同一 rule 内条件是 AND。duplicate 或 missing header 只使引用该 name 的条件失败，不影响其它 rule 未引用的 header。
 
-命中 `structuredContent` 后，`tools/call` 统一出口返回非破坏性的 `structuredContent` wrapper；工具 handler、工具 definition、`ToolRuntimeContext`、MCP session、transport/server 不保存 request policy 或 strict header view。selected workspace 配置非空 request header rules 时，工具响应日志在状态行后输出 `Rules:` 行；命中时只记录 `rules.requestHeaders[n]` 相对规则位置和 enabled feature，未命中时记录 `Rules: no match`，未配置规则时不输出该行。响应日志不记录请求 header name/value、配置 header name/value 或匹配字符串。
+命中 `structuredContent` 后，`tools/call` 统一出口先清理内部 `structuredPayload` 与 handler-supplied `structuredContent`，再由 runtime adapter 生成 payload 或 string fallback 形状的协议字段 `structuredContent`；工具 handler、工具 definition、`ToolRuntimeContext`、MCP session、transport/server 不保存 request policy 或 strict header view。selected workspace 配置非空 request header rules 时，工具响应日志在状态行后输出 `Rules:` 行；命中时只记录 `rules.requestHeaders[n]` 相对规则位置和 enabled feature，未命中时记录 `Rules: no match`，未配置规则时不输出该行。响应日志不记录请求 header name/value、配置 header name/value、匹配字符串、内部字段 `structuredPayload` 或 handler-supplied `structuredContent`。
 
 ### `android` 配置段
 
