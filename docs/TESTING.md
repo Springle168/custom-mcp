@@ -21,7 +21,7 @@
 ```text
 custom-mcp/test/
 ├── android-build/              # Android 构建工具测试，见 docs/tools/android-build.md
-├── ask-user/                   # ask_user 人工交互脚本，见 docs/tools/ask-user.md
+├── ask-user/                   # ask_user result 测试和人工交互脚本，见 docs/tools/ask-user.md
 ├── config/                     # 全局配置、workspace selection、env override 和 snapshot 测试，见 docs/CONFIG.md
 ├── fixtures/                   # 测试数据与运行期生成的 fixture 目录
 ├── helpers/                    # 测试辅助函数，如 runtime-config.ts
@@ -79,9 +79,11 @@ cmd /c npx tsx test/runtime/request-context-concurrency.test.ts
 cmd /c npx tsx test/tools/results.test.ts
 cmd /c npx tsx test/tools/tool-definitions.test.ts
 cmd /c npx tsx test/replace-text/structured-payload.test.ts
+cmd /c npx tsx test/ask-user/ask-user-result.test.ts
+cmd /c npx tsx test/android-build/test-android-build-tools.ts
 ```
 
-这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离、结果 helper 的内部 payload 写入边界、`tools/list` 不暴露 `outputSchema`，以及 `replace_text` 的 handler payload 与 adapter feature 开关。
+这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离、结果 helper 的内部 payload 写入边界、`tools/list` 不暴露 `outputSchema`，以及 `replace_text`、`ask_user` 和 Android 构建工具的 handler payload 与 adapter feature 开关。
 
 ---
 

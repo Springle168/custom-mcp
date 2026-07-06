@@ -78,7 +78,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 答案格式
 
-返回给 AI 的 JSON 结构：
+用户提交答案时，工具返回紧凑 JSON 兼容文本，并把同一个答案对象写入内部 `structuredPayload`。request policy 命中 `structuredContent` feature 时，runtime adapter 使用该 payload object 作为协议字段 `structuredContent`。
 
 ```json
 {
@@ -100,7 +100,10 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 - **key**：字符串形式的问题索引（`"0"`, `"1"`, ...）
 - **value**：对象，包含 `answer`（必需）和 `note`（可选）
 - **多选题**：多个选项用 `\n` 分隔，如 `"OAuth 2.0\nJWT"`
-- **取消**：返回文本 `"User dismissed ask_user dialog without answering."`
+- **兼容文本**：`content[0].text` 使用 `JSON.stringify(payload)` 的紧凑形式
+- **内部 payload**：提交答案路径写入 `structuredPayload: payload`，工具 handler 不构造协议字段 `structuredContent`
+- **取消**：返回自然文本 `"User dismissed ask_user dialog without answering."`，不写 `structuredPayload`
+- **参数错误**：返回自然文本错误并设置 `isError: true`，不写 `structuredPayload`
 
 ### HTML 表单生成
 
@@ -116,12 +119,12 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 表单数据解析
 
-`POST /answer/:sessionId` 的处理逻辑：
+`POST /answer/:sessionId` 通过 `normalizeAskUserAnswerPayload()` 解析表单数据：
 
 1. 遍历所有问题，读取 `question_{index}` 和 `note_{index}`
 2. **多选题特殊处理**：`req.body[answerKey]` 可能是数组（多个选中）或字符串（单个选中），统一用 `\n` 拼接
 3. **补充说明**：trim 后非空才添加 `note` 字段
-4. 构造答案对象，调用 `pending.resolve({ answers })`
+4. 构造 `{ answers }` payload，调用 `pending.resolve(payload)`
 
 ### 参数校验
 
@@ -142,6 +145,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 | `src/index.ts` | HTTP 路由（`/ask`, `/answer`, `/cancel`）、表单数据解析 |
 | `src/tools/index.ts` | 工具注册 |
 | `src/tools/types.ts` | `MCPTool` 接口定义 |
+| `test/ask-user/ask-user-result.test.ts` | 答案 payload、表单规范化、取消/参数错误 fallback 和 adapter 适配测试 |
 | `test/ask-user/ask-user.manual.ts` | 人工交互脚本（模拟 MCP 客户端调用） |
 
 ---
@@ -152,6 +156,6 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 - 工具通过 HTTP 表单完成交互，使用全局 Map + Promise 管理待回答会话。
 - MCP 调用保持阻塞直到用户提交或取消；当前实现不支持外部 `AbortSignal` 中止。
-- 返回给 AI 的结果是结构化 JSON 文本，答案对象包含 `answer` 和可选 `note`。
+- 提交答案路径返回紧凑 JSON 兼容文本，并提供内部 `structuredPayload`；答案对象包含 `answer` 和可选 `note`。取消和参数错误返回自然文本，由 runtime adapter 走文本 fallback。
 - 所有问题类型都支持补充说明；补充说明不与主答案互斥。
 - 工具不依赖 Gemini CLI 的 `MessageBus`、确认执行机制或遥测事件。

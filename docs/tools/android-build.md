@@ -53,7 +53,7 @@ Android 配置边界：
 BUILD SUCCESSFUL
 ```
 
-失败时返回精简 JSON 文本，并带 `isError: true`，字段包括：
+失败时返回紧凑 JSON 兼容文本，并带 `isError: true`。同一个 failure object 写入内部 `structuredPayload`；request policy 命中 `structuredContent` feature 时，runtime adapter 使用该 object 作为协议字段 `structuredContent`。字段包括：
 
 - `success`
 - `task`
@@ -64,6 +64,8 @@ BUILD SUCCESSFUL
 - `summary`
 - `firstErrorBlock`
 - `logTail`
+
+成功摘要、参数校验失败和缺失 Android 配置等前置错误返回自然文本，不写 `structuredPayload`，由 runtime adapter 走文本 fallback。
 
 ---
 
@@ -99,7 +101,7 @@ BUILD SUCCESSFUL
 
 Android 构建相关测试集中在 `test/android-build/`：
 
-- `test/android-build/test-android-build-tools.ts`：工具参数校验、缺失配置、缺失 wrapper
+- `test/android-build/test-android-build-tools.ts`：工具参数校验、缺失配置、缺失 wrapper、failure payload 和 adapter fallback
 - `test/android-build/test-android-gradle-output.ts`：输出裁剪、首个错误块、到达顺序
 - `test/android-build/test-android-gradle-timeout.ts`：超时后终止整棵进程树
 - `test/android-build/test-android-gradle-launcher.ts`：特殊 Windows 路径下的启动行为

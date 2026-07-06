@@ -56,17 +56,31 @@ interface Option {
 }
 ```
 
-### 答案格式（参考 Gemini CLI）
+### 答案格式
 
 ```typescript
-// 返回给 AI 的格式
+type AskUserAnswerPayload = {
+  answers: Record<string, { answer: string } | { answer: string; note: string }>;
+};
+```
+
+提交答案路径使用 `{ answers }` payload：
+
+```json
 {
-  answers: {
-    "0": "OAuth 2.0",           // 问题索引 -> 答案
-    "1": "PostgreSQL\nwith pooling"  // 多行用 \n 分隔
+  "answers": {
+    "0": {
+      "answer": "OAuth 2.0",
+      "note": "with PKCE"
+    },
+    "1": {
+      "answer": "PostgreSQL\nwith pooling"
+    }
   }
 }
 ```
+
+`content[0].text` 使用 `JSON.stringify(payload)` 的紧凑形式，同一个 payload 写入内部 `structuredPayload`。取消和参数错误返回自然文本，不写 `structuredPayload`。
 
 ### 实现流程
 
@@ -86,21 +100,24 @@ interface Option {
 
 3. **阻塞等待用户输入**
    ```typescript
-   const answers = await answerPromise;
-   return textResult(JSON.stringify({ answers }));
+   const payload = await answerPromise;
+   return payload === null
+     ? formatAskUserCanceledResult()
+     : formatAskUserAnswerResult(payload);
    ```
 
 4. **HTTP 路由处理**
-   - `GET /interact/:sessionId` - 渲染问题表单
-   - `POST /submit/:sessionId` - 接收答案，resolve Promise
+   - `GET /ask/:sessionId` - 渲染问题表单
+   - `POST /answer/:sessionId` - 调用 `normalizeAskUserAnswerPayload()` 构造 payload，resolve Promise
+   - `POST /cancel/:sessionId` - 用户取消，resolve Promise 为 `null`
 
 ### 状态管理
 
 ```typescript
 interface PendingQuestion {
   questions: Question[];
-  resolve: (answers: Record<string, string>) => void;
-  timeout: NodeJS.Timeout;
+  resolve: (result: AskUserAnswerPayload | null) => void;
+  createdAt: number;
 }
 
 const pendingQuestions = new Map<string, PendingQuestion>();
