@@ -108,6 +108,20 @@ export function parseResultJson(result: ToolCallResult): ReplaceTextV2Json {
   }
 
   assertResultShape(parsed);
+  assertEqual(
+    text,
+    JSON.stringify(parsed),
+    'Result content[0].text should be compact JSON',
+  );
+  assert(
+    'structuredPayload' in result,
+    'replace_text handler result should include internal structuredPayload',
+  );
+  assertDeepEqual(
+    result.structuredPayload,
+    parsed,
+    'Internal structuredPayload should match parsed content JSON',
+  );
   return parsed;
 }
 
@@ -212,7 +226,7 @@ function assertEnvelope(result: ToolCallResult): void {
   );
   assert(
     !('structuredContent' in result),
-    'replace_text v2 should not return structuredContent',
+    'replace_text handler should not return protocol structuredContent',
   );
 }
 

@@ -4,7 +4,7 @@
 
 ## 概述
 
-`replace_text` 对单个文本文件执行局部替换，并在 MCP 标准 `content[0].text` 中返回可解析的 JSON 字符串。
+`replace_text` 对单个文本文件执行局部替换，使用紧凑 `JSON.stringify(payload)` 作为 MCP 标准 `content[0].text`，并把同一 JSON payload 作为内部 `structuredPayload` 交给 runtime adapter。
 
 ---
 
@@ -20,6 +20,7 @@ test/replace-text/
 ├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
 ├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
 ├── output-safety.test.ts            # JSON 失败形状、sandbox 和安全写入
+├── structured-payload.test.ts       # structuredPayload 与 runtime adapter feature 开关
 └── line-ending-concurrency.test.ts  # CRLF/LF 规范化与并发回归
 ```
 
@@ -91,15 +92,23 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ## 输出 JSON
 
-成功和失败都返回 MCP 标准外壳：
+成功和失败都使用同一 `ReplaceTextPayload` 对象生成兼容文本和内部 payload：
+
+- `content[0].text` 是 `JSON.stringify(payload)` 的紧凑 JSON 字符串。
+- handler result 内部包含 `structuredPayload: payload`。
+- runtime adapter 生成 public result 时清理内部 `structuredPayload`。
+- request policy 命中 `structuredContent` feature 时，runtime adapter 把同一 payload object 作为协议字段 `structuredContent`；未命中时 public result 不包含 `structuredPayload` 或 `structuredContent`。
+
+MCP 标准外壳保留 `content` 与 `isError`：
 
 ```json
 {
-  "content": [{ "type": "text", "text": "{...json...}" }]
+  "content": [{ "type": "text", "text": "{...compact-json...}" }],
+  "isError": false
 }
 ```
 
-失败时额外设置 `isError: true`，且 `content[0].text` 中的 JSON `success=false`。不使用 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
+失败时设置 `isError: true`，且 payload 中的 `success=false`。工具 handler 不构造协议字段 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
 
 `content[0].text` 解析后的对象包含：
 

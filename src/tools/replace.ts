@@ -5,7 +5,6 @@ import {
   calculateMatchedSpan,
   calculateRegexReplacement,
   calculateReplacement,
-  type MatchedSpan,
   type ReplaceParams,
   type ReplacementResult,
 } from '../engine/replacement.js';
@@ -30,21 +29,29 @@ import { textErrorResult, textResult } from './results.js';
 
 type MatchMode = 'default' | 'regex';
 
-interface ReplaceTextPayload {
+type MatchedSpanPayload = {
+  start_line: number;
+  end_line: number;
+};
+
+type FileLineCountPayload = {
+  previous: number;
+  current: number;
+};
+
+type ReplaceTextPayloadCore = {
   success: boolean;
   file_path: string;
   match_mode: MatchMode;
   allow_multiple: boolean;
   matched_targets: number;
   replacement_count: number;
-  matched_span: MatchedSpan | null;
+  matched_span: MatchedSpanPayload | null;
   replacement_line_count: number;
-  file_line_count: {
-    previous: number;
-    current: number;
-  };
-  note?: string;
-}
+  file_line_count: FileLineCountPayload;
+};
+
+type ReplaceTextPayload = ReplaceTextPayloadCore | (ReplaceTextPayloadCore & { note: string });
 
 interface ValidationResult {
   ok: boolean;
@@ -133,11 +140,15 @@ Best practices:
 // ================
 
 function successResult(payload: ReplaceTextPayload): ToolCallResult {
-  return textResult(JSON.stringify(payload));
+  return textResult(JSON.stringify(payload), {
+    structuredPayload: payload,
+  });
 }
 
 function errorResult(payload: ReplaceTextPayload): ToolCallResult {
-  return textErrorResult(JSON.stringify(payload));
+  return textErrorResult(JSON.stringify(payload), {
+    structuredPayload: payload,
+  });
 }
 
 function normalizeMatchMode(value: unknown): MatchMode {
@@ -170,10 +181,10 @@ function payloadFromArgs(
   args: Record<string, unknown>,
   success: boolean,
   note: string | undefined,
-  overrides: Partial<ReplaceTextPayload> = {},
+  overrides: Partial<ReplaceTextPayloadCore> = {},
 ): ReplaceTextPayload {
   const previousLineCount = overrides.file_line_count?.previous ?? 0;
-  const payload: ReplaceTextPayload = {
+  const payload: ReplaceTextPayloadCore = {
     success,
     file_path: typeof args.file_path === 'string' ? args.file_path : '',
     match_mode: normalizeMatchMode(args.match_mode),
@@ -191,7 +202,7 @@ function payloadFromArgs(
   };
 
   if (note !== undefined && note.length > 0) {
-    payload.note = note;
+    return { ...payload, note };
   }
 
   return payload;

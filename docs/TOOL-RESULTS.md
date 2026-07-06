@@ -74,7 +74,7 @@
 - handler 返回中已有同名 `structuredContent` 字段时，该字段会被丢弃；只有 runtime adapter 生成的协议字段可以进入最终响应。
 - `tools/list` 的工具 definition 保持不变，不为该适配能力暴露或动态添加 `outputSchema`。
 
-阶段 1 结束时，helper 与 adapter 模型支持 payload / string fallback；生产工具的 `structuredPayload` 接入由后续开发检查点完成。
+`replace_text` 的成功与失败结果使用该机制：handler 把 `ReplaceTextPayload` 写入内部 `structuredPayload`，兼容文本是同一对象的紧凑 `JSON.stringify(payload)`。
 
 ---
 
@@ -115,7 +115,7 @@ return textErrorResult(JSON.stringify(payload), {
 
 ## JSON payload 工具
 
-拥有原生结构化结果的工具应把兼容文本放在 `content[0].text`，并把同一个 JSON value 作为内部 `structuredPayload` 交给 helper：
+拥有原生结构化结果的工具应把兼容文本放在 `content[0].text`，并把同一个 JSON value 作为内部 `structuredPayload` 交给 helper。`replace_text` 成功和失败路径遵循该模式：`ReplaceTextPayload.success` 与顶层 `isError` 对齐，request policy 命中时 adapter 以该 object 作为 `structuredContent`。
 
 ```typescript
 function successResult(payload: JsonValue): ToolCallResult {
