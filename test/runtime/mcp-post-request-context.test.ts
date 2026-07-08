@@ -1,10 +1,16 @@
 import type { Request, Response } from 'express';
+import type { RuntimeRulesConfig } from '../../src/config.js';
+import type { ConfigStore } from '../../src/runtime/config-store.js';
 import {
   handleMcpPostRequest,
   type McpPostSession,
   type McpPostTransport,
 } from '../../src/runtime/mcp-post-handler.js';
 import { getCurrentRequestHeaderView } from '../../src/runtime/request-context.js';
+import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
+import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
+import type { ToolCallResult } from '../../src/tools/types.js';
+import { createTestConfigStore } from '../helpers/runtime-config.js';
 import {
   assert,
   assertEqual,
@@ -14,6 +20,29 @@ import {
 interface FakeResponse extends Response {
   statusCodeValue?: number;
   ended?: boolean;
+}
+
+interface LoggedToolResult {
+  readonly result: ToolCallResult;
+  readonly metadata: RequestHeaderPolicyLogMetadata | undefined;
+}
+
+function matchingRules(): RuntimeRulesConfig {
+  return {
+    requestHeaders: [
+      {
+        match: [{ name: 'x-client', value: 'android-studio' }],
+        enable: ['structuredContentDup'],
+      },
+    ],
+  };
+}
+
+function createToolCallStore(): ConfigStore {
+  return createTestConfigStore({
+    rootDir: process.cwd(),
+    rules: matchingRules(),
+  });
 }
 
 function createRequest(options: {
@@ -66,6 +95,22 @@ function readContextHeaderValue(name: string): string | undefined {
   const state = view.headers.get(name);
   assert(state?.kind === 'single', `${name} should be a single header in strict view`);
   return state.value;
+}
+
+function textResult(text: string): ToolCallResult {
+  return {
+    content: [{ type: 'text', text }],
+    isError: false,
+  };
+}
+
+function getStructuredContentWrapper(result: ToolCallResult): Record<string, unknown> {
+  const { structuredContent } = result;
+  assert(
+    typeof structuredContent === 'object' && structuredContent !== null && !Array.isArray(structuredContent),
+    'Expected structuredContent wrapper object',
+  );
+  return structuredContent as Record<string, unknown>;
 }
 
 async function testExistingSessionRunsHandleRequestInContext(): Promise<void> {
@@ -154,6 +199,90 @@ async function testUnknownSessionReturns404WithoutContext(): Promise<void> {
   assertEqual(getCurrentRequestHeaderView(), undefined, 'Unknown session branch should not establish request context');
 }
 
+async function testSessionCreationHeadersDoNotEnableLaterSessionRequest(): Promise<void> {
+  const sessions = new Map<string, McpPostSession>();
+  const results: ToolCallResult[] = [];
+  const loggedResults: LoggedToolResult[] = [];
+  const handler = createToolCallRequestHandler({
+    configStore: createToolCallStore(),
+    logger: {
+      logToolCall() {},
+      logToolResult(_toolName, result, _durationMs, metadata) {
+        loggedResults.push({ result, metadata });
+      },
+    },
+    routeToolCall: async (name) => textResult(name),
+  });
+  const transport: McpPostTransport = {
+    sessionId: 'session-1',
+    async handleRequest() {
+      const result = await handler({
+        params: {
+          name: `fake_tool_${results.length}`,
+          arguments: {},
+        },
+      });
+      results.push(result);
+    },
+  };
+
+  await handleMcpPostRequest({
+    req: createRequest({ rawHeaders: ['X-Client', 'android-studio'] }),
+    res: createResponse(),
+    sessions,
+    logger: { info() {} },
+    createSession() {
+      return createSession(transport);
+    },
+  });
+
+  await handleMcpPostRequest({
+    req: createRequest({
+      sessionId: 'session-1',
+      rawHeaders: ['Mcp-Session-Id', 'session-1'],
+    }),
+    res: createResponse(),
+    sessions,
+    logger: { info() {} },
+    createSession() {
+      throw new Error('Existing session branch should not create a new session');
+    },
+  });
+
+  assert(sessions.has('session-1'), 'Created session should be retained for the follow-up POST');
+  assertEqual(results.length, 2, 'Fake transport should process both POST requests');
+  assertEqual(loggedResults.length, 2, 'Tool-call logger should record both POST-scoped calls');
+
+  const [firstResult, secondResult] = results;
+  assert(firstResult !== undefined, 'First POST should produce a tool result');
+  assert(secondResult !== undefined, 'Second POST should produce a tool result');
+  assertEqual(loggedResults[0]?.result, firstResult, 'First POST logger should receive the returned result');
+  assertEqual(loggedResults[1]?.result, secondResult, 'Later same-session POST logger should receive the returned result');
+  assertEqual(
+    getStructuredContentWrapper(firstResult).content,
+    firstResult.content,
+    'Session creation POST with a matching header should enable structuredContent for that POST only',
+  );
+  assertEqual(
+    getStructuredContentWrapper(firstResult).isError,
+    false,
+    'Matched POST wrapper should normalize isError',
+  );
+
+  assert(!('structuredContent' in secondResult), 'Later same-session POST without matching header should not inherit structuredContent');
+
+  assertEqual(
+    loggedResults[0]?.metadata?.enabledFeatures.join(','),
+    'structuredContentDup',
+    'First POST metadata should report the matched feature',
+  );
+  assertEqual(
+    loggedResults[1]?.metadata?.enabledFeatures.length,
+    0,
+    'Later same-session POST metadata should report no enabled features',
+  );
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing MCP POST request header context seam',
@@ -161,6 +290,7 @@ async function main(): Promise<void> {
       { name: 'existing session runs handleRequest in context', run: testExistingSessionRunsHandleRequestInContext },
       { name: 'new session runs handleRequest in context', run: testNewSessionRunsHandleRequestInContext },
       { name: 'unknown session returns 404 without context', run: testUnknownSessionReturns404WithoutContext },
+      { name: 'session creation headers do not enable later session request', run: testSessionCreationHeadersDoNotEnableLaterSessionRequest },
     ],
   });
 }

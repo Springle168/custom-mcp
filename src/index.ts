@@ -18,7 +18,11 @@ import {
 import { createToolCallRequestHandler } from './runtime/tool-call-handler.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
 import { Logger } from './utils/logger.js';
-import { pendingQuestions, generateQuestionForm } from './tools/ask-user.js';
+import {
+  pendingQuestions,
+  generateQuestionForm,
+  normalizeAskUserAnswerPayload,
+} from './tools/ask-user.js';
 
 // ================
 // MCP Server Factory
@@ -219,39 +223,13 @@ async function main() {
       return;
     }
 
-    // 解析答案
-    const answers: Record<string, { answer: string; note?: string }> = {};
-
-    for (let i = 0; i < pending.questions.length; i++) {
-      const question = pending.questions[i];
-      const answerKey = `question_${i}`;
-      const noteKey = `note_${i}`;
-
-      let answerValue: string;
-
-      if (question.type === 'choice' && question.multiSelect) {
-        // 多选：可能是数组或单个值
-        const values = req.body[answerKey];
-        if (Array.isArray(values)) {
-          answerValue = values.join('\n');
-        } else {
-          answerValue = values || '';
-        }
-      } else {
-        // 单选或文本
-        answerValue = req.body[answerKey] || '';
-      }
-
-      const noteValue = req.body[noteKey]?.trim();
-
-      answers[i.toString()] = {
-        answer: answerValue,
-        ...(noteValue && { note: noteValue }),
-      };
-    }
+    const payload = normalizeAskUserAnswerPayload(
+      pending.questions,
+      req.body as Record<string, unknown>,
+    );
 
     // Resolve Promise
-    pending.resolve({ answers });
+    pending.resolve(payload);
 
     res.send(`
       <h1>Submitted</h1>

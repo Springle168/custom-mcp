@@ -451,7 +451,7 @@ async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
       requestHeaders: [
         {
           match: { 'X-Client': 'android-studio' },
-          enable: ['structuredContent'],
+          enable: ['structuredContentDup'],
         },
       ],
     },
@@ -465,7 +465,7 @@ async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
 
   assertEqual(snapshot.rules.requestHeaders.length, 1, 'Snapshot should hold selected workspace request header rules');
   assertEqual(snapshot.rules.requestHeaders[0]?.match[0]?.name, 'x-client', 'Snapshot rules should contain normalized header names');
-  assertEqual(snapshot.rules.requestHeaders[0]?.enable[0], 'structuredContent', 'Snapshot rules should preserve enabled features');
+  assertEqual(snapshot.rules.requestHeaders[0]?.enable[0], 'structuredContentDup', 'Snapshot rules should preserve enabled features');
 }
 
 async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
@@ -476,7 +476,7 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
       requestHeaders: [
         {
           match: { 'X-Client': 'android-studio' },
-          enable: ['structuredContent'],
+          enable: ['structuredContentDup'],
         },
       ],
     },

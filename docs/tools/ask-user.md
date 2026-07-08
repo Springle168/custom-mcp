@@ -63,7 +63,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 2. 创建 Promise 并存入全局 Map：`pendingQuestions`
 3. 输出 URL 到终端：`http://localhost:{port}/ask/{sessionId}`
 4. `await` Promise，阻塞等待用户输入
-5. 用户提交表单后，HTTP handler 调用 `resolve()`，Promise 返回答案
+5. 用户提交表单后，HTTP handler 通过 `normalizeAskUserAnswerPayload()` 规范化表单数据并调用 `resolve()`，Promise 返回答案
 6. 清理会话，返回结果给 AI
 
 无超时限制，会话在用户提交或取消后自动清理。
@@ -78,7 +78,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 答案格式
 
-返回给 AI 的 JSON 结构：
+返回给 AI 的 `content[0].text` 是由 `JSON.stringify(payload)` 生成的紧凑 JSON：
 
 ```json
 {
@@ -100,7 +100,9 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 - **key**：字符串形式的问题索引（`"0"`, `"1"`, ...）
 - **value**：对象，包含 `answer`（必需）和 `note`（可选）
 - **多选题**：多个选项用 `\n` 分隔，如 `"OAuth 2.0\nJWT"`
+- **格式化 helper**：答案路径通过 `formatAskUserAnswerResult()` 返回标准 `content` + `isError` 结果
 - **取消**：返回文本 `"User dismissed ask_user dialog without answering."`
+- **取消 helper**：取消路径通过 `formatAskUserCanceledResult()` 返回自然文本，不设置 `isError: true`
 
 ### HTML 表单生成
 
@@ -116,12 +118,13 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 表单数据解析
 
-`POST /answer/:sessionId` 的处理逻辑：
+`POST /answer/:sessionId` 调用 `normalizeAskUserAnswerPayload()` 解析表单数据：
 
 1. 遍历所有问题，读取 `question_{index}` 和 `note_{index}`
 2. **多选题特殊处理**：`req.body[answerKey]` 可能是数组（多个选中）或字符串（单个选中），统一用 `\n` 拼接
-3. **补充说明**：trim 后非空才添加 `note` 字段
-4. 构造答案对象，调用 `pending.resolve({ answers })`
+3. **非字符串值**：通过安全字符串化处理，避免异常值让答案解析抛错
+4. **补充说明**：trim 后非空才添加 `note` 字段
+5. 构造答案对象，调用 `pending.resolve(payload)`
 
 ### 参数校验
 
@@ -138,10 +141,11 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/ask-user.ts` | 工具定义、Schema、参数校验、handler 实现、HTML 生成 |
-| `src/index.ts` | HTTP 路由（`/ask`, `/answer`, `/cancel`）、表单数据解析 |
+| `src/tools/ask-user.ts` | 工具定义、Schema、参数校验、handler 实现、答案规范化/格式化 helper、HTML 生成 |
+| `src/index.ts` | HTTP 路由（`/ask`, `/answer`, `/cancel`） |
 | `src/tools/index.ts` | 工具注册 |
 | `src/tools/types.ts` | `MCPTool` 接口定义 |
+| `test/ask-user/ask-user-result.test.ts` | 答案规范化、结果格式化与 handler 返回测试 |
 | `test/ask-user/ask-user.manual.ts` | 人工交互脚本（模拟 MCP 客户端调用） |
 
 ---

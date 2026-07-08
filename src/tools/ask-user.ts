@@ -4,32 +4,35 @@ import { textErrorResult, textResult } from './results.js';
 import crypto from 'crypto';
 
 // 类型定义
-interface Question {
+export interface AskUserQuestion {
   question: string;
   header: string;
   type: 'choice' | 'text' | 'yesno';
-  options?: Option[];
+  options?: AskUserOption[];
   multiSelect?: boolean;
   placeholder?: string;
 }
 
-interface Option {
+export interface AskUserOption {
   label: string;
   description: string;
 }
 
 interface AskUserParams {
-  questions: Question[];
+  questions: AskUserQuestion[];
 }
 
-interface Answer {
-  answer: string;
-  note?: string;
-}
+export type AskUserAnswer =
+  | { answer: string }
+  | { answer: string; note: string };
+
+export type AskUserAnswerPayload = {
+  answers: Record<string, AskUserAnswer>;
+};
 
 interface PendingQuestion {
-  questions: Question[];
-  resolve: (result: { answers: Record<string, Answer> } | null) => void;
+  questions: AskUserQuestion[];
+  resolve: (result: AskUserAnswerPayload | null) => void;
   createdAt: number;
 }
 
@@ -195,15 +198,13 @@ async function handleAskUser(
   console.log(`\nUser input required: ${url}\n`);
 
   // 创建 Promise
-  const answerPromise = new Promise<{ answers: Record<string, Answer> } | null>(
-    (resolve) => {
-      pendingQuestions.set(sessionId, {
-        questions: params.questions,
-        resolve,
-        createdAt: Date.now(),
-      });
-    },
-  );
+  const answerPromise = new Promise<AskUserAnswerPayload | null>((resolve) => {
+    pendingQuestions.set(sessionId, {
+      questions: params.questions,
+      resolve,
+      createdAt: Date.now(),
+    });
+  });
 
   // 等待用户输入
   const result = await answerPromise;
@@ -213,17 +214,79 @@ async function handleAskUser(
 
   // 处理取消
   if (result === null) {
-    return textResult('User dismissed ask_user dialog without answering.');
+    return formatAskUserCanceledResult();
   }
 
   // 返回答案
-  return textResult(JSON.stringify(result));
+  return formatAskUserAnswerResult(result);
+}
+
+export function normalizeAskUserAnswerPayload(
+  questions: readonly AskUserQuestion[],
+  body: Record<string, unknown>,
+): AskUserAnswerPayload {
+  const answers: Record<string, AskUserAnswer> = {};
+
+  for (let i = 0; i < questions.length; i++) {
+    const question = questions[i];
+    const answerKey = `question_${i}`;
+    const noteKey = `note_${i}`;
+    const answerValue =
+      question.type === 'choice' && question.multiSelect
+        ? normalizeMultiSelectFormValue(body[answerKey])
+        : normalizeSingleFormValue(body[answerKey]);
+    const noteValue = normalizeSingleFormValue(body[noteKey]).trim();
+
+    answers[i.toString()] = noteValue
+      ? { answer: answerValue, note: noteValue }
+      : { answer: answerValue };
+  }
+
+  return { answers };
+}
+
+export function formatAskUserAnswerResult(
+  payload: AskUserAnswerPayload,
+): ToolCallResult {
+  return textResult(JSON.stringify(payload));
+}
+
+export function formatAskUserCanceledResult(): ToolCallResult {
+  return textResult('User dismissed ask_user dialog without answering.');
+}
+
+function normalizeSingleFormValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(stringifyFormValue).join('\n');
+  }
+
+  return stringifyFormValue(value);
+}
+
+function normalizeMultiSelectFormValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(stringifyFormValue).join('\n');
+  }
+
+  return normalizeSingleFormValue(value);
+}
+
+function stringifyFormValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  try {
+    return String(value);
+  } catch {
+    return '';
+  }
 }
 
 // HTML 表单生成
 export function generateQuestionForm(
   sessionId: string,
-  questions: Question[],
+  questions: AskUserQuestion[],
 ): string {
   const questionHtml = questions
     .map((q, index) => {

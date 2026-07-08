@@ -5,7 +5,7 @@ export function adaptToolCallResultForRequestPolicy(
   result: ToolCallResult,
   policy: RequestHeaderPolicy,
 ): ToolCallResult {
-  if (!policy.enabledFeatures.includes('structuredContent')) {
+  if (!policy.enabledFeatures.includes('structuredContentDup')) {
     return result;
   }
 

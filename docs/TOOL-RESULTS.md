@@ -44,7 +44,7 @@
 
 `structuredContent` 是 `tools/call` 统一出口根据 request header policy 执行的兼容适配，不是单个工具 handler 的返回契约。工具 handler 只返回项目标准 `ToolCallResult`，不读取 request headers，不判断 request policy，也不自行构造 `structuredContent`。
 
-命中 `structuredContent` feature 时，runtime adapter 返回一个新对象：
+命中 `structuredContentDup` feature 时，runtime adapter 返回一个新对象，并把标准结果壳复制到 MCP 协议字段 `structuredContent`：
 
 ```json
 {
@@ -69,8 +69,8 @@
 
 适配规则：
 
-- 未启用 `structuredContent` 时返回 handler 的原始 result 对象，不添加扩展字段。
-- 启用 `structuredContent` 时返回新对象，不修改 handler 返回对象。
+- 未启用 `structuredContentDup` 时返回 handler 的原始 result 对象，不添加扩展字段。
+- 启用 `structuredContentDup` 时返回新对象，不修改 handler 返回对象。
 - wrapper 只包含 `content` 和 `isError`，不复制顶层其它扩展字段。
 - wrapper 不解析 `content[0].text`，不读取工具私有 JSON payload。
 - `structuredContent.isError` 只把 `result.isError === true` 判定为错误。
@@ -118,7 +118,7 @@ function errorResult(payload: ReplaceTextPayload): ToolCallResult {
 注意事项：
 
 - 迁移时必须保留原有 `JSON.stringify` 格式，避免改变客户端或测试依赖的文本内容。
-- Android 构建失败结果使用 `JSON.stringify(failure, null, 2)` 输出可读 JSON，后续维护时应保持该格式。
+- Android 构建失败结果使用 `JSON.stringify(failure)` 输出紧凑 JSON，后续维护时应保持该格式。
 - JSON payload 内部的 `success` 字段和 MCP 返回壳的 `isError` 字段应表达同一语义：成功时 `success: true` / `isError: false`，失败时 `success: false` / `isError: true`。
 
 ---

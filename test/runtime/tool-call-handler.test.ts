@@ -29,7 +29,7 @@ function matchingRules(): RuntimeRulesConfig {
     requestHeaders: [
       {
         match: [{ name: 'x-client', value: 'android-studio' }],
-        enable: ['structuredContent'],
+        enable: ['structuredContentDup'],
       },
     ],
   };
@@ -80,7 +80,7 @@ function assertMatchedMetadata(metadata: RequestHeaderPolicyLogMetadata | undefi
   assert(metadata !== undefined, 'Logger should receive request header rules metadata');
   assertEqual(metadata.rulesConfigured, true, 'Metadata should report configured request header rules');
   assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Metadata should include matched rule locations');
-  assertEqual(metadata.enabledFeatures.join(','), 'structuredContent', 'Metadata should include enabled features');
+  assertEqual(metadata.enabledFeatures.join(','), 'structuredContentDup', 'Metadata should include enabled features');
 }
 
 function assertNoMatchMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {

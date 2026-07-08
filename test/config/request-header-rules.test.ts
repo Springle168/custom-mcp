@@ -66,7 +66,7 @@ function globalConfig(workspaces: unknown[] = [workspace(0)]): Record<string, un
 function rule(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     match: { 'x-client': 'android-studio' },
-    enable: ['structuredContent'],
+    enable: ['structuredContentDup'],
     ...overrides,
   };
 }
@@ -129,7 +129,7 @@ async function testRulesShapeFailures(): Promise<void> {
     { overrides: { rules: { requestHeaders: {} } }, message: 'must be an array', fieldPath: 'workspaces[0].rules.requestHeaders' },
     { overrides: { rules: { requestHeaders: [null] } }, message: 'must be a JSON object', fieldPath: 'workspaces[0].rules.requestHeaders[0]' },
     { overrides: { rules: { requestHeaders: [rule({ match: null })] } }, message: 'must be a non-empty JSON object', fieldPath: 'workspaces[0].rules.requestHeaders[0].match' },
-    { overrides: { rules: { requestHeaders: [rule({ enable: 'structuredContent' })] } }, message: 'must be a non-empty array', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable' },
+    { overrides: { rules: { requestHeaders: [rule({ enable: 'structuredContentDup' })] } }, message: 'must be a non-empty array', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable' },
   ];
 
   for (const testCase of cases) {
@@ -149,7 +149,7 @@ async function testUnknownAndRequiredFields(): Promise<void> {
     'workspaces[0].rules.requestHeaders[0].unexpected',
   );
   await expectParseError(
-    { rules: { requestHeaders: [{ enable: ['structuredContent'] }] } },
+    { rules: { requestHeaders: [{ enable: ['structuredContentDup'] }] } },
     'workspaces[0].rules.requestHeaders[0].match is required',
     'workspaces[0].rules.requestHeaders[0].match',
   );
@@ -238,11 +238,11 @@ async function testEnableValidation(): Promise<void> {
     { enable: [42], message: 'must be a string', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
     { enable: [''], message: 'must be a non-empty string', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
     { enable: ['   '], message: 'must be a non-empty string', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: [' structuredContent'], message: 'must not contain leading or trailing whitespace', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['structuredContent '], message: 'must not contain leading or trailing whitespace', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['unknownFeature'], message: 'must be one of: structuredContent', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['StructuredContent'], message: 'must be one of: structuredContent', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['structuredContent', 'structuredContent'], message: 'contains duplicate feature "structuredContent"', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[1]' },
+    { enable: [' structuredContentDup'], message: 'must not contain leading or trailing whitespace', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
+    { enable: ['structuredContentDup '], message: 'must not contain leading or trailing whitespace', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
+    { enable: ['unknownFeature'], message: 'must be one of: structuredContentDup', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
+    { enable: ['StructuredContent'], message: 'must be one of: structuredContentDup', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
+    { enable: ['structuredContentDup', 'structuredContentDup'], message: 'contains duplicate feature "structuredContentDup"', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[1]' },
   ];
 
   for (const testCase of cases) {
@@ -270,7 +270,7 @@ async function testUnselectedWorkspaceInvalidRulesStillFail(): Promise<void> {
   );
 
   assertEqual(error.fieldPath, 'workspaces[1].rules.requestHeaders[0].enable[0]', 'Unselected workspace rules should still be schema-validated');
-  assertIncludes(error.message, 'must be one of: structuredContent', 'Unselected invalid feature should fail startup');
+  assertIncludes(error.message, 'must be one of: structuredContentDup', 'Unselected invalid feature should fail startup');
 }
 
 async function testOnlySelectedWorkspaceRulesEnterSnapshot(): Promise<void> {

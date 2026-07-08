@@ -5,7 +5,7 @@ import {
   type ValuePolicyResult,
 } from './value-policy.js';
 
-export type RuntimeRequestFeature = 'structuredContent';
+export type RuntimeRequestFeature = 'structuredContentDup';
 
 export interface RuntimeRequestHeaderMatchCondition {
   readonly name: string;
@@ -28,7 +28,7 @@ export interface RequestHeaderRulesParseContext {
 const RULES_FIELDS = new Set(['requestHeaders']);
 const REQUEST_HEADER_RULE_FIELDS = new Set(['match', 'enable']);
 const HTTP_HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const REQUEST_FEATURES = ['structuredContent'] as const satisfies readonly RuntimeRequestFeature[];
+const REQUEST_FEATURES = ['structuredContentDup'] as const satisfies readonly RuntimeRequestFeature[];
 
 export function createEmptyRuntimeRulesConfig(): RuntimeRulesConfig {
   return { requestHeaders: [] };

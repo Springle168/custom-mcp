@@ -11,7 +11,7 @@ function policy(enabled: boolean): RequestHeaderPolicy {
   return {
     rulesConfigured: true,
     matchedRuleIndexes: enabled ? [0] : [],
-    enabledFeatures: enabled ? ['structuredContent'] : [],
+    enabledFeatures: enabled ? ['structuredContentDup'] : [],
   };
 }
 
