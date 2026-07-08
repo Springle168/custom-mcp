@@ -33,7 +33,7 @@ export interface AndroidGradleToolArgs {
 
 type ToolAndroidConfig = NonNullable<ToolRuntimeContext['android']>;
 
-interface AndroidGradleToolFailure {
+export type AndroidGradleToolFailure = {
   success: false;
   task: RunAndroidGradleResult['task'];
   command: string;
@@ -43,7 +43,7 @@ interface AndroidGradleToolFailure {
   summary: 'BUILD FAILED';
   firstErrorBlock: string | null;
   logTail: string | null;
-}
+};
 
 export function validateAndroidGradleToolArgs(
   args: Record<string, unknown>,
@@ -140,7 +140,7 @@ export function formatAndroidGradleToolResult(
     logTail: result.logTail,
   };
 
-  return textErrorResult(JSON.stringify(failure, null, 2));
+  return textErrorResult(JSON.stringify(failure));
 }
 
 function toRuntimeConfig(androidConfig: ToolAndroidConfig): AndroidGradleRuntimeConfig {

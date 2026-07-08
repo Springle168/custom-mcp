@@ -20,11 +20,11 @@ function testRuleOrAndRuleInternalAnd(): void {
         { name: 'x-client', value: 'android-studio' },
         { name: 'x-compat', value: 'structured-content' },
       ],
-      enable: ['structuredContent'],
+      enable: ['structuredContentDup'],
     },
     {
       match: [{ name: 'x-client', value: 'other-client' }],
-      enable: ['structuredContent'],
+      enable: ['structuredContentDup'],
     },
   ]);
 
@@ -48,7 +48,7 @@ function testExactValueMatchIsCaseSensitiveAndDoesNotTrim(): void {
   const rules = rulesConfig([
     {
       match: [{ name: 'x-client', value: 'android-studio' }],
-      enable: ['structuredContent'],
+      enable: ['structuredContentDup'],
     },
   ]);
 
@@ -69,7 +69,7 @@ function testDuplicateMissingInvalidAndMissingContextDoNotMatch(): void {
   const rules = rulesConfig([
     {
       match: [{ name: 'x-client', value: 'android-studio' }],
-      enable: ['structuredContent'],
+      enable: ['structuredContentDup'],
     },
   ]);
 
@@ -93,7 +93,7 @@ function testUnreferencedDuplicateDoesNotAffectMatch(): void {
     rulesConfig([
       {
         match: [{ name: 'x-client', value: 'android-studio' }],
-        enable: ['structuredContent'],
+        enable: ['structuredContentDup'],
       },
     ]),
     createStrictRequestHeaderView([
@@ -104,7 +104,7 @@ function testUnreferencedDuplicateDoesNotAffectMatch(): void {
   );
 
   assertEqual(policy.matchedRuleIndexes.join(','), '0', 'Duplicate headers not referenced by a rule should not affect matching');
-  assertEqual(policy.enabledFeatures.join(','), 'structuredContent', 'Matched rule should enable structuredContent');
+  assertEqual(policy.enabledFeatures.join(','), 'structuredContentDup', 'Matched rule should enable structuredContentDup');
 }
 
 function testMatchedIndexesStableAndFeaturesDeduped(): void {
@@ -112,11 +112,11 @@ function testMatchedIndexesStableAndFeaturesDeduped(): void {
     rulesConfig([
       {
         match: [{ name: 'x-client', value: 'android-studio' }],
-        enable: ['structuredContent'],
+        enable: ['structuredContentDup'],
       },
       {
         match: [{ name: 'x-compat', value: 'structured-content' }],
-        enable: ['structuredContent'],
+        enable: ['structuredContentDup'],
       },
     ]),
     createStrictRequestHeaderView([
@@ -126,7 +126,7 @@ function testMatchedIndexesStableAndFeaturesDeduped(): void {
   );
 
   assertEqual(policy.matchedRuleIndexes.join(','), '0,1', 'Matched rule indexes should be stable');
-  assertEqual(policy.enabledFeatures.join(','), 'structuredContent', 'Enabled features should be deduplicated');
+  assertEqual(policy.enabledFeatures.join(','), 'structuredContentDup', 'Enabled features should be deduplicated');
 }
 
 function testLogMetadataContainsOnlyRuleLocationsAndFeatures(): void {
@@ -134,7 +134,7 @@ function testLogMetadataContainsOnlyRuleLocationsAndFeatures(): void {
     rulesConfig([
       {
         match: [{ name: 'x-secret-client', value: 'sensitive-request-value' }],
-        enable: ['structuredContent'],
+        enable: ['structuredContentDup'],
       },
     ]),
     createStrictRequestHeaderView(['X-Secret-Client', 'sensitive-request-value']),
@@ -145,7 +145,7 @@ function testLogMetadataContainsOnlyRuleLocationsAndFeatures(): void {
 
   assertEqual(metadata.rulesConfigured, true, 'Metadata should preserve rulesConfigured');
   assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Metadata should expose relative rule locations');
-  assertEqual(metadata.enabledFeatures.join(','), 'structuredContent', 'Metadata should expose enabled features');
+  assertEqual(metadata.enabledFeatures.join(','), 'structuredContentDup', 'Metadata should expose enabled features');
   assertEqual(serialized.includes('x-secret-client'), false, 'Metadata should not include config header names');
   assertEqual(serialized.includes('X-Secret-Client'), false, 'Metadata should not include request header names');
   assertEqual(serialized.includes('sensitive-request-value'), false, 'Metadata should not include header values');

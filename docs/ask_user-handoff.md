@@ -84,23 +84,26 @@ interface Option {
    logger.info(`User input required: ${url}`);
    ```
 
-3. **阻塞等待用户输入**
+3. **阻塞等待用户输入并格式化结果**
    ```typescript
-   const answers = await answerPromise;
-   return textResult(JSON.stringify({ answers }));
+   const result = await answerPromise;
+   return result === null
+     ? formatAskUserCanceledResult()
+     : formatAskUserAnswerResult(result);
    ```
 
 4. **HTTP 路由处理**
-   - `GET /interact/:sessionId` - 渲染问题表单
-   - `POST /submit/:sessionId` - 接收答案，resolve Promise
+   - `GET /ask/:sessionId` - 渲染问题表单
+   - `POST /answer/:sessionId` - 调用 `normalizeAskUserAnswerPayload()` 接收答案，resolve Promise
+   - `POST /cancel/:sessionId` - 取消并 resolve 为 `null`
 
 ### 状态管理
 
 ```typescript
 interface PendingQuestion {
-  questions: Question[];
-  resolve: (answers: Record<string, string>) => void;
-  timeout: NodeJS.Timeout;
+  questions: AskUserQuestion[];
+  resolve: (result: AskUserAnswerPayload | null) => void;
+  createdAt: number;
 }
 
 const pendingQuestions = new Map<string, PendingQuestion>();

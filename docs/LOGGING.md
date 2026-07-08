@@ -37,14 +37,14 @@
 
 ```text
 [2026-07-05T10:20:30.000+08:00] → OK read_file (12ms)
-  Rules: matched rules.requestHeaders[0]; enabled structuredContent
+  Rules: matched rules.requestHeaders[0]; enabled structuredContentDup
   Succeeded.
 ```
 
 多条规则命中时，规则位置按 policy 输出顺序稳定列出，例如：
 
 ```text
-  Rules: matched rules.requestHeaders[0], rules.requestHeaders[1]; enabled structuredContent
+  Rules: matched rules.requestHeaders[0], rules.requestHeaders[1]; enabled structuredContentDup
 ```
 
 配置了 request header rules 但未命中时，输出：

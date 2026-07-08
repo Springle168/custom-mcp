@@ -33,7 +33,7 @@ function errorResult(text = 'Failed.'): ToolCallResult {
 function metadata(options: {
   readonly rulesConfigured: boolean;
   readonly matchedRuleLocations?: readonly string[];
-  readonly enabledFeatures?: readonly ['structuredContent'];
+  readonly enabledFeatures?: readonly ['structuredContentDup'];
 }): RequestHeaderPolicyLogMetadata {
   return {
     rulesConfigured: options.rulesConfigured,
@@ -96,14 +96,14 @@ async function testMatchedRulesLineIsWritten(): Promise<void> {
       metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
-        enabledFeatures: ['structuredContent'],
+        enabledFeatures: ['structuredContentDup'],
       }),
     );
   });
 
   assertIncludes(
     logText,
-    'Rules: matched rules.requestHeaders[0]; enabled structuredContent',
+    'Rules: matched rules.requestHeaders[0]; enabled structuredContentDup',
     'Matched request header rules should be logged with relative rule location and enabled feature',
   );
 }
@@ -156,7 +156,7 @@ async function testFileLogDoesNotContainAnsiEscapeCodes(): Promise<void> {
       metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
-        enabledFeatures: ['structuredContent'],
+        enabledFeatures: ['structuredContentDup'],
       }),
     );
   });
@@ -178,16 +178,43 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
       metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
-        enabledFeatures: ['structuredContent'],
+        enabledFeatures: ['structuredContentDup'],
       }),
     );
   });
 
-  assertIncludes(logText, 'Rules: matched rules.requestHeaders[0]; enabled structuredContent', 'Privacy test should exercise matched rules logging');
+  assertIncludes(logText, 'Rules: matched rules.requestHeaders[0]; enabled structuredContentDup', 'Privacy test should exercise matched rules logging');
   assertNotIncludes(logText, requestHeaderName, 'Rules log should not contain request header names');
   assertNotIncludes(logText, configHeaderName, 'Rules log should not contain config header names');
   assertNotIncludes(logText, requestHeaderValue, 'Rules log should not contain request header values');
   assertNotIncludes(logText, configExpectedValue, 'Rules log should not contain config expected header values');
+}
+
+async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
+  const logText = await writeAndReadLog('rules-structured-content', (logger) => {
+    logger.logToolResult(
+      'read_file',
+      {
+        ...successResult('safe result text'),
+        structuredContent: {
+          payloadSecret: 'payload-secret',
+          staleProtocolField: 'stale-protocol-field',
+        },
+      },
+      12,
+      metadata({
+        rulesConfigured: true,
+        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        enabledFeatures: ['structuredContentDup'],
+      }),
+    );
+  });
+
+  assertIncludes(logText, 'safe result text', 'Logger should keep standard content text');
+  assertIncludes(logText, 'Rules: matched rules.requestHeaders[0]; enabled structuredContentDup', 'Logger should keep Rules metadata');
+  assertNotIncludes(logText, '"structuredContent"', 'Logger should not serialize the protocol structuredContent field');
+  assertNotIncludes(logText, 'payload-secret', 'Logger should not log object structuredContent payload values');
+  assertNotIncludes(logText, 'stale-protocol-field', 'Logger should not log stale handler structuredContent values');
 }
 
 async function main(): Promise<void> {
@@ -202,6 +229,7 @@ async function main(): Promise<void> {
       { name: 'success and failure both write Rules line', run: testSuccessAndFailureBothWriteRulesLine },
       { name: 'file log does not contain ANSI escape codes', run: testFileLogDoesNotContainAnsiEscapeCodes },
       { name: 'rules log does not contain header names or values', run: testRulesLogDoesNotContainHeaderNamesOrValues },
+      { name: 'structuredContent protocol field is not logged', run: testStructuredContentProtocolFieldIsNotLogged },
     ],
   });
 }

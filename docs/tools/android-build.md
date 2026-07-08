@@ -53,7 +53,7 @@ Android 配置边界：
 BUILD SUCCESSFUL
 ```
 
-失败时返回精简 JSON 文本，并带 `isError: true`，字段包括：
+失败时返回紧凑 JSON 文本（`JSON.stringify(failure)`，不缩进），并带 `isError: true`，字段包括：
 
 - `success`
 - `task`
