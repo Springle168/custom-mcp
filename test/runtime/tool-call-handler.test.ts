@@ -7,6 +7,10 @@ import { runWithRequestHeaderContext } from '../../src/runtime/request-context.j
 import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
 import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
+import type {
+  ToolCallLogContext,
+  ToolCallResultLogContext,
+} from '../../src/runtime/tool-call-log-context.js';
 import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import {
@@ -111,16 +115,23 @@ async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
   const routerResult = textResult('ok');
   let loggedResult: ToolCallResult | undefined;
   let loggedMetadata: RequestHeaderPolicyLogMetadata | undefined;
+  let callLogContext: ToolCallLogContext | undefined;
+  let resultLogContext: ToolCallResultLogContext | undefined;
   let routerContext: ToolRuntimeContext | undefined;
   const handler = createToolCallRequestHandler({
     configStore: store,
     logger: {
-      logToolCall() {},
-      logToolResult(_toolName, result, _durationMs, rulesMetadata) {
+      logToolCall(_toolName, _args, context) {
+        callLogContext = context;
+      },
+      logToolResult(_toolName, result, _durationMs, context) {
         loggedResult = result;
-        loggedMetadata = rulesMetadata;
+        loggedMetadata = context.requestHeaderPolicy;
+        resultLogContext = context;
       },
     },
+    getSessionId: () => 'session_test',
+    generateCallId: () => 'call_test',
     routeToolCall: async (_name, _args, context) => {
       routerContext = context;
       assertEqual(getCount(), 1, 'Router should run after exactly one snapshot read');
@@ -139,6 +150,10 @@ async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
   assertMatchedMetadata(loggedMetadata);
   assertEqual(wrapper.content, routerResult.content, 'Wrapper should contain the router result content');
   assertEqual(wrapper.isError, false, 'Wrapper should use normalized success status');
+  assertEqual(callLogContext?.sessionId, 'session_test', 'Call log should receive the transport session ID');
+  assertEqual(callLogContext?.callId, 'call_test', 'Call log should receive the generated call ID');
+  assertEqual(resultLogContext?.sessionId, 'session_test', 'Result log should keep the call session ID');
+  assertEqual(resultLogContext?.callId, 'call_test', 'Result log should keep the same call ID');
   assert(routerContext !== undefined, 'Router should receive a ToolRuntimeContext');
   assertContextHasNoRequestPolicyFields(routerContext);
   assertEqual(getCount(), 1, 'Handler should read snapshot once per tool call');
@@ -153,9 +168,9 @@ async function testHandlerWithoutRequestContextDoesNotAdapt(): Promise<void> {
     configStore: store,
     logger: {
       logToolCall() {},
-      logToolResult(_toolName, result, _durationMs, rulesMetadata) {
+      logToolResult(_toolName, result, _durationMs, context) {
         loggedResult = result;
-        loggedMetadata = rulesMetadata;
+        loggedMetadata = context.requestHeaderPolicy;
       },
     },
     routeToolCall: async () => routerResult,
@@ -177,8 +192,8 @@ async function testHandlerInvalidRequestViewLogsNoMatchMetadata(): Promise<void>
     configStore: store,
     logger: {
       logToolCall() {},
-      logToolResult(_toolName, _result, _durationMs, rulesMetadata) {
-        loggedMetadata = rulesMetadata;
+      logToolResult(_toolName, _result, _durationMs, context) {
+        loggedMetadata = context.requestHeaderPolicy;
       },
     },
     routeToolCall: async () => routerResult,

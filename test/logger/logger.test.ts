@@ -1,4 +1,5 @@
 import { Logger } from '../../src/utils/logger.js';
+import type { ToolCallResultLogContext } from '../../src/runtime/tool-call-log-context.js';
 import { isVerboseTestOutput } from '../test-utils.js';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -25,6 +26,18 @@ function expectedLogFilePath(logsDir: string, date: Date, workspaceId: string): 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const testLogsDir = join(__dirname, '..', 'logs');
+
+function demoLogContext(callId: string): ToolCallResultLogContext {
+  return {
+    sessionId: 'session_logger_demo',
+    callId,
+    requestHeaderPolicy: {
+      rulesConfigured: false,
+      matchedRuleLocations: [],
+      enabledFeatures: [],
+    },
+  };
+}
 
 async function assertMissingLogsRootFails(): Promise<void> {
   await mkdir(testLogsDir, { recursive: true });
@@ -185,6 +198,7 @@ await withFixedNow(fixedNow, async () => {
   logger.info('Server started on port 3100');
 
   // 测试 2: 小 JSON 参数（各种数据类型）
+  const replaceTextContext = demoLogContext('call_replace_text_demo');
   logger.logToolCall('replace_text', {
     file_path: 'src/index.ts',
     target: 'const port = 3000;',
@@ -193,7 +207,7 @@ await withFixedNow(fixedNow, async () => {
     match_mode: 'default',
     max_count: 10,
     metadata: null,
-  });
+  }, replaceTextContext);
 
   logger.logToolResult(
     'replace_text',
@@ -206,14 +220,16 @@ await withFixedNow(fixedNow, async () => {
       ],
       isError: false,
     },
-    45
+    45,
+    replaceTextContext,
   );
 
   // 测试 3: 失败结果
+  const readManyFilesContext = demoLogContext('call_read_many_files_demo');
   logger.logToolCall('read_many_files', {
     include: ['src/**/*.ts', 'config.json'],
     exclude: ['**/*.test.ts'],
-  });
+  }, readManyFilesContext);
 
   logger.logToolResult(
     'read_many_files',
@@ -226,10 +242,12 @@ await withFixedNow(fixedNow, async () => {
       ],
       isError: true,
     },
-    12
+    12,
+    readManyFilesContext,
   );
 
   // 测试 4: 嵌套 JSON
+  const complexToolContext = demoLogContext('call_complex_tool_demo');
   logger.logToolCall('complex_tool', {
     config: {
       nested: {
@@ -245,7 +263,7 @@ await withFixedNow(fixedNow, async () => {
       verbose: false,
       dryRun: true,
     },
-  });
+  }, complexToolContext);
 
   logger.logToolResult(
     'complex_tool',
@@ -253,18 +271,20 @@ await withFixedNow(fixedNow, async () => {
       content: [{ type: 'text', text: 'Operation completed successfully.' }],
       isError: false,
     },
-    123
+    123,
+    complexToolContext,
   );
 
   // 测试 5: 超大 JSON（测试 50KB 阈值）。Agent 运行时要非常谨慎：
   // 这段会向终端写入大量 JSON 噪音，默认跳过；需要验证大输出降级行为时使用 --verbose。
   if (isVerboseTestOutput()) {
+    const largeDataContext = demoLogContext('call_large_data_demo');
     const largeObject: Record<string, string> = {};
     for (let i = 0; i < 2000; i++) {
       largeObject[`key_${i}`] = `value_${i}_${'x'.repeat(50)}`;
     }
 
-    logger.logToolCall('large_data_tool', largeObject);
+    logger.logToolCall('large_data_tool', largeObject, largeDataContext);
 
     logger.logToolResult(
       'large_data_tool',
@@ -277,7 +297,8 @@ await withFixedNow(fixedNow, async () => {
         ],
         isError: false,
       },
-      567
+      567,
+      largeDataContext,
     );
   } else {
     console.log('\nSkipping large JSON logger demo. Use --verbose to include it.');

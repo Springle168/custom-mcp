@@ -18,6 +18,8 @@
 ```text
 ────────────────────────────────
 [2025-01-15T22:30:00.000+08:00] ← CALL replace_text
+  Session: session_13a09d50-0000-4000-8000-000000000000
+  Call ID: call_7c2c62a1-0000-4000-8000-000000000000
   {
     "file_path": "src/index.ts",
     "target": "...",
@@ -26,8 +28,24 @@
     "match_mode": "default"
   }
 [2025-01-15T22:30:00.050+08:00] → OK replace_text (50ms)
+  Session: session_13a09d50-0000-4000-8000-000000000000
+  Call ID: call_7c2c62a1-0000-4000-8000-000000000000
   {"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":10,"end_line":10},"replacement_line_count":1,"file_line_count":{"previous":120,"current":120}}
 ```
+
+### Session 与 Call ID
+
+MCP session ID 是服务端生成的实际协议 ID，格式为 `session_<uuid>`。同一 session 的后续请求通过该值关联 transport、server 和工具日志。
+
+每次进入统一 `tools/call` handler 时生成独立的日志关联 ID，格式为 `call_<uuid>`。同一次调用的 CALL 与 RESULT 日志使用相同 call ID；同一 session 内并发调用相同工具时，可通过 call ID 准确配对日志。
+
+CALL 与 RESULT 都固定输出 `Session:` 和 `Call ID:`。若工具调用路径没有可用的 transport session ID，session 行明确输出：
+
+```text
+  Session: unavailable (session ID missing)
+```
+
+call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-RPC request ID。
 
 ### Request Header Rules 响应元信息
 
@@ -37,6 +55,8 @@
 
 ```text
 [2026-07-05T10:20:30.000+08:00] → OK read_file (12ms)
+  Session: session_13a09d50-0000-4000-8000-000000000000
+  Call ID: call_7c2c62a1-0000-4000-8000-000000000000
   Rules: matched rules.requestHeaders[0]; enabled structuredContentDup
   Succeeded.
 ```
@@ -71,7 +91,7 @@
 
 ## 扩展日志
 
-日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。在 `src/index.ts` 的路由层统一拦截，**工具 handler 内部不需要写任何日志代码**。
+日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。`src/runtime/tool-call-handler.ts` 在统一 `tools/call` 入口生成调用 metadata 并写入 CALL 与 RESULT，`src/index.ts` 从对应 transport 提供 session ID；**工具 handler 内部不需要写任何日志代码**。
 
 如需在 handler 内部输出调试日志，可以将 `logger` 实例通过参数传入，或扩展 `MCPTool` 接口。
 

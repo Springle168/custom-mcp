@@ -1,10 +1,14 @@
+import { generateToolCallId } from './mcp-identifiers.js';
 import { getCurrentRequestHeaderView } from './request-context.js';
 import {
   evaluateRequestHeaderPolicy,
   toRequestHeaderPolicyLogMetadata,
-  type RequestHeaderPolicyLogMetadata,
 } from './request-header-policy.js';
 import { adaptToolCallResultForRequestPolicy } from './tool-result-adapter.js';
+import type {
+  ToolCallLogContext,
+  ToolCallResultLogContext,
+} from './tool-call-log-context.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
 import type { ConfigStore } from './config-store.js';
 import type { ToolCallResult } from '../tools/types.js';
@@ -17,12 +21,16 @@ export interface ToolCallRequestLike {
 }
 
 export interface ToolCallLogger {
-  logToolCall(toolName: string, args: Record<string, unknown>): void;
+  logToolCall(
+    toolName: string,
+    args: Record<string, unknown>,
+    context: ToolCallLogContext,
+  ): void;
   logToolResult(
     toolName: string,
     result: ToolCallResult,
     durationMs: number,
-    rulesMetadata?: RequestHeaderPolicyLogMetadata,
+    context: ToolCallResultLogContext,
   ): void;
 }
 
@@ -36,6 +44,8 @@ export interface CreateToolCallRequestHandlerOptions {
   readonly configStore: ConfigStore;
   readonly logger: ToolCallLogger;
   readonly routeToolCall: ToolCallRouter;
+  readonly getSessionId?: () => string | undefined;
+  readonly generateCallId?: () => string;
   readonly now?: () => number;
 }
 
@@ -47,23 +57,31 @@ export function createToolCallRequestHandler(
   options: CreateToolCallRequestHandlerOptions,
 ): ToolCallRequestHandler {
   const now = options.now ?? Date.now;
+  const generateCallId = options.generateCallId ?? generateToolCallId;
 
   return async (request) => {
     const { name, arguments: args } = request.params;
     const safeArgs = (args ?? {}) as Record<string, unknown>;
     const startTime = now();
+    const logContext: ToolCallLogContext = {
+      sessionId: options.getSessionId?.(),
+      callId: generateCallId(),
+    };
     const snapshot = options.configStore.getSnapshot();
     const requestHeaderView = getCurrentRequestHeaderView();
     const requestPolicy = evaluateRequestHeaderPolicy(snapshot.rules, requestHeaderView);
     const toolContext = createToolRuntimeContext(snapshot);
 
-    options.logger.logToolCall(name, safeArgs);
+    options.logger.logToolCall(name, safeArgs, logContext);
 
     const result = await options.routeToolCall(name, safeArgs, toolContext);
     const adaptedResult = adaptToolCallResultForRequestPolicy(result, requestPolicy);
-    const rulesMetadata = toRequestHeaderPolicyLogMetadata(requestPolicy);
+    const resultLogContext: ToolCallResultLogContext = {
+      ...logContext,
+      requestHeaderPolicy: toRequestHeaderPolicyLogMetadata(requestPolicy),
+    };
 
-    options.logger.logToolResult(name, adaptedResult, now() - startTime, rulesMetadata);
+    options.logger.logToolResult(name, adaptedResult, now() - startTime, resultLogContext);
     return adaptedResult;
   };
 }

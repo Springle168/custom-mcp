@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import express, { type Request } from 'express';
-import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
@@ -15,6 +14,7 @@ import {
   handleMcpPostRequest,
   type McpPostSession,
 } from './runtime/mcp-post-handler.js';
+import { generateMcpSessionId } from './runtime/mcp-identifiers.js';
 import { createToolCallRequestHandler } from './runtime/tool-call-handler.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
 import { Logger } from './utils/logger.js';
@@ -29,7 +29,11 @@ import {
 // MCP Server Factory
 // ================
 
-function createMCPServer(configStore: ConfigStore, logger: Logger): Server {
+function createMCPServer(
+  configStore: ConfigStore,
+  logger: Logger,
+  getSessionId: () => string | undefined,
+): Server {
   const server = new Server(
     { name: 'custom-mcp', version: '1.0.0' },
     { capabilities: { tools: {} } },
@@ -41,7 +45,12 @@ function createMCPServer(configStore: ConfigStore, logger: Logger): Server {
 
   server.setRequestHandler(
     CallToolRequestSchema,
-    createToolCallRequestHandler({ configStore, logger, routeToolCall }),
+    createToolCallRequestHandler({
+      configStore,
+      logger,
+      routeToolCall,
+      getSessionId,
+    }),
   );
 
   return server;
@@ -141,7 +150,7 @@ async function main() {
       logger,
       createSession: async () => {
         const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
+          sessionIdGenerator: generateMcpSessionId,
         });
 
         transport.onclose = () => {
@@ -152,7 +161,11 @@ async function main() {
           }
         };
 
-        const server = createMCPServer(configStore, logger);
+        const server = createMCPServer(
+          configStore,
+          logger,
+          () => transport.sessionId,
+        );
         await server.connect(transport);
         return { transport, server };
       },

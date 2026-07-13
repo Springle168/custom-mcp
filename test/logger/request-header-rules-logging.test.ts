@@ -2,6 +2,7 @@ import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
+import type { ToolCallResultLogContext } from '../../src/runtime/tool-call-log-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { Logger } from '../../src/utils/logger.js';
 import {
@@ -39,6 +40,17 @@ function metadata(options: {
     rulesConfigured: options.rulesConfigured,
     matchedRuleLocations: options.matchedRuleLocations ?? [],
     enabledFeatures: options.enabledFeatures ?? [],
+  };
+}
+
+function resultLogContext(
+  requestHeaderPolicy: RequestHeaderPolicyLogMetadata,
+  callId = 'call_logger_test',
+): ToolCallResultLogContext {
+  return {
+    sessionId: 'session_logger_test',
+    callId,
+    requestHeaderPolicy,
   };
 }
 
@@ -93,11 +105,11 @@ async function testMatchedRulesLineIsWritten(): Promise<void> {
       'read_file',
       successResult(),
       12,
-      metadata({
+      resultLogContext(metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
         enabledFeatures: ['structuredContentDup'],
-      }),
+      })),
     );
   });
 
@@ -114,7 +126,7 @@ async function testNoMatchRulesLineIsWritten(): Promise<void> {
       'read_file',
       successResult(),
       12,
-      metadata({ rulesConfigured: true }),
+      resultLogContext(metadata({ rulesConfigured: true })),
     );
   });
 
@@ -127,7 +139,7 @@ async function testUnconfiguredRulesDoNotWriteRulesLine(): Promise<void> {
       'read_file',
       successResult(),
       12,
-      metadata({ rulesConfigured: false }),
+      resultLogContext(metadata({ rulesConfigured: false })),
     );
   });
 
@@ -138,8 +150,18 @@ async function testSuccessAndFailureBothWriteRulesLine(): Promise<void> {
   const logText = await writeAndReadLog('rules-success-failure', (logger) => {
     const noMatchMetadata = metadata({ rulesConfigured: true });
 
-    logger.logToolResult('ok_tool', successResult('ok'), 1, noMatchMetadata);
-    logger.logToolResult('fail_tool', errorResult('fail'), 2, noMatchMetadata);
+    logger.logToolResult(
+      'ok_tool',
+      successResult('ok'),
+      1,
+      resultLogContext(noMatchMetadata, 'call_ok'),
+    );
+    logger.logToolResult(
+      'fail_tool',
+      errorResult('fail'),
+      2,
+      resultLogContext(noMatchMetadata, 'call_fail'),
+    );
   });
 
   assertIncludes(logText, '→ OK ok_tool (1ms)', 'Successful result should be logged');
@@ -153,11 +175,11 @@ async function testFileLogDoesNotContainAnsiEscapeCodes(): Promise<void> {
       'read_file',
       successResult(),
       12,
-      metadata({
+      resultLogContext(metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
         enabledFeatures: ['structuredContentDup'],
-      }),
+      })),
     );
   });
 
@@ -175,11 +197,11 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
       'read_file',
       successResult('safe result'),
       12,
-      metadata({
+      resultLogContext(metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
         enabledFeatures: ['structuredContentDup'],
-      }),
+      })),
     );
   });
 
@@ -202,11 +224,11 @@ async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
         },
       },
       12,
-      metadata({
+      resultLogContext(metadata({
         rulesConfigured: true,
         matchedRuleLocations: ['rules.requestHeaders[0]'],
         enabledFeatures: ['structuredContentDup'],
-      }),
+      })),
     );
   });
 
@@ -215,6 +237,47 @@ async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
   assertNotIncludes(logText, '"structuredContent"', 'Logger should not serialize the protocol structuredContent field');
   assertNotIncludes(logText, 'payload-secret', 'Logger should not log object structuredContent payload values');
   assertNotIncludes(logText, 'stale-protocol-field', 'Logger should not log stale handler structuredContent values');
+}
+
+async function testToolCallIdentityIsWrittenForCallAndResult(): Promise<void> {
+  const context: ToolCallResultLogContext = {
+    sessionId: 'session_identity_test',
+    callId: 'call_identity_test',
+    requestHeaderPolicy: metadata({ rulesConfigured: false }),
+  };
+  const logText = await writeAndReadLog('tool-call-identity', (logger) => {
+    logger.logToolCall('read_file', { file_path: 'src/index.ts' }, context);
+    logger.logToolResult('read_file', successResult(), 12, context);
+  });
+
+  assertEqual(
+    countOccurrences(logText, 'Session: session_identity_test'),
+    2,
+    'CALL and RESULT should include the same session ID',
+  );
+  assertEqual(
+    countOccurrences(logText, 'Call ID: call_identity_test'),
+    2,
+    'CALL and RESULT should include the same call ID',
+  );
+}
+
+async function testMissingSessionIsExplicitlyWritten(): Promise<void> {
+  const context: ToolCallResultLogContext = {
+    sessionId: undefined,
+    callId: 'call_missing_session_test',
+    requestHeaderPolicy: metadata({ rulesConfigured: false }),
+  };
+  const logText = await writeAndReadLog('missing-session', (logger) => {
+    logger.logToolCall('read_file', {}, context);
+    logger.logToolResult('read_file', successResult(), 12, context);
+  });
+
+  assertEqual(
+    countOccurrences(logText, 'Session: unavailable (session ID missing)'),
+    2,
+    'CALL and RESULT should explicitly report a missing session ID',
+  );
 }
 
 async function main(): Promise<void> {
@@ -230,6 +293,8 @@ async function main(): Promise<void> {
       { name: 'file log does not contain ANSI escape codes', run: testFileLogDoesNotContainAnsiEscapeCodes },
       { name: 'rules log does not contain header names or values', run: testRulesLogDoesNotContainHeaderNamesOrValues },
       { name: 'structuredContent protocol field is not logged', run: testStructuredContentProtocolFieldIsNotLogged },
+      { name: 'tool call identity is written for call and result', run: testToolCallIdentityIsWrittenForCallAndResult },
+      { name: 'missing session is explicitly written', run: testMissingSessionIsExplicitlyWritten },
     ],
   });
 }
