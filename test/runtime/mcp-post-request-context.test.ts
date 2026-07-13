@@ -207,8 +207,11 @@ async function testSessionCreationHeadersDoNotEnableLaterSessionRequest(): Promi
     configStore: createToolCallStore(),
     logger: {
       logToolCall() {},
-      logToolResult(_toolName, result, _durationMs, metadata) {
-        loggedResults.push({ result, metadata });
+      logToolResult(_toolName, result, _durationMs, context) {
+        loggedResults.push({
+          result,
+          metadata: context.requestHeaderPolicy,
+        });
       },
     },
     routeToolCall: async (name) => textResult(name),

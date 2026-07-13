@@ -9,6 +9,10 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
+import type {
+  ToolCallLogContext,
+  ToolCallResultLogContext,
+} from '../runtime/tool-call-log-context.js';
 import type { RequestHeaderPolicyLogMetadata } from '../runtime/request-header-policy.js';
 import type { ToolCallResult } from '../tools/types.js';
 
@@ -132,7 +136,11 @@ export class Logger {
     this.write(consoleText, fileText);
   }
 
-  logToolCall(toolName: string, args: Record<string, unknown>) {
+  logToolCall(
+    toolName: string,
+    args: Record<string, unknown>,
+    context: ToolCallLogContext,
+  ) {
     const timestamp = ts();
     const plainJson = JSON.stringify(args, null, 2);
     const fileBody = plainJson
@@ -147,8 +155,10 @@ export class Logger {
       .join('\n');
 
     const separator = chalk.gray('─'.repeat(60));
-    const consoleText = `\n${separator}\n${chalk.gray(`[${timestamp}]`)} ${chalk.cyan('← CALL')} ${chalk.yellow(toolName)}\n${consoleBody}\n`;
-    const fileText = `\n[${timestamp}] ← CALL ${toolName}\n${fileBody}\n`;
+    const consoleContext = this.formatToolCallConsoleContext(context);
+    const fileContext = this.formatToolCallFileContext(context);
+    const consoleText = `\n${separator}\n${chalk.gray(`[${timestamp}]`)} ${chalk.cyan('← CALL')} ${chalk.yellow(toolName)}\n${consoleContext}${consoleBody}\n`;
+    const fileText = `\n[${timestamp}] ← CALL ${toolName}\n${fileContext}${fileBody}\n`;
 
     this.write(consoleText, fileText);
   }
@@ -156,15 +166,15 @@ export class Logger {
   logToolResult(
     toolName: string,
     result: ToolCallResult,
-    durationMs?: number,
-    rulesMetadata?: RequestHeaderPolicyLogMetadata,
+    durationMs: number | undefined,
+    context: ToolCallResultLogContext,
   ) {
     const timestamp = ts();
     const isError = result.isError === true;
     const status = isError ? 'FAIL' : 'OK';
     const duration = durationMs !== undefined ? ` (${durationMs}ms)` : '';
-    const rulesFileLine = this.formatRulesFileLine(rulesMetadata);
-    const rulesConsoleLine = this.formatRulesConsoleLine(rulesMetadata);
+    const rulesFileLine = this.formatRulesFileLine(context.requestHeaderPolicy);
+    const rulesConsoleLine = this.formatRulesConsoleLine(context.requestHeaderPolicy);
     const text = result.content
       .map((c) => c.text ?? '')
       .filter(Boolean)
@@ -183,12 +193,28 @@ export class Logger {
     );
 
     const statusColor = isError ? chalk.red : chalk.green;
+    const consoleContext = this.formatToolCallConsoleContext(context);
+    const fileContext = this.formatToolCallFileContext(context);
     const consoleRules = rulesConsoleLine === undefined ? '' : `  ${rulesConsoleLine}\n`;
     const fileRules = rulesFileLine === undefined ? '' : `  ${rulesFileLine}\n`;
-    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleRules}${consoleBody}\n`;
-    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileRules}${fileBody}\n`;
+    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleContext}${consoleRules}${consoleBody}\n`;
+    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileContext}${fileRules}${fileBody}\n`;
 
     this.write(consoleText, fileText);
+  }
+
+  private formatToolCallFileContext(
+    context: ToolCallLogContext,
+  ): string {
+    const sessionId = context.sessionId ?? 'unavailable (session ID missing)';
+    return `  Session: ${sessionId}\n  Call ID: ${context.callId}\n`;
+  }
+
+  private formatToolCallConsoleContext(
+    context: ToolCallLogContext,
+  ): string {
+    const sessionId = context.sessionId ?? 'unavailable (session ID missing)';
+    return `  ${chalk.cyan('Session:')} ${chalk.magenta(sessionId)}\n  ${chalk.cyan('Call ID:')} ${chalk.magenta(context.callId)}\n`;
   }
 
   private formatRulesFileLine(

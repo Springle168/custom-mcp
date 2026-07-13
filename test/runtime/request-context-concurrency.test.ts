@@ -113,8 +113,11 @@ async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
     configStore: store,
     logger: {
       logToolCall() {},
-      logToolResult(toolName, result, _durationMs, metadata) {
-        loggedResults.set(toolName, { result, metadata });
+      logToolResult(toolName, result, _durationMs, context) {
+        loggedResults.set(toolName, {
+          result,
+          metadata: context.requestHeaderPolicy,
+        });
       },
     },
     routeToolCall: async (name) => {
