@@ -18,6 +18,7 @@ import {
 import { createToolCallRequestHandler } from './runtime/tool-call-handler.js';
 import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
 import { Logger } from './utils/logger.js';
+import { buildHttpUrl, formatHostPort } from './utils/http-url.js';
 import {
   pendingQuestions,
   generateQuestionForm,
@@ -254,9 +255,10 @@ async function main() {
   });
 
   // 启动
-  app.listen(initialSnapshot.port, () => {
+  app.listen(initialSnapshot.port, initialSnapshot.host, () => {
     logger.info('MCP Replace Server started');
-    logger.info(`  Endpoint: http://localhost:${initialSnapshot.port}/mcp`);
+    logger.info(`  Bind address: ${formatHostPort(initialSnapshot.host, initialSnapshot.port)}`);
+    logger.info(`  Endpoint: ${buildHttpUrl(initialSnapshot.host, initialSnapshot.port, '/mcp')}`);
     logger.info(`  Workspace id: ${initialSnapshot.workspaceId}`);
     logger.info(`  Selection mode: ${initialConfig.identity.selectionMode}`);
     logger.info(`  Snapshot version: ${initialSnapshot.snapshotVersion}`);

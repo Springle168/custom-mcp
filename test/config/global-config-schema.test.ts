@@ -158,6 +158,7 @@ async function testValidGlobalConfigLoadsExplicitWorkspace(): Promise<void> {
 
   assertEqual(snapshot.workspaceId, 'workspace-0', 'Snapshot should use the explicitly selected workspace');
   assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'Snapshot should use the selected workspace rootDir');
+  assertEqual(snapshot.host, '127.0.0.1', 'Snapshot should default host to IPv4 loopback');
   assertEqual(snapshot.logsDir, path.resolve(LOGS_DIR), 'Snapshot should use the selected workspace logsDir');
   assertEqual(snapshot.otherRootDirs.length, 0, 'otherRootDirs should default to an empty array');
   assert(snapshot.android === undefined, 'Android config should be optional');
@@ -380,6 +381,47 @@ async function testWorkspacePortValidation(): Promise<void> {
     'workspace port 4100 must be unique',
     'workspaces[1].port',
   );
+}
+
+async function testWorkspaceHostValidation(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig([
+    workspace(0, { host: '::1' }),
+    workspace(1, { host: '::1' }),
+  ]));
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'workspace-1',
+    env: {},
+  });
+  assertEqual(snapshot.host, '::1', 'IPv6 hosts should load and duplicate hosts should be allowed');
+
+  const invalidHosts = [
+    { value: 42, message: 'workspaces[0].host must be a string' },
+    { value: '', message: 'workspaces[0].host must be a non-empty string' },
+    { value: '   ', message: 'workspaces[0].host must be a non-empty string' },
+    {
+      value: ' 127.0.0.1',
+      message: 'workspaces[0].host must not contain leading or trailing whitespace',
+    },
+    {
+      value: '127.0.0.1 ',
+      message: 'workspaces[0].host must not contain leading or trailing whitespace',
+    },
+    { value: 'localhost', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
+    { value: 'example.com', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
+    { value: '127.0.0.1:3100', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
+    { value: '999.1.1.1', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
+  ] as const;
+
+  for (const invalidHost of invalidHosts) {
+    await expectValidationError(
+      globalConfig([workspace(0, { host: invalidHost.value })]),
+      invalidHost.message,
+      'workspaces[0].host',
+    );
+  }
 }
 
 async function testLineEndingValidation(): Promise<void> {
@@ -687,6 +729,11 @@ async function testEnvOverridesSelectorValidation(): Promise<void> {
     'workspaces[0].envOverrides.allowedFields[0]',
   );
   await expectValidationError(
+    globalConfig([workspace(0, { envOverrides: { allowedFields: ['host'] } })]),
+    'envOverrides.allowedFields contains forbidden field "host"',
+    'workspaces[0].envOverrides.allowedFields[0]',
+  );
+  await expectValidationError(
     globalConfig([workspace(0, { envOverrides: { allowedFields: ['android.unknown'] } })]),
     'envOverrides.allowedFields contains unknown field "android.unknown"',
     'workspaces[0].envOverrides.allowedFields[0]',
@@ -694,6 +741,11 @@ async function testEnvOverridesSelectorValidation(): Promise<void> {
   await expectValidationError(
     globalConfig([workspace(0, { envOverrides: { allowedFields: ['MCP_LOGS_DIR'] } })]),
     'envOverrides.allowedFields contains environment variable name "MCP_LOGS_DIR"',
+    'workspaces[0].envOverrides.allowedFields[0]',
+  );
+  await expectValidationError(
+    globalConfig([workspace(0, { envOverrides: { allowedFields: ['MCP_HOST'] } })]),
+    'envOverrides.allowedFields contains environment variable name "MCP_HOST"',
     'workspaces[0].envOverrides.allowedFields[0]',
   );
   await expectValidationError(
@@ -880,6 +932,7 @@ async function main(): Promise<void> {
       { name: 'unknown fields are rejected', run: testUnknownFieldsAreRejected },
       { name: 'workspace id validation', run: testWorkspaceIdValidation },
       { name: 'workspace port validation', run: testWorkspacePortValidation },
+      { name: 'workspace host validation', run: testWorkspaceHostValidation },
       { name: 'lineEnding validation', run: testLineEndingValidation },
       { name: 'otherRootDirs path validation', run: testOtherRootDirsPathValidation },
       { name: 'logsDir shape and path validation', run: testLogsDirShapeAndPathValidation },

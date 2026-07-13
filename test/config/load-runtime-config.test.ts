@@ -72,6 +72,7 @@ function createGlobalConfig(): unknown {
         id: 'primary-workspace',
         rootDir: PRIMARY_DIR,
         otherRootDirs: [ADDITIONAL_DIR],
+        host: '127.0.0.2',
         port: 4321,
         lineEnding: 'lf',
         android: {
@@ -107,6 +108,7 @@ async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
   assertEqual(snapshot.rootDir, PRIMARY_DIR, 'Snapshot should use rootDir from the selected workspace');
   assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should keep additional roots from the selected workspace');
   assertEqual(snapshot.otherRootDirs[0], ADDITIONAL_DIR, 'Snapshot should keep the additional root path');
+  assertEqual(snapshot.host, '127.0.0.2', 'Snapshot should use the configured host');
   assertEqual(snapshot.port, 4321, 'Snapshot should use the configured port');
   assertEqual(snapshot.lineEnding, 'lf', 'Snapshot should use the configured line ending');
   assertEqual(
@@ -189,8 +191,10 @@ async function testEnvOverridesApplyAfterWorkspaceSelectionBeforeSnapshot(): Pro
 
   assertEqual(loaded.identity.workspaceId, 'primary-workspace', 'Selection should run before env overrides are applied');
   assertEqual(loaded.identity.rootDir, PRIMARY_DIR, 'Runtime identity should keep the selected config rootDir');
+  assertEqual(loaded.identity.host, '127.0.0.1', 'Runtime identity should use the default IPv4 loopback host');
   assertEqual(loaded.identity.port, 4321, 'Runtime identity should keep the selected config port');
   assertEqual(loaded.snapshot.rootDir, PRIMARY_DIR, 'Boundary rootDir should not be overridden by env');
+  assertEqual(loaded.snapshot.host, '127.0.0.1', 'Boundary host should not be overridden by env');
   assertEqual(loaded.snapshot.port, 4321, 'Boundary port should not be overridden by env');
   assertEqual(loaded.snapshot.lineEnding, 'crlf', 'Snapshot should include the allowlisted lineEnding env override');
   assertEqual(loaded.snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Snapshot should include the allowlisted logsDir env override');

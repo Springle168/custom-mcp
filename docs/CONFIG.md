@@ -1,6 +1,6 @@
 # 配置开发说明
 
-本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、runtime snapshot、env override allowlist 行为和配置相关故障排查。根目录 `config.example.json` 是全局配置示例模板；复制到 `~/.custom-mcp/config.json` 前需要检查并替换其中的路径、端口和 workspace id。
+本文记录 `custom-mcp` 的运行配置、全局 workspace 选择、runtime snapshot、env override allowlist 行为和配置相关故障排查。根目录 `config.example.json` 是全局配置示例模板；复制到 `~/.custom-mcp/config.json` 前需要检查并替换其中的路径、host、端口和 workspace id。
 
 ---
 
@@ -27,6 +27,7 @@
         "E:/AnotherWorkspace"
       ],
       "lineEnding": "auto",
+      "host": "127.0.0.1",
       "port": 3100,
       "logsDir": "E:/Logs/custom-mcp",
       "android": {
@@ -69,10 +70,10 @@ loadRuntimeConfigWithIdentity()
         │
         ├─► parseGlobalConfig()
         │     - 校验 version / workspaces / 未知字段
-        │     - 按集中 value policy 校验 workspace id、lineEnding、allowlist selector 和 numeric 字段
+        │     - 按集中 value policy 校验 workspace id、host IP、lineEnding、allowlist selector 和 numeric 字段
         │     - 按 schema 规则处理 allowlist duplicate、forbidden、unknown、环境变量名误填和 Android base config 要求
         │     - 按配置 path policy 校验所有 path-like 字段是已存在目录
-        │     - 校验所有 workspace 的 id / port 唯一性
+        │     - 校验所有 workspace 的 id / port 唯一性；host 允许重复
         │     - 校验所有 workspace.rootDir 存在且互不重复/嵌套
         │
         ├─► selectRuntimeWorkspace()
@@ -80,14 +81,14 @@ loadRuntimeConfigWithIdentity()
         │     - cwd: process.cwd() realpath 必须等于某个 rootDir realpath
         │
         ├─► RuntimeConfigIdentity
-        │     - 记录 config file、workspace id、rootDir、port、selection mode
+        │     - 记录 config file、workspace id、rootDir、host、port、selection mode
         │     - 不受 env override 影响
         │
         ├─► applyEnvOverridesToWorkspace()
         │     - 只作用于 selected workspace 的 allowlist 字段
         │     - 只读取 selected workspace allowlist 授权的 env var
         │     - env var 不存在时不覆盖；存在但值非法时启动失败
-        │     - 不允许覆盖 rootDir / port / otherRootDirs 等边界字段
+        │     - 不允许覆盖 rootDir / host / port / otherRootDirs 等边界字段
         │
         ├─► buildRuntimeConfigSnapshot()
         │     ├─ createValidatedPathSafetyContext()
@@ -111,7 +112,7 @@ createConfigStore()
 | CLI 参数 | `parseCliArgs()` | 可选 `workspaceId`，值为已验证 lexical token | 启动参数非法，例如重复、缺失、空值、首尾 whitespace 或 grammar 非法的 `--workspace`。 |
 | 配置路径 | `getDefaultGlobalConfigPath()` / `getDefaultGlobalLogsDir()` | home-level dotdir config path / default logs dir | 进程没有可用 home 目录。 |
 | 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
-| 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
+| 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、host IP、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
 | Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | 已通过 lexical 校验的 `--workspace` 不存在，直接调用配置 loader 时传入非法 `workspaceId`，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
 | Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 防御性校验失败，或被允许的 env 值为空、whitespace-only、含首尾 whitespace、grammar 非法、path 不存在或不是目录。 |
 | Runtime snapshot | `buildRuntimeConfigSnapshot()` / `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context、默认 logs root 不存在/不是目录，或 direct snapshot seam 收到含首尾 whitespace 的 path-like 输入。 |
@@ -123,7 +124,7 @@ createConfigStore()
 - 默认 workspace 选择只接受 `process.cwd()` realpath 与某个 workspace `rootDir` realpath 等价；cwd 位于 workspace 子目录内会启动失败并提示显式选择。
 - `RuntimeConfigIdentity` 是启动选择边界，来自配置文件中已验证的 selected workspace；env override 不参与选择，也不改变 identity。
 - Env override 默认关闭；`envOverrides.allowedFields` 的基础 selector typed 边界由集中 value policy 读取，重复项、forbidden/unknown 字段、环境变量名误填和 Android base config 要求由 schema 覆盖所有 workspace 校验；env 值读取只作用于 selected workspace allowlist。env var 不存在表示不覆盖；env var 存在但为空字符串、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
-- `rootDir`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
+- `rootDir`、`host`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
 - `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；默认值、selected workspace 配置的 `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
 - `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
@@ -139,7 +140,7 @@ createConfigStore()
 - 默认选择：未提供 `--workspace` 时，`process.cwd()` 的 realpath 必须与某个 workspace `rootDir` 的 realpath 等价。
 - 默认选择只接受 cwd 与 root 等价；cwd 位于某个 workspace 的子目录中不会被视为匹配。
 - Windows 下大小写、路径分隔符和尾部分隔符差异不应影响默认匹配。
-- 启动选择成功后会形成 `RuntimeConfigIdentity`，记录 config file path、workspace id、已验证/规范化的 rootDir、port 和 selection mode。
+- 启动选择成功后会形成 `RuntimeConfigIdentity`，记录 config file path、workspace id、已验证/规范化的 rootDir、host、port 和 selection mode。
 - Env overrides 在 workspace 选择之后才按 selected workspace 的 allowlist 应用；它们不参与 workspace 选择，也不改变 `RuntimeConfigIdentity`。
 
 ### Runtime snapshot
@@ -148,6 +149,7 @@ createConfigStore()
 
 - initial `snapshotVersion` 为 `1`。
 - snapshot 必含已验证的 `pathSafetyContext`；文件类工具通过 `ToolRuntimeContext.pathSafetyContext` 使用这个上下文。
+- snapshot 必含最终 HTTP `host` 和 `port`；未配置 host 时使用 `127.0.0.1`。入口层使用两者绑定 HTTP server，`ask_user` 使用同一 snapshot 生成表单 URL。
 - snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示已存在的日志根目录。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
 - snapshot 的 `logsDir` 和 Android path 写入 resolved runtime path，但不加入 `pathSafetyContext.allowedRoots`；文件工具 allowed roots 只来自 selected workspace 的 `rootDir + otherRootDirs`。
@@ -156,7 +158,7 @@ createConfigStore()
 - snapshot、`android`、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；request header policy 使用 snapshot rules 与 request-scoped strict header view 计算，不进入 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
-- 启动日志会输出 workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。
+- 启动日志会输出 bind address、endpoint、workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。IPv6 endpoint 使用方括号；通配绑定地址 `0.0.0.0` / `::` 的 endpoint 分别使用本机回环地址 `127.0.0.1` / `::1`。
 
 ---
 
@@ -178,7 +180,7 @@ src/
 │   ├── request-header-rules.ts  # workspace rules.requestHeaders schema、值语义和 runtime rules 类型
 │   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots、rules 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
-│   ├── value-policy.ts          # typed/free-form 字符串、token/selector、JSON/env positive integer reader
+│   ├── value-policy.ts          # typed/free-form 字符串、IP、token/selector、JSON/env positive integer reader
 │   └── workspace-selection.ts   # 显式/cwd workspace 选择与 RuntimeConfigIdentity
 └── runtime/
     ├── config-store.ts          # current snapshot 与 identity baseline 只读持有者
@@ -192,13 +194,15 @@ src/
 
 `src/runtime/` 不完全属于配置层，但 `ConfigStore`、tool-call handler seam 和 `ToolRuntimeContext` 是 global workspace 配置进入工具层的边界。配置语义在本文维护；工具如何消费 `ToolRuntimeContext` 见 [docs/TOOLS.md](TOOLS.md)。
 
+`src/utils/http-url.ts` 统一处理 IPv6 host:port 方括号、通配 bind host 的本机 endpoint 映射，以及 MCP / `ask_user` HTTP URL 生成。
+
 ### 测试布局
 
 ```text
 test/
 ├── config/
 │   ├── global-config-path.test.ts      # home-level dotdir config path
-│   ├── value-policy.test.ts            # typed/free-form 值、token/selector、JSON/env positive integer reader
+│   ├── value-policy.test.ts            # typed/free-form 值、IP、token/selector、JSON/env positive integer reader
 │   ├── path-policy.test.ts             # 配置 path-like 字段 existing-directory policy 与 platform/filesystem seam
 │   ├── global-config-schema.test.ts    # version: 1 schema、字段值语义、path-like 字段和 allowlist selector 校验
 │   ├── workspace-selection.test.ts     # --workspace 与 cwd 选择
@@ -207,7 +211,7 @@ test/
 │   ├── runtime-snapshot.test.ts        # snapshot canonical roots、rules、deep freeze 和派生上下文
 │   └── load-runtime-config.test.ts     # loadRuntimeConfig 集成行为
 ├── runtime/
-│   ├── config-store.test.ts            # ConfigStore 与 tool-call handler seam
+│   ├── config-store.test.ts            # ConfigStore、tool-call handler seam 与 ask_user host URL
 │   ├── mcp-post-request-context.test.ts # POST /mcp request context seam
 │   ├── request-context.test.ts         # request-scoped strict header view carrier
 │   ├── request-context-concurrency.test.ts # request context 并发隔离和同 context 多次 tools/call
@@ -242,6 +246,7 @@ test/
 |-|-|-|-|
 | `id` | string | 是 | workspace 稳定标识；必须全局唯一，长度 `1..64`，以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`；日志文件名直接使用该 id 作为前缀。 |
 | `rootDir` | string | 是 | workspace primary root；必须是本地绝对路径、真实存在且为目录。 |
+| `host` | IPv4 / IPv6 string | 否 | HTTP 监听 IP；缺省为 `127.0.0.1`，不接受 `localhost` 或其他 hostname。host 可在不同 workspace 间重复。显式使用 `0.0.0.0` 或 `::` 会监听对应地址族的所有接口。 |
 | `port` | JSON number positive integer | 是 | 该 workspace 的 HTTP 端口；范围 `1..65535`，且全局唯一；numeric string 非法。 |
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
 | `logsDir` | string | 否 | 服务日志根目录；配置文件中提供时必须是已存在的本地绝对目录。缺省值为 `~/.custom-mcp/logs`，该默认日志根目录也必须预先存在且为目录。Logger 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
@@ -304,6 +309,7 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 - 未知字段会失败，不会静默忽略。
 - typed string 使用 `String.prototype.trim()` 检测空值和首尾 whitespace；空字符串和 whitespace-only 使用稳定错误片段 `must be a non-empty string`，首尾 whitespace 使用 `must not contain leading or trailing whitespace`；检测后保留原始合法值，不使用 trim 后的值继续解析。
 - workspace `id` 必须全局唯一，长度 `1..64`，以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`；首尾 whitespace 会以 whitespace 错误失败。
+- workspace `host` 缺省为 `127.0.0.1`；显式配置时必须是无首尾 whitespace 的 IPv4 或 IPv6 地址，不接受 hostname。host 不要求全局唯一。
 - `lineEnding` 只接受精确的 `auto` / `lf` / `crlf`，不做大小写宽容。
 - 配置文件 numeric 字段只接受 JSON number positive integer；numeric string（包括 `"3100"`、`" 3100"`、`"3100 "`）、`0`、负数、`1.5` 和 unsafe integer 都会失败。
 - workspace `port` 必须是 JSON number positive integer `1..65535`，且全局唯一。
@@ -334,7 +340,7 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 - 环境变量只有不存在时表示不覆盖；存在但值为 `""`、whitespace-only、含首尾 whitespace 或 grammar 非法时启动失败。
 - `MCP_LINE_ENDING` 使用 `auto` / `lf` / `crlf` token grammar；`MCP_LOGS_DIR`、`ANDROID_WORKSPACE_ROOT` 和 `ANDROID_JAVA_HOME` 必须指向已存在的本地绝对目录；Android numeric env var 必须精确匹配十进制正整数字符串 grammar。
 - Env override 在 workspace 选择之后应用，不参与 cwd 匹配或 `--workspace` 选择。
-- Env override 不改变 `RuntimeConfigIdentity`；`rootDir`、`port` 等边界字段始终来自配置文件中已验证的 selected workspace。
+- Env override 不改变 `RuntimeConfigIdentity`；`rootDir`、`host`、`port` 等边界字段始终来自配置文件中已验证的 selected workspace。
 
 ### 允许覆盖的字段
 
@@ -358,6 +364,7 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 | `workspaces` | 全局结构不能由 env 改变。 |
 | `id` | workspace identity 不能由 env 改变。 |
 | `rootDir` | primary root 和 workspace 选择边界不能由 env 改变。 |
+| `host` | HTTP 监听地址和 runtime identity 不能由 env 改变。 |
 | `port` | 端口唯一性、启动端口和 runtime identity 不能由 env 改变。 |
 | `otherRootDirs` | additional roots 会扩大文件访问边界，不能由 env 改变。 |
 | `rules` / `rules.*` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
@@ -386,12 +393,13 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 | 启动报 `version must be the number 1` | `version` 缺失或不是数字 `1` | 将配置调整为 `version: 1` + `workspaces` 数组。 |
 | 启动报 `Unknown config field ...` | 配置包含 schema 未定义字段 | 删除未知字段，或等待对应功能实现后再使用。 |
 | 启动报 workspace `id` 或 `port` 重复 | 多个 workspace 使用了同一 id 或端口 | 为每个 workspace 配置唯一 id 和端口。 |
+| 启动报 `host must be an IPv4 or IPv6 address` | workspace `host` 使用了 hostname、带端口的地址或非法 IP | 改为纯 IPv4 / IPv6 地址；仅本机使用时可删除该字段以采用 `127.0.0.1`。 |
 | 启动报 `--workspace` 参数非法 | CLI 参数缺失、重复、为空、包含首尾 whitespace，或不符合 workspace id lexical grammar | 使用 `--workspace <id>` 或 `--workspace=<id>`，并传入配置中存在的 lowercase workspace id。 |
 | 启动报 root 重复或嵌套 | 多个 workspace `rootDir` 在 lexical 或 realpath 层重复/互相包含 | 拆分为互相独立的目录；不要把子目录配置为另一个 workspace root。 |
 | 启动报 `must be a JSON number positive integer` | 配置文件 numeric 字段使用了 numeric string、`0`、负数、`1.5` 或 unsafe integer | 将字段改为 JSON number，例如 `3100`，不要写成 `"3100"`。 |
 | 启动报 `must be an absolute local path` 或 `does not exist or cannot be accessed` | 配置文件中的 path-like 字段、默认 logs root 或 env path override 使用了相对路径、UNC、namespace path、`~`、Windows 非 drive-absolute path，或目录不存在 | 改为已展开的本地绝对路径，并提前创建配置文件中写入的 `rootDir`、`otherRootDirs[]`、`logsDir`、默认 `~/.custom-mcp/logs` 和 Android 目录。 |
 | 启动报 `Selected workspace allowed roots are invalid` | selected workspace 的 `rootDir + otherRootDirs` 集合无法构建 path safety context | 按错误中的 `Field` 修复对应 root；allowed roots 必须互不重复/嵌套。 |
-| 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段 | 从 allowlist 移除该字段；`rootDir`、`port`、`otherRootDirs` 等边界字段不能通过 env 覆盖。 |
+| 启动报 `envOverrides.allowedFields contains forbidden field ...` | allowlist 试图覆盖边界字段 | 从 allowlist 移除该字段；`rootDir`、`host`、`port`、`otherRootDirs` 等边界字段不能通过 env 覆盖。 |
 | 启动报 `envOverrides.allowedFields contains unknown field ...` | allowlist 包含未支持字段 | 改为允许字段表中的字段，或删除该 allowlist 项。 |
 | 启动报 `envOverrides.allowedFields contains environment variable name ...` | allowlist 写了 `MCP_LOGS_DIR`、`ANDROID_JAVA_HOME` 等环境变量名 | 改写为配置字段 selector，例如 `logsDir` 或 `android.javaHome`。 |
 | 启动报 `ANDROID_* must be a positive integer` 或 `ANDROID_* must be a non-empty string` | allowlist 允许了 Android 数值字段，但对应 env 为空、包含首尾 whitespace、不是十进制正整数或超过 safe integer 范围 | 修正 env 值，或从 `envOverrides.allowedFields` 移除对应字段。 |

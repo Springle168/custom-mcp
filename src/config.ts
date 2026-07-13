@@ -58,6 +58,7 @@ const MINIMAL_GLOBAL_CONFIG_EXAMPLE = `{
     {
       "id": "your-workspace",
       "rootDir": "E:/Workspace/YourProject",
+      "host": "127.0.0.1",
       "port": 3100,
       "lineEnding": "auto"
     }

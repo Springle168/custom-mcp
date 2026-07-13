@@ -84,7 +84,10 @@ function globalConfig(overrides: Record<string, unknown> = {}): Record<string, u
           maxLogTailChars: 4000,
         },
       }),
-      workspace('workspace-b', WORKSPACE_B_DIR, 4502, { lineEnding: 'crlf' }),
+      workspace('workspace-b', WORKSPACE_B_DIR, 4502, {
+        host: '127.0.0.2',
+        lineEnding: 'crlf',
+      }),
     ],
     ...overrides,
   };
@@ -130,6 +133,7 @@ function parsedWorkspace(
   return {
     id,
     rootDir,
+    host: '127.0.0.1',
     port,
     lineEnding: 'auto',
     otherRootDirs: [],
@@ -265,9 +269,11 @@ async function testExplicitWorkspaceSelection(): Promise<void> {
 
   assertEqual(loadedConfig.snapshot.workspaceId, 'workspace-b', 'Explicit --workspace should select the requested id');
   assertEqual(loadedConfig.snapshot.rootDir, WORKSPACE_B_DIR, 'Explicit selection should not require cwd matching');
+  assertEqual(loadedConfig.snapshot.host, '127.0.0.2', 'Snapshot should use selected workspace host');
   assertEqual(loadedConfig.snapshot.port, 4502, 'Snapshot should use selected workspace port');
   assertEqual(loadedConfig.identity.workspaceId, 'workspace-b', 'Identity should record selected workspace id');
   assertEqual(loadedConfig.identity.rootDir, WORKSPACE_B_DIR, 'Identity rootDir should come from the validated workspace root');
+  assertEqual(loadedConfig.identity.host, '127.0.0.2', 'Identity should record selected workspace host');
   assertEqual(loadedConfig.identity.port, 4502, 'Identity should record selected workspace port');
   assertEqual(loadedConfig.identity.configFilePath, CONFIG_FILE, 'Identity should record the config file path');
   assertEqual(loadedConfig.identity.selectionMode, 'explicit', 'Identity should record explicit selection mode');
@@ -422,6 +428,7 @@ async function testEnvWithoutAllowlistDoesNotAffectSelectionIdentityOrSnapshot()
     cwd: WORKSPACE_A_DIR,
     env: {
       MCP_ROOT_DIR: OVERRIDE_DIR,
+      MCP_HOST: '127.0.0.3',
       MCP_PORT: '5500',
       MCP_LINE_ENDING: 'crlf',
       ANDROID_WORKSPACE_ROOT: ANDROID_OVERRIDE_ROOT,
@@ -434,8 +441,10 @@ async function testEnvWithoutAllowlistDoesNotAffectSelectionIdentityOrSnapshot()
 
   assertEqual(loadedConfig.snapshot.workspaceId, 'workspace-a', 'MCP_ROOT_DIR should not affect workspace selection');
   assertEqual(loadedConfig.snapshot.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not affect snapshot rootDir');
+  assertEqual(loadedConfig.snapshot.host, '127.0.0.1', 'MCP_HOST should not affect snapshot host');
   assertEqual(loadedConfig.snapshot.port, 4501, 'MCP_PORT should not affect snapshot port');
   assertEqual(loadedConfig.identity.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not affect runtime identity rootDir');
+  assertEqual(loadedConfig.identity.host, '127.0.0.1', 'MCP_HOST should not affect runtime identity host');
   assertEqual(loadedConfig.identity.port, 4501, 'MCP_PORT should not affect runtime identity port');
   assertEqual(loadedConfig.snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not apply without a selected workspace allowlist');
   assert(loadedConfig.snapshot.android !== undefined, 'Fixture should include Android config');

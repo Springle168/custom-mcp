@@ -3,6 +3,7 @@ import type {
   RuntimeAndroidConfig,
   RuntimeConfigSnapshot,
 } from '../config.js';
+import { buildHttpUrl } from '../utils/http-url.js';
 import type { PathSafetyContext } from '../utils/paths.js';
 
 export interface ToolRuntimeContext {
@@ -22,7 +23,8 @@ export function createToolRuntimeContext(
     pathSafetyContext: snapshot.pathSafetyContext,
     lineEnding: snapshot.lineEnding,
     askUser: {
-      makeUrl: (sessionId: string) => `http://localhost:${snapshot.port}/ask/${sessionId}`,
+      makeUrl: (sessionId: string) =>
+        buildHttpUrl(snapshot.host, snapshot.port, `/ask/${sessionId}`),
     },
     ...(snapshot.android ? { android: snapshot.android } : {}),
     missingAndroidConfigMessage:

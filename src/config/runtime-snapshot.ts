@@ -25,6 +25,7 @@ export interface RuntimeConfigSnapshot {
   readonly workspaceId: string;
   readonly rootDir: string;
   readonly otherRootDirs: readonly string[];
+  readonly host: string;
   readonly port: number;
   readonly lineEnding: LineEnding;
   readonly logsDir: string;
@@ -39,6 +40,7 @@ export interface RuntimeConfigSnapshotInput {
   readonly workspaceId: string;
   readonly rootDir: string;
   readonly otherRootDirs?: readonly string[];
+  readonly host: string;
   readonly port: number;
   readonly lineEnding: LineEnding;
   readonly logsDir: string;
@@ -70,6 +72,7 @@ export function buildRuntimeConfigSnapshot(
       workspaceId: workspace.id,
       rootDir: workspace.rootDir,
       otherRootDirs: workspace.otherRootDirs,
+      host: workspace.host,
       port: workspace.port,
       lineEnding: workspace.lineEnding,
       logsDir,
@@ -106,6 +109,7 @@ export function createRuntimeConfigSnapshot(
     workspaceId: input.workspaceId,
     rootDir: pathSafetyContext.primaryRoot.rootDir,
     otherRootDirs,
+    host: input.host,
     port: input.port,
     lineEnding: input.lineEnding,
     logsDir,

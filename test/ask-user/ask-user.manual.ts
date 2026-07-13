@@ -9,8 +9,9 @@
  */
 
 async function testAskUser() {
+  const host = '127.0.0.1';
   const port = 3100;
-  const endpoint = `http://localhost:${port}/mcp`;
+  const endpoint = `http://${host}:${port}/mcp`;
 
   // 1. 初始化会话
   const initPayload = {

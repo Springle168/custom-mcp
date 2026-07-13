@@ -8,6 +8,7 @@
         "E:/ExistingWorkspaces/AnotherProject"
       ],
       "lineEnding": "auto",
+      "host": "127.0.0.1",
       "port": 3100,
       "logsDir": "E:/ExistingLogs/custom-mcp",
       "android": {

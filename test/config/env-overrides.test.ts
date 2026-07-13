@@ -114,6 +114,7 @@ function globalConfig(workspaces: unknown[] = [workspace('workspace-a', WORKSPAC
 function envValues(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
     MCP_ROOT_DIR: OVERRIDE_ROOT_DIR,
+    MCP_HOST: '127.0.0.2',
     MCP_PORT: '5701',
     MCP_LINE_ENDING: 'crlf',
     MCP_LOGS_DIR: OVERRIDE_LOGS_DIR,
@@ -129,6 +130,7 @@ function envValues(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 function invalidEnvValues(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
     MCP_ROOT_DIR: `${OVERRIDE_ROOT_DIR} `,
+    MCP_HOST: 'localhost',
     MCP_PORT: '5701 ',
     MCP_LINE_ENDING: ' native ',
     MCP_LOGS_DIR: 'relative-logs',
@@ -168,6 +170,7 @@ async function testEnvIgnoredWhenEnvOverridesMissing(): Promise<void> {
   });
 
   assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not affect rootDir without an allowlist');
+  assertEqual(snapshot.host, '127.0.0.1', 'MCP_HOST should not affect host without an allowlist');
   assertEqual(snapshot.port, 4701, 'MCP_PORT should not affect port without an allowlist');
   assertEqual(snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not apply without envOverrides');
   assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'MCP_LOGS_DIR should not apply without envOverrides');
@@ -262,8 +265,10 @@ async function testAllowedFieldsOverrideSnapshotOnly(): Promise<void> {
   });
 
   assertEqual(loaded.snapshot.rootDir, WORKSPACE_A_DIR, 'Boundary rootDir should not be overridden');
+  assertEqual(loaded.snapshot.host, '127.0.0.1', 'Boundary host should not be overridden');
   assertEqual(loaded.snapshot.port, 4701, 'Boundary port should not be overridden');
   assertEqual(loaded.identity.rootDir, WORKSPACE_A_DIR, 'Runtime identity rootDir should stay based on config file selection');
+  assertEqual(loaded.identity.host, '127.0.0.1', 'Runtime identity host should stay based on config file selection');
   assertEqual(loaded.identity.port, 4701, 'Runtime identity port should stay based on config file selection');
   assertEqual(loaded.snapshot.lineEnding, 'crlf', 'Allowed MCP_LINE_ENDING should override snapshot lineEnding');
   assertEqual(loaded.snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Allowed MCP_LOGS_DIR should override snapshot logsDir');
@@ -588,6 +593,7 @@ async function testEnvOverridesDoNotParticipateInCwdSelection(): Promise<void> {
     cwd: WORKSPACE_A_DIR,
     env: envValues({
       MCP_ROOT_DIR: WORKSPACE_B_DIR,
+      MCP_HOST: '127.0.0.2',
       MCP_PORT: '4702',
       MCP_LINE_ENDING: 'crlf',
     }),
@@ -595,10 +601,12 @@ async function testEnvOverridesDoNotParticipateInCwdSelection(): Promise<void> {
 
   assertEqual(loaded.snapshot.workspaceId, 'workspace-a', 'Default cwd selection should use cwd/rootDir identity, not env');
   assertEqual(loaded.snapshot.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not change selected rootDir');
+  assertEqual(loaded.snapshot.host, '127.0.0.1', 'MCP_HOST should not change selected host');
   assertEqual(loaded.snapshot.port, 4701, 'MCP_PORT should not change selected port');
   assertEqual(loaded.snapshot.lineEnding, 'crlf', 'Allowed non-boundary env should still apply after selection');
   assertEqual(loaded.identity.workspaceId, 'workspace-a', 'Runtime identity should record the selected workspace');
   assertEqual(loaded.identity.rootDir, WORKSPACE_A_DIR, 'Runtime identity should not include env overrides');
+  assertEqual(loaded.identity.host, '127.0.0.1', 'Runtime identity host should not include env overrides');
   assertEqual(loaded.identity.port, 4701, 'Runtime identity port should not include env overrides');
 }
 

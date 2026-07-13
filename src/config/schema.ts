@@ -1,6 +1,7 @@
 import { ConfigError } from './errors.js';
 import { readExistingDirectoryPath } from './path-policy.js';
 import {
+  readIpAddress,
   readJsonPositiveInteger,
   readLineEndingToken,
   readSelectorToken,
@@ -14,6 +15,7 @@ import {
 import { validateWorkspaceRootPathSet } from '../utils/paths.js';
 
 export type ParsedLineEnding = 'auto' | 'lf' | 'crlf';
+const DEFAULT_WORKSPACE_HOST = '127.0.0.1';
 
 export interface ParsedAndroidConfig {
   readonly workspaceRoot: string;
@@ -42,6 +44,7 @@ export interface ParsedEnvOverridesConfig {
 export interface ParsedWorkspaceConfig {
   readonly id: string;
   readonly rootDir: string;
+  readonly host: string;
   readonly port: number;
   readonly lineEnding: ParsedLineEnding;
   readonly logsDir?: string;
@@ -68,6 +71,7 @@ const TOP_LEVEL_FIELDS = new Set(['version', 'workspaces']);
 const WORKSPACE_FIELDS = new Set([
   'id',
   'rootDir',
+  'host',
   'port',
   'lineEnding',
   'logsDir',
@@ -90,6 +94,7 @@ const ENV_OVERRIDE_FIELDS = new Set<ParsedEnvOverrideField>(ENV_OVERRIDE_FIELD_N
 const ENV_VAR_SELECTOR_HINTS = new Map<string, string>([
   ...ENV_OVERRIDE_FIELD_NAMES.map((field) => [ENV_OVERRIDE_FIELD_ENV_VARS[field], field] as const),
   ['MCP_ROOT_DIR', 'rootDir'],
+  ['MCP_HOST', 'host'],
   ['MCP_PORT', 'port'],
 ]);
 const FORBIDDEN_ENV_OVERRIDE_FIELDS = new Set([
@@ -97,6 +102,7 @@ const FORBIDDEN_ENV_OVERRIDE_FIELDS = new Set([
   'workspaces',
   'id',
   'rootDir',
+  'host',
   'port',
   'otherRootDirs',
   'rules',
@@ -188,6 +194,7 @@ function parseWorkspace(
   return {
     id: readRequiredWorkspaceId(context, rawWorkspace, 'id', fieldPath),
     rootDir: readRequiredExistingDirectoryPath(context, rawWorkspace, 'rootDir', fieldPath),
+    host: readOptionalHost(context, rawWorkspace.host, `${fieldPath}.host`),
     port: readRequiredPositiveInteger(context, rawWorkspace, 'port', fieldPath, {
       max: MAX_PORT,
       rangeDescription: `between 1 and ${MAX_PORT}`,
@@ -199,6 +206,18 @@ function parseWorkspace(
     ...(envOverrides !== undefined ? { envOverrides } : {}),
     rules: readOptionalRulesConfig(context, rawWorkspace.rules, `${fieldPath}.rules`),
   };
+}
+
+function readOptionalHost(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+): string {
+  if (value === undefined) {
+    return DEFAULT_WORKSPACE_HOST;
+  }
+
+  return unwrapPolicy(context, readIpAddress(value, { fieldPath }));
 }
 
 function readOptionalLogsDir(

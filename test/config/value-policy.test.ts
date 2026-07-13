@@ -1,6 +1,7 @@
 import {
   readEnvPositiveInteger,
   readFreeFormString,
+  readIpAddress,
   readJsonPositiveInteger,
   readLineEndingToken,
   readSelectorToken,
@@ -97,6 +98,30 @@ function testTokenGrammar(): void {
     readLineEndingToken('CRLF', { fieldPath: 'lineEnding' }),
     'must be one of: auto, lf, crlf',
     'lineEnding should be case-sensitive',
+  );
+}
+
+function testIpAddress(): void {
+  for (const value of ['127.0.0.1', '192.168.1.10', '::1', '2001:db8::1']) {
+    assertEqual(
+      expectOk(readIpAddress(value, { fieldPath: 'host' }), `IP address ${value} should parse`),
+      value,
+      'IP address reader should preserve the original legal value',
+    );
+  }
+
+  for (const value of ['localhost', 'example.com', '127.0.0.1:3100', '999.1.1.1']) {
+    expectError(
+      readIpAddress(value, { fieldPath: 'host' }),
+      'host must be an IPv4 or IPv6 address',
+      `Invalid IP address ${JSON.stringify(value)} should fail`,
+    );
+  }
+
+  expectError(
+    readIpAddress(' 127.0.0.1', { fieldPath: 'host' }),
+    'must not contain leading or trailing whitespace',
+    'IP address validation should preserve typed string whitespace priority',
   );
 }
 
@@ -215,6 +240,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'typed string whitespace priority', run: testTypedStringWhitespacePriority },
       { name: 'token grammar', run: testTokenGrammar },
+      { name: 'IP address', run: testIpAddress },
       { name: 'selector token boundary', run: testSelectorTokenBoundary },
       { name: 'JSON positive integer', run: testJsonPositiveInteger },
       { name: 'env positive integer', run: testEnvPositiveInteger },

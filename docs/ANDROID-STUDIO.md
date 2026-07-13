@@ -14,11 +14,13 @@ Android Studio 的 MCP 配置文件位置参考官方文档，添加：
 {
   "mcpServers": {
     "custom-mcp-server": {
-      "httpUrl": "http://localhost:3100/mcp"
+      "httpUrl": "http://127.0.0.1:3100/mcp"
     }
   }
 }
 ```
+
+workspace `host` 缺省为 `127.0.0.1`；显式配置其他 IP 时，`httpUrl` 使用相同地址。IPv6 地址在 URL 中需要方括号，例如 `http://[::1]:3100/mcp`。
 
 ### 限制
 

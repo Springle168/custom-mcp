@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 export interface ValuePolicyError {
   readonly fieldPath: string;
   readonly message: string;
@@ -91,6 +93,20 @@ export function readWorkspaceIdToken(
     pattern: WORKSPACE_ID_RE,
     description: WORKSPACE_ID_DESCRIPTION,
   });
+}
+
+export function readIpAddress(
+  value: unknown,
+  options: TypedStringOptions,
+): ValuePolicyResult<string> {
+  const stringResult = readTypedString(value, options);
+  if (!stringResult.ok) return stringResult;
+
+  if (isIP(stringResult.value) === 0) {
+    return fail(options.fieldPath, `${options.fieldPath} must be an IPv4 or IPv6 address.`);
+  }
+
+  return stringResult;
 }
 
 export function readLineEndingToken(

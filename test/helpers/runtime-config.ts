@@ -25,6 +25,7 @@ export interface TestRuntimeConfigOptions {
   readonly rootDir: string;
   readonly otherRootDirs?: readonly string[];
   readonly lineEnding?: LineEnding;
+  readonly host?: string;
   readonly port?: number;
   readonly android?: RuntimeAndroidConfig;
   readonly logsDir?: string;
@@ -44,6 +45,7 @@ export function createTestRuntimeConfigSnapshot(
     workspaceId: options.workspaceId ?? 'test-workspace',
     rootDir: options.rootDir,
     otherRootDirs: options.otherRootDirs ?? [],
+    host: options.host ?? '127.0.0.1',
     port: options.port ?? 3100,
     lineEnding: options.lineEnding ?? 'auto',
     logsDir,
@@ -65,6 +67,7 @@ export function createTestRuntimeConfigIdentity(
     configFilePath: snapshot.configFilePath,
     workspaceId: snapshot.workspaceId,
     rootDir: snapshot.rootDir,
+    host: snapshot.host,
     port: snapshot.port,
     selectionMode: 'explicit',
   });

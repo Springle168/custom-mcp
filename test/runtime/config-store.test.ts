@@ -32,10 +32,17 @@ async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
 }
 
-function createSnapshot(options: { readonly port?: number; readonly snapshotVersion?: number } = {}) {
+function createSnapshot(
+  options: {
+    readonly host?: string;
+    readonly port?: number;
+    readonly snapshotVersion?: number;
+  } = {},
+) {
   return createTestRuntimeConfigSnapshot({
     rootDir: PRIMARY_DIR,
     otherRootDirs: [ADDITIONAL_DIR],
+    ...(options.host !== undefined ? { host: options.host } : {}),
     port: options.port ?? 3100,
     snapshotVersion: options.snapshotVersion ?? 1,
     android: {
@@ -93,8 +100,31 @@ async function testToolRuntimeContextDerivesFromSnapshot(): Promise<void> {
   assertEqual(context.android, snapshot.android, 'ToolRuntimeContext should expose snapshot Android config');
   assertEqual(
     context.askUser.makeUrl('session-1'),
-    `http://localhost:${snapshot.port}/ask/session-1`,
+    `http://127.0.0.1:${snapshot.port}/ask/session-1`,
     'ask_user URL should be derived from the call snapshot',
+  );
+}
+
+function testToolRuntimeContextFormatsIpHosts(): void {
+  const ipv6Context = createToolRuntimeContext(createSnapshot({ host: '::1' }));
+  assertEqual(
+    ipv6Context.askUser.makeUrl('session-1'),
+    'http://[::1]:3100/ask/session-1',
+    'ask_user URL should wrap IPv6 hosts in brackets',
+  );
+
+  const ipv4WildcardContext = createToolRuntimeContext(createSnapshot({ host: '0.0.0.0' }));
+  assertEqual(
+    ipv4WildcardContext.askUser.makeUrl('session-1'),
+    'http://127.0.0.1:3100/ask/session-1',
+    'IPv4 wildcard binds should produce a local endpoint URL',
+  );
+
+  const ipv6WildcardContext = createToolRuntimeContext(createSnapshot({ host: '::' }));
+  assertEqual(
+    ipv6WildcardContext.askUser.makeUrl('session-1'),
+    'http://[::1]:3100/ask/session-1',
+    'IPv6 wildcard binds should produce a local endpoint URL',
   );
 }
 
@@ -159,7 +189,7 @@ async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
       );
       assertEqual(
         context.askUser.makeUrl('session-1'),
-        'http://localhost:3101/ask/session-1',
+        'http://127.0.0.1:3101/ask/session-1',
         'Router context should not switch to a later snapshot during the same tool call',
       );
       return result;
@@ -189,6 +219,7 @@ async function main(): Promise<void> {
       { name: 'returns initial snapshot', run: testStoreReturnsInitialSnapshot },
       { name: 'does not expose mutable snapshot writer', run: testStoreDoesNotExposeMutableSnapshotWriter },
       { name: 'derives tool runtime context from snapshot', run: testToolRuntimeContextDerivesFromSnapshot },
+      { name: 'formats IP hosts for tool URLs', run: testToolRuntimeContextFormatsIpHosts },
       { name: 'deep-freezes snapshot graph', run: testSnapshotDeepFreeze },
       { name: 'tool call handler reads store once', run: testToolCallHandlerReadsStoreOnce },
     ],

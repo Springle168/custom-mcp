@@ -137,6 +137,7 @@ async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
   assertEqual(snapshot.snapshotVersion, 1, 'Initial runtime snapshot version should be 1');
   assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the config file path');
   assertEqual(snapshot.workspaceId, 'runtime-workspace', 'Snapshot should record selected workspace id');
+  assertEqual(snapshot.host, '127.0.0.1', 'Snapshot should use the default IPv4 loopback host');
   assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Snapshot should use the default home dotdir logs dir');
   assertEqual(snapshot.rootDir, path.resolve(PRIMARY_DIR), 'Snapshot rootDir should use canonical path safety primary root');
   assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should include canonical additional roots');
@@ -242,6 +243,7 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
     workspaceId: 'runtime-workspace',
     rootDir: PRIMARY_DIR,
     otherRootDirs: [ADDITIONAL_A_DIR],
+    host: '127.0.0.1',
     port: 4801,
     lineEnding: 'lf' as const,
     logsDir: DEFAULT_LOGS_DIR,

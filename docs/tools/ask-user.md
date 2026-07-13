@@ -61,7 +61,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 工具 handler 创建会话时：
 1. 生成唯一的 `sessionId`（UUID）
 2. 创建 Promise 并存入全局 Map：`pendingQuestions`
-3. 输出 URL 到终端：`http://localhost:{port}/ask/{sessionId}`
+3. 使用 selected workspace runtime snapshot 中的 host / port 输出 URL，例如 `http://127.0.0.1:{port}/ask/{sessionId}`；IPv6 host 使用方括号
 4. `await` Promise，阻塞等待用户输入
 5. 用户提交表单后，HTTP handler 通过 `normalizeAskUserAnswerPayload()` 规范化表单数据并调用 `resolve()`，Promise 返回答案
 6. 清理会话，返回结果给 AI

@@ -10,6 +10,7 @@ export interface RuntimeConfigIdentity {
   readonly configFilePath: string;
   readonly workspaceId: string;
   readonly rootDir: string;
+  readonly host: string;
   readonly port: number;
   readonly selectionMode: RuntimeConfigSelectionMode;
 }
@@ -220,6 +221,7 @@ function createRuntimeConfigIdentity(options: {
     configFilePath: options.configFilePath,
     workspaceId: options.workspace.id,
     rootDir: options.workspace.rootDir,
+    host: options.workspace.host,
     port: options.workspace.port,
     selectionMode: options.selectionMode,
   });
