@@ -46,14 +46,14 @@ test/fixtures/read-many-files/
 
 ### description设计意图
 
-description 中刻意包含了以下信息引导 AI 正确使用：
+工具与参数 description 按职责分层，引导 AI 正确选择工具并构造参数：
 
-- **使用场景示例**：给出 drive-absolute 路径、glob、混合三种用法，降低 AI 猜测成本
-- **文本文件限定**：明确告知只处理文本文件，避免 AI 尝试读取图片等二进制文件
-- **截断提示**：告知超过行数限制会截断，引导 AI 用 `read_file` 或类似读取工具查看完整内容
-- **浅读取提示**：说明 `shallow_read` 适合先摸清文件集合规模和截断风险，并在总大小超过 50 KB 时拆分后续读取
-- **行号提示**：说明 `show_line_numbers` 会增加 token，仅在需要精确引用行号时开启
-- **与 read_file 的分工**：明确建议单文件用 `read_file`，多文件用本工具
+- **主 description**：说明多文件和 glob 读取场景、文本文件限定、截断边界，以及与单文件 `read_file` 的分工
+- **批量预检**：建议宽泛文件集合先使用 `shallow_read` 评估大小和截断风险，再决定后续读取范围
+- **输入路径**：由 `include` 参数说明 relative / drive-absolute 路径和 glob 的 root 语义，并提供输入示例
+- **排除规则**：由 `exclude` 和 `useDefaultExcludes` 参数说明追加规则、默认排除和 drive-absolute literal bypass 语义
+- **浅读取结果**：由 `shallow_read` 参数说明行数、大小、截断状态和超过 50 KB 时的拆分建议
+- **行号输出**：由 `show_line_numbers` 参数说明 1-based 行号及输出体积影响
 
 ---
 

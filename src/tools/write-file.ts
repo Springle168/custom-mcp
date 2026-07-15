@@ -25,11 +25,8 @@ const WRITE_FILE_TOOL_DEFINITION = {
   description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
 
 Use this tool for new files or full-file rewrites. Use replace_text or similar tools for targeted edits to existing files.
-The file path must stay inside a configured workspace root. Relative paths resolve from the primary root; additional roots require drive-absolute paths.
-The content parameter must contain the full file contents; possible omission placeholders like "..." or "rest of code" are written but reported as warnings.
 
-Parallel batching best practice: When creating or overwriting multiple files that each contain substantial content, keep write batches small—prefer one file at a time, or at most two independent files in one parallel batch. Small independent file writes may be parallelized normally.
-On success, returns a message with the written path and the file's total line count.`,
+Parallel batching best practice: When creating or overwriting multiple files with substantial content, prefer one file at a time or at most two independent files per parallel batch. Small independent file writes may be parallelized normally.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
