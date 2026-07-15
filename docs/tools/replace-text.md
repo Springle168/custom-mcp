@@ -44,6 +44,14 @@ test/replace-text/
 
 `inputSchema` 设置 `additionalProperties=false`，handler 也会主动校验必填字段、字段类型、枚举值和未知字段。
 
+### description 设计意图
+
+工具与参数 description 按调用风险分层：
+
+- **精确输入契约**：default 模式要求 AI 提供从目标文件取得的精确原文，包括空白、缩进和换行，不转义、不近似构造。Flexible、Tokenized 和 Fuzzy 属于引擎内部的防御性恢复机制，不作为 MCP description 中向 AI 宣传的调用能力，避免 AI 主动依赖容错匹配执行写入。
+- **正则风险提示**：主 description 提醒 regex 模式使用裸 JavaScript pattern、始终全局匹配、默认启用 dotAll，并建议行内捕获优先使用 `[^\\n]+`。`regex_flags` 参数 description 负责合法 flags、默认值和关闭 dotAll 的具体方式。
+- **参数局部约束**：匹配数量、模式默认值、捕获组语法和未知字段拒绝等规则由对应参数 description 与 `inputSchema` 表达，主 description 不逐项复述。
+
 ---
 
 ## 匹配模式

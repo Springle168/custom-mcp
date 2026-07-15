@@ -96,17 +96,27 @@ function testDescriptionsDocumentV2Boundaries(): void {
     'Tool description should mention replacement',
   );
   assertIncludes(description, 'default', 'Tool description should mention default mode');
+  assertIncludes(
+    description,
+    'exact literal source text',
+    'Tool description should require an exact default-mode target',
+  );
   assertIncludes(description, 'regex', 'Tool description should mention regex mode');
   assertIncludes(
     description,
     'regex_flags',
     'Tool description should mention regex_flags',
   );
+  assertIncludes(
+    description,
+    'global',
+    'Tool description should warn that regex matching is global',
+  );
   assertIncludes(description, 'dotall', 'Tool description should mention dotAll');
   assertIncludes(
     description,
-    'unknown',
-    'Tool description should mention unknown field rejection',
+    '[^\\n]+',
+    'Tool description should recommend a line-local capture pattern',
   );
 
   assertIncludes(
