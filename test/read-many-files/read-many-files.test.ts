@@ -359,6 +359,12 @@ async function testBinaryFileInGlob() {
 
 async function testShallowRead() {
 
+  const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
+  const readmePath = path.join(FIXTURES_DIR, 'docs', 'README.md');
+  const [fooStat, readmeStat] = await Promise.all([
+    fs.stat(fooPath),
+    fs.stat(readmePath),
+  ]);
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt', 'docs/README.md'], shallow_read: true },
     testContext
@@ -370,9 +376,9 @@ async function testShallowRead() {
   assertIncludes(text, 'Read 2 file(s)', 'Should report 2 files read');
   assertIncludes(text, 'Shallow read: file contents omitted.', 'Should explain shallow mode');
   assertIncludes(text, 'Total lines: 37.', 'Should report total line count');
-  assertIncludes(text, 'Total size: 566 bytes.', 'Should report total file size');
-  assertIncludes(text, 'src\\Foo.kt: 15 line(s), 253 bytes, would be truncated: no.', 'Should report Foo line count and size');
-  assertIncludes(text, 'docs\\README.md: 22 line(s), 313 bytes, would be truncated: no.', 'Should report README line count and size');
+  assertIncludes(text, `Total size: ${fooStat.size + readmeStat.size} bytes.`, 'Should report total file size');
+  assertIncludes(text, `src\\Foo.kt: 15 line(s), ${fooStat.size} bytes, would be truncated: no.`, 'Should report Foo line count and size');
+  assertIncludes(text, `docs\\README.md: 22 line(s), ${readmeStat.size} bytes, would be truncated: no.`, 'Should report README line count and size');
   assertNotIncludes(text, 'Recommendation:', 'Should not recommend splitting a small read');
   assertNotIncludes(text, 'data class Foo', 'Should not include file content');
   assertNotIncludes(text, '--- End of content ---', 'Should not include content terminator');
