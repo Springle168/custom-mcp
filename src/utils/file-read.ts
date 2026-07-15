@@ -88,6 +88,8 @@ export const BINARY_EXTENSIONS = new Set([
 export interface TextFileContent {
   /** File content (after truncation if applicable). */
   content: string;
+  /** Original file size in bytes. */
+  sizeBytes: number;
   /** Whether content was truncated by line-count or line-length limits. */
   isTruncated: boolean;
   /** Whether the selected line range intentionally excludes part of the file. */
@@ -291,6 +293,7 @@ export async function readTextFile(
     return {
       ok: true,
       content: formattedLines.join('\n'),
+      sizeBytes: stats.size,
       isTruncated: lineLimitTruncated || lineLengthTruncated,
       isPartialRead,
       lineLimitTruncated,

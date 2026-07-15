@@ -41,7 +41,7 @@ test/fixtures/read-many-files/
 | `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；相对输入基于 primary `rootDir`，drive-absolute 输入可位于任一 allowed root 内 |
 | `exclude` | `string[]` | ❌ | `[]` | 额外排除模式，追加到默认排除之后 |
 | `useDefaultExcludes` | `boolean` | ❌ | `true` | 是否启用默认排除规则 |
-| `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数、总行数和是否会截断，不返回文件内容 |
+| `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数与大小、总行数与总大小和是否会截断，不返回文件内容；总大小超过 50 KB 时建议拆分后续读取 |
 | `show_line_numbers` | `boolean` | ❌ | `false` | 给返回内容每行添加原始行号前缀，仅在确实需要行号时开启 |
 
 ### description设计意图
@@ -51,7 +51,7 @@ description 中刻意包含了以下信息引导 AI 正确使用：
 - **使用场景示例**：给出 drive-absolute 路径、glob、混合三种用法，降低 AI 猜测成本
 - **文本文件限定**：明确告知只处理文本文件，避免 AI 尝试读取图片等二进制文件
 - **截断提示**：告知超过行数限制会截断，引导 AI 用 `read_file` 或类似读取工具查看完整内容
-- **浅读取提示**：说明 `shallow_read` 适合先摸清文件集合规模和截断风险
+- **浅读取提示**：说明 `shallow_read` 适合先摸清文件集合规模和截断风险，并在总大小超过 50 KB 时拆分后续读取
 - **行号提示**：说明 `show_line_numbers` 会增加 token，仅在需要精确引用行号时开启
 - **与 read_file 的分工**：明确建议单文件用 `read_file`，多文件用本工具
 
@@ -108,7 +108,9 @@ Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的�
 
 截断逻辑参考自Gemini CLI 的 `fileUtils.ts`，常量值与原版一致。
 
-`shallow_read: true` 时仍会读取文本以统计行数和判断截断风险，但不会把内容拼接到返回结果中。返回信息包括每个文件的原始总行数、所有文件总行数、以及如果正常读取内容是否会被截断。
+`shallow_read: true` 时仍会读取文本以统计行数和判断截断风险，但不会把内容拼接到返回结果中。返回信息包括每个文件的原始总行数和磁盘字节数、所有成功处理文件的总行数和总字节数，以及如果正常读取内容是否会被截断。大小统计复用 `readTextFile()` 读取前取得的 `fs.stat().size`，不会为此增加额外的文件系统访问；被跳过、读取失败或因总文件数限制而未处理的文件不计入合计。
+
+总大小严格大于 `50 * 1024` 字节时，返回结果会建议将文件拆分到至少两次后续读取中。该提示用于控制后续 MCP 返回体和上下文规模，不改变 `shallow_read` 本身仍需读取文本以统计行数的行为。
 
 `show_line_numbers: true` 时，每一行内容会添加原始 1-based 行号前缀，例如 `12: print("xxx")`。这个选项会增加输出体积，只有需要精确定位或引用行号时才建议开启。
 
@@ -157,9 +159,11 @@ No truncation: all returned file contents are complete.
 Read 2 file(s).
 Shallow read: file contents omitted.
 Total lines: 120.
+Total size: 62.4 KB (63898 bytes).
+Recommendation: Total size exceeds 50 KB. Split the files across at least two read calls.
 Files:
-- src/Foo.kt: 40 line(s), would be truncated: no.
-- src/Large.kt: 80 line(s), would be truncated: no.
+- src/Foo.kt: 40 line(s), 12.1 KB (12390 bytes), would be truncated: no.
+- src/Large.kt: 80 line(s), 50.3 KB (51508 bytes), would be truncated: no.
 ```
 
 AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容。
