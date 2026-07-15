@@ -60,23 +60,12 @@ export const REPLACE_TOOL_DEFINITION = {
   description: `Replaces text within a file and returns a JSON payload in content[0].text.
 
 - When writing code, do NOT use omission placeholders to represent existing code, such as '(rest of methods ...)', '...', or 'unchanged code'. Write the complete replacement content explicitly. Possible placeholders are written but reported as warnings in note.
-- allow_multiple: If true, replace all matches. If false or omitted, exactly one match is required.
-- match_mode: 'default' or 'regex'. Defaults to 'default'.
-- regex_flags: Optional in regex mode. Controls only 'm' and 's'; 'g' is always enabled. Defaults to 'ms'.
-
-target:
-- In default mode this must be EXACT literal text including all whitespace, indentation, and newlines. NEVER escape the string content.
-- In regex mode this is a bare JavaScript RegExp pattern compiled with global matching plus regex_flags.
-- With dotAll ('s'), '.' matches newlines; for line-local captures prefer '[^\\n]+' over '.+'.
-
-replacement:
-- Must be EXACT literal replacement text and ensure the resulting is correct and idiomatic.
 
 Mode boundaries:
-- default mode treats target and replacement as literal text. It does not interpret $!n, $1, $&, $$, or any regex replacement syntax.
-- regex mode interprets only $!n capture references and $$ dollar escaping in replacement; JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
+- In default mode, target MUST be EXACT literal source text, including all whitespace, indentation, and newlines. Never escape or approximate it. replacement must be complete literal text; no replacement syntax is interpreted.
+- In regex mode, target is a bare JavaScript RegExp pattern. Matching is global and defaults to regex_flags='ms'; with dotAll enabled, '.' matches newlines, so prefer '[^\\n]+' for line-local captures.
+- Regex replacement interprets only $!n capture references and $$ dollar escaping. JavaScript native replacement tokens like $1, $&, $\`, and $' remain literal.
 - Empty target is allowed only in default mode when the file does not exist, to create a new file. Prefer write_file for new file creation.
-- Any unknown field is rejected.
 
 Parallel calls:
 - Parallel replace_text calls may target the same file.

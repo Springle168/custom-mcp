@@ -31,13 +31,11 @@ const READ_FILE_TOOL_DEFINITION = {
   name: 'read_file',
   description: `Reads and returns the content of a specified text file.
 
-Use read_mode="line" to interpret start_line and end_line as 1-based line numbers; end_line is inclusive.
-Use read_mode="regex" to interpret start_line and end_line as JavaScript RegExp patterns matched line-by-line; returned content is still one continuous line range.
+Supports full-file reads and optional continuous ranges positioned by 1-based line numbers or line-by-line JavaScript RegExp patterns.
 For context efficiency, always retrieve only the minimum content necessary for your next step.
 Successful responses always start with two summary lines, then a blank line, then a '${OUTPUT_SEPARATOR_FORMAT}' separator before the file content, and end with '${OUTPUT_TERMINATOR}'.
 Text files only. Binary files (images, archives, compiled output, etc.) are rejected.
-Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not apply line-count or line-length truncation.
-Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".`,
+Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not apply line-count or line-length truncation.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
