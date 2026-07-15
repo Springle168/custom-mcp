@@ -72,21 +72,12 @@ const DEFAULT_EXCLUDES: string[] = [
 
 const READ_MANY_FILES_TOOL_DEFINITION = {
   name: 'read_many_files',
-  description: `Reads and returns the content of multiple text files in one call. Supports drive-absolute file paths and glob patterns inside configured workspace roots.
+  description: `Reads and returns the content of multiple text files in one call.
 
-Use this tool when you need content from several files at once, such as:
-- Reading all Kotlin files in a package: include ["src/main/kotlin/com/example/**/*.kt"]
-- Reading specific files by absolute path: include ["E:/workspace/project/Foo.kt", "E:/workspace/project/Bar.kt"]
-- Mixing paths and patterns: include ["E:/workspace/project/Config.kt", "src/**/*.kt"]
+Use this tool when reading several related files or expanding glob patterns. Text files only; binary files are skipped.
+Files exceeding ${MAX_LINES_PER_FILE} lines are truncated—use read_file for a complete or targeted single-file read.
 
-Text files only. Binary files (images, archives, compiled output, etc.) are automatically skipped.
-Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file or a similar file-reading tool on that specific file for full content.
-Set shallow_read to true to list matched files with per-file line and size statistics, totals, and truncation status without returning file contents. When the total size exceeds 50 KB, the result recommends splitting follow-up reads.
-Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".
-Relative paths and globs resolve from the primary workspace root. Additional roots must be accessed with drive-absolute paths or globs.
-Drive-absolute literal paths bypass excludes; glob results, including drive-absolute globs in additional roots, still use excludes.
-Default excludes filter out node_modules, .git, build directories, and binary files. Set useDefaultExcludes to false to disable.
-Prefer read_file for a single file. Use this tool when reading 2 or more files.`,
+For broad file sets, use shallow_read first to inspect their size and truncation risk before requesting contents. Prefer read_file when reading only one file.`,
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -101,7 +92,7 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
         type: 'array',
         items: { type: 'string', minLength: 1 },
         description:
-          'Optional glob patterns for files to exclude, added to default excludes. Examples: ["**/*.test.kt", "generated/**"]',
+          'Optional glob patterns added to the default excludes. Drive-absolute literal include paths bypass excludes; glob results remain subject to them. Examples: ["**/*.test.kt", "generated/**"]',
       },
       useDefaultExcludes: {
         type: 'boolean',
@@ -116,7 +107,7 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
       show_line_numbers: {
         type: 'boolean',
         description:
-          'If true, prefix each returned content line with its original 1-based line number. Use only when line numbers are necessary. Defaults to false.',
+          'If true, prefix each returned content line with its original 1-based line number. This increases output size, so use it only when precise line references are needed. Defaults to false.',
       },
     },
     required: ['include'],
