@@ -32,6 +32,9 @@ import {
 /** Maximum number of files to process in a single call. */
 const MAX_FILES = 100;
 
+/** Total shallow-read size above which smaller follow-up read batches are recommended. */
+const SHALLOW_READ_BATCH_SIZE_BYTES = 50 * 1024;
+
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 const OUTPUT_TERMINATOR = '--- End of content ---';
 
@@ -78,7 +81,7 @@ Use this tool when you need content from several files at once, such as:
 
 Text files only. Binary files (images, archives, compiled output, etc.) are automatically skipped.
 Files exceeding ${MAX_LINES_PER_FILE} lines are truncated — use read_file or a similar file-reading tool on that specific file for full content.
-Set shallow_read to true to list matched files with per-file line counts, total line count, and truncation status without returning file contents.
+Set shallow_read to true to list matched files with per-file line and size statistics, totals, and truncation status without returning file contents. When the total size exceeds 50 KB, the result recommends splitting follow-up reads.
 Set show_line_numbers to true only when line numbers are necessary; it prefixes each returned content line like "12: print(\"xxx\")".
 Relative paths and globs resolve from the primary workspace root. Additional roots must be accessed with drive-absolute paths or globs.
 Drive-absolute literal paths bypass excludes; glob results, including drive-absolute globs in additional roots, still use excludes.
@@ -108,7 +111,7 @@ Prefer read_file for a single file. Use this tool when reading 2 or more files.`
       shallow_read: {
         type: 'boolean',
         description:
-          'If true, return only the matched file list with each file line count, total line count, and whether content would be truncated. Defaults to false.',
+          'If true, return only the matched file list with per-file line counts and sizes, total line count and size, and whether content would be truncated. Totals over 50 KB include a recommendation to split follow-up reads. Defaults to false.',
       },
       show_line_numbers: {
         type: 'boolean',
@@ -195,6 +198,13 @@ function pathSafetySkipReason(error: PathSafetyError): string {
 function readSafetySkipReason(result: SafeReadTargetResult): string {
   if (result.ok) return '';
   return result.reason;
+}
+
+function formatFileSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} bytes`;
+  }
+  return `${(sizeBytes / 1024).toFixed(1)} KB (${sizeBytes} bytes)`;
 }
 
 async function tryAddLiteralFile(
@@ -447,6 +457,7 @@ async function handleReadManyFiles(
         displayPath: file.displayPath,
         ok: true as const,
         content: result.content,
+        sizeBytes: result.sizeBytes,
         isTruncated: result.isTruncated,
         lineCountTruncated: result.lineCountTruncated,
         lineLengthTruncated: result.lineLengthTruncated,
@@ -464,6 +475,7 @@ async function handleReadManyFiles(
     filePath: string;
     displayPath: string;
     content: string;
+    sizeBytes: number;
     isTruncated: boolean;
     lineCountTruncated: boolean;
     lineLengthTruncated: boolean;
@@ -492,6 +504,7 @@ async function handleReadManyFiles(
       filePath: r.filePath,
       displayPath: r.displayPath,
       content: r.content,
+      sizeBytes: r.sizeBytes,
       isTruncated: r.isTruncated,
       lineCountTruncated: r.lineCountTruncated,
       lineLengthTruncated: r.lineLengthTruncated,
@@ -516,8 +529,18 @@ async function handleReadManyFiles(
       (sum, file) => sum + file.originalLineCount,
       0,
     );
+    const totalSizeBytes = processedFiles.reduce(
+      (sum, file) => sum + file.sizeBytes,
+      0,
+    );
     summaryParts.push('Shallow read: file contents omitted.');
     summaryParts.push(`Total lines: ${totalLineCount}.`);
+    summaryParts.push(`Total size: ${formatFileSize(totalSizeBytes)}.`);
+    if (totalSizeBytes > SHALLOW_READ_BATCH_SIZE_BYTES) {
+      summaryParts.push(
+        'Recommendation: Total size exceeds 50 KB. Split the files across at least two read calls.',
+      );
+    }
     summaryParts.push('Files:');
     for (const file of processedFiles) {
       const truncationStatus = file.isTruncated
@@ -527,7 +550,7 @@ async function handleReadManyFiles(
           ].filter(Boolean).join(', ')})`
         : 'no';
       summaryParts.push(
-        `- ${file.displayPath}: ${file.originalLineCount} line(s), would be truncated: ${truncationStatus}.`,
+        `- ${file.displayPath}: ${file.originalLineCount} line(s), ${formatFileSize(file.sizeBytes)}, would be truncated: ${truncationStatus}.`,
       );
     }
   } else if (processedFiles.length > 0) {
