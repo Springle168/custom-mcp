@@ -290,69 +290,69 @@ async function testDefaultNoOpFailsWithoutWriting(): Promise<void> {
   await assertFixtureContent('no-op.txt', 'alpha\n', 'No-op should not modify the file');
 }
 
-async function testFlexibleMatchReindentsReplacement(): Promise<void> {
+async function testDefaultRejectsDifferentIndentation(): Promise<void> {
   await resetFixtures();
-  await writeFixture(
-    'flexible.txt',
-    'function demo() {\n  const value = 1;\n  return value;\n}\n',
-  );
+  const before = 'function demo() {\n  const value = 1;\n  return value;\n}\n';
+  await writeFixture('different-indentation.txt', before);
 
   const result = await callReplace({
-    file_path: 'flexible.txt',
+    file_path: 'different-indentation.txt',
     target: 'const value = 1;\nreturn value;',
     replacement: 'const value = 2;\nreturn value + 1;',
     match_mode: 'default',
   });
 
-  const json = assertSuccessResult(result);
-  assertSpan(json, 2, 3, 'Flexible cross-line match span');
-  assertEqual(json.matched_targets, 1, 'Flexible should match once');
+  const json = assertErrorResult(result);
+  assertEqual(json.matched_targets, 0, 'Different indentation should not match');
+  assertNoSpan(json, 'Different indentation should not have a span');
   await assertFixtureContent(
-    'flexible.txt',
-    'function demo() {\n  const value = 2;\n  return value + 1;\n}\n',
-    'Flexible replacement should use target indentation',
+    'different-indentation.txt',
+    before,
+    'Different indentation should not write',
   );
 }
 
-async function testTokenizedMatchEscapesRegexMetacharacters(): Promise<void> {
+async function testDefaultRejectsDifferentWhitespace(): Promise<void> {
   await resetFixtures();
-  await writeFixture('tokenized.txt', 'before\n  if ( foo ) { bar = baz }\nafter\n');
+  const before = 'before\n  if ( foo ) { bar = baz }\nafter\n';
+  await writeFixture('different-whitespace.txt', before);
 
   const result = await callReplace({
-    file_path: 'tokenized.txt',
+    file_path: 'different-whitespace.txt',
     target: 'if(foo){bar=baz}',
     replacement: 'if (foo) {\n  bar = qux\n}',
     match_mode: 'default',
   });
 
-  const json = assertSuccessResult(result);
-  assertSpan(json, 2, 2, 'Tokenized match span');
-  assert(!('strategy' in json), 'Public JSON should not expose internal strategy');
+  const json = assertErrorResult(result);
+  assertEqual(json.matched_targets, 0, 'Different whitespace should not match');
+  assertNoSpan(json, 'Different whitespace should not have a span');
   await assertFixtureContent(
-    'tokenized.txt',
-    'before\n  if (foo) {\n    bar = qux\n  }\nafter\n',
-    'Tokenized replacement should use captured indentation',
+    'different-whitespace.txt',
+    before,
+    'Different whitespace should not write',
   );
 }
 
-async function testFuzzyMatchReplacesSmallTextDifference(): Promise<void> {
+async function testDefaultRejectsSmallTextDifference(): Promise<void> {
   await resetFixtures();
-  await writeFixture('fuzzy.txt', 'before\nThe quik brown fox jumps\nafter\n');
+  const before = 'before\nThe quik brown fox jumps\nafter\n';
+  await writeFixture('different-text.txt', before);
 
   const result = await callReplace({
-    file_path: 'fuzzy.txt',
+    file_path: 'different-text.txt',
     target: 'The quick brown fox jumps',
     replacement: 'The quick brown fox leaps',
     match_mode: 'default',
   });
 
-  const json = assertSuccessResult(result);
-  assertEqual(json.matched_targets, 1, 'Fuzzy should match one best candidate');
-  assertSpan(json, 2, 2, 'Fuzzy single-line span');
+  const json = assertErrorResult(result);
+  assertEqual(json.matched_targets, 0, 'Different text should not match');
+  assertNoSpan(json, 'Different text should not have a span');
   await assertFixtureContent(
-    'fuzzy.txt',
-    'before\nThe quick brown fox leaps\nafter\n',
-    'Fuzzy should replace small text differences',
+    'different-text.txt',
+    before,
+    'Different text should not write',
   );
 }
 
@@ -500,16 +500,16 @@ async function main(): Promise<void> {
       },
       { name: 'Default no-op fails without writing', run: testDefaultNoOpFailsWithoutWriting },
       {
-        name: 'Flexible match reindents replacement',
-        run: testFlexibleMatchReindentsReplacement,
+        name: 'Default mode rejects different indentation',
+        run: testDefaultRejectsDifferentIndentation,
       },
       {
-        name: 'Tokenized match handles whitespace-tolerant code',
-        run: testTokenizedMatchEscapesRegexMetacharacters,
+        name: 'Default mode rejects different whitespace',
+        run: testDefaultRejectsDifferentWhitespace,
       },
       {
-        name: 'Fuzzy match replaces small text difference',
-        run: testFuzzyMatchReplacesSmallTextDifference,
+        name: 'Default mode rejects small text difference',
+        run: testDefaultRejectsSmallTextDifference,
       },
       {
         name: 'End line belongs to line before matched newline',

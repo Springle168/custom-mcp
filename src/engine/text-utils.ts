@@ -54,55 +54,7 @@ export function restoreTrailingNewline(
 }
 
 // ============
-// 正则 / 文本工具
-// ============
-
-/**
- * 转义正则表达式中的特殊字符。
- * 平移自 edit.ts escapeRegex
- */
-export function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * 去除所有空白字符，用于 fuzzy 匹配的归一化比较。
- * 平移自 edit.ts stripWhitespace
- */
-export function stripWhitespace(str: string): string {
-  return str.replace(/\s/g, '');
-}
-
-// ============
-// 缩进处理
-// ============
-
-/**
- * 以第一行为参照，将目标缩进应用到所有行上，同时保留相对缩进。
- * 平移自 edit.ts applyIndentation
- */
-export function applyIndentation(
-  lines: string[],
-  targetIndentation: string,
-): string[] {
-  if (lines.length === 0) return [];
-
-  const referenceLine = lines[0];
-  const refIndentMatch = referenceLine.match(/^([ \t]*)/);
-  const refIndent = refIndentMatch ? refIndentMatch[1] : '';
-
-  return lines.map((line) => {
-    if (line.trim() === '') return '';
-    if (line.startsWith(refIndent)) {
-      return targetIndentation + line.slice(refIndent.length);
-    }
-    return targetIndentation + line.trimStart();
-  });
-}
-
-// ============
 // 省略占位符检测
-// 整体平移自 omissionPlaceholderDetector.ts
 // ============
 
 const OMITTED_PREFIXES = new Set([
