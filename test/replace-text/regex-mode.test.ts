@@ -204,7 +204,7 @@ async function testRegexSlashSyntaxIsLiteralPatternText(): Promise<void> {
   );
 }
 
-async function testRegexDoesNotUseDefaultFallback(): Promise<void> {
+async function testRegexDoesNotUseDefaultLiteralMatching(): Promise<void> {
   await resetFixtures();
   await writeFixture('no-fallback.txt', 'hello world\n');
 
@@ -216,12 +216,12 @@ async function testRegexDoesNotUseDefaultFallback(): Promise<void> {
   });
 
   const json = assertErrorResult(result);
-  assertEqual(json.matched_targets, 0, 'Regex no-match should not fall back to flexible matching');
-  assertNoSpan(json, 'Regex no fallback should have no span');
+  assertEqual(json.matched_targets, 0, 'Regex no-match should not use default literal matching');
+  assertNoSpan(json, 'Regex no default literal match should have no span');
   await assertFixtureContent(
     'no-fallback.txt',
     'hello world\n',
-    'Regex no-match should not write via default fallback',
+    'Regex no-match should not write via default literal matching',
   );
 }
 
@@ -548,7 +548,10 @@ async function main(): Promise<void> {
       },
       { name: 'Regex multiline anchors match per line', run: testRegexMultilineAnchors },
       { name: 'Regex slash syntax is not /pattern/flags', run: testRegexSlashSyntaxIsLiteralPatternText },
-      { name: 'Regex mode does not use default fallback', run: testRegexDoesNotUseDefaultFallback },
+      {
+        name: 'Regex mode does not use default literal matching',
+        run: testRegexDoesNotUseDefaultLiteralMatching,
+      },
       {
         name: 'Regex multiple matches rejected without allow_multiple',
         run: testRegexMultipleMatchesRejectedWithoutAllowMultiple,

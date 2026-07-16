@@ -39,7 +39,7 @@ test/replace-text/
 | `target` | `string` | ✅ | — | 要定位的内容；`default` 模式为普通文本，`regex` 模式为裸 JavaScript `RegExp` pattern |
 | `replacement` | `string` | ✅ | — | 完整替换内容；`default` 模式为普通文本，`regex` 模式仅解释 `$!n` 捕获组和 `$$` |
 | `allow_multiple` | `boolean` | ❌ | `false` | 是否允许替换全部匹配；默认要求恰好一个匹配 |
-| `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用容错文本流程，`regex` 使用显式 JavaScript 正则流程 |
+| `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用精确字面匹配，`regex` 使用显式 JavaScript 正则流程 |
 | `regex_flags` | `string` | ❌ | `"ms"` | 仅 `regex` 模式可用；可控制 `m` / `s`，`g` 始终由工具强制启用 |
 
 `inputSchema` 设置 `additionalProperties=false`，handler 也会主动校验必填字段、字段类型、枚举值和未知字段。
@@ -48,7 +48,7 @@ test/replace-text/
 
 工具与参数 description 按调用风险分层：
 
-- **精确输入契约**：default 模式要求 AI 提供从目标文件取得的精确原文，包括空白、缩进和换行，不转义、不近似构造。Flexible、Tokenized 和 Fuzzy 属于引擎内部的防御性恢复机制，不作为 MCP description 中向 AI 宣传的调用能力，避免 AI 主动依赖容错匹配执行写入。
+- **精确输入契约**：default 模式要求 AI 提供从目标文件取得的精确原文，包括空白、缩进和换行，不转义、不近似构造。
 - **正则风险提示**：主 description 提醒 regex 模式使用裸 JavaScript pattern、始终全局匹配、默认启用 dotAll，并建议行内捕获优先使用 `[^\\n]+`。`regex_flags` 参数 description 负责合法 flags、默认值和关闭 dotAll 的具体方式。
 - **参数局部约束**：匹配数量、模式默认值、捕获组语法和未知字段拒绝等规则由对应参数 description 与 `inputSchema` 表达，主 description 不逐项复述。
 
@@ -60,12 +60,7 @@ test/replace-text/
 
 `default` 模式把 `target` 和 `replacement` 都作为普通文本处理，不解释 `$!1`、`$1`、`$&`、`$$` 等任何 replacement 特殊语法。
 
-匹配策略按以下顺序尝试，命中后不会继续后续策略：
-
-1. **Exact**：规范化 LF 后进行字面匹配。
-2. **Flexible**：逐行 `trim()` 后比较，忽略缩进差异，并把目标缩进应用到 `replacement`。
-3. **Tokenized**：将 `target` 按分隔符 `( ) : [ ] { } > < =` 拆分为token，把 token 转义后用 `\s*` 连接，容忍 token 间空白变化。
-4. **Fuzzy**：滑动窗口 + Levenshtein 距离，容忍小幅文本差异。
+`target` 和 `replacement` 规范化为 LF 后进行字面匹配。缩进、空白或文本内容存在差异时不会匹配。
 
 空 `target` 只在 `default` 模式且目标文件不存在时表示创建新文件；目标文件已存在时会失败。创建新文件仍建议优先使用 `write_file`。
 
@@ -78,7 +73,7 @@ test/replace-text/
 - `g` 可以传入但不需要传入；工具始终强制启用 `g`，传入时会在成功结果的 `note` 中提示。
 - `regex_flags` 实际只控制 `m` / `s`：例如 `"m"` 编译为 `gm`，`"s"` 编译为 `gs`，`""` 编译为 `g`。
 - 默认 dotAll (`s`) 下 `.` 会匹配换行；行内捕获推荐优先使用 `[^\n]+`，不要使用容易跨行吞内容的 `.+`。
-- 不走 Exact / Flexible / Tokenized / Fuzzy fallback。
+- 不使用 default 模式的字面匹配。
 - `target` 必须非空；非法正则、无匹配、零长度匹配都会失败且不写入。
 - 扫描阶段先收集全部匹配，再根据 `allow_multiple`、no-op 和写入规则决定是否修改文件。
 - 成功替换且任一匹配跨多行时，`note` 会提示检查 dotAll / `.` 是否误伤。
