@@ -58,25 +58,25 @@ custom-mcp/test/
 npm run build
 
 # 脚本测试示例
-cmd /c npx tsx test/read-file/read-file.test.ts
+node --import tsx test/read-file/read-file.test.ts
 ```
 
-单个脚本测试直接用 `npx tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+单个脚本测试直接用 `node --import tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
 
 Request header rules 与 `structuredContentDup` feature / `structuredContent` wrapper focused tests：
 
 ```bash
-cmd /c npx tsx test/config/request-header-rules.test.ts
-cmd /c npx tsx test/config/runtime-snapshot.test.ts
-cmd /c npx tsx test/runtime/request-header-view.test.ts
-cmd /c npx tsx test/runtime/request-context.test.ts
-cmd /c npx tsx test/runtime/request-header-policy.test.ts
-cmd /c npx tsx test/runtime/tool-result-adapter.test.ts
-cmd /c npx tsx test/runtime/tool-call-handler.test.ts
-cmd /c npx tsx test/runtime/mcp-post-request-context.test.ts
-cmd /c npx tsx test/logger/request-header-rules-logging.test.ts
-cmd /c npx tsx test/runtime/request-context-concurrency.test.ts
-cmd /c npx tsx test/tools/tool-definitions.test.ts
+node --import tsx test/config/request-header-rules.test.ts
+node --import tsx test/config/runtime-snapshot.test.ts
+node --import tsx test/runtime/request-header-view.test.ts
+node --import tsx test/runtime/request-context.test.ts
+node --import tsx test/runtime/request-header-policy.test.ts
+node --import tsx test/runtime/tool-result-adapter.test.ts
+node --import tsx test/runtime/tool-call-handler.test.ts
+node --import tsx test/runtime/mcp-post-request-context.test.ts
+node --import tsx test/logger/request-header-rules-logging.test.ts
+node --import tsx test/runtime/request-context-concurrency.test.ts
+node --import tsx test/tools/tool-definitions.test.ts
 ```
 
 这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离和 `tools/list` 不暴露 `outputSchema`。
@@ -84,7 +84,7 @@ cmd /c npx tsx test/tools/tool-definitions.test.ts
 `ask_user` 答案规范化与结果格式化测试：
 
 ```bash
-cmd /c npx tsx test/ask-user/ask-user-result.test.ts
+node --import tsx test/ask-user/ask-user-result.test.ts
 ```
 
 ---

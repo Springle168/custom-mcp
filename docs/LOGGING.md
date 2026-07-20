@@ -102,19 +102,19 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 运行 `test/logger/logger.test.ts` 可以测试日志系统的颜色输出效果：
 
 ```bash
-cmd /c npx tsx test/logger/logger.test.ts
+node --import tsx test/logger/logger.test.ts
 ```
 
 运行 `test/logger/request-header-rules-logging.test.ts` 可以测试 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界：
 
 ```bash
-cmd /c npx tsx test/logger/request-header-rules-logging.test.ts
+node --import tsx test/logger/request-header-rules-logging.test.ts
 ```
 
 默认会跳过超大 JSON 演示，避免 Agent 或自动化运行时输出大量噪音；需要验证 50KB 阈值下的大输出降级行为时，追加 `--verbose`：
 
 ```bash
-cmd /c npx tsx test/logger/logger.test.ts --verbose
+node --import tsx test/logger/logger.test.ts --verbose
 ```
 
 测试生成的日志文件显式写入 `test/logs/` 目录。更多测试约定见 [docs/TESTING.md](TESTING.md)。

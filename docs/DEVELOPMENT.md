@@ -80,7 +80,7 @@ custom-mcp/
 npm run build
 
 # 单个脚本测试
-cmd /c npx tsx test/read-file/read-file.test.ts
+node --import tsx test/read-file/read-file.test.ts
 ```
 
 更多测试命令见 [docs/TESTING.md](TESTING.md)。

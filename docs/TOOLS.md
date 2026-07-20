@@ -68,7 +68,7 @@ src/tools/
 通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看 MCP `tools/list` 结构：
 
 ```bash
-cmd /c npx tsx test/tools/inspect-tools.ts
+node --import tsx test/tools/inspect-tools.ts
 ```
 
 ---
