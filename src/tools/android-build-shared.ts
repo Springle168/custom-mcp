@@ -9,18 +9,23 @@ import {
   type RunAndroidGradleResult,
 } from '../utils/android-gradle.js';
 
-const ALLOWED_KEYS = new Set(['quiet', 'stacktrace']);
+const ALLOWED_KEYS = new Set(['quiet', 'stacktrace', 'offline']);
 
 export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
   type: 'object' as const,
   properties: {
     quiet: {
       type: 'boolean',
-      description: 'Optional. If true, adds -q to reduce Gradle output.',
+      description: 'Reduces Gradle output when true. Defaults to false.',
     },
     stacktrace: {
       type: 'boolean',
-      description: 'Optional. If true, adds --stacktrace for more failure detail.',
+      description: 'Includes a Gradle stack trace on failure when true. Defaults to false.',
+    },
+    offline: {
+      type: 'boolean',
+      description:
+        "Uses Gradle's offline dependency resolution when true; required dependencies must already be cached. Defaults to false.",
     },
   },
   additionalProperties: false,
@@ -29,6 +34,7 @@ export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
 export interface AndroidGradleToolArgs {
   quiet?: boolean;
   stacktrace?: boolean;
+  offline?: boolean;
 }
 
 type ToolAndroidConfig = NonNullable<ToolRuntimeContext['android']>;
@@ -50,7 +56,7 @@ export function validateAndroidGradleToolArgs(
 ): string | null {
   for (const key of Object.keys(args)) {
     if (!ALLOWED_KEYS.has(key)) {
-      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace.`;
+      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace, offline.`;
     }
   }
 
@@ -60,6 +66,10 @@ export function validateAndroidGradleToolArgs(
 
   if (args.stacktrace !== undefined && typeof args.stacktrace !== 'boolean') {
     return "The 'stacktrace' parameter must be a boolean.";
+  }
+
+  if (args.offline !== undefined && typeof args.offline !== 'boolean') {
+    return "The 'offline' parameter must be a boolean.";
   }
 
   return null;
@@ -76,6 +86,10 @@ export function toRunAndroidGradleOptions(
 
   if (typeof args.stacktrace === 'boolean') {
     options.stacktrace = args.stacktrace;
+  }
+
+  if (typeof args.offline === 'boolean') {
+    options.offline = args.offline;
   }
 
   return options;

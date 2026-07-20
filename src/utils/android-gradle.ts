@@ -20,6 +20,7 @@ export interface AndroidGradleRuntimeConfig {
 export interface RunAndroidGradleOptions {
   quiet?: boolean;
   stacktrace?: boolean;
+  offline?: boolean;
 }
 
 export interface RunAndroidGradleResult extends ParsedAndroidGradleOutput {
@@ -199,6 +200,10 @@ function buildGradleArgs(
 
   if (options.stacktrace === true) {
     args.push('--stacktrace');
+  }
+
+  if (options.offline === true) {
+    args.push('--offline');
   }
 
   args.push('--no-daemon');
