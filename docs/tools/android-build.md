@@ -17,6 +17,9 @@
 
 - `quiet?: boolean` → 追加 `-q`
 - `stacktrace?: boolean` → 追加 `--stacktrace`
+- `offline?: boolean` → 追加 `--offline`，要求 Gradle 使用已缓存的依赖
+
+三个参数的默认值均为 `false`。
 
 对应命令：
 
@@ -32,6 +35,8 @@
 - 固定注入：`JAVA_HOME`（值来自 `context.android.javaHome`）
 - 固定追加：`--no-daemon`
 - 不开放任意 task、任意命令、任意环境变量透传
+
+`offline: true` 控制 Gradle 的离线依赖解析；Gradle Wrapper 在本地缺少指定 distribution 时仍可能先执行下载，因此该参数不构成进程级网络隔离。
 
 ---
 

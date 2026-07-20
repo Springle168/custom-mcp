@@ -8,7 +8,7 @@ import {
 const ANDROID_ASSEMBLE_DEBUG_TOOL_DEFINITION = {
   name: 'android.assembleDebug',
   description:
-    'Runs .\\gradlew.bat assembleDebug in the configured android.workspaceRoot. Only supports quiet?: boolean and stacktrace?: boolean. Always uses the configured Android Studio JBR via JAVA_HOME and always appends --no-daemon. Success returns BUILD SUCCESSFUL. Failure returns a compact JSON summary with firstErrorBlock and logTail.',
+    'Builds the Android project debug variant. All optional parameters default to false. Success returns BUILD SUCCESSFUL. Failure returns a compact JSON summary with firstErrorBlock and logTail, which may be truncated. If these details are insufficient to diagnose the failure, explain that limitation to the user instead of guessing.',
   inputSchema: ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
 };
 

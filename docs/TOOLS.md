@@ -27,8 +27,8 @@ docs/tools/
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
-| `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
-| `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` | [docs/tools/android-build.md](tools/android-build.md) |
+| `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
+| `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
 
 ---
 
@@ -48,7 +48,7 @@ src/tools/
 ├── ask-user.ts                      # ask_user 工具
 ├── android-build-shared.ts          # Android 构建工具共享逻辑
 ├── android-assemble-debug.ts        # android.assembleDebug 工具
-└── android-test-debug-unit-test.ts   # android.testDebugUnitTest 工具
+└── android-test-debug-unit-test.ts  # android.testDebugUnitTest 工具
 ```
 
 ### 共享实现归属

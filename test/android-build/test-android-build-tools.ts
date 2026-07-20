@@ -46,14 +46,14 @@ async function testValidationErrorForUnknownField() {
 
 async function testValidationErrorForNonBoolean() {
   const result = await androidTestDebugUnitTestTool.handler(
-    { stacktrace: 'yes' },
+    { offline: 'yes' },
     baseContext,
   );
 
   assert(result.isError === true, 'Should fail on non-boolean parameter');
   assertIncludes(
     getResultText(result),
-    "The 'stacktrace' parameter must be a boolean.",
+    "The 'offline' parameter must be a boolean.",
     'Should explain the invalid parameter type',
   );
 }
@@ -81,7 +81,11 @@ async function testMissingGradleWrapper() {
     },
   });
 
-  const result = await androidTestDebugUnitTestTool.handler({ quiet: true }, context);
+  const result = await androidTestDebugUnitTestTool.handler(
+    { quiet: true, offline: true },
+    context,
+  );
+  const failure = parseCompactJsonText(getResultText(result));
 
   assert(result.isError === true, 'Should fail when gradlew.bat is missing');
   assertIncludes(
@@ -95,9 +99,14 @@ async function testMissingGradleWrapper() {
     'Should keep failure summary in JSON output',
   );
   assertEqual(
-    parseCompactJsonText(getResultText(result)).success,
+    failure.success,
     false,
     'Failure JSON should keep success=false',
+  );
+  assertIncludes(
+    String(failure.command),
+    '--offline',
+    'Should pass offline mode to Gradle',
   );
 }
 
