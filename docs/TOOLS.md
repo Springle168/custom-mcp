@@ -38,7 +38,8 @@ docs/tools/
 
 ```text
 src/tools/
-├── index.ts                         # 工具注册表、tools/list 和路由分发
+├── names.ts                         # canonical 工具名目录、ToolName 类型和名称判断
+├── index.ts                         # canonical registry 与 workspace filtered service
 ├── types.ts                         # MCPTool 与 ToolCallResult 类型
 ├── results.ts                       # textResult / textErrorResult 等返回值 helper
 ├── replace.ts                       # replace_text 工具
@@ -55,6 +56,7 @@ src/tools/
 
 | 区域 | 归属 |
 |-|-|
+| `src/runtime/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
 | `src/runtime/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
 | `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
 | `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
@@ -65,11 +67,19 @@ src/tools/
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
 
-通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看 MCP `tools/list` 结构：
+通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看完整 canonical registry 的 definition 结构；selected workspace 的实际 `tools/list` 还会应用 exposure 过滤：
 
 ```bash
 node --import tsx test/tools/inspect-tools.ts
 ```
+
+### Registry 与 workspace tool service
+
+`src/tools/names.ts` 的 `TOOL_NAMES` 是工具名称和顺序的 canonical 目录，不导入 handler。`src/tools/index.ts` 按该目录构建完整 registry，并在启动时检查缺失实现、额外实现和重复实现。
+
+`createWorkspaceToolService()` 使用 selected workspace snapshot 中的 `toolExposure` 过滤完整 registry。service 的 definitions 和 route map 来自同一个 filtered registry，因此 `tools/list` 与 `tools/call` 使用相同的暴露边界；被排除或未注册的名称统一返回 `Unknown tool`。definitions 保持 canonical registry 顺序，不跟随配置数组顺序。
+
+`src/runtime/mcp-server.ts` 提供可导入的 MCP server factory。factory 使用调用方传入的同一个 `WorkspaceToolService` 注册 list/call handlers；`tools/list` 在 SDK 协议边界返回 definitions 数组的浅拷贝。
 
 ---
 
@@ -121,36 +131,46 @@ const readFileTool: MCPTool = {
 export default readFileTool;
 ```
 
-### 步骤 2：注册工具
+### 步骤 2：登记 canonical 工具名
 
-编辑 `src/tools/index.ts`，加两行：
+编辑 `src/tools/names.ts`，把工具名加入 `TOOL_NAMES`。该数组同时定义合法配置名称和 canonical registry 顺序。
+
+### 步骤 3：注册工具
+
+编辑 `src/tools/index.ts`，导入工具并把实现加入 `importedTools`：
 
 ```typescript
 import replaceTool from './replace.js';
 import readManyFilesTool from './read-many-files.js';
 import readFileTool from './read-file.js';  // ← 加这行
 
-const registry: MCPTool[] = [
+const importedTools: readonly MCPTool[] = [
   replaceTool,
   readManyFilesTool,
   readFileTool,  // ← 加这行
 ];
 ```
 
-完成。`index.ts` 入口文件、日志系统、路由逻辑都不需要改动。
+名称目录与实现 registry 必须一一对应；缺失、额外或重复实现会在 registry 构建时失败。`src/index.ts`、日志系统和路由逻辑不需要为单个工具改动。
 
 工具 handler 接收 `ToolRuntimeContext`，不要在工具层读取配置文件或解析全局配置结构。配置来源、workspace 选择和运行时快照归一化由配置层/运行时层负责。
 
-### 步骤 3：编译测试
+### 步骤 4：编译测试
 
 ```bash
 npm run build
 npm run start
 ```
 
-### 步骤 4：编写工具文档
+### 步骤 5：编写工具文档
 
 在 `docs/tools/` 下新建对应的 markdown 文件，记录 Schema 设计意图、实现细节、设计边界、涉及文件和参考来源。然后在本文的“已实现工具”表格中添加条目。
+
+工具暴露机制的回归入口：
+
+- `test/tools/tool-exposure.test.ts`：canonical registry、workspace 过滤、definitions 与路由一致性。
+- `test/runtime/mcp-server-tool-exposure.test.ts`：MCP server factory 的真实 `tools/list` / `tools/call` 接线和 service 复用。
+- `test/config/tool-exposure.test.ts`：workspace `tools` schema、snapshot 接入和 env override 禁止。
 
 ---
 

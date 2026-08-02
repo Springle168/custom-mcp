@@ -1,4 +1,5 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolName } from './names.js';
 
 export interface ToolCallResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -7,12 +8,12 @@ export interface ToolCallResult {
 }
 
 export interface MCPTool {
-  definition: {
-    name: string;
-    description: string;
-    inputSchema: object;
+  readonly definition: {
+    readonly name: ToolName;
+    readonly description: string;
+    readonly inputSchema: object;
   };
-  handler: (
+  readonly handler: (
     args: Record<string, unknown>,
     context: ToolRuntimeContext,
   ) => Promise<ToolCallResult>;

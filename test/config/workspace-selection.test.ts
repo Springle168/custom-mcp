@@ -137,6 +137,7 @@ function parsedWorkspace(
     port,
     lineEnding: 'auto',
     otherRootDirs: [],
+    toolExposure: { mode: 'all' },
     rules: createEmptyRuntimeRulesConfig(),
   };
 }

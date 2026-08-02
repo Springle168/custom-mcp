@@ -28,7 +28,7 @@ const OUTPUT_TERMINATOR = '--- End of content ---';
 // ================
 
 const READ_FILE_TOOL_DEFINITION = {
-  name: 'read_file',
+  name: 'read_file' as const,
   description: `Reads and returns the content of a specified text file.
 
 Supports full-file reads and optional continuous ranges positioned by 1-based line numbers or line-by-line JavaScript RegExp patterns.

@@ -19,6 +19,7 @@ import type { PathSafetyContext } from './utils/paths.js';
 
 export { ConfigError, isConfigError } from './config/errors.js';
 export type { ConfigErrorCode } from './config/errors.js';
+export type { RuntimeToolExposure } from './config/tool-exposure.js';
 export { getDefaultGlobalConfigPath, getDefaultGlobalLogsDir } from './config/global-config-path.js';
 export type {
   DefaultGlobalConfigPathOptions,

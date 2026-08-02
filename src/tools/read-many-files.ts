@@ -71,7 +71,7 @@ const DEFAULT_EXCLUDES: string[] = [
 // ================
 
 const READ_MANY_FILES_TOOL_DEFINITION = {
-  name: 'read_many_files',
+  name: 'read_many_files' as const,
   description: `Reads and returns the content of multiple text files in one call.
 
 Use this tool when reading several related files or expanding glob patterns. Text files only; binary files are skipped.

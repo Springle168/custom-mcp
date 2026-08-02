@@ -1,11 +1,9 @@
+import type { RuntimeToolExposure } from '../config.js';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { MCPTool, ToolCallResult } from './types.js';
+import { TOOL_NAMES, type ToolName } from './names.js';
 import { textErrorResult } from './results.js';
+import type { MCPTool, ToolCallResult } from './types.js';
 
-// =============================
-// 在这里导入所有工具
-// 加新工具时只需要在这里加一行 import + 加到 registry 数组里
-// =============================
 import replaceTool from './replace.js';
 import writeFileTool from './write-file.js';
 import readManyFilesTool from './read-many-files.js';
@@ -14,7 +12,7 @@ import askUserTool from './ask-user.js';
 import androidAssembleDebugTool from './android-assemble-debug.js';
 import androidTestDebugUnitTestTool from './android-test-debug-unit-test.js';
 
-const registry: MCPTool[] = [
+const importedTools: readonly MCPTool[] = [
   replaceTool,
   writeFileTool,
   readManyFilesTool,
@@ -22,34 +20,81 @@ const registry: MCPTool[] = [
   askUserTool,
   androidAssembleDebugTool,
   androidTestDebugUnitTestTool,
-  // 未来: import xxxTool from './xxx.js'; 然后加在这里
 ];
 
-// 构建路由表（name → handler）
-const routeMap = new Map<string, MCPTool['handler']>(
-  registry.map((t) => [t.definition.name, t.handler]),
-);
+const registry = buildCanonicalRegistry(importedTools);
 
-/**
- * 返回所有工具定义，供 tools/list 使用
- */
-export function getAllToolDefinitions() {
-  return registry.map((t) => t.definition);
+export interface WorkspaceToolService {
+  getDefinitions(): readonly MCPTool['definition'][];
+  routeToolCall(
+    name: string,
+    args: Record<string, unknown>,
+    context: ToolRuntimeContext,
+  ): Promise<ToolCallResult>;
 }
 
-/**
- * 路由工具调用，供 tools/call 使用
- */
-export async function routeToolCall(
-  name: string,
-  args: Record<string, unknown>,
-  context: ToolRuntimeContext,
-): Promise<ToolCallResult> {
-  const handler = routeMap.get(name);
+export function getAllToolDefinitions(): readonly MCPTool['definition'][] {
+  return registry.map((tool) => tool.definition);
+}
 
-  if (!handler) {
-    return textErrorResult(`Unknown tool: ${name}`);
+export function createWorkspaceToolService(
+  exposure: RuntimeToolExposure,
+): WorkspaceToolService {
+  const configuredNames = new Set<ToolName>(exposure.mode === 'all' ? [] : exposure.names);
+  const filteredRegistry = registry.filter((tool) => {
+    if (exposure.mode === 'all') {
+      return true;
+    }
+
+    const configured = configuredNames.has(tool.definition.name);
+    return exposure.mode === 'allow' ? configured : !configured;
+  });
+  const definitions = Object.freeze(filteredRegistry.map((tool) => tool.definition));
+  const routeMap = new Map<string, MCPTool['handler']>(
+    filteredRegistry.map((tool) => [tool.definition.name, tool.handler]),
+  );
+
+  return Object.freeze({
+    getDefinitions: () => definitions,
+    routeToolCall: async (
+      name: string,
+      args: Record<string, unknown>,
+      context: ToolRuntimeContext,
+    ): Promise<ToolCallResult> => {
+      const handler = routeMap.get(name);
+      if (!handler) {
+        return textErrorResult(`Unknown tool: ${name}`);
+      }
+
+      return handler(args, context);
+    },
+  });
+}
+
+function buildCanonicalRegistry(tools: readonly MCPTool[]): readonly MCPTool[] {
+  const toolsByName = new Map<ToolName, MCPTool>();
+
+  for (const tool of tools) {
+    const name = tool.definition.name;
+    if (toolsByName.has(name)) {
+      throw new Error(`Duplicate tool implementation registered for "${name}".`);
+    }
+    toolsByName.set(name, tool);
   }
 
-  return handler(args, context);
+  const canonicalRegistry = TOOL_NAMES.map((name) => {
+    const tool = toolsByName.get(name);
+    if (!tool) {
+      throw new Error(`Missing tool implementation for "${name}".`);
+    }
+    return tool;
+  });
+
+  if (toolsByName.size !== TOOL_NAMES.length) {
+    throw new Error(
+      `Tool registry size ${toolsByName.size} does not match canonical tool name count ${TOOL_NAMES.length}.`,
+    );
+  }
+
+  return Object.freeze(canonicalRegistry);
 }

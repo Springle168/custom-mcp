@@ -56,7 +56,7 @@ interface ValidationResult {
 // ================
 
 export const REPLACE_TOOL_DEFINITION = {
-  name: 'replace_text',
+  name: 'replace_text' as const,
   description: `Replaces text within a file and returns a JSON payload.
 
 - When writing code, do NOT use omission placeholders to represent existing code, such as '(rest of methods ...)', '...', or 'unchanged code'. Write the complete replacement content explicitly. Possible placeholders are written but reported as warnings in note.

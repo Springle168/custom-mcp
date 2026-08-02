@@ -5,9 +5,12 @@ import {
   ConfigError,
   createEmptyRuntimeRulesConfig,
   loadRuntimeConfig,
+  loadRuntimeConfigWithIdentity,
+  type RuntimeToolExposure,
 } from '../../src/config.js';
 import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
 import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
+import type { ToolName } from '../../src/tools/names.js';
 import {
   assert,
   assertEqual,
@@ -247,6 +250,7 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
     port: 4801,
     lineEnding: 'lf' as const,
     logsDir: DEFAULT_LOGS_DIR,
+    toolExposure: { mode: 'all' as const },
     rules: createEmptyRuntimeRulesConfig(),
     android: {
       workspaceRoot: ANDROID_WORKSPACE_DIR,
@@ -548,6 +552,69 @@ async function testToolRuntimeContextUsesSnapshotAndroidMessage(): Promise<void>
   );
 }
 
+async function testToolExposureSnapshotCloneAndOwnership(): Promise<void> {
+  await resetFixtures();
+
+  const createSnapshot = (toolExposure: RuntimeToolExposure) =>
+    createRuntimeConfigSnapshot({
+      configFilePath: CONFIG_FILE,
+      workspaceId: 'runtime-workspace',
+      rootDir: PRIMARY_DIR,
+      otherRootDirs: [],
+      host: '127.0.0.1',
+      port: 4801,
+      lineEnding: 'lf',
+      logsDir: DEFAULT_LOGS_DIR,
+      toolExposure,
+      rules: createEmptyRuntimeRulesConfig(),
+    });
+
+  const allInput: RuntimeToolExposure = { mode: 'all' };
+  const allSnapshot = createSnapshot(allInput);
+  assert(allSnapshot.toolExposure !== allInput, 'All exposure should be cloned into a new object');
+  assert(Object.isFrozen(allSnapshot.toolExposure), 'All exposure clone should be frozen');
+  assert(!Object.isFrozen(allInput), 'Snapshot construction should not freeze the caller all exposure object');
+
+  for (const mode of ['allow', 'disable'] as const) {
+    const sourceNames: ToolName[] = ['read_file'];
+    const sourceExposure: RuntimeToolExposure = { mode, names: sourceNames };
+    const snapshot = createSnapshot(sourceExposure);
+
+    assert(snapshot.toolExposure !== sourceExposure, `${mode} exposure should be cloned into a new object`);
+    assert(snapshot.toolExposure.mode !== 'all', `${mode} snapshot should keep its names`);
+    assert(snapshot.toolExposure.names !== sourceNames, `${mode} names should be cloned into a new array`);
+    assert(Object.isFrozen(snapshot.toolExposure), `${mode} exposure clone should be frozen`);
+    assert(Object.isFrozen(snapshot.toolExposure.names), `${mode} names clone should be frozen`);
+    assert(!Object.isFrozen(sourceExposure), `Snapshot construction should not freeze caller ${mode} exposure`);
+    assert(!Object.isFrozen(sourceNames), `Snapshot construction should not freeze caller ${mode} names`);
+
+    sourceNames.push('ask_user');
+    assertEqual(
+      snapshot.toolExposure.names.join(','),
+      'read_file',
+      `${mode} snapshot should not retain the caller names array`,
+    );
+  }
+}
+
+async function testToolExposureStaysOutOfIdentityAndToolContext(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(globalConfig({
+    tools: { allowed: ['read_file'] },
+  }));
+
+  const loaded = loadRuntimeConfigWithIdentity({
+    homeDir: HOME_DIR,
+    workspaceId: 'runtime-workspace',
+    env: {},
+  });
+  const identity = loaded.identity as unknown as Record<string, unknown>;
+  const context = createToolRuntimeContext(loaded.snapshot) as unknown as Record<string, unknown>;
+
+  assert(!('toolExposure' in identity), 'RuntimeConfigIdentity should not contain toolExposure');
+  assert(!('toolExposure' in context), 'ToolRuntimeContext should not contain toolExposure');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing runtime snapshot construction',
@@ -567,6 +634,8 @@ async function main(): Promise<void> {
       { name: 'snapshot holds request header rules', run: testSnapshotHoldsRequestHeaderRules },
       { name: 'deep-freezes snapshot graph', run: testSnapshotGraphIsDeepFrozen },
       { name: 'tool runtime context uses snapshot Android message', run: testToolRuntimeContextUsesSnapshotAndroidMessage },
+      { name: 'tool exposure snapshot clone owns frozen data', run: testToolExposureSnapshotCloneAndOwnership },
+      { name: 'tool exposure stays out of identity and tool context', run: testToolExposureStaysOutOfIdentityAndToolContext },
     ],
   });
 }

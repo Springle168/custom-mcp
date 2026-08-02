@@ -6,7 +6,7 @@ import {
 } from './android-build-shared.js';
 
 const ANDROID_TEST_DEBUG_UNIT_TEST_TOOL_DEFINITION = {
-  name: 'android.testDebugUnitTest',
+  name: 'android.testDebugUnitTest' as const,
   description:
     'Runs the Android project debug unit tests. All optional parameters default to false. Success returns BUILD SUCCESSFUL. Failure returns a compact JSON summary with firstErrorBlock and logTail, which may be truncated. If these details are insufficient to diagnose the failure, explain that limitation to the user instead of guessing.',
   inputSchema: ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
