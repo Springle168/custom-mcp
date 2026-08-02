@@ -131,9 +131,7 @@ function validateParams(params: AskUserParams): string | null {
     return 'Maximum 4 questions allowed.';
   }
 
-  for (let i = 0; i < params.questions.length; i++) {
-    const q = params.questions[i];
-
+  for (const [i, q] of params.questions.entries()) {
     if (!q.question || typeof q.question !== 'string') {
       return `Question ${i + 1}: 'question' is required and must be a string.`;
     }
@@ -156,8 +154,7 @@ function validateParams(params: AskUserParams): string | null {
       }
 
       // Validate each option
-      for (let j = 0; j < q.options.length; j++) {
-        const opt = q.options[j];
+      for (const [j, opt] of q.options.entries()) {
         if (!opt.label || typeof opt.label !== 'string' || !opt.label.trim()) {
           return `Question ${i + 1}, option ${j + 1}: 'label' is required and must be a non-empty string.`;
         }
@@ -227,8 +224,7 @@ export function normalizeAskUserAnswerPayload(
 ): AskUserAnswerPayload {
   const answers: Record<string, AskUserAnswer> = {};
 
-  for (let i = 0; i < questions.length; i++) {
-    const question = questions[i];
+  for (const [i, question] of questions.entries()) {
     const answerKey = `question_${i}`;
     const noteKey = `note_${i}`;
     const answerValue =

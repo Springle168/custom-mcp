@@ -114,8 +114,9 @@ export function calculateMatchedSpan(
   const sortedRanges = [...ranges].sort(
     (a, b) => a.startOffset - b.startOffset,
   );
-  const firstRange = sortedRanges[0];
-  const lastRange = sortedRanges[sortedRanges.length - 1];
+  const firstRange = sortedRanges.at(0);
+  const lastRange = sortedRanges.at(-1);
+  if (firstRange === undefined || lastRange === undefined) return null;
 
   return {
     start_line: lineForOffset(content, firstRange.startOffset),
@@ -193,7 +194,7 @@ function expandRegexReplacement(
 
     if (char === '$' && nextChar === '!') {
       let digitIndex = index + 2;
-      while (digitIndex < replacement.length && /\d/.test(replacement[digitIndex])) {
+      while (digitIndex < replacement.length && /\d/.test(replacement.charAt(digitIndex))) {
         digitIndex++;
       }
 

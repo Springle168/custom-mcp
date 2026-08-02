@@ -17,13 +17,14 @@ export class CliError extends Error {
 export function parseCliArgs(argv: readonly string[]): CliOptions {
   let workspaceId: string | undefined;
 
-  for (let index = 0; index < argv.length; index++) {
-    const arg = argv[index];
-
+  const args = argv[Symbol.iterator]();
+  for (const arg of args) {
     if (arg === '--workspace') {
-      const value = argv[index + 1];
-      workspaceId = readWorkspaceIdValue(value, workspaceId);
-      index++;
+      const value = args.next();
+      workspaceId = readWorkspaceIdValue(
+        value.done ? undefined : value.value,
+        workspaceId,
+      );
       continue;
     }
 
