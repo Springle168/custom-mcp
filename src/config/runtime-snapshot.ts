@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import type { RuntimeToolExposure } from '../config.js';
 import { ConfigError } from './errors.js';
 import { readExistingDirectoryPath } from './path-policy.js';
 import type { RuntimeRulesConfig } from './request-header-rules.js';
@@ -30,6 +31,7 @@ export interface RuntimeConfigSnapshot {
   readonly lineEnding: LineEnding;
   readonly logsDir: string;
   readonly android?: RuntimeAndroidConfig;
+  readonly toolExposure: RuntimeToolExposure;
   readonly rules: RuntimeRulesConfig;
   readonly pathSafetyContext: PathSafetyContext;
 }
@@ -45,6 +47,7 @@ export interface RuntimeConfigSnapshotInput {
   readonly lineEnding: LineEnding;
   readonly logsDir: string;
   readonly android?: RuntimeAndroidConfig;
+  readonly toolExposure: RuntimeToolExposure;
   readonly rules: RuntimeRulesConfig;
 }
 
@@ -77,6 +80,7 @@ export function buildRuntimeConfigSnapshot(
       lineEnding: workspace.lineEnding,
       logsDir,
       ...(workspace.android ? { android: workspace.android } : {}),
+      toolExposure: workspace.toolExposure,
       rules: workspace.rules,
       snapshotVersion: options.snapshotVersion ?? 1,
     },
@@ -101,6 +105,7 @@ export function createRuntimeConfigSnapshot(
     .map((root) => root.rootDir);
   const logsDir = resolve(input.logsDir);
   const android = resolveRuntimeAndroidConfig(input.android);
+  const toolExposure = cloneRuntimeToolExposure(input.toolExposure);
   const rules = cloneRuntimeRulesConfig(input.rules);
 
   const snapshot: RuntimeConfigSnapshot = {
@@ -114,6 +119,7 @@ export function createRuntimeConfigSnapshot(
     lineEnding: input.lineEnding,
     logsDir,
     ...(android ? { android } : {}),
+    toolExposure,
     rules,
     pathSafetyContext,
   };
@@ -228,6 +234,19 @@ function resolveRuntimeAndroidConfig(
     ...android,
     workspaceRoot: resolve(android.workspaceRoot),
     javaHome: resolve(android.javaHome),
+  };
+}
+
+function cloneRuntimeToolExposure(
+  exposure: RuntimeToolExposure,
+): RuntimeToolExposure {
+  if (exposure.mode === 'all') {
+    return { mode: 'all' };
+  }
+
+  return {
+    mode: exposure.mode,
+    names: [...exposure.names],
   };
 }
 

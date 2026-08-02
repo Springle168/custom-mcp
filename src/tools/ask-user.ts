@@ -41,7 +41,7 @@ export const pendingQuestions = new Map<string, PendingQuestion>();
 
 // Schema 定义
 const ASK_USER_TOOL_DEFINITION = {
-  name: 'ask_user',
+  name: 'ask_user' as const,
   description: `Ask the user 1-4 questions to gather preferences, clarify requirements, or make decisions. Returns structured answers with optional additional notes.
 
 Each item in the questions array must be an object with these fields:

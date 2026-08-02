@@ -46,9 +46,9 @@ custom-mcp/
 |-|-|-|-|
 | 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时通常不需要改动 |
 | CLI 层 | `src/cli.ts` | 解析启动参数，如 `--workspace` | 只负责命令行输入，不承载配置 schema 细节 |
-| 配置层 | `src/config.ts`, `src/config/` | 读取全局配置、校验 `version: 1` workspace schema、应用集中 value/path policy、选择 workspace、应用 selected workspace env override allowlist、构建 runtime snapshot | public facade 不承载 schema/value/path/selection/env/snapshot 细节；不在工具层读取配置文件 |
-| 运行时层 | `src/runtime/` | 持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext` | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
-| 工具层 | `src/tools/` | 工具定义、参数校验、业务编排、工具注册与返回值 helper | 每个工具一个文件，单工具细节优先写入 `docs/tools/` |
+| 配置层 | `src/config.ts`, `src/config/` | 读取全局配置、校验 `version: 1` workspace schema 和工具暴露策略、应用集中 value/path policy、选择 workspace、应用 selected workspace env override allowlist、构建 runtime snapshot | public facade 不承载 schema/value/path/selection/env/snapshot 细节；不在工具层读取配置文件 |
+| 运行时层 | `src/runtime/` | 持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext`，通过 MCP server factory 接入 workspace tool service | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
+| 工具层 | `src/tools/` | 工具名目录、定义、参数校验、业务编排、canonical registry、workspace 过滤与返回值 helper | 每个工具一个文件，单工具细节优先写入 `docs/tools/` |
 | 引擎层 | `src/engine/` | 纯算法逻辑，如文本替换、行尾符处理和 Gradle 输出解析 | 无 I/O 副作用，可独立测试；按使用场景由对应工具文档承接细节 |
 | 工具库 | `src/utils/` | 基础设施，如路径安全、文件锁、文件读取、日志、Gradle 进程执行 | 跨工具复用；按不变量归属由路径安全、日志、工具或单工具文档承接 |
 
@@ -58,9 +58,9 @@ custom-mcp/
 
 | 源码区域 | 主要维护入口 |
 |-|-|
-| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md)，其中 `src/config/value-policy.ts` 维护 typed/free-form、IP、token/selector 和 JSON/env positive integer 值语义，`src/config/path-policy.ts` 维护配置 path-like 字段的 existing-directory 输入策略，`src/config/request-header-rules.ts` 维护 `rules.requestHeaders` schema、HTTP header name/value 校验和 runtime rules 类型 |
-| `src/runtime/config-store.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts`, `src/runtime/request-context.ts`, `src/runtime/request-header-policy.ts`, `src/runtime/request-header-view.ts`, `src/runtime/tool-result-adapter.ts` | 配置 runtime、request header rules policy 和 `structuredContent` 适配语义见 [docs/CONFIG.md](CONFIG.md)；工具 handler 消费方式见 [docs/TOOLS.md](TOOLS.md)，工具返回结果适配见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
-| `src/tools/` | [docs/TOOLS.md](TOOLS.md) 和 [docs/tools/](tools/) 下对应单工具文档 |
+| `src/config.ts`, `src/config/` | [docs/CONFIG.md](CONFIG.md)，其中 `src/config/value-policy.ts` 维护 typed/free-form、IP、token/selector 和 JSON/env positive integer 值语义，`src/config/path-policy.ts` 维护配置 path-like 字段的 existing-directory 输入策略，`src/config/request-header-rules.ts` 维护 `rules.requestHeaders` schema、HTTP header name/value 校验和 runtime rules 类型，`src/config/tool-exposure.ts` 维护 workspace `tools` schema、strict exactly-one 校验和 runtime exposure 类型 |
+| `src/runtime/config-store.ts`, `src/runtime/mcp-server.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts`, `src/runtime/request-context.ts`, `src/runtime/request-header-policy.ts`, `src/runtime/request-header-view.ts`, `src/runtime/tool-result-adapter.ts` | 配置 runtime、MCP server factory、request header rules policy 和 `structuredContent` 适配语义见 [docs/CONFIG.md](CONFIG.md)；workspace tool service 与工具 handler 消费方式见 [docs/TOOLS.md](TOOLS.md)，工具返回结果适配见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
+| `src/tools/names.ts`, `src/tools/index.ts`, `src/tools/*.ts` | canonical 工具名目录、registry 与 workspace filtered service 见 [docs/TOOLS.md](TOOLS.md)，单工具实现见 [docs/tools/](tools/) 下对应文档 |
 | `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
 | `src/engine/android-gradle-output.ts` | [docs/tools/android-build.md](tools/android-build.md) |

@@ -1,22 +1,17 @@
 #!/usr/bin/env node
 
 import express, { type Request } from 'express';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import { CliError, parseCliArgs } from './cli.js';
 import { ConfigError, loadRuntimeConfigWithIdentity } from './config.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
+import { createMCPServer } from './runtime/mcp-server.js';
 import {
   handleMcpPostRequest,
   type McpPostSession,
 } from './runtime/mcp-post-handler.js';
 import { generateMcpSessionId } from './runtime/mcp-identifiers.js';
-import { createToolCallRequestHandler } from './runtime/tool-call-handler.js';
-import { getAllToolDefinitions, routeToolCall } from './tools/index.js';
+import { createWorkspaceToolService } from './tools/index.js';
 import { Logger } from './utils/logger.js';
 import { buildHttpUrl, formatHostPort } from './utils/http-url.js';
 import {
@@ -24,37 +19,6 @@ import {
   generateQuestionForm,
   normalizeAskUserAnswerPayload,
 } from './tools/ask-user.js';
-
-// ================
-// MCP Server Factory
-// ================
-
-function createMCPServer(
-  configStore: ConfigStore,
-  logger: Logger,
-  getSessionId: () => string | undefined,
-): Server {
-  const server = new Server(
-    { name: 'custom-mcp', version: '1.0.0' },
-    { capabilities: { tools: {} } },
-  );
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: getAllToolDefinitions(),
-  }));
-
-  server.setRequestHandler(
-    CallToolRequestSchema,
-    createToolCallRequestHandler({
-      configStore,
-      logger,
-      routeToolCall,
-      getSessionId,
-    }),
-  );
-
-  return server;
-}
 
 function logWorkspaceRoots(configStore: ConfigStore, logger: Logger): void {
   const { pathSafetyContext } = configStore.getSnapshot();
@@ -127,6 +91,7 @@ async function main() {
   });
   const initialSnapshot = initialConfig.snapshot;
   const configStore = createConfigStore(initialConfig);
+  const toolService = createWorkspaceToolService(initialSnapshot.toolExposure);
   const logger = new Logger(initialSnapshot.logsDir, {
     workspaceId: initialSnapshot.workspaceId,
   });
@@ -161,11 +126,12 @@ async function main() {
           }
         };
 
-        const server = createMCPServer(
+        const server = createMCPServer({
           configStore,
           logger,
-          () => transport.sessionId,
-        );
+          toolService,
+          getSessionId: () => transport.sessionId,
+        });
         await server.connect(transport);
         return { transport, server };
       },

@@ -6,7 +6,7 @@ import {
 } from './android-build-shared.js';
 
 const ANDROID_ASSEMBLE_DEBUG_TOOL_DEFINITION = {
-  name: 'android.assembleDebug',
+  name: 'android.assembleDebug' as const,
   description:
     'Builds the Android project debug variant. All optional parameters default to false. Success returns BUILD SUCCESSFUL. Failure returns a compact JSON summary with firstErrorBlock and logTail, which may be truncated. If these details are insufficient to diagnose the failure, explain that limitation to the user instead of guessing.',
   inputSchema: ANDROID_GRADLE_TOOL_INPUT_SCHEMA,

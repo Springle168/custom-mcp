@@ -30,6 +30,11 @@
       "host": "127.0.0.1",
       "port": 3100,
       "logsDir": "E:/Logs/custom-mcp",
+      "tools": {
+        "disabled": [
+          "android.testDebugUnitTest"
+        ]
+      },
       "android": {
         "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
         "javaHome": "E:/Android_Studio/jbr",
@@ -70,6 +75,7 @@ loadRuntimeConfigWithIdentity()
         │
         ├─► parseGlobalConfig()
         │     - 校验 version / workspaces / 未知字段
+        │     - 严格解析每个 workspace 的 tools.allowed / tools.disabled exactly-one 策略
         │     - 按集中 value policy 校验 workspace id、host IP、lineEnding、allowlist selector 和 numeric 字段
         │     - 按 schema 规则处理 allowlist duplicate、forbidden、unknown、环境变量名误填和 Android base config 要求
         │     - 按配置 path policy 校验所有 path-like 字段是已存在目录
@@ -95,7 +101,7 @@ loadRuntimeConfigWithIdentity()
         │     │   - 校验 selected workspace 的 rootDir + otherRootDirs
         │     │   - 生成 canonical allowed roots
         │     │
-        │     └─ 校验默认 logs root，写入 resolved logsDir / Android paths，并 deep-freeze RuntimeConfigSnapshot
+        │     └─ 校验默认 logs root，写入 resolved logsDir / Android paths，克隆 toolExposure 并 deep-freeze RuntimeConfigSnapshot
         │
         ▼
 createConfigStore()
@@ -127,6 +133,7 @@ createConfigStore()
 - `rootDir`、`host`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
 - `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；默认值、selected workspace 配置的 `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
+- selected workspace 的 `toolExposure` 会被完整克隆后写入 snapshot；snapshot 中的策略对象及非 `all` 策略的名称数组会被冻结，构建过程不冻结调用方对象。
 - `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
 - `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
 - 工具层只能通过 `ToolRuntimeContext` 消费配置能力，不应读取 `~/.custom-mcp/config.json`、解析全局 schema 或遍历 `otherRootDirs`。
@@ -154,8 +161,9 @@ createConfigStore()
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
 - snapshot 的 `logsDir` 和 Android path 写入 resolved runtime path，但不加入 `pathSafetyContext.allowedRoots`；文件工具 allowed roots 只来自 selected workspace 的 `rootDir + otherRootDirs`。
 - snapshot 必含归一化后的 `rules`；未配置 request header rules 时写入 `{ requestHeaders: [] }`，只有 selected workspace 的规则进入 runtime snapshot。
-- `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路；调用方必须显式传入已归一化的 `rules`。
-- snapshot、`android`、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
+- snapshot 必含 selected workspace 的 `toolExposure`；未配置 `tools` 时写入 `{ mode: "all" }`。snapshot 构造会克隆策略对象和名称数组，再随 snapshot deep-freeze。
+- `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路；调用方必须显式传入已归一化的 `rules` 和 `toolExposure`。
+- snapshot、`android`、`toolExposure`、非 `all` 策略的名称数组、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；request header policy 使用 snapshot rules 与 request-scoped strict header view 计算，不进入 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
 - 启动日志会输出 bind address、endpoint、workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。IPv6 endpoint 使用方括号；通配绑定地址 `0.0.0.0` / `::` 的 endpoint 分别使用本机回环地址 `127.0.0.1` / `::1`。
@@ -180,6 +188,7 @@ src/
 │   ├── request-header-rules.ts  # workspace rules.requestHeaders schema、值语义和 runtime rules 类型
 │   ├── runtime-snapshot.ts      # RuntimeConfigSnapshot 构建、canonical roots、rules 与 deep freeze
 │   ├── schema.ts                # version: 1 全局 workspace schema 校验
+│   ├── tool-exposure.ts         # workspace tools schema、strict exactly-one 校验与 runtime exposure 类型
 │   ├── value-policy.ts          # typed/free-form 字符串、IP、token/selector、JSON/env positive integer reader
 │   └── workspace-selection.ts   # 显式/cwd workspace 选择与 RuntimeConfigIdentity
 └── runtime/
@@ -209,6 +218,7 @@ test/
 │   ├── env-overrides.test.ts           # selected workspace allowlist 与 env 解析
 │   ├── request-header-rules.test.ts    # rules.requestHeaders schema、归一化、env override 禁止和 snapshot 接入
 │   ├── runtime-snapshot.test.ts        # snapshot canonical roots、rules、deep freeze 和派生上下文
+│   ├── tool-exposure.test.ts            # workspace tools schema、严格校验、snapshot 和 env override 禁止
 │   └── load-runtime-config.test.ts     # loadRuntimeConfig 集成行为
 ├── runtime/
 │   ├── config-store.test.ts            # ConfigStore、tool-call handler seam 与 ask_user host URL
@@ -254,8 +264,30 @@ test/
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
 | `rules` | object | 否 | workspace 级请求兼容规则；支持 `rules.requestHeaders` exact 匹配以启用 `structuredContentDup` 适配。 |
+| `tools` | object | 否 | workspace 工具暴露策略；必须且只能配置 `allowed` 或 `disabled` 之一，缺省为暴露完整 canonical registry。 |
 
 workspace 未知字段会导致启动失败。
+
+### `tools` 配置段
+
+`tools` 是 workspace 级可选对象，用于过滤该 workspace 的 `tools/list` definitions 和 `tools/call` 路由。未配置时归一化为 `{ mode: "all" }`，暴露完整 canonical registry。
+
+```json
+{
+  "tools": {
+    "disabled": ["android.testDebugUnitTest"]
+  }
+}
+```
+
+- `tools` 只能包含 `allowed` 和 `disabled`，并且必须且只能配置其中一个。
+- `allowed` 表示只暴露列出的工具；`disabled` 表示暴露完整 registry 中未列出的工具。
+- `allowed: []` 合法，表示不暴露任何工具；`disabled: []` 合法，表示暴露全部工具。
+- 数组 entry 必须是无首尾 whitespace 的非空 string，并精确匹配 `src/tools/names.ts` 中的 canonical 工具名；名称大小写敏感，不接受宿主转换后的名称。
+- 未知名称和重复名称会在启动期失败。配置解析覆盖所有 workspace，不因 workspace 未被选中而跳过。
+- 新增工具会自动进入未配置 `tools` 或使用 `disabled` 的 workspace；使用 `allowed` 的 workspace 只有显式加入该名称后才会暴露新工具。
+- selected workspace 的策略进入 runtime snapshot；策略对象和名称数组由 snapshot 克隆并冻结。该策略不进入 `RuntimeConfigIdentity` 或 `ToolRuntimeContext`。
+- 工具是否具有运行时依赖不参与暴露过滤；例如缺少 `android` 配置不会自动隐藏 Android 工具。
 
 ### `rules.requestHeaders`
 
@@ -319,6 +351,7 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 - selected workspace 的 `rootDir + otherRootDirs` 集合安全由 runtime snapshot / path safety 继续校验。
 - `android` 若提供，必须是对象且字段完整。
 - `rules` 若提供，必须是对象且只允许 `requestHeaders`；`rules.requestHeaders` rule 的 header name、header value、feature token 和重复项会在 schema 阶段校验，所有 workspace 都参与校验。
+- `tools` 若提供，必须是对象并严格满足 `allowed` / `disabled` exactly-one；名称数组中的非字符串、空值、首尾 whitespace、未知名称和重复名称都会在 schema 阶段失败，所有 workspace 都参与校验。
 - `envOverrides.allowedFields[]` 是 selector token；基础 typed 边界由 `readSelectorToken()` 读取，schema 继续校验重复项、forbidden field、unknown field、环境变量名误填和 Android base config 要求。
 
 ---
@@ -367,9 +400,10 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 | `host` | HTTP 监听地址和 runtime identity 不能由 env 改变。 |
 | `port` | 端口唯一性、启动端口和 runtime identity 不能由 env 改变。 |
 | `otherRootDirs` | additional roots 会扩大文件访问边界，不能由 env 改变。 |
+| `tools` / `tools.*` | 工具暴露边界不能由 env 改变。 |
 | `rules` / `rules.*` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
 
-`envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。`rules` 和以 `rules.` 开头的 selector 均在 schema 阶段按 forbidden field 失败，不会读取任何 env value。
+`envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。`tools`、以 `tools.` 开头的 selector、`rules` 和以 `rules.` 开头的 selector 均在 schema 阶段按 forbidden field 失败，不会读取任何 env value。
 
 `logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 不存在时不覆盖；存在时必须是非空、无首尾 whitespace、已存在的本地绝对目录，错误字段定位到 selected workspace 的 `logsDir`。
 

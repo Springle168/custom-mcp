@@ -11,6 +11,11 @@
       "host": "127.0.0.1",
       "port": 3100,
       "logsDir": "E:/ExistingLogs/custom-mcp",
+      "tools": {
+        "disabled": [
+          "android.testDebugUnitTest"
+        ]
+      },
       "android": {
         "workspaceRoot": "E:/ExistingAndroidProjects/YourProject",
         "javaHome": "E:/ExistingAndroidStudio/jbr",

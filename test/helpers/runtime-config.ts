@@ -8,6 +8,7 @@ import {
   type RuntimeAndroidConfig,
   type RuntimeConfigSnapshot,
   type RuntimeRulesConfig,
+  type RuntimeToolExposure,
 } from '../../src/config.js';
 import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
 import type { RuntimeConfigIdentity } from '../../src/config/workspace-selection.js';
@@ -33,6 +34,7 @@ export interface TestRuntimeConfigOptions {
   readonly workspaceId?: string;
   readonly snapshotVersion?: number;
   readonly rules?: RuntimeRulesConfig;
+  readonly toolExposure?: RuntimeToolExposure;
 }
 
 export function createTestRuntimeConfigSnapshot(
@@ -50,6 +52,7 @@ export function createTestRuntimeConfigSnapshot(
     lineEnding: options.lineEnding ?? 'auto',
     logsDir,
     ...(options.android ? { android: options.android } : {}),
+    toolExposure: options.toolExposure ?? { mode: 'all' },
     rules: options.rules ?? createEmptyRuntimeRulesConfig(),
     snapshotVersion: options.snapshotVersion ?? 1,
   });

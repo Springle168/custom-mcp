@@ -21,7 +21,7 @@ import { textErrorResult, textResult } from './results.js';
 // ================
 
 const WRITE_FILE_TOOL_DEFINITION = {
-  name: 'write_file',
+  name: 'write_file' as const,
   description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
 
 Use this tool for new files or full-file rewrites. Use replace_text or similar tools for targeted edits to existing files.

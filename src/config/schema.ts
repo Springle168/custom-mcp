@@ -1,4 +1,8 @@
 import { ConfigError } from './errors.js';
+import {
+  readOptionalToolExposureConfig,
+  type RuntimeToolExposure,
+} from './tool-exposure.js';
 import { readExistingDirectoryPath } from './path-policy.js';
 import {
   readIpAddress,
@@ -51,6 +55,7 @@ export interface ParsedWorkspaceConfig {
   readonly otherRootDirs: readonly string[];
   readonly android?: ParsedAndroidConfig;
   readonly envOverrides?: ParsedEnvOverridesConfig;
+  readonly toolExposure: RuntimeToolExposure;
   readonly rules: RuntimeRulesConfig;
 }
 
@@ -78,6 +83,7 @@ const WORKSPACE_FIELDS = new Set([
   'otherRootDirs',
   'android',
   'envOverrides',
+  'tools',
   'rules',
 ]);
 const ANDROID_FIELDS = new Set([
@@ -204,6 +210,10 @@ function parseWorkspace(
     otherRootDirs: readOptionalExistingDirectoryPathArray(context, rawWorkspace.otherRootDirs, `${fieldPath}.otherRootDirs`),
     ...(android !== undefined ? { android } : {}),
     ...(envOverrides !== undefined ? { envOverrides } : {}),
+    toolExposure: readOptionalToolExposureConfig(rawWorkspace.tools, {
+      configFilePath: context.configFilePath,
+      fieldPath: `${fieldPath}.tools`,
+    }),
     rules: readOptionalRulesConfig(context, rawWorkspace.rules, `${fieldPath}.rules`),
   };
 }
@@ -505,7 +515,11 @@ function isEnvOverrideField(field: string): field is ParsedEnvOverrideField {
 }
 
 function isForbiddenEnvOverrideField(selector: string): boolean {
-  return FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector) || selector === 'rules' || selector.startsWith('rules.');
+  return FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector) ||
+    selector === 'rules' ||
+    selector.startsWith('rules.') ||
+    selector === 'tools' ||
+    selector.startsWith('tools.');
 }
 
 function joinFieldPath(parentPath: string | undefined, key: string): string {
