@@ -54,14 +54,22 @@ custom-mcp/test/
 ## 常用验证命令
 
 ```bash
-# TypeScript 编译
+# 编译生产源码 src/**/*.ts 并生成 dist
 npm run build
+
+# 对 src/**/*.ts 与 test/**/*.ts 执行类型检查，不生成文件
+npm run typecheck:test
+
+# 依次执行生产构建和测试类型检查
+npm run check
 
 # 脚本测试示例
 node --import tsx test/read-file/read-file.test.ts
 ```
 
-单个脚本测试直接用 `node --import tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+`npm run build` 使用 `tsconfig.json`，只覆盖生产源码。`npm run typecheck:test` 使用 `tsconfig.test.json`，在复用生产编译选项的同时检查生产源码与测试代码，并通过 `noEmit` 禁止生成文件。
+
+单个脚本测试直接用 `node --import tsx` 运行对应 `test/<topic>/*.ts` 文件。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本与 `npm run typecheck:test`。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
 
 Request header rules 与 `structuredContentDup` feature / `structuredContent` wrapper focused tests：
 

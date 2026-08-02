@@ -24,8 +24,17 @@ function textError(text: string): ToolCallResult {
   };
 }
 
-function getTextContent(result: { readonly content?: readonly unknown[] }): string {
-  const first = result.content?.[0];
+function getTextContent(result: unknown): string {
+  if (
+    typeof result !== 'object'
+    || result === null
+    || !('content' in result)
+    || !Array.isArray(result.content)
+  ) {
+    return '';
+  }
+
+  const first = result.content[0];
   if (typeof first !== 'object' || first === null || !('text' in first)) {
     return '';
   }
@@ -66,7 +75,7 @@ function createSpyService(): {
         routeCallCount++;
         return textError(`Unknown tool: ${name}`);
       },
-    }),
+    } satisfies WorkspaceToolService),
   };
 }
 
