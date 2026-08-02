@@ -173,17 +173,23 @@ export function createValidatedPathSafetyContext(
     })),
   );
 
-  const workspaceRoots = rootSpecs.map((root, index) =>
-    createWorkspaceRoot(
-      root.kind,
-      validatedRootPaths[index].rootDir,
-      validatedRootPaths[index].realRootDir,
-    ),
+  const [primaryRootPath, ...additionalRootPaths] = validatedRootPaths;
+  if (primaryRootPath === undefined) {
+    throw new Error('At least one workspace root is required.');
+  }
+
+  const primaryRoot = createWorkspaceRoot(
+    'primary',
+    primaryRootPath.rootDir,
+    primaryRootPath.realRootDir,
+  );
+  const additionalRoots = additionalRootPaths.map((root) =>
+    createWorkspaceRoot('additional', root.rootDir, root.realRootDir),
   );
 
   return {
-    primaryRoot: workspaceRoots[0],
-    allowedRoots: workspaceRoots,
+    primaryRoot,
+    allowedRoots: [primaryRoot, ...additionalRoots],
   };
 }
 
@@ -314,11 +320,8 @@ function validateIndependentRoots(
   roots: Array<{ label: string; rootDir: string }>,
   layer: 'lexical path' | 'real path',
 ): void {
-  for (let leftIndex = 0; leftIndex < roots.length; leftIndex++) {
-    for (let rightIndex = leftIndex + 1; rightIndex < roots.length; rightIndex++) {
-      const left = roots[leftIndex];
-      const right = roots[rightIndex];
-
+  for (const [leftIndex, left] of roots.entries()) {
+    for (const right of roots.slice(leftIndex + 1)) {
       if (areSamePath(left.rootDir, right.rootDir)) {
         throw new Error(
           `Allowed workspace roots must be unique at the ${layer} layer: ` +
@@ -671,15 +674,22 @@ function matchUniqueAllowedRoot(
     isPathInsideRoot(resolvedPath, root.rootDir),
   );
 
-  if (matches.length === 0) return null;
-  if (matches.length > 1) return 'multiple';
-  return matches[0];
+  const [match, ...additionalMatches] = matches;
+  if (match === undefined) return null;
+  if (additionalMatches.length > 0) return 'multiple';
+  return match;
 }
 
-function getAllowedRoots(context: PathSafetyContext): WorkspaceRoot[] {
+function getAllowedRoots(
+  context: PathSafetyContext,
+): [WorkspaceRoot, ...WorkspaceRoot[]] {
   if (context.allowedRoots.includes(context.primaryRoot)) {
-    return context.allowedRoots;
+    const [firstRoot, ...remainingRoots] = context.allowedRoots;
+    return firstRoot === undefined
+      ? [context.primaryRoot]
+      : [firstRoot, ...remainingRoots];
   }
+
   return [context.primaryRoot, ...context.allowedRoots];
 }
 
@@ -690,11 +700,12 @@ function describeWorkspaceRootForError(root: WorkspaceRoot): string {
 }
 
 function describeAllowedWorkspaceRootsForError(context: PathSafetyContext): string {
-  const allowedRoots = getAllowedRoots(context);
-  if (allowedRoots.length === 1) {
-    return describeWorkspaceRootForError(allowedRoots[0]);
+  const [firstRoot, ...remainingRoots] = getAllowedRoots(context);
+  if (remainingRoots.length === 0) {
+    return describeWorkspaceRootForError(firstRoot);
   }
 
+  const allowedRoots = [firstRoot, ...remainingRoots];
   const primaryRoots = allowedRoots.filter((root) => root.kind === 'primary');
   const additionalRoots = allowedRoots.filter((root) => root.kind === 'additional');
   const parts = [
@@ -879,6 +890,7 @@ function getStaticGlobBase(
   const magicStart = firstMagicIndex === -1 ? segments.length : firstMagicIndex;
   const baseSegments = segments.slice(0, magicStart);
   const magicSegments = segments.slice(magicStart);
+  const firstBaseSegment = baseSegments[0];
 
   let staticBase: string;
   if (baseSegments.length === 0 || baseSegments.every((segment) => segment === '')) {
@@ -886,9 +898,10 @@ function getStaticGlobBase(
   } else if (
     kind === 'drive_absolute' &&
     baseSegments.length === 1 &&
-    /^[a-zA-Z]:$/.test(baseSegments[0])
+    firstBaseSegment !== undefined &&
+    /^[a-zA-Z]:$/.test(firstBaseSegment)
   ) {
-    staticBase = `${baseSegments[0]}/`;
+    staticBase = `${firstBaseSegment}/`;
   } else {
     staticBase = baseSegments.join('/') || '.';
   }
@@ -1009,8 +1022,8 @@ function findFirstExtglobGroup(
   input: string,
 ): { start: number; end: number; content: string; operator: string } | null {
   for (let index = 0; index < input.length - 1; index++) {
-    const operator = input[index];
-    if (!'!@+*?'.includes(operator) || input[index + 1] !== '(') continue;
+    const operator = input.charAt(index);
+    if (!'!@+*?'.includes(operator) || input.charAt(index + 1) !== '(') continue;
 
     let depth = 1;
     for (let cursor = index + 2; cursor < input.length; cursor++) {
