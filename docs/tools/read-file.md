@@ -23,7 +23,7 @@ test/read-file/
 
 ### 工具名称
 
-`read_file` → Android Studio 中显示为 `mcp__custom_mcp__read_file`
+`read_file`
 
 ### 参数
 
@@ -185,10 +185,10 @@ data class Foo(
 
 ---
 
-## 参考来源与设计边界
+## 设计边界
 
-`read_file` 的参数命名、行范围语义和截断提示参考 Gemini CLI 的 `read_file` / `fileUtils` 实现。本项目的稳定边界如下：
+本项目的稳定边界如下：
 
 - 只返回 MCP text 内容；图片、PDF、音频和其它二进制内容会被拒绝读取。
-- 路径访问由 allowed roots 沙箱决定，不读取 gitignore / geminiignore 作为安全边界。
+- 路径访问由 allowed roots 沙箱决定，不读取忽略文件作为安全边界。
 - 工具不注入 JIT 上下文，也不记录遥测事件。

@@ -17,7 +17,7 @@
 
 ### 工具名称
 
-`ask_user` → Android Studio 中显示为 `mcp__custom_mcp__ask_user`
+`ask_user`
 
 ### 参数
 
@@ -150,12 +150,12 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ---
 
-## 参考来源与设计边界
+## 设计边界
 
-`ask_user` 的 schema 结构、问题类型和基础参数校验参考 Gemini CLI 的 `ask_user` 工具定义。本项目的稳定边界如下：
+本项目的稳定边界如下：
 
 - 工具通过 HTTP 表单完成交互，使用全局 Map + Promise 管理待回答会话。
 - MCP 调用保持阻塞直到用户提交或取消；当前实现不支持外部 `AbortSignal` 中止。
 - 返回给 AI 的结果是结构化 JSON 文本，答案对象包含 `answer` 和可选 `note`。
 - 所有问题类型都支持补充说明；补充说明不与主答案互斥。
-- 工具不依赖 Gemini CLI 的 `MessageBus`、确认执行机制或遥测事件。
+- 工具不依赖消息总线、确认执行机制或遥测事件。

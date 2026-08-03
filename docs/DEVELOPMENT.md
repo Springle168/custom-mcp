@@ -16,8 +16,7 @@
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、脚本测试约定、常用验证命令、测试日志 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
-| Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、MCP → Gemini 转换层限制 |
-| Gemini CLI 移植 | [docs/GEMINI-CLI.md](GEMINI-CLI.md) | 继续移植 Gemini CLI 能力时的参考路径和裁剪原则 |
+| Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、schema 转换层限制 |
 | 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
 | 提交规范 | [docs/commit-guidelines.md](commit-guidelines.md) | Git 提交信息格式与约束 |
 

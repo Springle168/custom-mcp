@@ -29,7 +29,7 @@ test/replace-text/
 
 ### 工具名称
 
-`replace_text` → Android Studio 中显示为 `mcp__custom_mcp__replace_text`
+`replace_text`
 
 ### 参数
 

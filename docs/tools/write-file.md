@@ -25,7 +25,7 @@ test/write-file/
 
 ### 工具名称
 
-`write_file` → Android Studio 中显示为 `mcp__custom_mcp__write_file`
+`write_file`
 
 ### 参数
 

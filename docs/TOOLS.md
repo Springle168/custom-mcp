@@ -178,7 +178,7 @@ npm run start
 
 ### Schema 设计
 
-Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 prompt**。这是从 Gemini CLI 学到的核心设计理念。
+Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 prompt**。
 
 **应该包含的内容：**
 

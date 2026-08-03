@@ -1,6 +1,6 @@
 # Android Studio 集成说明
 
-本文记录 `custom-mcp` 与 Android Studio MCP 宿主集成时的配置方式、工具名称规则，以及 Android Studio MCP → Gemini 转换层限制。
+本文记录 `custom-mcp` 与 Android Studio MCP 宿主集成时的配置方式、工具名称规则，以及 Android Studio 的 MCP schema 转换层限制。
 
 ---
 
@@ -39,27 +39,13 @@ workspace `host` 缺省为 `127.0.0.1`；显式配置其他 IP 时，`httpUrl` �
 
 `-` 会被 Android Studio 自动转为 `_`。
 
-### 与 Android Studio 内置工具的覆盖分析
-
-Android Studio 已内置以下工具，通常无需额外移植：
-
-| Gemini CLI 工具 | Android Studio 内置对应工具 |
-|-|-|
-| `read_file` | `read_file` |
-| `write_file` | `write_file` |
-| `list_directory` | `list_files` |
-| `glob` | `find_files` |
-| `grep_search` | `grep` |
-
-注：尽管 Android Studio 已内置 `write_file`，本仓库仍提供同名 server-side 工具，用于统一写入流程、保持与 `replace_text` 的配套体验，并在宿主不使用内置能力时保持可用。
-
 ---
 
-## MCP → Gemini 转换层限制
+## MCP schema 转换层限制
 
 ### 问题描述
 
-Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为 Gemini Function Calling 格式时，**只保留第一层 `properties` 的 `description`**，嵌套在 `items.properties` 内的所有 `description` 会被静默丢弃。`minItems`、`maxItems` 等约束也一并丢失。
+Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为宿主 Function Calling 格式时，**只保留第一层 `properties` 的 `description`**，嵌套在 `items.properties` 内的所有 `description` 会被静默丢弃。`minItems`、`maxItems` 等约束也一并丢失。
 
 受影响的结构示例：
 

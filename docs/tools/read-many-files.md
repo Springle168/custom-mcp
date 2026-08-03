@@ -32,7 +32,7 @@ test/fixtures/read-many-files/
 
 ### 工具名称
 
-`read_many_files` → Android Studio 中显示为 `mcp__custom_mcp__read_many_files`
+`read_many_files`
 
 ### 参数
 
@@ -105,8 +105,6 @@ Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的�
 | 单文件行数 | 2000 行 | 超过截断，附带 `[WARNING: Truncated...]` |
 | 单行长度 | 2000 字符 | 超过截断，行尾加 `... [truncated]` |
 | 总文件数 | 100 个 | 超过后停止读取，结果中说明 |
-
-截断逻辑参考自Gemini CLI 的 `fileUtils.ts`，常量值与原版一致。
 
 `shallow_read: true` 时仍会读取文本以统计行数和判断截断风险，但不会把内容拼接到返回结果中。返回信息包括每个文件的原始总行数和磁盘字节数、所有成功处理文件的总行数和总字节数，以及如果正常读取内容是否会被截断。大小统计复用 `readTextFile()` 读取前取得的 `fs.stat().size`，不会为此增加额外的文件系统访问；被跳过、读取失败或因总文件数限制而未处理的文件不计入合计。
 
@@ -195,12 +193,12 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 
 ---
 
-## 参考来源与设计边界
+## 设计边界
 
-`read_many_files` 的批量读取流程、默认排除模式、文本截断阈值和二进制扩展名列表参考 Gemini CLI 的 `ReadManyFilesTool` / `fileUtils` / `ignorePatterns` 实现。本项目的稳定边界如下：
+本项目的稳定边界如下：
 
 - 不自动遍历多个 workspace；relative 输入只基于 primary root，additional roots 必须通过 drive-absolute path / glob 明确访问。
-- allowed roots 沙箱和 `exclude` 参数共同决定可读文件集合，不读取 gitignore / geminiignore 作为安全边界。
+- allowed roots 沙箱和 `exclude` 参数共同决定可读文件集合，不读取忽略文件作为安全边界。
 - 只返回文本内容；图片、PDF、音频和其它二进制内容会被跳过。
 - 使用 UTF-8 读取文本，不做 BOM 编码检测。
 - 递归由 glob 的 `**` 表达，不提供单独的 `recursive` 参数。
