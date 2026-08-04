@@ -69,15 +69,20 @@ async function testCompilesRootSpecificQueriesAndFreezesSnapshot(): Promise<void
   await resetFixtures();
   const baseIgnore = path.join(POLICIES_DIR, 'base.ignore');
   const overrideIgnore = path.join(POLICIES_DIR, 'override.ignore');
+  const primaryDeny = path.join(POLICIES_DIR, 'primary.deny');
   const additionalDeny = path.join(POLICIES_DIR, 'additional.deny');
   await fs.writeFile(baseIgnore, 'generated/**\n', 'utf-8');
   await fs.writeFile(overrideIgnore, '!generated/keep.txt\n', 'utf-8');
+  await fs.writeFile(primaryDeny, 'private-primary/**\n', 'utf-8');
   await fs.writeFile(additionalDeny, 'private/**\n', 'utf-8');
   await writeConfig({
     version: 1,
     workspaces: [workspace({
       fileAccess: {
-        rootDir: { ignoreFiles: [baseIgnore, overrideIgnore] },
+        rootDir: {
+          ignoreFiles: [baseIgnore, baseIgnore, overrideIgnore],
+          denyFiles: [primaryDeny],
+        },
         otherRootDirs: {
           [`${ADDITIONAL_DIR}${path.sep}`]: { denyFiles: [additionalDeny] },
         },
@@ -101,6 +106,61 @@ async function testCompilesRootSpecificQueriesAndFreezesSnapshot(): Promise<void
   assert(Object.isFrozen(snapshot.fileAccessPolicyContext), 'File access policy context should be frozen');
   assert(Object.isFrozen(snapshot.fileAccessPolicyContext.roots), 'Root policy container should be frozen');
   assert(Object.isFrozen(primaryPolicy.ignore), 'Query facade should be frozen');
+  const [primaryFiles, additionalFiles] = snapshot.fileAccessPolicyFiles;
+  assert(primaryFiles !== undefined && additionalFiles !== undefined, 'Snapshot should contain policy file metadata for every allowed root');
+  assertEqual(
+    primaryFiles.ignoreFiles.join('|'),
+    [baseIgnore, baseIgnore, overrideIgnore].map((file) => path.resolve(file)).join('|'),
+    'Primary ignore file metadata should preserve normalized configuration order and duplicates',
+  );
+  assertEqual(
+    primaryFiles.denyFiles.join('|'),
+    path.resolve(primaryDeny),
+    'Primary deny file metadata should contain the validated lexical path',
+  );
+  assertEqual(
+    additionalFiles.denyFiles.join('|'),
+    path.resolve(additionalDeny),
+    'Additional-root deny file metadata should stay associated with its root',
+  );
+  assert(Object.isFrozen(snapshot.fileAccessPolicyFiles), 'Policy file metadata container should be frozen');
+  assert(Object.isFrozen(primaryFiles), 'Each policy file metadata entry should be frozen');
+  assert(Object.isFrozen(primaryFiles.ignoreFiles), 'Ignore file metadata arrays should be frozen');
+  assert(Object.isFrozen(primaryFiles.denyFiles), 'Deny file metadata arrays should be frozen');
+}
+
+async function testOnlySelectedWorkspacePolicyFilesEnterSnapshot(): Promise<void> {
+  await resetFixtures();
+  const secondaryDeny = path.join(POLICIES_DIR, 'secondary.deny');
+  await fs.writeFile(secondaryDeny, 'secondary-private/**\n', 'utf-8');
+  await writeConfig({
+    version: 1,
+    workspaces: [
+      workspace(),
+      {
+        id: 'secondary',
+        rootDir: SECONDARY_DIR,
+        port: 4902,
+        lineEnding: 'auto',
+        fileAccess: { rootDir: { denyFiles: [secondaryDeny] } },
+      },
+    ],
+  });
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'primary',
+    env: {},
+  });
+  const listedPolicyFiles = snapshot.fileAccessPolicyFiles.flatMap((root) => [
+    ...root.ignoreFiles,
+    ...root.denyFiles,
+  ]);
+  assertEqual(
+    listedPolicyFiles.length,
+    0,
+    'Unselected workspace policy files should not enter the runtime snapshot',
+  );
 }
 
 async function testValidatesUnselectedWorkspacePolicyFilesBeforeSelection(): Promise<void> {
@@ -182,6 +242,7 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'compiles root-specific queries and freezes snapshot', run: testCompilesRootSpecificQueriesAndFreezesSnapshot },
+      { name: 'only selected workspace policy files enter snapshot', run: testOnlySelectedWorkspacePolicyFilesEnterSnapshot },
       { name: 'validates unselected workspace policy files before selection', run: testValidatesUnselectedWorkspacePolicyFilesBeforeSelection },
       { name: 'rejects invalid UTF-8 policy file', run: testRejectsInvalidUtf8PolicyFile },
       { name: 'rejects unassociated additional root key', run: testRejectsUnassociatedAdditionalRootKey },

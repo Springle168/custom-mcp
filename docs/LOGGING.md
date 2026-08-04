@@ -33,6 +33,25 @@
   {"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":10,"end_line":10},"replacement_line_count":1,"file_line_count":{"previous":120,"current":120}}
 ```
 
+### 启动配置摘要
+
+HTTP server 开始监听后，`src/index.ts` 输出 selected workspace 的启动配置摘要。文件访问策略部分使用 `RuntimeConfigSnapshot.fileAccessPolicyFiles`，按 primary / additional root 分组列出已验证的 resolved lexical 策略文件引用：
+
+```text
+  File access policies:
+    Primary root: E:\Workspace
+      Ignore files:
+        - C:\Policies\project.ignore
+      Deny files:
+        - C:\Policies\project.deny
+    Additional root: E:\AdditionalWorkspace
+      Ignore files: none
+      Deny files:
+        - C:\Policies\additional.deny
+```
+
+策略文件路径保持配置顺序和重复引用，不排序或去重。日志不输出策略文件内容、matcher 内容或 symbolic link 的 real target。所有 allowed root 均未配置 ignore / deny 文件时，摘要输出 `File access policies: none`。所有 workspace 的策略仍在 workspace 选择前验证和编译，但启动摘要只包含 selected workspace。
+
 ### Session 与 Call ID
 
 MCP session ID 是服务端生成的实际协议 ID，格式为 `session_<uuid>`。同一 session 的后续请求通过该值关联 transport、server 和工具日志。

@@ -124,7 +124,7 @@ createConfigStore()
 选中 workspace 后，配置层会构建 initial `RuntimeConfigSnapshot`，并用它创建 `ConfigStore`：
 
 - initial `snapshotVersion` 为 `1`。
-- snapshot 必含已验证的 `pathSafetyContext`，并以它和 selected workspace 已编译 root policy 构建 `fileAccessPolicyContext`；文件类工具通过 `ToolRuntimeContext.fileAccessPolicyContext` 使用统一上下文。
+- snapshot 必含已验证的 `pathSafetyContext`，并以它和 selected workspace 已编译 root policy 构建 `fileAccessPolicyContext`；文件类工具通过 `ToolRuntimeContext.fileAccessPolicyContext` 使用统一上下文。另以 `fileAccessPolicyFiles` 保存 selected workspace 每个 allowed root 对应的已验证 lexical ignore / deny 策略文件路径；该启动可观测性元数据不进入 `ToolRuntimeContext`。
 - snapshot 必含最终 HTTP `host` 和 `port`；未配置 host 时使用 `127.0.0.1`。入口层使用两者绑定 HTTP server，`ask_user` 使用同一 snapshot 生成表单 URL。
 - snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示已存在的日志根目录。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
@@ -132,10 +132,10 @@ createConfigStore()
 - snapshot 必含归一化后的 `rules`；未配置 request header rules 时写入 `{ requestHeaders: [] }`，只有 selected workspace 的规则进入 runtime snapshot。
 - snapshot 必含 selected workspace 的 `toolExposure`；未配置 `tools` 时写入 `{ mode: "all" }`。snapshot 构造会克隆策略对象和名称数组，再随 snapshot deep-freeze。
 - `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路；调用方必须显式传入已归一化的 `rules` 和 `toolExposure`。
-- snapshot、`android`、`toolExposure`、非 `all` 策略的名称数组、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、`fileAccessPolicyContext`、root policy 容器、query facade、root 对象和 allowed roots 数组都会 deep-freeze。
+- snapshot、`android`、`toolExposure`、非 `all` 策略的名称数组、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、`fileAccessPolicyContext`、`fileAccessPolicyFiles` 及其 root 条目和路径数组、root policy 容器、query facade、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；request header policy 使用 snapshot rules 与 request-scoped strict header view 计算，不进入 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
-- 启动日志会输出 bind address、endpoint、workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。IPv6 endpoint 使用方括号；通配绑定地址 `0.0.0.0` / `::` 的 endpoint 分别使用本机回环地址 `127.0.0.1` / `::1`。
+- 启动日志会输出 bind address、endpoint、workspace id、selection mode、snapshot version、config file、canonical roots、selected workspace 按 root 分组的 ignore / deny 策略文件路径、lineEnding 和实际日志文件路径。策略日志不输出文件内容；没有配置策略文件时输出 `File access policies: none`。IPv6 endpoint 使用方括号；通配绑定地址 `0.0.0.0` / `::` 的 endpoint 分别使用本机回环地址 `127.0.0.1` / `::1`。
 
 ---
 
@@ -266,6 +266,7 @@ workspace 未知字段会导致启动失败。
 - `fileAccess.otherRootDirs` key 使用 workspace root 相同的绝对目录输入规则，并按 lexical canonical identity 关联同一 workspace 的某个 configured `otherRootDirs`。只在 realpath 层等价的 alias、primary root、未关联 key 或归一化后重复 key 均非法。
 - 所有 workspace 的策略在选择 workspace 前读取并编译。未选中 workspace 的文件缺失、不可读、UTF-8 非法或 matcher 编译失败也会阻止启动。
 - Runtime snapshot 的 `fileAccessPolicyContext` 为每个 allowed root 保存 canonical lexical / real root 和只读 ignore / deny query facade。原始第三方 matcher 及 `.add()` 等 mutation API 不会暴露；context、root 容器和 facade 随 snapshot deep-freeze。
+- Runtime snapshot 的 `fileAccessPolicyFiles` 只保留 selected workspace 按 allowed root 关联的 resolved lexical 策略文件引用。数组保留配置顺序和重复引用，并与 matcher facade 分离；启动日志只使用该路径摘要，不输出策略内容或 symlink real target。
 - Ignore 只过滤自动发现结果，literal 显式路径可以绕过 ignore；deny 始终应用。文件工具中的路径、glob 与 symlink 语义见 [PATH-SAFETY.md](PATH-SAFETY.md)。
 
 ### `tools` 配置段
