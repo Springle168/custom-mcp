@@ -212,7 +212,7 @@ export async function validateFileAccessReadTarget(
     };
   }
 
-  let stats;
+  let stats: nodeFs.Stats;
   try {
     stats = await fs.stat(realPath);
   } catch (err: unknown) {
@@ -286,39 +286,64 @@ export async function validateFileAccessWriteTarget(
     };
   }
 
+  let stats: nodeFs.Stats;
   try {
-    const stats = await fs.lstat(safePath.resolvedPath);
-    const realPath = await fs.realpath(safePath.resolvedPath);
+    stats = await fs.lstat(safePath.resolvedPath);
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') return { ok: true };
+    return {
+      ok: false,
+      code: 'io_error',
+      reason: `Could not validate write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
+    };
+  }
+
+  let realPath: string;
+  try {
+    realPath = await fs.realpath(safePath.resolvedPath);
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (stats.isSymbolicLink() && error.code === 'ENOENT') {
+      return symbolicLinkWriteResult(safePath.input);
+    }
+    if (error.code === 'ENOENT') return { ok: true };
+    return {
+      ok: false,
+      code: 'io_error',
+      reason: `Could not resolve write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
+    };
+  }
+
+  if (!isInsideRoot(realPath, rootPolicy.realRootDir)) {
+    return {
+      ok: false,
+      code: 'outside_root_dir',
+      reason:
+        `Path ${safePath.input} resolves outside its matched workspace root. ` +
+        'Symlinks and real paths must stay within the same matched workspace root.',
+    };
+  }
+
+  try {
     const actualStats = await fs.stat(realPath);
     const kind: FileAccessTargetKind = actualStats.isDirectory() ? 'directory' : 'file';
-
     if (
       isDenied(safePath.resolvedPath, safePath.matchedRoot, kind, context, false) ||
       isDenied(realPath, safePath.matchedRoot, kind, context, true)
     ) {
       return denyWriteResult(safePath.input);
     }
-
-    if (stats.isSymbolicLink()) {
-      return {
-        ok: false,
-        code: 'io_error',
-        reason:
-          `Cannot write file ${safePath.input}: target path is a symbolic link. ` +
-          'Provide a regular file path inside the matched workspace root.',
-      };
-    }
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
-    if (error.code !== 'ENOENT') {
-      return {
-        ok: false,
-        code: 'io_error',
-        reason: `Could not validate write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
-      };
-    }
+    return {
+      ok: false,
+      code: 'io_error',
+      reason: `Could not inspect write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
+    };
   }
 
+  if (stats.isSymbolicLink()) return symbolicLinkWriteResult(safePath.input);
   return { ok: true };
 }
 
@@ -358,6 +383,7 @@ export async function expandFileAccessGlob(
       void validateTraversalDirectory(
         directoryPath,
         globResult.glob.matchedRoot,
+        globResult.glob.resolvedStaticBase,
         context,
       ).then((validation) => {
         if (!validation.ok) {
@@ -384,6 +410,20 @@ export async function expandFileAccessGlob(
       absolute: true,
       follow: false,
       fs: controlledFs,
+      ignore: {
+        ignored: () => false,
+        childrenIgnored: (entry: { fullpath: () => string }) => {
+          const directoryPath = path.resolve(entry.fullpath());
+          if (areSamePath(directoryPath, globResult.glob.resolvedStaticBase)) {
+            return false;
+          }
+          try {
+            return nodeFs.lstatSync(directoryPath).isSymbolicLink();
+          } catch {
+            return true;
+          }
+        },
+      },
     });
   } catch (err: unknown) {
     return {
@@ -527,6 +567,7 @@ async function validateGlobStaticBase(
 async function validateTraversalDirectory(
   directoryPath: string,
   root: WorkspaceRoot,
+  explicitStaticBase: string,
   context: FileAccessPolicyContext,
 ): Promise<
   | { readonly ok: true }
@@ -536,6 +577,23 @@ async function validateTraversalDirectory(
       readonly reason: string;
     }
 > {
+  try {
+    const stats = await fs.lstat(directoryPath);
+    if (
+      stats.isSymbolicLink() &&
+      !areSamePath(directoryPath, explicitStaticBase)
+    ) {
+      return {
+        ok: false,
+        code: 'io_error',
+        reason: 'Glob traversal does not follow discovered directory symbolic links.',
+      };
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return { ok: false, code: 'io_error', reason: error.message };
+  }
+
   if (
     !isInsideRoot(directoryPath, root.rootDir) ||
     (
@@ -617,6 +675,16 @@ function denyWriteResult(input: string): FileAccessWriteTargetResult {
   return { ok: false, code: 'deny_policy', reason: denyMessage(input) };
 }
 
+function symbolicLinkWriteResult(input: string): FileAccessWriteTargetResult {
+  return {
+    ok: false,
+    code: 'io_error',
+    reason:
+      `Cannot write file ${input}: target path is a symbolic link. ` +
+      'Provide a regular file path inside the matched workspace root.',
+  };
+}
+
 function denyGlobResult(
   input: string,
 ): {
@@ -640,7 +708,10 @@ function isInsideRoot(candidatePath: string, rootDir: string): boolean {
   const normalizedCandidate = path.resolve(candidatePath);
   if (areSamePath(normalizedCandidate, normalizedRoot)) return true;
   const relative = path.relative(normalizedRoot, normalizedCandidate);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return relative !== '' &&
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative);
 }
 
 async function findExistingAncestor(targetPath: string): Promise<string> {
