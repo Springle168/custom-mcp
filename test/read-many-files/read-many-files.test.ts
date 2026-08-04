@@ -99,7 +99,7 @@ async function testGlobStartingWithSlash() {
   
 }
 
-async function testDefaultExcludes() {
+async function testNoBuiltInDefaultExcludes() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt', '**/*.kt', '**/*.md'] },
@@ -109,38 +109,35 @@ async function testDefaultExcludes() {
   assert(!result.isError, 'Should succeed');
   const text = getResultText(result);
   
-  // Should read .kt and .md files, but not .txt in node_modules/build
+  // Automatic discovery has no hard-coded ignore layer.
   assertIncludes(text, 'Foo.kt', 'Should include Foo.kt');
   assertIncludes(text, 'README.md', 'Should include README.md');
-  assertNotIncludes(text, 'node_modules', 'Should not include node_modules files');
-  assertNotIncludes(text, 'build', 'Should not include build files');
-  assertNotIncludes(text, 'excluded.txt', 'Should not include excluded.txt');
+  assertIncludes(text, 'node_modules', 'Should include node_modules without configured ignore');
+  assertIncludes(text, 'build', 'Should include build output without configured ignore');
+  assertIncludes(text, 'excluded.txt', 'Should include files without configured ignore');
   
 }
 
-async function testDefaultExcludesDisabled() {
+async function testRejectUseDefaultExcludesAlias() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useDefaultExcludes: false },
     testContext
   );
   
-  assert(!result.isError, 'Should succeed');
+  assert(result.isError === true, 'Removed aliases should be rejected');
   const text = getResultText(result);
-  
-  // Should now read .txt files in node_modules and build
-  assertIncludes(text, 'Read 2 file(s)', 'Should read 2 txt files');
-  assertIncludes(text, 'excluded.txt', 'Should include excluded.txt files');
+  assertIncludes(text, 'Unknown parameter(s): useDefaultExcludes', 'Should identify the unsupported alias');
   
 }
 
-async function testAbsolutePathBypassesExcludes() {
+async function testAbsoluteLiteralBypassesExcludes() {
   
   const excludedPath = path.join(FIXTURES_DIR, 'node_modules', 'excluded.txt');
   const result = await readManyFilesTool.handler(
     { 
       include: [excludedPath],
-      useDefaultExcludes: true  // Even with default excludes on
+      exclude: ['node_modules/**'],
     },
     testContext
   );
@@ -339,10 +336,7 @@ async function testBinaryFileSkipped() {
 async function testBinaryFileInGlob() {
   
   const result = await readManyFilesTool.handler(
-    { 
-      include: ['**/*.{kt,png}'],
-      useDefaultExcludes: false  // 关闭默认排除，让 PNG 能被 glob 匹配到
-    },
+    { include: ['**/*.{kt,png}'] },
     testContext
   );
   
@@ -456,9 +450,9 @@ async function main(): Promise<void> {
       { name: 'Glob pattern matching multiple files', run: testGlobPattern },
       { name: 'Mixed absolute paths and glob patterns', run: testMixedPathsAndGlobs },
       { name: 'Glob pattern starting with / (should work as relative glob)', run: testGlobStartingWithSlash },
-      { name: 'Default excludes (node_modules, build)', run: testDefaultExcludes },
-      { name: 'Default excludes disabled', run: testDefaultExcludesDisabled },
-      { name: 'Absolute path bypasses default excludes', run: testAbsolutePathBypassesExcludes },
+      { name: 'No built-in default excludes', run: testNoBuiltInDefaultExcludes },
+      { name: 'Removed useDefaultExcludes alias is rejected', run: testRejectUseDefaultExcludesAlias },
+      { name: 'Absolute literal bypasses excludes', run: testAbsoluteLiteralBypassesExcludes },
       { name: 'File not found', run: testFileNotFound },
       { name: 'No matches for glob', run: testNoMatches },
       { name: 'Path outside root', run: testPathOutsideRoot },

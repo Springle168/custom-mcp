@@ -1,12 +1,10 @@
-import * as fs from 'node:fs/promises';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import {
-  formatPathSafetyError,
-  resolveSafePathInContext,
-  validateSafeReadTarget,
-} from '../utils/paths.js';
+  resolveFileAccessPath,
+  validateFileAccessReadTarget,
+} from '../utils/file-access-policy.js';
 import {
   isBinaryFile,
   MAX_FILE_SIZE_MB,
@@ -215,48 +213,47 @@ async function handleReadFile(
   const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
-  const pathSafetyContext = context.pathSafetyContext;
-  const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
+  const fileAccessPolicyContext = context.fileAccessPolicyContext;
+  const safePathResult = resolveFileAccessPath(
+    filePath,
+    fileAccessPolicyContext,
+  );
   if (!safePathResult.ok) {
-    return textErrorResult(formatPathSafetyError(safePathResult.error));
+    return textErrorResult(safePathResult.reason);
   }
   const safePath = safePathResult.path;
 
-  const readTarget = await validateSafeReadTarget(safePath);
+  const readTarget = await validateFileAccessReadTarget(
+    safePath,
+    fileAccessPolicyContext,
+  );
   if (!readTarget.ok) {
     return textErrorResult(
       `Could not read file ${filePath}: ${readTarget.reason}. Check the path and ensure it is a readable text file.`,
     );
   }
 
-  try {
-    const stat = await fs.stat(readTarget.realPath);
-    if (stat.isDirectory()) {
-      return textErrorResult(
-        `Could not read file ${filePath}: path is a directory. Provide a text file path instead.`,
-      );
-    }
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
+  if (readTarget.target.kind === 'directory') {
     return textErrorResult(
-      `Could not read file ${filePath}: ${error.code === 'ENOENT' ? 'file not found' : error.message}. Check the path and ensure it is a readable text file.`,
+      `Could not read file ${filePath}: path is a directory. Provide a text file path instead.`,
     );
   }
+  const realPath = readTarget.target.realPath;
 
-  if (await isBinaryFile(readTarget.realPath)) {
+  if (await isBinaryFile(realPath)) {
     return textErrorResult(
       `Cannot display content of binary file: ${filePath}. Provide a text file path instead.`,
     );
   }
 
-  const lineRange = await resolveLineRange(readMode, readTarget.realPath, args);
+  const lineRange = await resolveLineRange(readMode, realPath, args);
   if (typeof lineRange === 'string') {
     return textErrorResult(
       `Could not read file ${filePath}: ${lineRange}`,
     );
   }
 
-  const result = await readTextFile(readTarget.realPath, {
+  const result = await readTextFile(realPath, {
     startLine: lineRange.startLine,
     endLine: lineRange.endLine,
     showLineNumbers: (args.show_line_numbers as boolean | undefined) ?? false,

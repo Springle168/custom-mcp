@@ -176,7 +176,7 @@ async function testRejectSymlinkEscapingWorkspace() {
     assert(result.isError === true, 'Should fail');
     assertIncludes(
       getResultText(result),
-      'matched primary workspace root',
+      'matched workspace root',
       'Should reject symlink path escapes',
     );
 

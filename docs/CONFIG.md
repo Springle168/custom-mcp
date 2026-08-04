@@ -30,6 +30,17 @@
       "host": "127.0.0.1",
       "port": 3100,
       "logsDir": "E:/Logs/custom-mcp",
+      "fileAccess": {
+        "rootDir": {
+          "ignoreFiles": ["C:/Users/username/.custom-mcp/policies/project.ignore"],
+          "denyFiles": ["C:/Users/username/.custom-mcp/policies/project.deny"]
+        },
+        "otherRootDirs": {
+          "E:/AnotherWorkspace": {
+            "denyFiles": ["C:/Users/username/.custom-mcp/policies/additional.deny"]
+          }
+        }
+      },
       "tools": {
         "disabled": [
           "android.testDebugUnitTest"
@@ -56,7 +67,7 @@
 
 ### 启动期配置管线
 
-配置加载的主入口是 `loadRuntimeConfigWithIdentity()`。启动期处理是线性管线：先建立受信配置来源，再校验全局 schema，再选择 workspace，再按 selected workspace allowlist 应用 env override，最后把 selected workspace 归一化为不可变 runtime snapshot。维护时应按管线阶段定位职责，不要在工具层重新读取或理解全局配置结构。
+配置加载的主入口是 `loadRuntimeConfigWithIdentity()`。启动期处理是线性管线：先建立受信配置来源，再校验全局 schema 和所有 workspace 的文件访问策略，再选择 workspace，再按 selected workspace allowlist 应用 env override，最后把 selected workspace 归一化为不可变 runtime snapshot。维护时应按管线阶段定位职责，不要在工具层重新读取或理解全局配置结构。
 
 ```text
 parseCliArgs()
@@ -81,6 +92,11 @@ loadRuntimeConfigWithIdentity()
         │     - 按配置 path policy 校验所有 path-like 字段是已存在目录
         │     - 校验所有 workspace 的 id / port 唯一性；host 允许重复
         │     - 校验所有 workspace.rootDir 存在且互不重复/嵌套
+        │
+        ├─► compileGlobalFileAccessPolicies()
+        │     - 对所有 workspace（包括未选中项）读取并严格 UTF-8 解码策略文件
+        │     - 按 root 与数组顺序编译独立 ignore / deny matcher
+        │     - 只输出不含 matcher mutation API 的只读 query facade
         │
         ├─► selectRuntimeWorkspace()
         │     - explicit: 按 --workspace id 选择
@@ -119,6 +135,7 @@ createConfigStore()
 | 配置路径 | `getDefaultGlobalConfigPath()` / `getDefaultGlobalLogsDir()` | home-level dotdir config path / default logs dir | 进程没有可用 home 目录。 |
 | 文件读取与 JSON 解析 | `readConfigFile()` / `JSON.parse` | 原始 JSON 对象 | 全局配置文件不存在、不可读或 JSON 语法非法。 |
 | 全局 schema 校验 | `parseGlobalConfig()` | `ParsedGlobalConfig` | schema、typed value、host IP、配置 path-like 字段、allowlist selector、所有 workspace 的 `rootDir`、`id` / `port` 唯一性或未知字段非法。 |
+| 全局文件访问策略 | `compileGlobalFileAccessPolicies()` | 所有 workspace 的 root-specific query facade | 策略文件路径、存在性、普通文件类型、可读性、严格 UTF-8 解码或 matcher 编译失败。未选中 workspace 的错误同样阻止启动。 |
 | Workspace 选择 | `selectRuntimeWorkspace()` | selected workspace + `RuntimeConfigIdentity` | 已通过 lexical 校验的 `--workspace` 不存在，直接调用配置 loader 时传入非法 `workspaceId`，或默认 cwd 不能与某个 workspace root realpath 精确匹配。 |
 | Env override | `applyEnvOverridesToWorkspace()` | 覆盖后的 selected workspace | selected workspace 的 allowlist 防御性校验失败，或被允许的 env 值为空、whitespace-only、含首尾 whitespace、grammar 非法、path 不存在或不是目录。 |
 | Runtime snapshot | `buildRuntimeConfigSnapshot()` / `createRuntimeConfigSnapshot()` | frozen `RuntimeConfigSnapshot` | selected workspace 的 `rootDir + otherRootDirs` 无法构建 path safety context、默认 logs root 不存在/不是目录，或 direct snapshot seam 收到含首尾 whitespace 的 path-like 输入。 |
@@ -133,6 +150,7 @@ createConfigStore()
 - `rootDir`、`host`、`port`、`otherRootDirs` 等边界字段不能被 env override 覆盖，`android.*` override 也不能创建缺失的 `android` 配置段。
 - `logsDir` 是服务日志根目录，默认值为 `~/.custom-mcp/logs`；默认值、selected workspace 配置的 `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。实际日志文件路径由 `Logger` 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建，文件名前缀直接使用 selected workspace id。
 - selected workspace 的 `rootDir + otherRootDirs` 会在 snapshot 构建阶段再次进入 path safety 校验，并以 canonical roots 写入 snapshot。
+- `fileAccess` 在 workspace 选择前对所有 workspace 完整读取和编译；snapshot 只选择已编译策略，不重新读取磁盘文件。策略修改需要重启并成功构建新 snapshot 后才生效。
 - selected workspace 的 `toolExposure` 会被完整克隆后写入 snapshot；snapshot 中的策略对象及非 `all` 策略的名称数组会被冻结，构建过程不冻结调用方对象。
 - `logsDir` 不进入 `ToolRuntimeContext`，也不会加入文件工具 allowed roots。
 - `ConfigStore` 当前只暴露只读 snapshot / identity / status；没有 watcher、reload apply 或 snapshot mutation API。
@@ -155,7 +173,7 @@ createConfigStore()
 选中 workspace 后，配置层会构建 initial `RuntimeConfigSnapshot`，并用它创建 `ConfigStore`：
 
 - initial `snapshotVersion` 为 `1`。
-- snapshot 必含已验证的 `pathSafetyContext`；文件类工具通过 `ToolRuntimeContext.pathSafetyContext` 使用这个上下文。
+- snapshot 必含已验证的 `pathSafetyContext`，并以它和 selected workspace 已编译 root policy 构建 `fileAccessPolicyContext`；文件类工具通过 `ToolRuntimeContext.fileAccessPolicyContext` 使用统一上下文。
 - snapshot 必含最终 HTTP `host` 和 `port`；未配置 host 时使用 `127.0.0.1`。入口层使用两者绑定 HTTP server，`ask_user` 使用同一 snapshot 生成表单 URL。
 - snapshot 必含最终 `logsDir`；该值来自 allowlisted `MCP_LOGS_DIR`、selected workspace `logsDir` 或默认 `~/.custom-mcp/logs`，并表示已存在的日志根目录。
 - snapshot 的 `rootDir` / `otherRootDirs` 来自 `pathSafetyContext` 中的 canonical roots，而不是保留原始输入字符串。
@@ -163,7 +181,7 @@ createConfigStore()
 - snapshot 必含归一化后的 `rules`；未配置 request header rules 时写入 `{ requestHeaders: [] }`，只有 selected workspace 的规则进入 runtime snapshot。
 - snapshot 必含 selected workspace 的 `toolExposure`；未配置 `tools` 时写入 `{ mode: "all" }`。snapshot 构造会克隆策略对象和名称数组，再随 snapshot deep-freeze。
 - `createRuntimeConfigSnapshot()` 作为 direct test seam 时会拒绝 path-like 输入中的空值、whitespace-only 和首尾 whitespace，避免通过 path safety 的兼容性 trim 形成配置值语义旁路；调用方必须显式传入已归一化的 `rules` 和 `toolExposure`。
-- snapshot、`android`、`toolExposure`、非 `all` 策略的名称数组、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、root 对象和 allowed roots 数组都会 deep-freeze。
+- snapshot、`android`、`toolExposure`、非 `all` 策略的名称数组、`rules`、`rules.requestHeaders`、每条 rule、`match` 数组、`enable` 数组、`otherRootDirs`、`pathSafetyContext`、`fileAccessPolicyContext`、root policy 容器、query facade、root 对象和 allowed roots 数组都会 deep-freeze。
 - `ConfigStore` 只读保存 current snapshot 与 `RuntimeConfigIdentity` baseline；运行时 API 不暴露 watcher、reload apply 或 snapshot mutation 能力。
 - 每次 MCP tool call 开始时从 `ConfigStore` 读取一次 current snapshot，并由该 snapshot 派生本次调用的 `ToolRuntimeContext`；request header policy 使用 snapshot rules 与 request-scoped strict header view 计算，不进入 `ToolRuntimeContext`；同一次工具调用期间不会再次读取配置。
 - 启动日志会输出 bind address、endpoint、workspace id、selection mode、snapshot version、config file、canonical roots、lineEnding 和实际日志文件路径。IPv6 endpoint 使用方括号；通配绑定地址 `0.0.0.0` / `::` 的 endpoint 分别使用本机回环地址 `127.0.0.1` / `::1`。
@@ -183,6 +201,7 @@ src/
 ├── config/
 │   ├── env-overrides.ts         # selected workspace 字段级 env override allowlist 与 env 值读取
 │   ├── errors.ts                # 结构化配置错误
+│   ├── file-access-policy.ts    # 策略文件校验、严格 UTF-8 读取、root-specific matcher 编译与只读 facade
 │   ├── global-config-path.ts    # home-level dotdir 配置路径解析
 │   ├── path-policy.ts           # 配置 path-like 字段本地绝对 existing-directory policy
 │   ├── request-header-rules.ts  # workspace rules.requestHeaders schema、值语义和 runtime rules 类型
@@ -205,11 +224,14 @@ src/
 
 `src/utils/http-url.ts` 统一处理 IPv6 host:port 方括号、通配 bind host 的本机 endpoint 映射，以及 MCP / `ask_user` HTTP URL 生成。
 
+`src/utils/file-access-policy.ts` 持有文件工具共享的 allowed-root、candidate、deny / ignore 与受控 glob 运行时策略；配置层只向它提供不含 matcher mutation API 的 root-specific query facade。
+
 ### 测试布局
 
 ```text
 test/
 ├── config/
+│   ├── file-access-policy.test.ts      # fileAccess schema、全 workspace 编译、严格 UTF-8、snapshot facade 与 env 禁止
 │   ├── global-config-path.test.ts      # home-level dotdir config path
 │   ├── value-policy.test.ts            # typed/free-form 值、IP、token/selector、JSON/env positive integer reader
 │   ├── path-policy.test.ts             # 配置 path-like 字段 existing-directory policy 与 platform/filesystem seam
@@ -261,12 +283,39 @@ test/
 | `lineEnding` | `"auto"` \| `"lf"` \| `"crlf"` | 是 | 文本写回策略。 |
 | `logsDir` | string | 否 | 服务日志根目录；配置文件中提供时必须是已存在的本地绝对目录。缺省值为 `~/.custom-mcp/logs`，该默认日志根目录也必须预先存在且为目录。Logger 在该根目录下按 `YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 创建日期子目录和实际日志文件。 |
 | `otherRootDirs` | string[] | 否 | additional roots；缺省为 `[]`。每一项必须是已存在的本地绝对目录。选中 workspace 构建 snapshot 时会作为 allowed roots 集合校验，并在 snapshot 中保存为 canonical root 路径。 |
+| `fileAccess` | object | 否 | 按 primary / additional root 配置持久 ignore 与 deny 策略文件；缺省为全部空策略。 |
 | `android` | object | 否 | Android 构建配置；整段可选，但出现后字段必须完整。 |
 | `envOverrides` | object | 否 | 字段级环境变量覆盖 allowlist；缺省为全部禁用。 |
 | `rules` | object | 否 | workspace 级请求兼容规则；支持 `rules.requestHeaders` exact 匹配以启用 `structuredContentDup` 适配。 |
 | `tools` | object | 否 | workspace 工具暴露策略；必须且只能配置 `allowed` 或 `disabled` 之一，缺省为暴露完整 canonical registry。 |
 
 workspace 未知字段会导致启动失败。
+
+### `fileAccess` 配置段
+
+`fileAccess` 只允许 `rootDir` 与 `otherRootDirs`。每个 root 策略对象只允许 `ignoreFiles` 与 `denyFiles`，两者均为可选的有序 string 数组，缺省为 `[]`。数组顺序与重复引用均保留；每份文件使用 Gitignore 语法，后加载规则（包括 negation）可以改变先前结果。Primary root 策略不会自动继承给 additional roots。
+
+```json
+{
+  "fileAccess": {
+    "rootDir": {
+      "ignoreFiles": ["C:/Policies/common.ignore", "C:/Policies/project.ignore"],
+      "denyFiles": ["C:/Policies/project.deny"]
+    },
+    "otherRootDirs": {
+      "E:/AnotherWorkspace": {
+        "denyFiles": ["C:/Policies/additional.deny"]
+      }
+    }
+  }
+}
+```
+
+- 策略文件引用必须是无首尾 whitespace 的非空 string 和受支持的本地绝对路径；启动时必须存在、可读、解析 symbolic link 后为普通文件，并能以严格 UTF-8 解码。UTF-8 BOM 合法。
+- `fileAccess.otherRootDirs` key 使用 workspace root 相同的绝对目录输入规则，并按 lexical canonical identity 关联同一 workspace 的某个 configured `otherRootDirs`。只在 realpath 层等价的 alias、primary root、未关联 key 或归一化后重复 key 均非法。
+- 所有 workspace 的策略在选择 workspace 前读取并编译。未选中 workspace 的文件缺失、不可读、UTF-8 非法或 matcher 编译失败也会阻止启动。
+- Runtime snapshot 的 `fileAccessPolicyContext` 为每个 allowed root 保存 canonical lexical / real root 和只读 ignore / deny query facade。原始第三方 matcher 及 `.add()` 等 mutation API 不会暴露；context、root 容器和 facade 随 snapshot deep-freeze。
+- Ignore 只过滤自动发现结果，literal 显式路径可以绕过 ignore；deny 始终应用。具体文件工具路径、glob、symlink 与 mixed-result 行为见 `docs/design/file-access-ignore-deny-policy.md`。
 
 ### `tools` 配置段
 
@@ -400,10 +449,11 @@ HTTP `POST /mcp` 入口只从 `Request.rawHeaders` 构造 strict header view，�
 | `host` | HTTP 监听地址和 runtime identity 不能由 env 改变。 |
 | `port` | 端口唯一性、启动端口和 runtime identity 不能由 env 改变。 |
 | `otherRootDirs` | additional roots 会扩大文件访问边界，不能由 env 改变。 |
+| `fileAccess` / `fileAccess.*` | 文件访问策略及其规则顺序不能由 env 新增、删除、替换或重排。 |
 | `tools` / `tools.*` | 工具暴露边界不能由 env 改变。 |
 | `rules` / `rules.*` | 请求规则结构复杂且影响请求行为，不能由 env 改变。 |
 
-`envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。`tools`、以 `tools.` 开头的 selector、`rules` 和以 `rules.` 开头的 selector 均在 schema 阶段按 forbidden field 失败，不会读取任何 env value。
+`envOverrides.allowedFields` 必须写配置字段 selector，而不是环境变量名。环境变量名、边界字段、未知字段和重复字段都会导致启动失败；允许覆盖的字段以“允许覆盖的字段”表为准。`tools`、`rules`、`fileAccess` 及其子 selector 均在 schema 阶段按 forbidden field 失败，不会读取任何 env value。
 
 `logsDir` 的 env override 使用字段名 `logsDir` 进入 allowlist。`MCP_LOGS_DIR` 不存在时不覆盖；存在时必须是非空、无首尾 whitespace、已存在的本地绝对目录，错误字段定位到 selected workspace 的 `logsDir`。
 

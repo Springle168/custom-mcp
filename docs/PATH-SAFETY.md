@@ -18,7 +18,7 @@
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 - 服务日志目录 `logsDir` 不属于 allowed roots，即使配置在 workspace 外也不会扩大文件工具访问边界。
 
-文件类工具入口统一由 `src/utils/paths.ts` 处理。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；对应 env path override（`MCP_LOGS_DIR`、`ANDROID_WORKSPACE_ROOT`、`ANDROID_JAVA_HOME`）在 selected workspace allowlist 授权后也通过同一 policy 校验。该 policy 覆盖 `rootDir`、`otherRootDirs[]`、configured `logsDir`、`android.workspaceRoot` 和 `android.javaHome` 的输入合法性，但不决定文件工具 allowed roots。默认 `~/.custom-mcp/logs` 也使用 existing-directory policy 校验。配置加载阶段再通过 `src/config/runtime-snapshot.ts` 为 selected workspace 的 `rootDir + otherRootDirs` 创建已验证的 `PathSafetyContext`；snapshot 的 `rootDir` / `otherRootDirs` 与该 context 中的 canonical roots 保持一致。工具 handler 通过 `ToolRuntimeContext.pathSafetyContext` 使用 context API。工具层不应直接遍历或理解 `otherRootDirs`，也不消费日志目录。
+`src/utils/paths.ts` 负责路径分类、allowed-root lexical 匹配和 canonical root；`src/utils/file-access-policy.ts` 在其上组合 policy candidate、root-specific ignore/deny、realpath 检查和受控 glob 遍历。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；策略文件由 `src/config/file-access-policy.ts` 严格读取并编译。Runtime snapshot 为 selected workspace 保存统一的 `FileAccessPolicyContext`。四个文件工具只通过 `ToolRuntimeContext.fileAccessPolicyContext` 消费文件访问能力，不自行遍历 `otherRootDirs`、读取策略文件或组合 deny 顺序。
 
 ---
 
@@ -87,9 +87,9 @@
 1. 先尝试作为字面路径进入普通路径安全流程。
 2. 已存在且是文件的字面路径按文件处理。
 3. 若字面路径不存在或不是文件，且输入包含 glob 语法，再按 glob 处理。
-4. glob 处理先计算 static base；static base 必须命中唯一 matched root，否则不调用 `glob()`。
-5. `glob()` 使用 matched root 作为 `cwd` 展开。
-6. `glob()` 展开后的每个结果再次进入 lexical + realpath 校验，并且必须仍位于同一个 matched root 内。
+4. glob 处理先计算 static base；static base 必须命中唯一 matched root，并通过 lexical/预计 real deny。
+5. glob adapter 使用 matched root 作为 `cwd`，在每次 `readdir` 前执行目录 lexical/real deny；默认不跟随遍历中遇到的目录 symlink / junction。
+6. 展开后的每个结果再次进入 lexical + realpath deny 校验，并且必须仍位于同一个 matched root 内。
 
 支持的 glob 来源包括：
 
@@ -121,25 +121,25 @@ glob static base 通过后，glob segment 中仍不能包含会在展开后形�
 
 工具会先在 lexical 安全校验通过后按字面路径探测；只有字面文件不存在或不是文件时，才进入 glob 展开。
 
-### exclude 语义
+### ignore / exclude 语义
 
-`read_many_files` 的 exclude 规则是全局性的：
+`read_many_files` 的软过滤只作用于 glob 自动发现结果：
 
 | 输入类型 | 是否受 exclude 影响 |
 |-|-|
-| relative literal | 是 |
-| drive-absolute literal | 否 |
-| relative glob | 是 |
-| slash-leading glob | 是 |
-| drive-absolute glob | 是 |
+| relative literal | ignore：否；exclude：否 |
+| drive-absolute literal | ignore：否；exclude：否 |
+| relative glob | ignore：由 `useIgnoreFiles` 控制；exclude：是 |
+| slash-leading glob | ignore：由 `useIgnoreFiles` 控制；exclude：是 |
+| drive-absolute glob | ignore：由 `useIgnoreFiles` 控制；exclude：是 |
 
-Drive-absolute 字面路径不走 exclude 过滤，因为调用方显式指定了绝对文件。Glob 展开结果始终受默认和用户提供的 exclude 过滤，包括 additional root 内的 absolute glob。
+`ignoreFiles` 使用 Gitignore 语义并与 matched root 关联；`exclude` 使用 `glob` 包的 glob pattern 语义。两者都在 deny 后、去重和排序前执行。没有硬编码默认 ignore。
 
-relative 字面路径的 exclude 检查使用 `glob.Ignore`，要求：
+### deny 语义
 
-- 字面路径本身不能被重新解释为 glob。
-- exclude pattern 必须保留 brace / extglob 语义，例如 `src/*.{ts,tsx}`、`src/@(Foo).ts`。
-- Windows 下匹配应保持大小写不敏感，与 `glob(..., { ignore })` 行为一致。
+Deny 同时查询 lexical candidate 与 realpath candidate，并在实际类型确认后按文件或目录形式重查。Lexical deny 命中时不对目标执行 `stat`、`realpath`、内容读取或文件锁。写入不存在目标时，共享层将最近存在祖先的 realpath 与剩余 lexical 路径组合为预计 real target，再执行 deny。
+
+Policy candidate 相对于 matched root 生成：文件形如 `a/b.txt`，目录形如 `a/`；分隔符统一为 `/`。Root 自身不生成 candidate，但仍校验 lexical/real root identity。
 
 ---
 
@@ -167,10 +167,10 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 读取已存在文件时：
 
-1. 先做 lexical 路径安全校验并得到 `SafePath.matchedRoot`。
-2. 对目标执行 `fs.realpath()`。
-3. 校验真实目标仍位于 `matchedRoot.realRootDir` 内。
-4. 再执行 `fs.stat()`、二进制检测和文本读取。
+1. 做 lexical 路径安全与文件 candidate deny，得到 `SafePath.matchedRoot`。
+2. 对目标执行 `fs.realpath()` 并校验仍位于同一个 real root。
+3. 确认实际类型，按实际类型重新查询 lexical/real deny。
+4. 再执行工具自身的目录错误、二进制检测和文本读取。
 
 如果目标不存在，按工具语义返回不存在，不需要读取真实路径。
 
@@ -180,12 +180,12 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 `write_file` 和 `replace_text` 共享写入安全策略：
 
-1. 先做 lexical 路径安全校验并得到 `SafePath.matchedRoot`。
-2. 查找目标父目录中最近的已存在祖先目录。
-3. 对该祖先目录执行 `fs.realpath()` 并确认仍位于 `matchedRoot.realRootDir` 内。
-4. 如果目标文件已存在且是 symbolic link，拒绝写入。
-5. 创建缺失父目录后、正式写入前再次执行写入安全校验。
-6. 写入流程必须包裹在 `withFileLock()` 中。
+1. 做 lexical 路径安全与文件 candidate deny；命中时在取得文件锁前失败。
+2. 锁内查找最近存在祖先并计算预计 real target，执行 same-root 与 deny。
+3. 目标存在时先按实际类型查询 lexical/real deny，再处理 symbolic link、目录或文件类型错误。
+4. 创建缺失父目录后重新执行 realpath/root 与 deny。
+5. 正式写入前再次执行写入安全与 deny。
+6. 写入流程使用 `withFileLock()` 串行化同一路径的进程内写入。
 
 ---
 
@@ -193,11 +193,10 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 新增或维护文件类工具时：
 
-- 从 `ToolRuntimeContext.pathSafetyContext` 获取已验证上下文，不要在工具层自行读取或遍历 `rootDir` / `otherRootDirs`。
-- 普通路径使用 `resolveSafePathInContext()`，不要在工具层自行调用 `path.isAbsolute()` 判断用户意图。
-- 读取已存在文件前调用 `validateSafeReadTarget()`。
-- 写入文件前调用 `validateSafeWriteTarget()`，创建父目录后、正式写入前再次调用。
-- glob 输入使用 `resolveSafeGlobPatternInContext()` 做展开前校验，展开结果使用 `resolveSafeGlobEntry()` 做逐项校验。
+- 从 `ToolRuntimeContext.fileAccessPolicyContext` 获取统一上下文，不要在工具层自行读取或遍历 roots、策略文件或 matcher。
+- 普通路径使用 `resolveFileAccessPath()`，读取使用 `validateFileAccessReadTarget()`。
+- 写入使用 `validateFileAccessWriteTarget()`，创建父目录后、正式写入前再次调用。
+- glob 使用 `expandFileAccessGlob()`，不得退化为完整遍历后过滤 deny。
 - 文件写入必须使用 `withFileLock()`。
 - 所有文件系统 I/O 必须发生在 lexical path safety 之后。
 
@@ -207,7 +206,7 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 
 ## 测试入口
 
-路径安全核心回归位于 `test/path-safety/`，配置层 allowed roots 与 snapshot 集成覆盖位于 `test/config/`。这些测试覆盖：
+路径安全核心回归位于 `test/path-safety/`，文件访问策略横向回归位于 `test/file-access-policy/`，配置编译与 snapshot 集成位于 `test/config/`。这些测试覆盖：
 
 - 配置层 allowed roots 绝对路径、存在性、目录类型、lexical 重复/嵌套和 realpath 重复/嵌套校验。
 - 不支持路径形态的拒绝。
@@ -217,6 +216,6 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 - drive-absolute glob、slash-leading glob、glob static base 越界。
 - brace / extglob parent traversal 拦截。
 - 含 glob 元字符的字面文件名。
-- relative 字面路径与 drive-absolute literal / glob 的 exclude 语义。
+- literal 绕过 ignore/exclude、glob ignore 开关、deny mixed-result 隐私。
 - primary / additional root 之间的 symlink realpath 越界拒绝。
 - 写入目标 symlink 与写入父目录 symlink 相关行为。

@@ -117,7 +117,7 @@ async function handleReadFile(
   context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
   // 参数校验
-  // 业务逻辑；文件类工具从 context.pathSafetyContext 使用路径安全能力
+  // 业务逻辑；文件类工具从 context.fileAccessPolicyContext 使用统一文件访问策略
   // 返回结果
   return textResult('结果文本');
 }

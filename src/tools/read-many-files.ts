@@ -1,24 +1,18 @@
 // src/tools/read-many-files.ts
 
-import * as fs from 'node:fs/promises';
-import { glob, Ignore } from 'glob';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import {
-  formatPathSafetyError,
-  hasGlobMagic,
-  resolveSafeGlobEntry,
-  resolveSafeGlobPatternInContext,
-  resolveSafePathInContext,
-  validateSafeReadTarget,
-  type PathSafetyContext,
-  type PathSafetyError,
-  type SafePath,
-  type SafeReadTargetResult,
-} from '../utils/paths.js';
+  expandFileAccessGlob,
+  isIgnoredByFileAccessPolicy,
+  matchesExcludePattern,
+  resolveFileAccessPath,
+  validateFileAccessReadTarget,
+  type FileAccessPolicyContext,
+} from '../utils/file-access-policy.js';
+import { hasGlobMagic } from '../utils/paths.js';
 import {
-  BINARY_EXTENSIONS,
   isBinaryFile,
   readTextFile,
   MAX_LINE_LENGTH,
@@ -37,34 +31,6 @@ const SHALLOW_READ_BATCH_SIZE_BYTES = 50 * 1024;
 
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 const OUTPUT_TERMINATOR = '--- End of content ---';
-
-/**
- * Default exclusion patterns applied when useDefaultExcludes is true.
- * Binary/media glob patterns are generated from the shared BINARY_EXTENSIONS set
- * so the two layers stay in sync automatically.
- */
-const DEFAULT_EXCLUDES: string[] = [
-  // Version control & dependencies
-  '**/node_modules/**',
-  '**/.git/**',
-  '**/.svn/**',
-  '**/.hg/**',
-  '**/bower_components/**',
-  // IDE & editor
-  '**/.vscode/**',
-  '**/.idea/**',
-  // Build output
-  '**/dist/**',
-  '**/build/**',
-  '**/coverage/**',
-  '**/__pycache__/**',
-  '**/.gradle/**',
-  // System files
-  '**/.DS_Store',
-  '**/.env',
-  // Binary & media files
-  ...[...BINARY_EXTENSIONS].map((ext) => `**/*${ext}`),
-];
 
 // ================
 // Tool Schema
@@ -92,12 +58,12 @@ For broad file sets, use shallow_read first to inspect their size and truncation
         type: 'array',
         items: { type: 'string', minLength: 1 },
         description:
-          'Optional glob patterns added to the default excludes. Drive-absolute literal include paths bypass excludes; glob results remain subject to them. Examples: ["**/*.test.kt", "generated/**"]',
+          'Optional glob patterns applied to automatically discovered glob results. Literal include paths bypass excludes. Examples: ["**/*.test.kt", "generated/**"]',
       },
-      useDefaultExcludes: {
+      useIgnoreFiles: {
         type: 'boolean',
         description:
-          'Whether to apply default exclusion patterns (node_modules, .git, build, binary files, etc.). Defaults to true.',
+          'Whether configured ignore files filter glob results. Defaults to true. Literal paths bypass ignore files; deny policy always applies.',
       },
       shallow_read: {
         type: 'boolean',
@@ -111,6 +77,7 @@ For broad file sets, use shallow_read first to inspect their size and truncation
       },
     },
     required: ['include'],
+    additionalProperties: false,
   },
 };
 
@@ -119,6 +86,17 @@ For broad file sets, use shallow_read first to inspect their size and truncation
 // ================
 
 function validateParams(args: Record<string, unknown>): string | null {
+  const allowedKeys = new Set([
+    'include',
+    'exclude',
+    'useIgnoreFiles',
+    'shallow_read',
+    'show_line_numbers',
+  ]);
+  const unknownKeys = Object.keys(args).filter((key) => !allowedKeys.has(key));
+  if (unknownKeys.length > 0) {
+    return `Unknown parameter(s): ${unknownKeys.join(', ')}.`;
+  }
   if (!Array.isArray(args.include) || args.include.length === 0) {
     return "The 'include' parameter must be a non-empty array of strings.";
   }
@@ -138,10 +116,10 @@ function validateParams(args: Record<string, unknown>): string | null {
     }
   }
   if (
-    args.useDefaultExcludes !== undefined &&
-    typeof args.useDefaultExcludes !== 'boolean'
+    args.useIgnoreFiles !== undefined &&
+    typeof args.useIgnoreFiles !== 'boolean'
   ) {
-    return "The 'useDefaultExcludes' parameter must be a boolean.";
+    return "The 'useIgnoreFiles' parameter must be a boolean.";
   }
   if (args.shallow_read !== undefined && typeof args.shallow_read !== 'boolean') {
     return "The 'shallow_read' parameter must be a boolean.";
@@ -182,15 +160,6 @@ function addFile(fileMap: Map<string, FileEntry>, entry: FileEntry): void {
   }
 }
 
-function pathSafetySkipReason(error: PathSafetyError): string {
-  return formatPathSafetyError(error);
-}
-
-function readSafetySkipReason(result: SafeReadTargetResult): string {
-  if (result.ok) return '';
-  return result.reason;
-}
-
 function formatFileSize(sizeBytes: number): string {
   if (sizeBytes < 1024) {
     return `${sizeBytes} bytes`;
@@ -200,140 +169,84 @@ function formatFileSize(sizeBytes: number): string {
 
 async function tryAddLiteralFile(
   item: string,
-  safePath: SafePath,
   itemHasGlobMagic: boolean,
-  effectiveExcludes: string[],
+  fileAccessPolicyContext: FileAccessPolicyContext,
   fileMap: Map<string, FileEntry>,
   skipped: SkippedEntry[],
-): Promise<LiteralDecision> {
-  const readTarget = await validateSafeReadTarget(safePath);
+): Promise<LiteralDecision | ToolCallResult> {
+  const safePathResult = resolveFileAccessPath(item, fileAccessPolicyContext);
+  if (!safePathResult.ok) {
+    if (safePathResult.code === 'deny_policy') {
+      return textErrorResult(safePathResult.reason);
+    }
+    skipped.push({ path: item, reason: safePathResult.reason });
+    return 'handled';
+  }
+
+  const safePath = safePathResult.path;
+  const readTarget = await validateFileAccessReadTarget(
+    safePath,
+    fileAccessPolicyContext,
+  );
   if (!readTarget.ok) {
     if (readTarget.code === 'not_found' && itemHasGlobMagic) {
       return 'continue_to_glob';
     }
-    skipped.push({ path: item, reason: readSafetySkipReason(readTarget) });
+    if (readTarget.code === 'deny_policy') {
+      return textErrorResult(readTarget.reason);
+    }
+    skipped.push({ path: item, reason: readTarget.reason });
     return 'handled';
   }
 
-  try {
-    const stat = await fs.stat(readTarget.realPath);
-    if (!stat.isFile()) {
-      if (itemHasGlobMagic) return 'continue_to_glob';
-      skipped.push({ path: item, reason: 'not a file' });
-      return 'handled';
-    }
-
-    if (
-      safePath.kind === 'relative' &&
-      !relativeLiteralPassesExcludes(safePath, effectiveExcludes)
-    ) {
-      skipped.push({ path: item, reason: 'excluded by exclude patterns' });
-      return 'handled';
-    }
-
-    addFile(fileMap, {
-      readPath: readTarget.realPath,
-      displayPath: safePath.displayPath,
-    });
-    return 'added';
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT' && itemHasGlobMagic) {
-      return 'continue_to_glob';
-    }
-    skipped.push({
-      path: item,
-      reason: error.code === 'ENOENT' ? 'file not found' : error.message,
-    });
+  if (readTarget.target.kind !== 'file') {
+    if (itemHasGlobMagic) return 'continue_to_glob';
+    skipped.push({ path: item, reason: 'not a file' });
     return 'handled';
   }
-}
 
-function relativeLiteralPassesExcludes(
-  safePath: SafePath,
-  effectiveExcludes: string[],
-): boolean {
-  if (effectiveExcludes.length === 0) return true;
-
-  const ignore = new Ignore(effectiveExcludes, {
-    dot: true,
-    nocase: process.platform === 'win32',
+  addFile(fileMap, {
+    readPath: readTarget.target.realPath,
+    displayPath: safePath.displayPath,
   });
-  const ignorePath = {
-    fullpath: () => safePath.resolvedPath,
-    relative: () => safePath.displayPath.replace(/\\/g, '/'),
-  } as Parameters<Ignore['ignored']>[0];
-
-  return !ignore.ignored(ignorePath);
+  return 'added';
 }
 
 async function expandGlobPattern(
   item: string,
-  effectiveExcludes: string[],
-  pathSafetyContext: PathSafetyContext,
+  exclude: string[],
+  useIgnoreFiles: boolean,
+  fileAccessPolicyContext: FileAccessPolicyContext,
   fileMap: Map<string, FileEntry>,
   skipped: SkippedEntry[],
-): Promise<string | null> {
-  const globResult = resolveSafeGlobPatternInContext(item, pathSafetyContext);
-  if (!globResult.ok) {
-    skipped.push({ path: item, reason: pathSafetySkipReason(globResult.error) });
-    return null;
+): Promise<{ readonly error: string | null; readonly blockedByDeny: boolean }> {
+  const result = await expandFileAccessGlob(item, fileAccessPolicyContext);
+  if (!result.ok) {
+    return { error: result.reason, blockedByDeny: false };
   }
 
-  let entries: string[];
-  try {
-    entries = await glob(globResult.glob.pattern, {
-      cwd: globResult.glob.rootDir,
-      ignore: effectiveExcludes,
-      nodir: true,
-      dot: true,
-      absolute: true,
-    });
-  } catch (err: unknown) {
-    return (
-      `Glob pattern error: ${err instanceof Error ? err.message : String(err)}. ` +
-      'Check that your include patterns are valid.'
-    );
-  }
-
-  for (const entry of entries) {
-    const safeEntry = resolveSafeGlobEntry(entry, globResult.glob);
-    if (!safeEntry.ok) {
-      skipped.push({ path: entry, reason: pathSafetySkipReason(safeEntry.error) });
+  skipped.push(...result.expansion.skipped);
+  for (const target of result.expansion.files) {
+    if (
+      useIgnoreFiles &&
+      isIgnoredByFileAccessPolicy(target.safePath, fileAccessPolicyContext)
+    ) {
       continue;
     }
-
-    const readTarget = await validateSafeReadTarget(safeEntry.path);
-    if (!readTarget.ok) {
-      skipped.push({
-        path: safeEntry.path.displayPath,
-        reason: readSafetySkipReason(readTarget),
-      });
-      continue;
-    }
-
-    try {
-      const stat = await fs.stat(readTarget.realPath);
-      if (!stat.isFile()) {
-        skipped.push({ path: safeEntry.path.displayPath, reason: 'not a file' });
-        continue;
-      }
-    } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
-      skipped.push({
-        path: safeEntry.path.displayPath,
-        reason: error.code === 'ENOENT' ? 'file not found' : error.message,
-      });
+    if (matchesExcludePattern(target.safePath, exclude)) {
       continue;
     }
 
     addFile(fileMap, {
-      readPath: readTarget.realPath,
-      displayPath: safeEntry.path.displayPath,
+      readPath: target.realPath,
+      displayPath: target.safePath.displayPath,
     });
   }
 
-  return null;
+  return {
+    error: null,
+    blockedByDeny: result.expansion.blockedByDeny,
+  };
 }
 
 // ================
@@ -350,56 +263,55 @@ async function handleReadManyFiles(
 
   const include = args.include as string[];
   const exclude = (args.exclude as string[] | undefined) ?? [];
-  const useDefaultExcludes =
-    (args.useDefaultExcludes as boolean | undefined) ?? true;
+  const useIgnoreFiles =
+    (args.useIgnoreFiles as boolean | undefined) ?? true;
   const shallowRead = (args.shallow_read as boolean | undefined) ?? false;
   const showLineNumbers =
     (args.show_line_numbers as boolean | undefined) ?? false;
 
-  // 2. Build effective exclude patterns
-  const effectiveExcludes = useDefaultExcludes
-    ? [...DEFAULT_EXCLUDES, ...exclude]
-    : [...exclude];
-
-  // 3. Resolve literal paths and expand glob patterns after lexical safety checks.
+  // 2. Resolve literals first, then expand only the inputs that qualify as globs.
   const fileMap = new Map<string, FileEntry>();
   const skipped: SkippedEntry[] = [];
-  const pathSafetyContext = context.pathSafetyContext;
+  const fileAccessPolicyContext = context.fileAccessPolicyContext;
+  let blockedByDeny = false;
 
   for (const item of include) {
     const itemHasGlobMagic = hasGlobMagic(item);
-    const safePathResult = resolveSafePathInContext(item, pathSafetyContext);
+    const slashLeadingGlob =
+      itemHasGlobMagic &&
+      (item.startsWith('/') || item.startsWith('\\')) &&
+      !(item.startsWith('//') || item.startsWith('\\\\'));
 
-    if (safePathResult.ok) {
+    if (!slashLeadingGlob) {
       const literalDecision = await tryAddLiteralFile(
         item,
-        safePathResult.path,
         itemHasGlobMagic,
-        effectiveExcludes,
+        fileAccessPolicyContext,
         fileMap,
         skipped,
       );
 
+      if (typeof literalDecision !== 'string') {
+        return literalDecision;
+      }
       if (literalDecision !== 'continue_to_glob') {
         continue;
       }
-    } else if (!itemHasGlobMagic) {
-      skipped.push({
-        path: item,
-        reason: pathSafetySkipReason(safePathResult.error),
-      });
-      continue;
     }
 
     if (itemHasGlobMagic) {
-      const globError = await expandGlobPattern(
+      const globExpansion = await expandGlobPattern(
         item,
-        effectiveExcludes,
-        pathSafetyContext,
+        exclude,
+        useIgnoreFiles,
+        fileAccessPolicyContext,
         fileMap,
         skipped,
       );
-      if (globError) return textErrorResult(globError);
+      if (globExpansion.error) {
+        return textErrorResult(globExpansion.error);
+      }
+      blockedByDeny ||= globExpansion.blockedByDeny;
     }
   }
 
@@ -581,6 +493,12 @@ async function handleReadManyFiles(
     summaryParts.push(
       `File limit reached (${MAX_FILES}). ` +
         'Not all matching files were read. Use more specific patterns to narrow results.',
+    );
+  }
+
+  if (processedFiles.length > 0 && blockedByDeny) {
+    summaryParts.push(
+      'Some paths were blocked by the file access deny policy.',
     );
   }
 
