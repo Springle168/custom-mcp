@@ -38,12 +38,14 @@ async function resetFixtures(): Promise<void> {
     fs.mkdir(path.join(FIXTURES_DIR, 'ignored'), { recursive: true }),
     fs.mkdir(path.join(FIXTURES_DIR, 'denied'), { recursive: true }),
     fs.mkdir(path.join(FIXTURES_DIR, 'node_modules'), { recursive: true }),
+    fs.mkdir(path.join(FIXTURES_DIR, '..cache'), { recursive: true }),
   ]);
   await Promise.all([
     fs.writeFile(path.join(FIXTURES_DIR, 'allowed', 'visible.txt'), 'visible', 'utf-8'),
     fs.writeFile(path.join(FIXTURES_DIR, 'ignored', 'soft.txt'), 'soft', 'utf-8'),
     fs.writeFile(path.join(FIXTURES_DIR, 'denied', 'secret.txt'), 'secret-value', 'utf-8'),
     fs.writeFile(path.join(FIXTURES_DIR, 'node_modules', 'dependency.txt'), 'dependency', 'utf-8'),
+    fs.writeFile(path.join(FIXTURES_DIR, '..cache', 'valid.txt'), 'valid-dot-prefix', 'utf-8'),
   ]);
 }
 
@@ -104,6 +106,25 @@ async function testPolicyCandidateShape(): Promise<void> {
     null,
     'The root itself should not produce a policy candidate',
   );
+}
+
+async function testDotDotPrefixedDirectoryRemainsInsideRoot(): Promise<void> {
+  const readResult = await readFileTool.handler(
+    { file_path: '..cache/valid.txt' },
+    createContext(),
+  );
+  assert(readResult.isError !== true, 'A ..-prefixed name is not parent traversal');
+  assertIncludes(
+    getResultText(readResult),
+    'valid-dot-prefix',
+    'A valid in-root ..-prefixed directory should be readable',
+  );
+
+  const writeResult = await writeFileTool.handler(
+    { file_path: '..cache/new.txt', content: 'created' },
+    createContext(),
+  );
+  assert(writeResult.isError !== true, 'A future target under a ..-prefixed name should be writable');
 }
 
 async function testLiteralReadDenyAndIgnoreBypass(): Promise<void> {
@@ -214,6 +235,36 @@ async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
   );
 }
 
+async function testGlobDoesNotFollowDiscoveredDirectoryLinks(): Promise<void> {
+  const aliasPath = path.join(FIXTURES_DIR, 'alias-discovered');
+  await fs.symlink(
+    path.join(FIXTURES_DIR, 'allowed'),
+    aliasPath,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+
+  const result = await readManyFilesTool.handler(
+    { include: ['alias-*/visible.txt'] },
+    createContext(),
+  );
+  assert(result.isError === true, 'A wildcard-discovered directory link should be pruned');
+  assertIncludes(getResultText(result), 'No files matched', 'Pruned links should look like no match');
+  assertNotIncludes(getResultText(result), 'visible', 'The linked file must not be discovered');
+}
+
+async function testDanglingWriteSymlinkIsRejected(): Promise<void> {
+  if (process.platform === 'win32') return;
+  const linkPath = path.join(FIXTURES_DIR, 'dangling.txt');
+  await fs.symlink(path.join(FIXTURES_DIR, 'missing-target.txt'), linkPath, 'file');
+
+  const result = await writeFileTool.handler(
+    { file_path: 'dangling.txt', content: 'must-not-follow' },
+    createContext(),
+  );
+  assert(result.isError === true, 'A dangling write symlink should be rejected');
+  assertIncludes(getResultText(result), 'symbolic link', 'The failure should identify the unsafe target type');
+}
+
 async function testWriteAndReplaceDenyFutureTargets(): Promise<void> {
   const context = createContext({ deny: ['denied/**'] });
   const writeResult = await writeFileTool.handler(
@@ -263,11 +314,14 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'policy candidate shape', run: testPolicyCandidateShape },
+      { name: '..-prefixed directory remains inside root', run: testDotDotPrefixedDirectoryRemainsInsideRoot },
       { name: 'literal deny and ignore/exclude bypass', run: testLiteralReadDenyAndIgnoreBypass },
       { name: 'realpath deny cannot be bypassed by symlink', run: testRealpathDenyCannotBeBypassedBySymlink },
       { name: 'glob ignore toggle and no built-in defaults', run: testGlobIgnoreToggleAndNoBuiltInDefaults },
       { name: 'glob deny mixed-result privacy', run: testGlobDenyMixedResultPrivacy },
       { name: 'glob deny zero-result and static-base privacy', run: testGlobDenyZeroResultAndStaticBasePrivacy },
+      { name: 'glob does not follow discovered directory links', run: testGlobDoesNotFollowDiscoveredDirectoryLinks },
+      { name: 'dangling write symlink is rejected', run: testDanglingWriteSymlinkIsRejected },
       { name: 'write and replace deny future targets', run: testWriteAndReplaceDenyFutureTargets },
       { name: 'directory-type deny precedes directory error', run: testDirectoryTypeDenyPrecedesDirectoryError },
     ],
