@@ -178,15 +178,53 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   const filteredText = getResultText(filtered);
   assertNotIncludes(filteredText, 'ignored\\soft.txt', 'Configured ignore should filter glob results');
   assertIncludes(filteredText, 'node_modules', 'There should be no hard-coded default ignore patterns');
+  assertIncludes(
+    filteredText,
+    'NOTE: Some glob-discovered paths were filtered by configured ignoreFiles rules.',
+    'Mixed results should disclose configured ignore filtering',
+  );
 
   const unfiltered = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useIgnoreFiles: false },
     createContext({ ignore: ['ignored/**'] }),
   );
+  const unfilteredText = getResultText(unfiltered);
   assertIncludes(
-    getResultText(unfiltered),
+    unfilteredText,
     'ignored\\soft.txt',
     'useIgnoreFiles=false should disable only the ignore matcher',
+  );
+  assertNotIncludes(
+    unfilteredText,
+    'filtered by configured ignoreFiles rules',
+    'Disabled ignore filtering should not emit the ignore note',
+  );
+
+  const excluded = await readManyFilesTool.handler(
+    {
+      include: ['**/*.txt'],
+      exclude: ['ignored/**'],
+      useIgnoreFiles: false,
+    },
+    createContext({ ignore: ['ignored/**'] }),
+  );
+  assertNotIncludes(
+    getResultText(excluded),
+    'filtered by configured ignoreFiles rules',
+    'Per-call excludes should not emit the ignore note',
+  );
+
+  const onlyIgnored = await readManyFilesTool.handler(
+    { include: ['ignored/**/*.txt'], useIgnoreFiles: true },
+    createContext({ ignore: ['ignored/**'] }),
+  );
+  assert(onlyIgnored.isError === true, 'An all-ignored glob should use the normal error');
+  const onlyIgnoredText = getResultText(onlyIgnored);
+  assertIncludes(onlyIgnoredText, 'No files matched', 'All-ignored results should remain generic');
+  assertNotIncludes(
+    onlyIgnoredText,
+    'filtered by configured ignoreFiles rules',
+    'An all-ignored glob should not emit the ignore note',
   );
 }
 

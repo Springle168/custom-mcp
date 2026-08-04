@@ -63,7 +63,7 @@ For broad file sets, use shallow_read first to inspect their size and truncation
       useIgnoreFiles: {
         type: 'boolean',
         description:
-          'Whether configured ignoreFiles rules filter automatically discovered glob results. Defaults to true. Literal include paths bypass ignore rules. The file access deny policy always applies.',
+          'Whether configured ignoreFiles rules filter automatically discovered glob results. Defaults to true. Literal include paths bypass ignore rules. The file access deny policy always applies. Keep enabled for broad discovery. If inspection of ignored matches is needed, use the recommended workflow: first use a narrow include pattern with useIgnoreFiles=false and shallow_read=true, then read selected files by literal path.',
       },
       shallow_read: {
         type: 'boolean',
@@ -219,18 +219,28 @@ async function expandGlobPattern(
   fileAccessPolicyContext: FileAccessPolicyContext,
   fileMap: Map<string, FileEntry>,
   skipped: SkippedEntry[],
-): Promise<{ readonly error: string | null; readonly blockedByDeny: boolean }> {
+): Promise<{
+  readonly error: string | null;
+  readonly blockedByDeny: boolean;
+  readonly ignoredByPolicy: boolean;
+}> {
   const result = await expandFileAccessGlob(item, fileAccessPolicyContext);
   if (!result.ok) {
-    return { error: result.reason, blockedByDeny: false };
+    return {
+      error: result.reason,
+      blockedByDeny: false,
+      ignoredByPolicy: false,
+    };
   }
 
   skipped.push(...result.expansion.skipped);
+  let ignoredByPolicy = false;
   for (const target of result.expansion.files) {
     if (
       useIgnoreFiles &&
       isIgnoredByFileAccessPolicy(target.safePath, fileAccessPolicyContext)
     ) {
+      ignoredByPolicy = true;
       continue;
     }
     if (matchesExcludePattern(target.safePath, exclude)) {
@@ -246,6 +256,7 @@ async function expandGlobPattern(
   return {
     error: null,
     blockedByDeny: result.expansion.blockedByDeny,
+    ignoredByPolicy,
   };
 }
 
@@ -274,6 +285,7 @@ async function handleReadManyFiles(
   const skipped: SkippedEntry[] = [];
   const fileAccessPolicyContext = context.fileAccessPolicyContext;
   let blockedByDeny = false;
+  let ignoredByPolicy = false;
 
   for (const item of include) {
     const itemHasGlobMagic = hasGlobMagic(item);
@@ -312,6 +324,7 @@ async function handleReadManyFiles(
         return textErrorResult(globExpansion.error);
       }
       blockedByDeny ||= globExpansion.blockedByDeny;
+      ignoredByPolicy ||= globExpansion.ignoredByPolicy;
     }
   }
 
@@ -499,6 +512,12 @@ async function handleReadManyFiles(
   if (processedFiles.length > 0 && blockedByDeny) {
     summaryParts.push(
       'NOTE: Some paths were blocked by the file access deny policy.',
+    );
+  }
+
+  if (processedFiles.length > 0 && ignoredByPolicy) {
+    summaryParts.push(
+      'NOTE: Some glob-discovered paths were filtered by configured ignoreFiles rules.',
     );
   }
 
