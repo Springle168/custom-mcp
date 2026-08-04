@@ -199,7 +199,7 @@ async function testGlobDenyMixedResultPrivacy(): Promise<void> {
   const text = getResultText(result);
   assertIncludes(
     text,
-    'Some paths were blocked by the file access deny policy.',
+    'NOTE: Some paths were blocked by the file access deny policy.',
     'Mixed results should contain the fixed disclosure',
   );
   assertNotIncludes(text, 'secret.txt', 'Denied paths must not be disclosed');

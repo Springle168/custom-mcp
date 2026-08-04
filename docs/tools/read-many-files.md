@@ -174,7 +174,7 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 - 没有硬编码默认 ignore 列表，也不从二进制扩展名生成 glob 排除项。
 - `ignoreFiles` 只过滤自动发现的 lexical 可见路径；`useIgnoreFiles=false` 可以关闭该软过滤。
 - `denyFiles` 始终应用，并同时检查 lexical path 与 realpath。
-- glob 同时得到 allowed 文件和 denied 自动发现项时，只返回 allowed 文件并追加固定说明：`Some paths were blocked by the file access deny policy.`。
+- glob 同时得到 allowed 文件和 denied 自动发现项时，只返回 allowed 文件并追加固定说明：`NOTE: Some paths were blocked by the file access deny policy.`。
 - denied 自动发现项不进入 skipped、排序、去重、数量限制或数量统计，也不输出路径。
 - 全部结果被 ignore、exclude 或 deny 时，与普通零匹配使用相同错误。
 
