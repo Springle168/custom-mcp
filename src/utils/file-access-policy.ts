@@ -412,16 +412,20 @@ export async function expandFileAccessGlob(
       fs: controlledFs,
       ignore: {
         ignored: () => false,
-        childrenIgnored: (entry: { fullpath: () => string }) => {
+        childrenIgnored: (entry: {
+          fullpath: () => string;
+          isSymbolicLink: () => boolean;
+        }) => {
           const directoryPath = path.resolve(entry.fullpath());
-          if (areSamePath(directoryPath, globResult.glob.resolvedStaticBase)) {
+          if (
+            isExplicitStaticBasePrefix(
+              directoryPath,
+              globResult.glob.resolvedStaticBase,
+            )
+          ) {
             return false;
           }
-          try {
-            return nodeFs.lstatSync(directoryPath).isSymbolicLink();
-          } catch {
-            return true;
-          }
+          return entry.isSymbolicLink();
         },
       },
     });
@@ -577,23 +581,6 @@ async function validateTraversalDirectory(
       readonly reason: string;
     }
 > {
-  try {
-    const stats = await fs.lstat(directoryPath);
-    if (
-      stats.isSymbolicLink() &&
-      !areSamePath(directoryPath, explicitStaticBase)
-    ) {
-      return {
-        ok: false,
-        code: 'io_error',
-        reason: 'Glob traversal does not follow discovered directory symbolic links.',
-      };
-    }
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return { ok: false, code: 'io_error', reason: error.message };
-  }
-
   if (
     !isInsideRoot(directoryPath, root.rootDir) ||
     (
@@ -604,6 +591,23 @@ async function validateTraversalDirectory(
     return isInsideRoot(directoryPath, root.rootDir)
       ? { ...denyGlobResult('glob traversal'), reason: 'Directory was blocked by the file access deny policy.' }
       : { ok: false, code: 'io_error', reason: 'Glob traversal left its matched workspace root.' };
+  }
+
+  try {
+    const stats = await fs.lstat(directoryPath);
+    if (
+      stats.isSymbolicLink() &&
+      !isExplicitStaticBasePrefix(directoryPath, explicitStaticBase)
+    ) {
+      return {
+        ok: false,
+        code: 'io_error',
+        reason: 'Glob traversal does not follow discovered directory symbolic links.',
+      };
+    }
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    return { ok: false, code: 'io_error', reason: error.message };
   }
 
   try {
@@ -712,6 +716,13 @@ function isInsideRoot(candidatePath: string, rootDir: string): boolean {
     relative !== '..' &&
     !relative.startsWith(`..${path.sep}`) &&
     !path.isAbsolute(relative);
+}
+
+function isExplicitStaticBasePrefix(
+  directoryPath: string,
+  explicitStaticBase: string,
+): boolean {
+  return isInsideRoot(explicitStaticBase, directoryPath);
 }
 
 async function findExistingAncestor(targetPath: string): Promise<string> {
