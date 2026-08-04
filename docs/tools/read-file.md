@@ -51,7 +51,7 @@ test/read-file/
 
 `file_path` 统一通过 `src/utils/paths.ts` 的路径安全层处理：先按原始输入分类，再解析和做 lexical root 边界校验。相对路径只基于 primary `rootDir`；drive-absolute 路径可位于 primary 或 additional root 内，并会命中唯一 matched root。drive-relative（如 `C:foo.txt`）、rooted without drive（如 `/foo.txt`、`\\foo.txt`）、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
 
-读取已存在文件时，工具会在 lexical 校验通过后执行 `realpath` 校验，确认真实目标仍位于同一个 matched root 内，再继续 `stat`、二进制检测和文本读取。
+读取已存在文件时，工具通过 `FileAccessPolicyContext` 先执行 lexical file candidate deny，再执行 `realpath` / same-root 校验；实际类型确认后按 file 或 directory candidate 同时重查 lexical 与 realpath deny。只有通过 deny 后才继续目录错误、二进制检测和文本读取。Literal 读取不应用 ignore。
 
 ### 参数校验
 
@@ -180,7 +180,8 @@ data class Foo(
 |-|-|
 | `src/tools/read-file.ts` | Schema 定义、参数校验、`read_mode` 解析、路径安全、结果拼接 |
 | `src/utils/file-read.ts` | 二进制检测、20MB 文件大小保护、文本读取、可配置截断、行号前缀 |
-| `src/utils/paths.ts` | 路径分类、root 边界校验、display path、读取 realpath 安全校验 |
+| `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
+| `src/utils/file-access-policy.ts` | policy candidate、lexical/realpath deny 与读取目标检查 |
 | `src/tools/index.ts` | 工具注册 |
 
 ---
@@ -190,5 +191,5 @@ data class Foo(
 本项目的稳定边界如下：
 
 - 只返回 MCP text 内容；图片、PDF、音频和其它二进制内容会被拒绝读取。
-- 路径访问由 allowed roots 沙箱决定，不读取忽略文件作为安全边界。
+- 可访问边界由 allowed roots 与 matched-root deny 共同决定；ignore 只用于自动发现，不影响 `read_file` literal。
 - 工具不注入 JIT 上下文，也不记录遥测事件。

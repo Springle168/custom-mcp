@@ -4,6 +4,9 @@ import {
   type RuntimeConfigSnapshot,
 } from './config/runtime-snapshot.js';
 import { applyEnvOverridesToWorkspace } from './config/env-overrides.js';
+import {
+  compileGlobalFileAccessPolicies,
+} from './config/file-access-policy.js';
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
@@ -90,23 +93,41 @@ export function loadRuntimeConfigWithIdentity(
     const globalConfig = parseGlobalConfig(parsed, {
       configFilePath: location.configFilePath,
     });
+    const compiledWorkspaces = compileGlobalFileAccessPolicies(
+      location.configFilePath,
+      globalConfig.workspaces,
+    );
     const selection = selectRuntimeWorkspace({
       configFilePath: location.configFilePath,
-      workspaces: globalConfig.workspaces,
+      workspaces: compiledWorkspaces,
       ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     });
     const selectedWorkspaceIndex = getSelectedWorkspaceIndex(
-      globalConfig.workspaces,
+      compiledWorkspaces,
       selection.identity.workspaceId,
       location.configFilePath,
     );
-    const workspace = applyEnvOverridesToWorkspace({
+    const selectedWorkspace = compiledWorkspaces[selectedWorkspaceIndex];
+    if (selectedWorkspace === undefined) {
+      throw new ConfigError({
+        code: 'config_validation_failed',
+        configFilePath: location.configFilePath,
+        fieldPath: 'workspace',
+        message: `Selected workspace "${selection.identity.workspaceId}" has no compiled file access policy entry.`,
+        suggestion: 'Restart the server after fixing the global workspace configuration.',
+      });
+    }
+    const workspaceWithOverrides = applyEnvOverridesToWorkspace({
       configFilePath: location.configFilePath,
-      workspace: selection.workspace,
+      workspace: selectedWorkspace,
       workspaceIndex: selectedWorkspaceIndex,
       env: options.env,
     });
+    const workspace = {
+      ...workspaceWithOverrides,
+      compiledFileAccessPolicy: selectedWorkspace.compiledFileAccessPolicy,
+    };
     const snapshot = buildRuntimeConfigSnapshot({
       configFilePath: location.configFilePath,
       workspace,

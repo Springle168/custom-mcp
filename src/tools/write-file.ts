@@ -9,10 +9,9 @@ import {
 import { isBinaryFile } from '../utils/file-read.js';
 import { withFileLock } from '../utils/file-lock.js';
 import {
-  formatPathSafetyError,
-  resolveSafePathInContext,
-  validateSafeWriteTarget,
-} from '../utils/paths.js';
+  resolveFileAccessPath,
+  validateFileAccessWriteTarget,
+} from '../utils/file-access-policy.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 
@@ -149,16 +148,22 @@ async function handleWriteFile(
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
-  const pathSafetyContext = context.pathSafetyContext;
-  const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
+  const fileAccessPolicyContext = context.fileAccessPolicyContext;
+  const safePathResult = resolveFileAccessPath(
+    filePath,
+    fileAccessPolicyContext,
+  );
   if (!safePathResult.ok) {
-    return textErrorResult(formatPathSafetyError(safePathResult.error));
+    return textErrorResult(safePathResult.reason);
   }
   const safePath = safePathResult.path;
 
   return withFileLock(safePath.resolvedPath, async () => {
-    const safetyError = await validateSafeWriteTarget(safePath);
-    if (safetyError) return textErrorResult(safetyError);
+    const safetyResult = await validateFileAccessWriteTarget(
+      safePath,
+      fileAccessPolicyContext,
+    );
+    if (!safetyResult.ok) return textErrorResult(safetyResult.reason);
 
     let detectedLineEnding: '\r\n' | '\n' | null = null;
 
@@ -198,8 +203,13 @@ async function handleWriteFile(
 
     try {
       await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
-      const postMkdirSafetyError = await validateSafeWriteTarget(safePath);
-      if (postMkdirSafetyError) return textErrorResult(postMkdirSafetyError);
+      const postMkdirSafetyResult = await validateFileAccessWriteTarget(
+        safePath,
+        fileAccessPolicyContext,
+      );
+      if (!postMkdirSafetyResult.ok) {
+        return textErrorResult(postMkdirSafetyResult.reason);
+      }
 
       await fs.writeFile(safePath.resolvedPath, finalContent, 'utf-8');
     } catch (err: unknown) {

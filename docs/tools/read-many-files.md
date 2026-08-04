@@ -14,14 +14,17 @@
 test/read-many-files/
 └── read-many-files.test.ts      # include/exclude、glob、shallow_read、行号和二进制跳过
 
+test/file-access-policy/
+└── file-tools.test.ts           # literal/glob ignore、deny、mixed-result 隐私与写入拒绝
+
 test/fixtures/read-many-files/
 ├── setup.ts                     # fixture 生成脚本
 ├── src/                         # Kotlin 测试文件
 ├── docs/                        # Markdown 测试文件
 ├── special-names/               # 文件名含 glob 元字符的字面路径测试
 ├── binary/                      # 二进制文件测试
-├── node_modules/                # 默认排除测试
-└── build/                       # 默认排除测试
+├── node_modules/                # 无内置 ignore 的回归 fixture
+└── build/                       # 无内置 ignore 的回归 fixture
 ```
 
 跨 allowed roots、glob static base、exclude 与 symlink 的横向路径安全回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)。
@@ -39,8 +42,8 @@ test/fixtures/read-many-files/
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
 | `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；相对输入基于 primary `rootDir`，drive-absolute 输入可位于任一 allowed root 内 |
-| `exclude` | `string[]` | ❌ | `[]` | 额外排除模式，追加到默认排除之后 |
-| `useDefaultExcludes` | `boolean` | ❌ | `true` | 是否启用默认排除规则 |
+| `exclude` | `string[]` | ❌ | `[]` | 仅过滤 glob 自动发现结果的本次调用 glob pattern；literal 绕过 |
+| `useIgnoreFiles` | `boolean` | ❌ | `true` | 是否使用 matched root 配置的 `ignoreFiles` 过滤 glob 自动发现结果；不影响 literal、`exclude` 或 deny |
 | `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数与大小、总行数与总大小和是否会截断，不返回文件内容；总大小超过 50 KB 时建议拆分后续读取 |
 | `show_line_numbers` | `boolean` | ❌ | `false` | 给返回内容每行添加原始行号前缀，仅在确实需要行号时开启 |
 
@@ -51,7 +54,7 @@ test/fixtures/read-many-files/
 - **主 description**：说明多文件和 glob 读取场景、文本文件限定、截断边界，以及与单文件 `read_file` 的分工
 - **批量预检**：建议宽泛文件集合先使用 `shallow_read` 评估大小和截断风险，再决定后续读取范围
 - **输入路径**：由 `include` 参数说明 relative / drive-absolute 路径和 glob 的 root 语义，并提供输入示例
-- **排除规则**：由 `exclude` 和 `useDefaultExcludes` 参数说明追加规则、默认排除和 drive-absolute literal bypass 语义
+- **过滤规则**：由 `exclude` 和 `useIgnoreFiles` 参数区分本次调用过滤与 root-specific 持久 ignore；所有 literal 都绕过两者
 - **浅读取结果**：由 `shallow_read` 参数说明行数、大小、截断状态和超过 50 KB 时的拆分建议
 - **行号输出**：由 `show_line_numbers` 参数说明 1-based 行号及输出体积影响
 
@@ -61,28 +64,28 @@ test/fixtures/read-many-files/
 
 ### 路径分类处理
 
-`include` 数组中的每个元素先进入统一路径安全层，路径层会在任何文件系统 I/O 前完成输入形态分类、lexical root 边界校验和 matched root 选择：
+`include` 数组中的每个元素进入统一文件访问策略层。该层组合 allowed-root、policy candidate、lexical/realpath deny 和受控 glob 遍历：
 
 ```text
 遍历 include 数组
 ├── 字面路径候选（relative 或 drive-absolute）
-│   → resolveSafePathInContext lexical 校验并得到 matched root
-│   → validateSafeReadTarget realpath 校验，真实目标必须仍在 matched root 内
-│   → fs.stat 确认为文件后加入待读集合
-│   → drive-absolute 字面路径不受 exclude 模式影响
+│   → lexical 校验、文件 candidate deny 并得到 matched root
+│   → realpath/same-root 与实际类型 lexical/real deny
+│   → 确认为文件后加入待读集合
+│   → relative 与 drive-absolute literal 都绕过 ignore 和 exclude
 │
 └── glob 候选
-    → resolveSafeGlobPatternInContext 分类并计算 static base
-    → static base 必须命中唯一 matched root，否则不调用 glob()
-    → glob(pattern, { cwd: matchedRoot.rootDir, ignore: effectiveExcludes, absolute: true })
-    → 每个展开结果再次做 lexical + realpath 校验，且必须仍在同一个 matched root 内
+    → 分类并计算 static base，执行 lexical/预计 real deny
+    → 受控 glob adapter 在 readdir 前执行目录 lexical/real deny，拒绝目录会被剪枝
+    → 每个展开结果再次执行 lexical/realpath deny
+    → useIgnoreFiles 启用时应用 lexical ignore，再应用本次 exclude
 ```
 
 支持的 glob 来源包括 relative glob（如 `src/**/*.ts`）、drive-absolute glob（如 `E:/Repo/src/**/*.ts`）和窄兼容的 slash-leading glob（如 `/**/Foo.kt`）。relative glob 和 slash-leading glob 只基于 primary `rootDir`；drive-absolute glob 可命中 primary 或 additional root。普通 `/foo/bar.ts` 不含 glob 元字符，会按 rooted without drive 拒绝。
 
 文件名中包含 glob 元字符（如 `special/file[test].ts`、`special/file{brace}.ts`）时，工具会先在 lexical 校验通过后按字面文件探测；只有不存在或不是文件时，才继续按 glob 模式处理。
 
-Drive-absolute 字面路径不走 exclude 过滤的原因：AI 显式指定的文件不应被默认规则拦截。Glob 展开结果仍受 exclude 过滤，包括 additional root 内的 drive-absolute glob。
+Literal 是显式访问，因此 relative 与 drive-absolute literal 都不走 ignore / exclude。Deny 是强制访问边界，始终应用于 literal、glob static base、遍历目录和展开结果，不能由工具参数关闭。
 
 ### 二进制文件检测
 
@@ -166,19 +169,14 @@ Files:
 
 AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容。
 
-### 默认排除列表
+### Ignore、deny 与 mixed result
 
-启用 `useDefaultExcludes`（默认）时，以下模式会被排除：
-
-| 类别 | 模式 |
-|-|-|
-| 版本控制 | `**/node_modules/**`, `**/.git/**`, `**/.svn/**`, `**/.hg/**`, `**/bower_components/**` |
-| IDE | `**/.vscode/**`, `**/.idea/**` |
-| 构建输出 | `**/dist/**`, `**/build/**`, `**/coverage/**`, `**/__pycache__/**`, `**/.gradle/**` |
-| 系统文件 | `**/.DS_Store`, `**/.env` |
-| 二进制文件 | 由 `BINARY_EXTENSIONS` 集合自动生成（`**/*.exe`, `**/*.jar`, `**/*.png` 等） |
-
-排除列表与 `BINARY_EXTENSIONS` 共用同一数据源，保持一致性。
+- 没有硬编码默认 ignore 列表，也不从二进制扩展名生成 glob 排除项。
+- `ignoreFiles` 只过滤自动发现的 lexical 可见路径；`useIgnoreFiles=false` 可以关闭该软过滤。
+- `denyFiles` 始终应用，并同时检查 lexical path 与 realpath。
+- glob 同时得到 allowed 文件和 denied 自动发现项时，只返回 allowed 文件并追加固定说明：`Some paths were blocked by the file access deny policy.`。
+- denied 自动发现项不进入 skipped、排序、去重、数量限制或数量统计，也不输出路径。
+- 全部结果被 ignore、exclude 或 deny 时，与普通零匹配使用相同错误。
 
 ---
 
@@ -188,7 +186,8 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 |-|-|
 | `src/tools/read-many-files.ts` | Schema定义、参数校验、路径分类、glob 展开、结果拼接 |
 | `src/utils/file-read.ts` | 常量、二进制检测（`isBinaryFile`）、文本读取与截断（`readTextFile`）、`BINARY_EXTENSIONS` 集合 |
-| `src/utils/paths.ts` | 路径分类、root 边界校验、glob static base 校验、展开结果校验、读取 realpath 安全校验 |
+| `src/utils/paths.ts` | 路径分类、root 边界和 glob static base 的 lexical 解析 |
+| `src/utils/file-access-policy.ts` | candidate、deny/ignore、realpath 校验和受控 glob 遍历 |
 | `src/tools/index.ts` | 工具注册 |
 
 ---
@@ -198,7 +197,7 @@ AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容�
 本项目的稳定边界如下：
 
 - 不自动遍历多个 workspace；relative 输入只基于 primary root，additional roots 必须通过 drive-absolute path / glob 明确访问。
-- allowed roots 沙箱和 `exclude` 参数共同决定可读文件集合，不读取忽略文件作为安全边界。
+- allowed roots 与 deny 决定可访问边界；ignore 和 `exclude` 只过滤自动发现结果。
 - 只返回文本内容；图片、PDF、音频和其它二进制内容会被跳过。
 - 使用 UTF-8 读取文本，不做 BOM 编码检测。
 - 递归由 glob 的 `**` 表达，不提供单独的 `recursive` 参数。

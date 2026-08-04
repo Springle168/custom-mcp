@@ -16,10 +16,9 @@ import {
 } from '../engine/text-utils.js';
 import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
 import {
-  formatPathSafetyError,
-  resolveSafePathInContext,
-  validateSafeWriteTarget,
-} from '../utils/paths.js';
+  resolveFileAccessPath,
+  validateFileAccessWriteTarget,
+} from '../utils/file-access-policy.js';
 import { withFileLock } from '../utils/file-lock.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
@@ -575,23 +574,29 @@ export async function handleReplace(
   const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
-  const pathSafetyContext = context.pathSafetyContext;
-  const safePathResult = resolveSafePathInContext(filePath, pathSafetyContext);
+  const fileAccessPolicyContext = context.fileAccessPolicyContext;
+  const safePathResult = resolveFileAccessPath(
+    filePath,
+    fileAccessPolicyContext,
+  );
   if (!safePathResult.ok) {
     return errorResult(
       payloadFromArgs(
         args,
         false,
-        formatPathSafetyError(safePathResult.error),
+        safePathResult.reason,
       ),
     );
   }
   const safePath = safePathResult.path;
 
   return withFileLock(safePath.resolvedPath, async () => {
-    const safetyError = await validateSafeWriteTarget(safePath);
-    if (safetyError) {
-      return errorResult(payloadFromArgs(args, false, safetyError));
+    const safetyResult = await validateFileAccessWriteTarget(
+      safePath,
+      fileAccessPolicyContext,
+    );
+    if (!safetyResult.ok) {
+      return errorResult(payloadFromArgs(args, false, safetyResult.reason));
     }
 
     const existingFile = await readExistingTextFile(safePath.resolvedPath, filePath);
@@ -625,9 +630,14 @@ export async function handleReplace(
             ),
           );
         }
-        const postMkdirSafetyError = await validateSafeWriteTarget(safePath);
-        if (postMkdirSafetyError) {
-          return errorResult(payloadFromArgs(args, false, postMkdirSafetyError));
+        const postMkdirSafetyResult = await validateFileAccessWriteTarget(
+          safePath,
+          fileAccessPolicyContext,
+        );
+        if (!postMkdirSafetyResult.ok) {
+          return errorResult(
+            payloadFromArgs(args, false, postMkdirSafetyResult.reason),
+          );
         }
 
         const writeError = await writeTextContent(
@@ -760,10 +770,13 @@ export async function handleReplace(
       context.lineEnding,
       existingFile.detectedLineEnding,
     );
-    const preWriteSafetyError = await validateSafeWriteTarget(safePath);
-    if (preWriteSafetyError) {
+    const preWriteSafetyResult = await validateFileAccessWriteTarget(
+      safePath,
+      fileAccessPolicyContext,
+    );
+    if (!preWriteSafetyResult.ok) {
       return errorResult(
-        payloadFromArgs(args, false, preWriteSafetyError, {
+        payloadFromArgs(args, false, preWriteSafetyResult.reason, {
           file_line_count: {
             previous: previousLineCount,
             current: previousLineCount,

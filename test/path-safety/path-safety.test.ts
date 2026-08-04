@@ -235,11 +235,14 @@ async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise
   assertIncludes(
     getResultText(literalResult),
     'excluded additional text',
-    'Drive-absolute literal should read even when default excludes match',
+    'Drive-absolute literal should read explicit paths',
   );
 
   const globResult = await readManyFilesTool.handler(
-    { include: [path.join(OUTSIDE_DIR, '**', '*.txt')] },
+    {
+      include: [path.join(OUTSIDE_DIR, '**', '*.txt')],
+      exclude: ['node_modules/**'],
+    },
     multiRootContext,
   );
 
@@ -250,7 +253,7 @@ async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise
   const text = getResultText(globResult);
   assertIncludes(text, `--- ${visiblePath} ---`, 'Additional root glob should display absolute file paths');
   assertIncludes(text, 'visible additional text', 'Additional root glob should include non-excluded files');
-  assertNotIncludes(text, 'excluded additional text', 'Additional root glob should honor default excludes');
+  assertNotIncludes(text, 'excluded additional text', 'Additional root glob should honor caller excludes');
   assertNotIncludes(text, 'node_modules', 'Additional root glob should not list excluded node_modules files');
 }
 
@@ -282,7 +285,7 @@ async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): P
     );
     assertIncludes(
       getResultText(result),
-      'matched primary workspace root',
+      'matched workspace root',
       'Matched-root realpath check should reject primary -> additional symlink reads',
     );
     symlinkResults.push('primary to additional symlink: ran');
@@ -319,7 +322,7 @@ async function testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck(): P
     );
     assertIncludes(
       getResultText(result),
-      'matched additional workspace root',
+      'matched workspace root',
       'Matched-root realpath check should reject additional -> primary symlink reads',
     );
     symlinkResults.push('additional to primary symlink: ran');
@@ -361,7 +364,7 @@ async function testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootChec
     );
     assertIncludes(
       getResultText(result),
-      'matched additional workspace root',
+      'matched workspace root',
       'Matched-root realpath check should reject additional -> primary symlink writes',
     );
 
@@ -422,7 +425,7 @@ async function testDriveAbsoluteGlobStaticBaseAndDisplay(): Promise<void> {
   assertEqual(globSafety.glob.displayKind, 'absolute', 'Drive-absolute glob results should display as absolute paths');
 
   const result = await readManyFilesTool.handler(
-    { include: [pattern], useDefaultExcludes: false },
+    { include: [pattern] },
     createToolContext(),
   );
 
@@ -462,7 +465,7 @@ async function testSlashLeadingGlobIsRelativeButPlainRootedPathFails(): Promise<
 
 async function testGlobStaticBaseOutsideRootFailsBeforeReading(): Promise<void> {
   const result = await readManyFilesTool.handler(
-    { include: ['../path-safety-outside/**/*.ts'], useDefaultExcludes: false },
+    { include: ['../path-safety-outside/**/*.ts'] },
     createToolContext(),
   );
 
@@ -482,7 +485,7 @@ async function testBraceExpandedParentTraversalFailsBeforeGlob(): Promise<void> 
   assertEqual(globSafety.error.code, 'invalid_glob', 'Brace-expanded parent traversal should be an invalid glob');
 
   const result = await readManyFilesTool.handler(
-    { include: ['{..,src}/**/*.ts'], useDefaultExcludes: false },
+    { include: ['{..,src}/**/*.ts'] },
     createToolContext(),
   );
 
@@ -507,7 +510,7 @@ async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
   assert(globSafety.ok === true, 'Extglob-only pattern should be recognized as glob magic');
 
   const result = await readManyFilesTool.handler(
-    { include: ['src/@(Foo).ts'], useDefaultExcludes: false },
+    { include: ['src/@(Foo).ts'] },
     createToolContext(),
   );
 
@@ -518,19 +521,18 @@ async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
   assertIncludes(text, 'export const foo = 1;', 'Extglob-only pattern should include Foo content');
 }
 
-async function testRelativeLiteralPathHonorsDefaultExcludes(): Promise<void> {
+async function testRelativeLiteralPathBypassesSoftFilters(): Promise<void> {
   const result = await readManyFilesTool.handler(
-    { include: ['.env'] },
+    { include: ['.env'], exclude: ['.env'] },
     createToolContext(),
   );
 
-  assert(result.isError === true, 'Relative literal .env should be excluded by default');
+  assert(result.isError !== true, 'Relative literal .env should bypass exclude');
   const text = getResultText(result);
-  assertIncludes(text, 'excluded by exclude patterns', 'Relative literal should report exclude filtering');
-  assertNotIncludes(text, 'SECRET=hidden', 'Excluded relative literal content must not be read');
+  assertIncludes(text, 'SECRET=', 'Explicit relative literal content should be read');
 }
 
-async function testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows(): Promise<void> {
+async function testRelativeLiteralPathBypassesCaseInsensitiveExcludesOnWindows(): Promise<void> {
   if (process.platform !== 'win32') return;
 
   const defaultResult = await readManyFilesTool.handler(
@@ -538,45 +540,40 @@ async function testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows(): 
     createToolContext(),
   );
 
-  assert(defaultResult.isError === true, 'Uppercase .ENV should be excluded by default on Windows');
-  assertIncludes(getResultText(defaultResult), 'excluded by exclude patterns', 'Uppercase default exclude should be reported');
-  assertNotIncludes(getResultText(defaultResult), 'SECRET=uppercase', 'Uppercase .ENV content must not be read');
+  assert(defaultResult.isError !== true, 'Uppercase .ENV literal should be read on Windows');
+  assertIncludes(getResultText(defaultResult), 'SECRET=uppercase', 'Uppercase literal content should be read');
 
   const customResult = await readManyFilesTool.handler(
-    { include: ['src/Foo.ts'], exclude: ['SRC/*.TS'], useDefaultExcludes: false },
+    { include: ['src/Foo.ts'], exclude: ['SRC/*.TS'] },
     createToolContext(),
   );
 
-  assert(customResult.isError === true, 'Case-different custom exclude should filter a relative literal on Windows');
-  assertIncludes(getResultText(customResult), 'excluded by exclude patterns', 'Case-different custom exclude should be reported');
-  assertNotIncludes(getResultText(customResult), 'export const foo = 1;', 'Case-excluded content must not be read');
+  assert(customResult.isError !== true, 'Case-different exclude should not filter a literal');
+  assertIncludes(getResultText(customResult), 'export const foo = 1;', 'Literal content should be read');
 }
 
-async function testRelativeLiteralPathHonorsBraceAndExtglobExcludes(): Promise<void> {
+async function testRelativeLiteralPathBypassesBraceAndExtglobExcludes(): Promise<void> {
   const braceResult = await readManyFilesTool.handler(
-    { include: ['src/Foo.ts'], exclude: ['src/*.{ts,tsx}'], useDefaultExcludes: false },
+    { include: ['src/Foo.ts'], exclude: ['src/*.{ts,tsx}'] },
     createToolContext(),
   );
 
-  assert(braceResult.isError === true, 'Brace exclude should filter a relative literal path');
-  assertIncludes(getResultText(braceResult), 'excluded by exclude patterns', 'Brace exclude should be reported');
-  assertNotIncludes(getResultText(braceResult), 'export const foo = 1;', 'Brace-excluded content must not be read');
+  assert(braceResult.isError !== true, 'Brace exclude should not filter a literal path');
+  assertIncludes(getResultText(braceResult), 'export const foo = 1;', 'Literal content should be read');
 
   const extglobResult = await readManyFilesTool.handler(
-    { include: ['src/Foo.ts'], exclude: ['src/@(Foo).ts'], useDefaultExcludes: false },
+    { include: ['src/Foo.ts'], exclude: ['src/@(Foo).ts'] },
     createToolContext(),
   );
 
-  assert(extglobResult.isError === true, 'Extglob exclude should filter a relative literal path');
-  assertIncludes(getResultText(extglobResult), 'excluded by exclude patterns', 'Extglob exclude should be reported');
-  assertNotIncludes(getResultText(extglobResult), 'export const foo = 1;', 'Extglob-excluded content must not be read');
+  assert(extglobResult.isError !== true, 'Extglob exclude should not filter a literal path');
+  assertIncludes(getResultText(extglobResult), 'export const foo = 1;', 'Literal content should be read');
 }
 
 async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
   const result = await readManyFilesTool.handler(
     {
       include: ['special/file[test].ts', 'special/file{brace}.ts', 'special/file{a,b}.ts'],
-      useDefaultExcludes: false,
     },
     createToolContext(),
   );
@@ -617,14 +614,13 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
     assert(result.isError === true, 'read_file should reject symlink escapes');
     assertIncludes(
       getResultText(result),
-      'matched primary workspace root',
+      'matched workspace root',
       'read_file should report realpath escape',
     );
 
     const readManyResult = await readManyFilesTool.handler(
       {
         include: [path.join('outside-link', 'outside.ts')],
-        useDefaultExcludes: false,
       },
       createToolContext(),
     );
@@ -635,7 +631,7 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
     );
     assertIncludes(
       getResultText(readManyResult),
-      'matched primary workspace root',
+      'matched workspace root',
       'read_many_files should preserve detailed realpath escape reasons',
     );
     symlinkResults.push('read symlink escape: ran');
@@ -702,9 +698,9 @@ async function main(): Promise<void> {
       { name: 'Brace-expanded parent traversal fails before glob', run: testBraceExpandedParentTraversalFailsBeforeGlob },
       { name: 'Long brace-expanded parent traversal fails closed', run: testLongBraceExpandedParentTraversalFailsClosed },
       { name: 'Extglob-only pattern is expanded', run: testExtglobOnlyPatternIsExpanded },
-      { name: 'Relative literal path honors default excludes', run: testRelativeLiteralPathHonorsDefaultExcludes },
-      { name: 'Relative literal path honors case-insensitive excludes on Windows', run: testRelativeLiteralPathHonorsCaseInsensitiveExcludesOnWindows },
-      { name: 'Relative literal path honors brace and extglob excludes', run: testRelativeLiteralPathHonorsBraceAndExtglobExcludes },
+      { name: 'Relative literal path bypasses soft filters', run: testRelativeLiteralPathBypassesSoftFilters },
+      { name: 'Relative literal path bypasses case-insensitive excludes on Windows', run: testRelativeLiteralPathBypassesCaseInsensitiveExcludesOnWindows },
+      { name: 'Relative literal path bypasses brace and extglob excludes', run: testRelativeLiteralPathBypassesBraceAndExtglobExcludes },
       { name: 'Literal filenames with glob metacharacters are read safely', run: testLiteralFilenamesWithGlobMetacharacters },
       { name: 'Read rejects symlink escape when available', run: testReadRejectsSymlinkEscapeWhenAvailable },
       { name: 'Write rejects symlink target when available', run: testWriteRejectsSymlinkTargetWhenAvailable },

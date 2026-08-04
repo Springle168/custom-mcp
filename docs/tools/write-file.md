@@ -53,9 +53,10 @@ test/write-file/
 
 ### 写入策略
 
-- 写入前使用 `withFileLock()`，避免同一路径的并发写入互相覆盖。
-- 写入前会查找目标父目录中最近的已存在祖先目录并校验其 `realpath` 仍位于同一个 matched root 内；创建缺失父目录后会再次执行同一校验。
-- 目标路径若已存在且是 symbolic link，会被拒绝，避免通过 symlink / junction 写出工作区。
+- Lexical file candidate deny 在取得 `withFileLock()` 前执行；命中时不会创建目录、读取内容或取得锁。
+- 锁内查找最近存在祖先，将其 `realpath` 与剩余 lexical 路径组合为预计 real target，并执行 same-root 与 deny。
+- 已存在目标先按实际类型执行 lexical/realpath deny，再处理 symbolic link、目录和文件类型错误。
+- 创建缺失父目录后和正式写入前都重新执行写入安全与 deny。
 - 目标路径已存在时，会先读取文件并检测原始行尾；`lineEnding=auto` 时保留原始行尾风格。
 - 目标路径不存在时，`lineEnding=auto` 默认使用 LF。
 - 内容中如果包含疑似省略占位符，会继续写入并在成功消息后追加 Warning，提醒调用方确认是否为有意的文档或示例文本。
@@ -79,7 +80,8 @@ Success: wrote nested/example.txt. Total lines: 2.
 |-|-|
 | `src/tools/write-file.ts` | Schema 定义、参数校验、路径安全、写入编排、成功消息 |
 | `src/tools/index.ts` | 工具注册 |
-| `src/utils/paths.ts` | 路径分类、root 边界校验、display path、写入 realpath / symlink 安全校验 |
+| `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
+| `src/utils/file-access-policy.ts` | policy candidate、预计 real target、deny 与写入安全复检 |
 | `src/utils/file-lock.ts` | `withFileLock()` 文件级并发锁 |
 | `src/engine/text-utils.ts` | 行尾符检测与解析 |
 | `src/utils/file-read.ts` | 二进制文件识别 |

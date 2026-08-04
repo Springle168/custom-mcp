@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs';
+import * as path from 'node:path';
 import { ConfigError } from './errors.js';
 import {
   readOptionalToolExposureConfig,
@@ -45,6 +47,16 @@ export interface ParsedEnvOverridesConfig {
   readonly allowedFields: readonly ParsedEnvOverrideField[];
 }
 
+export interface ParsedRootFileAccessConfig {
+  readonly ignoreFiles: readonly string[];
+  readonly denyFiles: readonly string[];
+}
+
+export interface ParsedFileAccessConfig {
+  readonly rootDir: ParsedRootFileAccessConfig;
+  readonly otherRootDirs: Readonly<Record<string, ParsedRootFileAccessConfig>>;
+}
+
 export interface ParsedWorkspaceConfig {
   readonly id: string;
   readonly rootDir: string;
@@ -57,6 +69,7 @@ export interface ParsedWorkspaceConfig {
   readonly envOverrides?: ParsedEnvOverridesConfig;
   readonly toolExposure: RuntimeToolExposure;
   readonly rules: RuntimeRulesConfig;
+  readonly fileAccess?: ParsedFileAccessConfig;
 }
 
 export interface ParsedGlobalConfig {
@@ -85,6 +98,7 @@ const WORKSPACE_FIELDS = new Set([
   'envOverrides',
   'tools',
   'rules',
+  'fileAccess',
 ]);
 const ANDROID_FIELDS = new Set([
   'workspaceRoot',
@@ -94,6 +108,8 @@ const ANDROID_FIELDS = new Set([
   'maxLogTailChars',
 ]);
 const ENV_OVERRIDES_FIELDS = new Set(['allowedFields']);
+const FILE_ACCESS_FIELDS = new Set(['rootDir', 'otherRootDirs']);
+const ROOT_FILE_ACCESS_FIELDS = new Set(['ignoreFiles', 'denyFiles']);
 const MAX_PORT = 65535;
 const ENV_OVERRIDE_FIELD_NAMES = Object.keys(ENV_OVERRIDE_FIELD_ENV_VARS) as ParsedEnvOverrideField[];
 const ENV_OVERRIDE_FIELDS = new Set<ParsedEnvOverrideField>(ENV_OVERRIDE_FIELD_NAMES);
@@ -168,10 +184,10 @@ export function parseGlobalConfig(
 
   validateGlobalWorkspaceRoots(context, workspaces);
 
-  return {
+  return deepFreezeParsedConfig({
     version: 1,
     workspaces,
-  };
+  });
 }
 
 function parseWorkspace(
@@ -196,10 +212,16 @@ function parseWorkspace(
     `${fieldPath}.envOverrides`,
     android !== undefined,
   );
+  const rootDir = readRequiredExistingDirectoryPath(context, rawWorkspace, 'rootDir', fieldPath);
+  const otherRootDirs = readOptionalExistingDirectoryPathArray(
+    context,
+    rawWorkspace.otherRootDirs,
+    `${fieldPath}.otherRootDirs`,
+  );
 
   return {
     id: readRequiredWorkspaceId(context, rawWorkspace, 'id', fieldPath),
-    rootDir: readRequiredExistingDirectoryPath(context, rawWorkspace, 'rootDir', fieldPath),
+    rootDir,
     host: readOptionalHost(context, rawWorkspace.host, `${fieldPath}.host`),
     port: readRequiredPositiveInteger(context, rawWorkspace, 'port', fieldPath, {
       max: MAX_PORT,
@@ -207,7 +229,7 @@ function parseWorkspace(
     }),
     lineEnding: readRequiredLineEnding(context, rawWorkspace, 'lineEnding', fieldPath),
     ...readOptionalLogsDir(context, rawWorkspace.logsDir, `${fieldPath}.logsDir`),
-    otherRootDirs: readOptionalExistingDirectoryPathArray(context, rawWorkspace.otherRootDirs, `${fieldPath}.otherRootDirs`),
+    otherRootDirs,
     ...(android !== undefined ? { android } : {}),
     ...(envOverrides !== undefined ? { envOverrides } : {}),
     toolExposure: readOptionalToolExposureConfig(rawWorkspace.tools, {
@@ -215,7 +237,160 @@ function parseWorkspace(
       fieldPath: `${fieldPath}.tools`,
     }),
     rules: readOptionalRulesConfig(context, rawWorkspace.rules, `${fieldPath}.rules`),
+    fileAccess: readOptionalFileAccessConfig(
+      context,
+      rawWorkspace.fileAccess,
+      `${fieldPath}.fileAccess`,
+      rootDir,
+      otherRootDirs,
+    ),
   };
+}
+
+function readOptionalFileAccessConfig(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+  primaryRoot: string,
+  additionalRoots: readonly string[],
+): ParsedFileAccessConfig {
+  if (value === undefined) {
+    return emptyFileAccessConfig();
+  }
+
+  const rawFileAccess = readObject(
+    context,
+    value,
+    fieldPath,
+    `${fieldPath} must be a JSON object when configured.`,
+  );
+  assertKnownFields(context, rawFileAccess, FILE_ACCESS_FIELDS, fieldPath);
+
+  return {
+    rootDir: readOptionalRootFileAccessConfig(
+      context,
+      rawFileAccess.rootDir,
+      `${fieldPath}.rootDir`,
+    ),
+    otherRootDirs: readAdditionalRootFileAccessConfigs(
+      context,
+      rawFileAccess.otherRootDirs,
+      `${fieldPath}.otherRootDirs`,
+      primaryRoot,
+      additionalRoots,
+    ),
+  };
+}
+
+function readOptionalRootFileAccessConfig(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+): ParsedRootFileAccessConfig {
+  if (value === undefined) return emptyRootFileAccessConfig();
+
+  const rawPolicy = readObject(
+    context,
+    value,
+    fieldPath,
+    `${fieldPath} must be a JSON object when configured.`,
+  );
+  assertKnownFields(context, rawPolicy, ROOT_FILE_ACCESS_FIELDS, fieldPath);
+
+  return {
+    ignoreFiles: readOptionalStringArray(context, rawPolicy.ignoreFiles, `${fieldPath}.ignoreFiles`),
+    denyFiles: readOptionalStringArray(context, rawPolicy.denyFiles, `${fieldPath}.denyFiles`),
+  };
+}
+
+function readAdditionalRootFileAccessConfigs(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+  primaryRoot: string,
+  additionalRoots: readonly string[],
+): Readonly<Record<string, ParsedRootFileAccessConfig>> {
+  if (value === undefined) return Object.freeze({});
+
+  const rawPolicies = readObject(
+    context,
+    value,
+    fieldPath,
+    `${fieldPath} must be a JSON object when configured.`,
+  );
+  const result: Record<string, ParsedRootFileAccessConfig> = {};
+  const associatedRoots = new Set<string>();
+
+  for (const [rootKey, rawPolicy] of Object.entries(rawPolicies)) {
+    const keyPath = `${fieldPath}[${JSON.stringify(rootKey)}]`;
+    const validatedKey = readConfigExistingDirectoryPath(context, rootKey, keyPath);
+    if (areLexicallySamePath(validatedKey, primaryRoot)) {
+      fail(context, keyPath, `${keyPath} must identify an entry in otherRootDirs, not rootDir.`);
+    }
+
+    const associatedRoot = additionalRoots.find((root) => areLexicallySamePath(root, validatedKey));
+    if (associatedRoot === undefined) {
+      fail(context, keyPath, `${keyPath} must lexically identify exactly one configured otherRootDirs entry.`);
+    }
+    if (associatedRoots.has(associatedRoot)) {
+      fail(context, keyPath, `${keyPath} duplicates another key for the same configured additional root.`);
+    }
+
+    try {
+      if (!areLexicallySamePath(realpathSync(validatedKey), realpathSync(associatedRoot))) {
+        fail(context, keyPath, `${keyPath} realpath must match its configured additional root.`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      fail(context, keyPath, `${keyPath} could not be associated with its configured additional root. ${message}`);
+    }
+
+    associatedRoots.add(associatedRoot);
+    result[associatedRoot] = readOptionalRootFileAccessConfig(context, rawPolicy, keyPath);
+  }
+
+  return Object.freeze(result);
+}
+
+function readOptionalStringArray(
+  context: ParseContext,
+  value: unknown,
+  fieldPath: string,
+): readonly string[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value)) {
+    fail(context, fieldPath, `${fieldPath} must be an array of non-empty strings.`);
+  }
+
+  return Object.freeze(value.map((item, index) => {
+    const itemPath = `${fieldPath}[${index}]`;
+    if (typeof item !== 'string' || item.length === 0 || item.trim() !== item) {
+      fail(context, itemPath, `${itemPath} must be a non-empty string without leading or trailing whitespace.`);
+    }
+    return item;
+  }));
+}
+
+function emptyFileAccessConfig(): ParsedFileAccessConfig {
+  return {
+    rootDir: emptyRootFileAccessConfig(),
+    otherRootDirs: Object.freeze({}),
+  };
+}
+
+function emptyRootFileAccessConfig(): ParsedRootFileAccessConfig {
+  return {
+    ignoreFiles: Object.freeze([]),
+    denyFiles: Object.freeze([]),
+  };
+}
+
+function areLexicallySamePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
 }
 
 function readOptionalHost(
@@ -519,7 +694,9 @@ function isForbiddenEnvOverrideField(selector: string): boolean {
     selector === 'rules' ||
     selector.startsWith('rules.') ||
     selector === 'tools' ||
-    selector.startsWith('tools.');
+    selector.startsWith('tools.') ||
+    selector === 'fileAccess' ||
+    selector.startsWith('fileAccess.');
 }
 
 function joinFieldPath(parentPath: string | undefined, key: string): string {
@@ -542,4 +719,16 @@ function fail(
     message,
     suggestion: `Fix ${fieldPath ?? 'the configuration'} in ${context.configFilePath} and restart the server.`,
   });
+}
+
+function deepFreezeParsedConfig<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+
+  for (const propertyValue of Object.values(value as Record<string, unknown>)) {
+    deepFreezeParsedConfig(propertyValue);
+  }
+
+  return Object.freeze(value);
 }

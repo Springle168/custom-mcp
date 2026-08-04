@@ -3,8 +3,18 @@ import type { RuntimeToolExposure } from '../config.js';
 import { ConfigError } from './errors.js';
 import { readExistingDirectoryPath } from './path-policy.js';
 import type { RuntimeRulesConfig } from './request-header-rules.js';
-import type { ParsedAndroidConfig, ParsedWorkspaceConfig } from './schema.js';
+import {
+  createEmptyCompiledFileAccessPolicy,
+  type CompiledFileAccessPolicy,
+  type WorkspaceWithCompiledFileAccessPolicy,
+} from './file-access-policy.js';
+import type { ParsedAndroidConfig } from './schema.js';
 import { readTypedString } from './value-policy.js';
+import {
+  createFileAccessPolicyContext,
+  type FileAccessPolicyContext,
+  type RootFileAccessPolicy,
+} from '../utils/file-access-policy.js';
 import {
   createValidatedPathSafetyContext,
   type PathSafetyContext,
@@ -34,6 +44,7 @@ export interface RuntimeConfigSnapshot {
   readonly toolExposure: RuntimeToolExposure;
   readonly rules: RuntimeRulesConfig;
   readonly pathSafetyContext: PathSafetyContext;
+  readonly fileAccessPolicyContext: FileAccessPolicyContext;
 }
 
 export interface RuntimeConfigSnapshotInput {
@@ -49,6 +60,7 @@ export interface RuntimeConfigSnapshotInput {
   readonly android?: RuntimeAndroidConfig;
   readonly toolExposure: RuntimeToolExposure;
   readonly rules: RuntimeRulesConfig;
+  readonly compiledFileAccessPolicy?: CompiledFileAccessPolicy;
 }
 
 export interface RuntimeConfigSnapshotErrorContext {
@@ -57,7 +69,7 @@ export interface RuntimeConfigSnapshotErrorContext {
 
 export interface BuildRuntimeConfigSnapshotOptions {
   readonly configFilePath: string;
-  readonly workspace: ParsedWorkspaceConfig;
+  readonly workspace: WorkspaceWithCompiledFileAccessPolicy;
   readonly workspaceIndex: number;
   readonly defaultLogsDir: string;
   readonly snapshotVersion?: number;
@@ -82,6 +94,7 @@ export function buildRuntimeConfigSnapshot(
       ...(workspace.android ? { android: workspace.android } : {}),
       toolExposure: workspace.toolExposure,
       rules: workspace.rules,
+      compiledFileAccessPolicy: workspace.compiledFileAccessPolicy,
       snapshotVersion: options.snapshotVersion ?? 1,
     },
     { workspaceIndex: options.workspaceIndex },
@@ -107,6 +120,12 @@ export function createRuntimeConfigSnapshot(
   const android = resolveRuntimeAndroidConfig(input.android);
   const toolExposure = cloneRuntimeToolExposure(input.toolExposure);
   const rules = cloneRuntimeRulesConfig(input.rules);
+  const compiledPolicy = input.compiledFileAccessPolicy ??
+    createEmptyCompiledFileAccessPolicy(input.rootDir, configuredOtherRootDirs);
+  const fileAccessPolicyContext = createFileAccessPolicyContext(
+    pathSafetyContext,
+    cloneRootFileAccessPolicies(compiledPolicy.roots),
+  );
 
   const snapshot: RuntimeConfigSnapshot = {
     snapshotVersion: input.snapshotVersion ?? 1,
@@ -122,6 +141,7 @@ export function createRuntimeConfigSnapshot(
     toolExposure,
     rules,
     pathSafetyContext,
+    fileAccessPolicyContext,
   };
 
   return deepFreeze(snapshot);
@@ -257,6 +277,17 @@ function cloneRuntimeRulesConfig(rules: RuntimeRulesConfig): RuntimeRulesConfig 
       enable: [...rule.enable],
     })),
   };
+}
+
+function cloneRootFileAccessPolicies(
+  policies: readonly RootFileAccessPolicy[],
+): readonly RootFileAccessPolicy[] {
+  return policies.map((policy) => Object.freeze({
+    rootDir: policy.rootDir,
+    realRootDir: policy.realRootDir,
+    ignore: Object.freeze({ isIgnored: policy.ignore.isIgnored }),
+    deny: Object.freeze({ isIgnored: policy.deny.isIgnored }),
+  }));
 }
 
 function createPathSafetyContextOrThrowConfigError(

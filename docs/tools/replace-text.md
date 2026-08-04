@@ -149,9 +149,9 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ## 安全与写入规则
 
-- 路径统一经过 `src/utils/paths.ts` 的路径安全层：先按原始输入分类，再解析和做 lexical root 边界校验；相对路径只基于 primary `rootDir`，drive-absolute 路径可位于任一 allowed root 内；drive-relative、rooted without drive、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
-- 创建缺失父目录前后都会校验目标父目录中最近已存在祖先目录的 realpath，避免路径穿越或符号链接绕过 matched root。
-- 目标路径若已存在且是符号链接会被拒绝；目录路径也会被拒绝。`write_file` 与 `replace_text` 共享同一套写入 realpath / symlink 安全校验。
+- 路径通过 `FileAccessPolicyContext` 组合输入分类、allowed-root、policy candidate 和 deny。Lexical deny 在文件锁、目录创建或既有内容读取前失败。
+- 不存在目标通过最近存在祖先计算预计 real target 并执行 deny；创建缺失父目录后和正式写入前都会重新执行 same-root 与 deny。
+- 已存在目标先按实际 file/directory 类型查询 lexical/realpath deny，再处理符号链接、目录和文件类型错误。`write_file` 与 `replace_text` 共享同一写入策略入口。
 - 写入流程使用 `withFileLock()`，同一文件并发替换会串行化，不同文件互不阻塞。
 - 已有文件超过 `20MB`、被判定为二进制，或新建路径看起来是二进制文件时会被拒绝。
 - 写回行尾符由 `ToolRuntimeContext.lineEnding` 控制：`auto` 保留已有主要行尾符，新文件默认 LF。
