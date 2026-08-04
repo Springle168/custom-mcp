@@ -11,6 +11,35 @@
       "host": "127.0.0.1",
       "port": 3100,
       "logsDir": "E:/ExistingLogs/custom-mcp",
+      "fileAccess": {
+        "rootDir": {
+          "ignoreFiles": [
+            "C:/Users/username/.custom-mcp/policies/project.ignore"
+          ],
+          "denyFiles": [
+            "C:/Users/username/.custom-mcp/policies/project.deny"
+          ]
+        },
+        "otherRootDirs": {
+          "E:/ExistingWorkspaces/AnotherProject": {
+            "denyFiles": [
+              "C:/Users/username/.custom-mcp/policies/additional.deny"
+            ]
+          }
+        }
+      },
+      "rules": {
+        "requestHeaders": [
+          {
+            "match": {
+              "x-custom-mcp-client": "android-studio"
+            },
+            "enable": [
+              "structuredContentDup"
+            ]
+          }
+        ]
+      },
       "tools": {
         "disabled": [
           "android.testDebugUnitTest"

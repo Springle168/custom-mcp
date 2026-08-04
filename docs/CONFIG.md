@@ -14,56 +14,7 @@
 
 在 Windows 上通常展开为 `%USERPROFILE%\.custom-mcp\config.json`。服务启动时只读取这个 home-level dotdir 配置文件。可以复制根目录 `config.example.json` 的内容作为模板。
 
-运行配置使用 `version: 1` 全局 workspace schema。文件内容示例：
-
-```json
-{
-  "version": 1,
-  "workspaces": [
-    {
-      "id": "custom-mcp",
-      "rootDir": "E:/YourWorkspace",
-      "otherRootDirs": [
-        "E:/AnotherWorkspace"
-      ],
-      "lineEnding": "auto",
-      "host": "127.0.0.1",
-      "port": 3100,
-      "logsDir": "E:/Logs/custom-mcp",
-      "fileAccess": {
-        "rootDir": {
-          "ignoreFiles": ["C:/Users/username/.custom-mcp/policies/project.ignore"],
-          "denyFiles": ["C:/Users/username/.custom-mcp/policies/project.deny"]
-        },
-        "otherRootDirs": {
-          "E:/AnotherWorkspace": {
-            "denyFiles": ["C:/Users/username/.custom-mcp/policies/additional.deny"]
-          }
-        }
-      },
-      "tools": {
-        "disabled": [
-          "android.testDebugUnitTest"
-        ]
-      },
-      "android": {
-        "workspaceRoot": "E:/AndroidStudioProjects/YourProject",
-        "javaHome": "E:/Android_Studio/jbr",
-        "buildTimeoutMs": 900000,
-        "maxErrorBlockChars": 2500,
-        "maxLogTailChars": 4000
-      },
-      "envOverrides": {
-        "allowedFields": [
-          "lineEnding",
-          "logsDir",
-          "android.javaHome"
-        ]
-      }
-    }
-  ]
-}
-```
+运行配置使用 `version: 1` 全局 workspace schema。覆盖主要可选能力的完整配置模板见 [config.example.json](../config.example.json)。
 
 ### 启动期配置管线
 
@@ -315,7 +266,7 @@ workspace 未知字段会导致启动失败。
 - `fileAccess.otherRootDirs` key 使用 workspace root 相同的绝对目录输入规则，并按 lexical canonical identity 关联同一 workspace 的某个 configured `otherRootDirs`。只在 realpath 层等价的 alias、primary root、未关联 key 或归一化后重复 key 均非法。
 - 所有 workspace 的策略在选择 workspace 前读取并编译。未选中 workspace 的文件缺失、不可读、UTF-8 非法或 matcher 编译失败也会阻止启动。
 - Runtime snapshot 的 `fileAccessPolicyContext` 为每个 allowed root 保存 canonical lexical / real root 和只读 ignore / deny query facade。原始第三方 matcher 及 `.add()` 等 mutation API 不会暴露；context、root 容器和 facade 随 snapshot deep-freeze。
-- Ignore 只过滤自动发现结果，literal 显式路径可以绕过 ignore；deny 始终应用。具体文件工具路径、glob、symlink 与 mixed-result 行为见 `docs/design/file-access-ignore-deny-policy.md`。
+- Ignore 只过滤自动发现结果，literal 显式路径可以绕过 ignore；deny 始终应用。文件工具中的路径、glob 与 symlink 语义见 [PATH-SAFETY.md](PATH-SAFETY.md)。
 
 ### `tools` 配置段
 

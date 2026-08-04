@@ -63,7 +63,7 @@ For broad file sets, use shallow_read first to inspect their size and truncation
       useIgnoreFiles: {
         type: 'boolean',
         description:
-          'Whether configured ignore files filter glob results. Defaults to true. Literal paths bypass ignore files; deny policy always applies.',
+          'Whether configured ignoreFiles rules filter automatically discovered glob results. Defaults to true. Literal include paths bypass ignore rules. The file access deny policy always applies.',
       },
       shallow_read: {
         type: 'boolean',
@@ -498,7 +498,7 @@ async function handleReadManyFiles(
 
   if (processedFiles.length > 0 && blockedByDeny) {
     summaryParts.push(
-      'Some paths were blocked by the file access deny policy.',
+      'NOTE: Some paths were blocked by the file access deny policy.',
     );
   }
 
