@@ -11,6 +11,7 @@ import {
   type McpPostSession,
 } from './runtime/mcp-post-handler.js';
 import { generateMcpSessionId } from './runtime/mcp-identifiers.js';
+import { formatFileAccessPolicyStartupLines } from './runtime/startup-logging.js';
 import { createWorkspaceToolService } from './tools/index.js';
 import { Logger } from './utils/logger.js';
 import { buildHttpUrl, formatHostPort } from './utils/http-url.js';
@@ -243,6 +244,11 @@ async function main() {
     logger.info(`  Snapshot version: ${initialSnapshot.snapshotVersion}`);
     logger.info(`  Config file: ${initialSnapshot.configFilePath}`);
     logWorkspaceRoots(configStore, logger);
+    for (const line of formatFileAccessPolicyStartupLines(
+      initialSnapshot.fileAccessPolicyFiles,
+    )) {
+      logger.info(line);
+    }
     logger.info(`  Line ending: ${initialSnapshot.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
   });

@@ -503,6 +503,12 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   }
   assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Frozen snapshot should keep logsDir immutable');
   assert(Object.isFrozen(snapshot.otherRootDirs), 'Snapshot otherRootDirs should be frozen');
+  assert(Object.isFrozen(snapshot.fileAccessPolicyFiles), 'Snapshot policy file metadata should be frozen');
+  for (const root of snapshot.fileAccessPolicyFiles) {
+    assert(Object.isFrozen(root), 'Each policy file metadata entry should be frozen');
+    assert(Object.isFrozen(root.ignoreFiles), 'Each ignore file metadata array should be frozen');
+    assert(Object.isFrozen(root.denyFiles), 'Each deny file metadata array should be frozen');
+  }
   assert(Object.isFrozen(snapshot.rules), 'Snapshot rules object should be frozen');
   assert(Object.isFrozen(snapshot.rules.requestHeaders), 'Snapshot requestHeaders array should be frozen');
   const firstRule = snapshot.rules.requestHeaders[0];
@@ -597,7 +603,7 @@ async function testToolExposureSnapshotCloneAndOwnership(): Promise<void> {
   }
 }
 
-async function testToolExposureStaysOutOfIdentityAndToolContext(): Promise<void> {
+async function testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig({
     tools: { allowed: ['read_file'] },
@@ -613,6 +619,10 @@ async function testToolExposureStaysOutOfIdentityAndToolContext(): Promise<void>
 
   assert(!('toolExposure' in identity), 'RuntimeConfigIdentity should not contain toolExposure');
   assert(!('toolExposure' in context), 'ToolRuntimeContext should not contain toolExposure');
+  assert(
+    !('fileAccessPolicyFiles' in context),
+    'ToolRuntimeContext should not expose file access policy file paths',
+  );
 }
 
 async function main(): Promise<void> {
@@ -635,7 +645,7 @@ async function main(): Promise<void> {
       { name: 'deep-freezes snapshot graph', run: testSnapshotGraphIsDeepFrozen },
       { name: 'tool runtime context uses snapshot Android message', run: testToolRuntimeContextUsesSnapshotAndroidMessage },
       { name: 'tool exposure snapshot clone owns frozen data', run: testToolExposureSnapshotCloneAndOwnership },
-      { name: 'tool exposure stays out of identity and tool context', run: testToolExposureStaysOutOfIdentityAndToolContext },
+      { name: 'runtime-only metadata stays out of identity and tool context', run: testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext },
     ],
   });
 }

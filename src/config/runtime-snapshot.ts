@@ -6,6 +6,8 @@ import type { RuntimeRulesConfig } from './request-header-rules.js';
 import {
   createEmptyCompiledFileAccessPolicy,
   type CompiledFileAccessPolicy,
+  type CompiledRootFileAccessPolicy,
+  type RootFileAccessPolicyFiles,
   type WorkspaceWithCompiledFileAccessPolicy,
 } from './file-access-policy.js';
 import type { ParsedAndroidConfig } from './schema.js';
@@ -45,6 +47,7 @@ export interface RuntimeConfigSnapshot {
   readonly rules: RuntimeRulesConfig;
   readonly pathSafetyContext: PathSafetyContext;
   readonly fileAccessPolicyContext: FileAccessPolicyContext;
+  readonly fileAccessPolicyFiles: readonly RootFileAccessPolicyFiles[];
 }
 
 export interface RuntimeConfigSnapshotInput {
@@ -126,6 +129,9 @@ export function createRuntimeConfigSnapshot(
     pathSafetyContext,
     cloneRootFileAccessPolicies(compiledPolicy.roots),
   );
+  const fileAccessPolicyFiles = cloneRootFileAccessPolicyFiles(
+    compiledPolicy.roots,
+  );
 
   const snapshot: RuntimeConfigSnapshot = {
     snapshotVersion: input.snapshotVersion ?? 1,
@@ -142,6 +148,7 @@ export function createRuntimeConfigSnapshot(
     rules,
     pathSafetyContext,
     fileAccessPolicyContext,
+    fileAccessPolicyFiles,
   };
 
   return deepFreeze(snapshot);
@@ -280,13 +287,23 @@ function cloneRuntimeRulesConfig(rules: RuntimeRulesConfig): RuntimeRulesConfig 
 }
 
 function cloneRootFileAccessPolicies(
-  policies: readonly RootFileAccessPolicy[],
+  roots: readonly CompiledRootFileAccessPolicy[],
 ): readonly RootFileAccessPolicy[] {
-  return policies.map((policy) => Object.freeze({
+  return roots.map(({ policy }) => Object.freeze({
     rootDir: policy.rootDir,
     realRootDir: policy.realRootDir,
     ignore: Object.freeze({ isIgnored: policy.ignore.isIgnored }),
     deny: Object.freeze({ isIgnored: policy.deny.isIgnored }),
+  }));
+}
+
+function cloneRootFileAccessPolicyFiles(
+  roots: readonly CompiledRootFileAccessPolicy[],
+): readonly RootFileAccessPolicyFiles[] {
+  return roots.map(({ policyFiles }) => ({
+    rootDir: policyFiles.rootDir,
+    ignoreFiles: [...policyFiles.ignoreFiles],
+    denyFiles: [...policyFiles.denyFiles],
   }));
 }
 

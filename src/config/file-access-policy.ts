@@ -9,7 +9,18 @@ import type {
 } from '../utils/file-access-policy.js';
 
 export interface CompiledFileAccessPolicy {
-  readonly roots: readonly RootFileAccessPolicy[];
+  readonly roots: readonly CompiledRootFileAccessPolicy[];
+}
+
+export interface RootFileAccessPolicyFiles {
+  readonly rootDir: string;
+  readonly ignoreFiles: readonly string[];
+  readonly denyFiles: readonly string[];
+}
+
+export interface CompiledRootFileAccessPolicy {
+  readonly policy: RootFileAccessPolicy;
+  readonly policyFiles: RootFileAccessPolicyFiles;
 }
 
 export interface WorkspaceWithCompiledFileAccessPolicy extends ParsedWorkspaceConfig {
@@ -80,7 +91,7 @@ function compileRootPolicies(
   workspaceIndex: number | undefined,
   fileCache: Map<string, string>,
 ): CompiledFileAccessPolicy {
-  const rootPolicies = [
+  const compiledRoots = [
     compileRootPolicy(
       rootDir,
       fileAccess.rootDir,
@@ -102,7 +113,7 @@ function compileRootPolicies(
   ];
 
   return Object.freeze({
-    roots: Object.freeze(rootPolicies),
+    roots: Object.freeze(compiledRoots),
   });
 }
 
@@ -113,7 +124,7 @@ function compileRootPolicy(
   workspaceLabel: string,
   fieldPath: string,
   fileCache: Map<string, string>,
-): RootFileAccessPolicy {
+): CompiledRootFileAccessPolicy {
   let realRootDir: string;
   try {
     realRootDir = realpathSync(rootDir);
@@ -121,12 +132,40 @@ function compileRootPolicy(
     throwPolicyError(configFilePath, fieldPath, workspaceLabel, rootDir, 'Could not resolve the associated root.', err);
   }
 
+  const resolvedRootDir = path.resolve(rootDir);
+  const ignorePolicy = compileQuery(
+    config.ignoreFiles,
+    configFilePath,
+    workspaceLabel,
+    `${fieldPath}.ignoreFiles`,
+    fileCache,
+  );
+  const denyPolicy = compileQuery(
+    config.denyFiles,
+    configFilePath,
+    workspaceLabel,
+    `${fieldPath}.denyFiles`,
+    fileCache,
+  );
+
   return Object.freeze({
-    rootDir: path.resolve(rootDir),
-    realRootDir,
-    ignore: compileQuery(config.ignoreFiles, configFilePath, workspaceLabel, `${fieldPath}.ignoreFiles`, fileCache),
-    deny: compileQuery(config.denyFiles, configFilePath, workspaceLabel, `${fieldPath}.denyFiles`, fileCache),
+    policy: Object.freeze({
+      rootDir: resolvedRootDir,
+      realRootDir,
+      ignore: ignorePolicy.query,
+      deny: denyPolicy.query,
+    }),
+    policyFiles: Object.freeze({
+      rootDir: resolvedRootDir,
+      ignoreFiles: ignorePolicy.policyFiles,
+      denyFiles: denyPolicy.policyFiles,
+    }),
   });
+}
+
+interface CompiledFileAccessQuery {
+  readonly query: FileAccessPolicyQuery;
+  readonly policyFiles: readonly string[];
 }
 
 function compileQuery(
@@ -135,8 +174,9 @@ function compileQuery(
   workspaceLabel: string,
   fieldPath: string,
   fileCache: Map<string, string>,
-): FileAccessPolicyQuery {
+): CompiledFileAccessQuery {
   const matcher = ignore({ ignorecase: process.platform === 'win32' });
+  const resolvedPolicyFiles: string[] = [];
 
   policyFiles.forEach((policyFile, index) => {
     const entryPath = `${fieldPath}[${index}]`;
@@ -146,6 +186,7 @@ function compileQuery(
       workspaceLabel,
       entryPath,
     );
+    resolvedPolicyFiles.push(resolvedPolicyFile);
     let contents = fileCache.get(resolvedPolicyFile);
     if (contents === undefined) {
       contents = readPolicyFile(resolvedPolicyFile, configFilePath, workspaceLabel, entryPath);
@@ -166,7 +207,10 @@ function compileQuery(
   });
 
   return Object.freeze({
-    isIgnored: (candidate: string): boolean => matcher.ignores(candidate),
+    query: Object.freeze({
+      isIgnored: (candidate: string): boolean => matcher.ignores(candidate),
+    }),
+    policyFiles: Object.freeze(resolvedPolicyFiles),
   });
 }
 
