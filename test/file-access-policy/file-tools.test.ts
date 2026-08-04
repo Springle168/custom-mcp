@@ -35,6 +35,7 @@ async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
   await Promise.all([
     fs.mkdir(path.join(FIXTURES_DIR, 'allowed'), { recursive: true }),
+    fs.mkdir(path.join(FIXTURES_DIR, 'allowed', 'sub'), { recursive: true }),
     fs.mkdir(path.join(FIXTURES_DIR, 'ignored'), { recursive: true }),
     fs.mkdir(path.join(FIXTURES_DIR, 'denied'), { recursive: true }),
     fs.mkdir(path.join(FIXTURES_DIR, 'node_modules'), { recursive: true }),
@@ -42,6 +43,7 @@ async function resetFixtures(): Promise<void> {
   ]);
   await Promise.all([
     fs.writeFile(path.join(FIXTURES_DIR, 'allowed', 'visible.txt'), 'visible', 'utf-8'),
+    fs.writeFile(path.join(FIXTURES_DIR, 'allowed', 'sub', 'nested.txt'), 'nested-visible', 'utf-8'),
     fs.writeFile(path.join(FIXTURES_DIR, 'ignored', 'soft.txt'), 'soft', 'utf-8'),
     fs.writeFile(path.join(FIXTURES_DIR, 'denied', 'secret.txt'), 'secret-value', 'utf-8'),
     fs.writeFile(path.join(FIXTURES_DIR, 'node_modules', 'dependency.txt'), 'dependency', 'utf-8'),
@@ -252,6 +254,22 @@ async function testGlobDoesNotFollowDiscoveredDirectoryLinks(): Promise<void> {
   assertNotIncludes(getResultText(result), 'visible', 'The linked file must not be discovered');
 }
 
+async function testGlobAllowsLinksInExplicitStaticBasePrefix(): Promise<void> {
+  const aliasPath = path.join(FIXTURES_DIR, 'alias-explicit');
+  await fs.symlink(
+    path.join(FIXTURES_DIR, 'allowed'),
+    aliasPath,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+
+  const result = await readManyFilesTool.handler(
+    { include: ['alias-explicit/sub/**/*.txt'] },
+    createContext(),
+  );
+  assert(result.isError !== true, 'A validated explicit static-base link should be traversable');
+  assertIncludes(getResultText(result), 'nested-visible', 'The explicit static-base link should resolve files');
+}
+
 async function testDanglingWriteSymlinkIsRejected(): Promise<void> {
   if (process.platform === 'win32') return;
   const linkPath = path.join(FIXTURES_DIR, 'dangling.txt');
@@ -321,6 +339,7 @@ async function main(): Promise<void> {
       { name: 'glob deny mixed-result privacy', run: testGlobDenyMixedResultPrivacy },
       { name: 'glob deny zero-result and static-base privacy', run: testGlobDenyZeroResultAndStaticBasePrivacy },
       { name: 'glob does not follow discovered directory links', run: testGlobDoesNotFollowDiscoveredDirectoryLinks },
+      { name: 'glob allows links in explicit static-base prefix', run: testGlobAllowsLinksInExplicitStaticBasePrefix },
       { name: 'dangling write symlink is rejected', run: testDanglingWriteSymlinkIsRejected },
       { name: 'write and replace deny future targets', run: testWriteAndReplaceDenyFutureTargets },
       { name: 'directory-type deny precedes directory error', run: testDirectoryTypeDenyPrecedesDirectoryError },
