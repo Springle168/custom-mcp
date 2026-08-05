@@ -18,7 +18,7 @@
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
 | Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、schema 转换层限制 |
 | 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
-| 提交规范 | [docs/commit-guidelines.md](commit-guidelines.md) | Git 提交信息格式与约束 |
+| 提交规范 | [docs/guidelines/commit-guidelines.md](guidelines/commit-guidelines.md) | Git 提交信息格式与约束 |
 
 ---
 

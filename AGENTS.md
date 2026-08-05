@@ -11,7 +11,6 @@
 
 - 除非任务明确需要，否则保持改动小而聚焦，不顺手重构无关代码，不修复与任务无关的问题。
 - **未经用户明确授权**：
-  * 禁止主动查看或修改 `package-lock.json`、`node_modules/`、`dist/`。
   * 禁止读取或修改工作区外文件；禁止执行未知的、用户本地私有的或与任务无关的工作区外程序。
   * 例外：为完成本仓库任务所需的常规开发命令（如 git、npm、npx、node、powershell.exe、cmd）按本文“验证方式”和“Git 使用规则”执行。
   * 禁止为绕过路径、安全或并发约束而创建临时目录或迁移路径。
@@ -30,7 +29,6 @@
 ## 代码与工具约定
 
 - 保持现有 TypeScript 风格：ESM / NodeNext、严格类型、相对导入使用 `.js` 后缀、避免不必要的 `any`。
-- 工具 schema 的 `description` 是给 AI 看的 prompt，应简洁说明能力边界、参数约束、常见误用和与其他工具的配合方式。
 - 添加或调整工具后，同步维护 `docs/tools/` 中的工具文档；必要时更新 `docs/DEVELOPMENT.md` 的工具列表或开发说明。
 
 ## 注释与文档
@@ -70,5 +68,5 @@
 ## sub-agent 的使用
 
 - 仅当用户明确表示允许使用时主 Agent 才考虑创建 sub-agent。
-- [docs/guidelines/sub-agent-guidelines.md](docs/guidelines/sub-agent-guidelines.md)
-- **注意：`docs/guidelines/sub-agent-guidelines.md` 的内容默认只允许拥有能够创建 sub-agent 的 Agent 查看，任何无创建 sub-agent 能力的 Agent / 未受到明确授权的 sub-agent 禁止查看。**
+- **按需读取**：获得用户授权后，仅当准备创建 sub-agent 时，主 Agent 阅读 [docs/guidelines/sub-agent-guidelines.md](docs/guidelines/sub-agent-guidelines.md)；避免不必要的提前读取。
+- **注意：`docs/guidelines/sub-agent-guidelines.md` 只面向拥有创建 sub-agent 能力的主 Agent。sub-agent 禁止读取、搜索、引用或总结其内容。**
