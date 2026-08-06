@@ -20,8 +20,10 @@ import {
 /** Maximum number of files to process in a single call. */
 const MAX_FILES = 100;
 
-/** Total shallow-read size above which smaller follow-up read batches are recommended. */
+/** Recommended maximum original file size for a content-returning shallow read. */
 const SHALLOW_READ_BATCH_SIZE_BYTES = 50 * 1024;
+const SHALLOW_READ_BATCH_SIZE_LABEL =
+  `${(SHALLOW_READ_BATCH_SIZE_BYTES / 1024).toFixed(1)} KB`;
 
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 const OUTPUT_TERMINATOR = '--- End of content ---';
@@ -58,7 +60,13 @@ For broad file sets, use shallow_read first to inspect their size and truncation
       shallow_read: {
         type: 'boolean',
         description:
-          'If true, return only the matched file list with per-file line counts and sizes, total line count and size, and whether content would be truncated. Totals over 50 KB include a recommendation to split follow-up reads. Defaults to false.',
+          `If true, return the matched file list with per-file line counts and sizes, total line count and size, and whether content would be truncated. Use shallow_read_content_limit_bytes to also return contents for small selections. Keep content-return thresholds at or below the recommended ${SHALLOW_READ_BATCH_SIZE_LABEL} batch size unless larger output is intentional. Defaults to false.`,
+      },
+      shallow_read_content_limit_bytes: {
+        type: 'integer',
+        minimum: 1,
+        description:
+          'Optional positive integer used only with shallow_read=true. If the total size of successfully processed files is less than or equal to this byte limit, return both shallow-read statistics and file contents.',
       },
       show_line_numbers: {
         type: 'boolean',
@@ -77,6 +85,7 @@ function validateParams(args: Record<string, unknown>): string | null {
     'exclude',
     'useIgnoreFiles',
     'shallow_read',
+    'shallow_read_content_limit_bytes',
     'show_line_numbers',
   ]);
   const unknownKeys = Object.keys(args).filter((key) => !allowedKeys.has(key));
@@ -109,6 +118,17 @@ function validateParams(args: Record<string, unknown>): string | null {
   }
   if (args.shallow_read !== undefined && typeof args.shallow_read !== 'boolean') {
     return "The 'shallow_read' parameter must be a boolean.";
+  }
+  if (args.shallow_read_content_limit_bytes !== undefined) {
+    if (
+      !Number.isSafeInteger(args.shallow_read_content_limit_bytes) ||
+      (args.shallow_read_content_limit_bytes as number) < 1
+    ) {
+      return "The 'shallow_read_content_limit_bytes' parameter must be a positive integer (JSON number).";
+    }
+    if (args.shallow_read !== true) {
+      return "The 'shallow_read_content_limit_bytes' parameter requires 'shallow_read' to be true.";
+    }
   }
   if (
     args.show_line_numbers !== undefined &&
@@ -254,6 +274,8 @@ async function handleReadManyFiles(
   const useIgnoreFiles =
     (args.useIgnoreFiles as boolean | undefined) ?? true;
   const shallowRead = (args.shallow_read as boolean | undefined) ?? false;
+  const shallowReadContentLimitBytes =
+    args.shallow_read_content_limit_bytes as number | undefined;
   const showLineNumbers =
     (args.show_line_numbers as boolean | undefined) ?? false;
 
@@ -332,7 +354,9 @@ async function handleReadManyFiles(
         };
       }
       const result = await readTextFile(file.readPath, {
-        showLineNumbers: !shallowRead && showLineNumbers,
+        showLineNumbers:
+          (!shallowRead || shallowReadContentLimitBytes !== undefined) &&
+          showLineNumbers,
       });
       if (!result.ok) {
         return {
@@ -412,21 +436,40 @@ async function handleReadManyFiles(
       '.',
   );
 
+  const totalLineCount = processedFiles.reduce(
+    (sum, file) => sum + file.originalLineCount,
+    0,
+  );
+  const totalSizeBytes = processedFiles.reduce(
+    (sum, file) => sum + file.sizeBytes,
+    0,
+  );
+  const includeShallowContent =
+    shallowRead &&
+    shallowReadContentLimitBytes !== undefined &&
+    totalSizeBytes <= shallowReadContentLimitBytes;
+  const includeContent = !shallowRead || includeShallowContent;
+
   if (shallowRead && processedFiles.length > 0) {
-    const totalLineCount = processedFiles.reduce(
-      (sum, file) => sum + file.originalLineCount,
-      0,
-    );
-    const totalSizeBytes = processedFiles.reduce(
-      (sum, file) => sum + file.sizeBytes,
-      0,
-    );
-    summaryParts.push('Shallow read: file contents omitted.');
+    if (shallowReadContentLimitBytes === undefined) {
+      summaryParts.push('Shallow read: file contents omitted.');
+    } else if (includeShallowContent) {
+      summaryParts.push(
+        `Shallow read: file contents included because total size is within the configured ${formatFileSize(shallowReadContentLimitBytes)} limit.`,
+      );
+    } else {
+      summaryParts.push(
+        `Shallow read: file contents omitted because total size exceeds the configured ${formatFileSize(shallowReadContentLimitBytes)} limit.`,
+      );
+    }
     summaryParts.push(`Total lines: ${totalLineCount}.`);
     summaryParts.push(`Total size: ${formatFileSize(totalSizeBytes)}.`);
-    if (totalSizeBytes > SHALLOW_READ_BATCH_SIZE_BYTES) {
+    if (
+      includeShallowContent &&
+      totalSizeBytes > SHALLOW_READ_BATCH_SIZE_BYTES
+    ) {
       summaryParts.push(
-        'Recommendation: Total size exceeds 50 KB. Split the files across at least two read calls.',
+        `WARNING: Included file contents exceed the recommended ${SHALLOW_READ_BATCH_SIZE_LABEL} batch size. The response may be truncated or otherwise limited by the receiving client or host.`,
       );
     }
     summaryParts.push('Files:');
@@ -441,7 +484,9 @@ async function handleReadManyFiles(
         `- ${file.displayPath}: ${file.originalLineCount} line(s), ${formatFileSize(file.sizeBytes)}, would be truncated: ${truncationStatus}.`,
       );
     }
-  } else if (processedFiles.length > 0) {
+  }
+
+  if (includeContent && processedFiles.length > 0) {
     const hasTruncatedContent = processedFiles.some((file) => file.isTruncated);
     if (!hasTruncatedContent) {
       summaryParts.push('No truncation: all returned file contents are complete.');

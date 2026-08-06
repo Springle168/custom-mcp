@@ -44,7 +44,8 @@ test/fixtures/read-many-files/
 | `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；相对输入基于 primary `rootDir`，drive-absolute 输入可位于任一 allowed root 内 |
 | `exclude` | `string[]` | ❌ | `[]` | 仅过滤 glob 自动发现结果的本次调用 glob pattern；literal 绕过 |
 | `useIgnoreFiles` | `boolean` | ❌ | `true` | 是否使用 matched root 配置的 `ignoreFiles` 过滤 glob 自动发现结果；不影响 literal、`exclude` 或 deny。宽泛发现应保持默认开启；如需检查被 ignore 的候选，推荐先收窄 include pattern，再以 `useIgnoreFiles=false` 和 `shallow_read=true` 预检，最后通过 literal 路径读取选中的文件 |
-| `shallow_read` | `boolean` | ❌ | `false` | 浅读取，只返回文件列表、各自行数与大小、总行数与总大小和是否会截断，不返回文件内容；总大小超过 50 KB 时建议拆分后续读取 |
+| `shallow_read` | `boolean` | ❌ | `false` | 返回文件列表、各自行数与大小、总行数与总大小和是否会截断；可通过 `shallow_read_content_limit_bytes` 为小规模结果同时返回文件内容；内容返回阈值建议不超过 `SHALLOW_READ_BATCH_SIZE_BYTES` |
+| `shallow_read_content_limit_bytes` | `integer` | ❌ | — | 仅与 `shallow_read=true` 配合使用的正整数；成功处理文件的原始磁盘总大小不大于该字节数时，同时返回浅读统计和文件内容 |
 | `show_line_numbers` | `boolean` | ❌ | `false` | 给返回内容每行添加原始行号前缀，仅在确实需要行号时开启 |
 
 ### description设计意图
@@ -56,7 +57,8 @@ test/fixtures/read-many-files/
 - **输入路径**：由 `include` 参数说明 relative / drive-absolute 路径和 glob 的 root 语义，并提供输入示例
 - **过滤规则**：由 `exclude` 和 `useIgnoreFiles` 参数区分本次调用过滤与 root-specific 持久 ignore；所有 literal 都绕过两者
 - **ignore 渐进式探查**：保持宽泛发现的默认 ignore；如需检查被过滤候选，先收窄 pattern 并以关闭 ignore 的浅读取预检，再通过 literal 路径精读
-- **浅读取结果**：由 `shallow_read` 参数说明行数、大小、截断状态和超过 50 KB 时的拆分建议
+- **浅读取结果**：由 `shallow_read` 参数说明行数、大小、截断状态、可选内容返回和建议批次大小
+- **小规模结果合并返回**：由 `shallow_read_content_limit_bytes` 说明按成功处理文件的原始磁盘总大小决定是否同时返回内容
 - **行号输出**：由 `show_line_numbers` 参数说明 1-based 行号及输出体积影响
 
 ---
@@ -110,11 +112,19 @@ Literal 是显式访问，因此 relative 与 drive-absolute literal 都不走 i
 | 单行长度 | 2000 字符 | 超过截断，行尾加 `... [truncated]` |
 | 总文件数 | 100 个 | 超过后停止读取，结果中说明 |
 
-`shallow_read: true` 时仍会读取文本以统计行数和判断截断风险，但不会把内容拼接到返回结果中。返回信息包括每个文件的原始总行数和磁盘字节数、所有成功处理文件的总行数和总字节数，以及如果正常读取内容是否会被截断。大小统计复用 `readTextFile()` 读取前取得的 `fs.stat().size`，不会为此增加额外的文件系统访问；被跳过、读取失败或因总文件数限制而未处理的文件不计入合计。
+`shallow_read: true` 时仍会读取文本以统计行数和判断截断风险。返回信息包括每个文件的原始总行数和磁盘字节数、所有成功处理文件的总行数和总字节数，以及如果正常读取内容是否会被截断。大小统计复用 `readTextFile()` 读取前取得的 `fs.stat().size`，不会为此增加额外的文件系统访问；被跳过、读取失败或因总文件数限制而未处理的文件不计入合计。
 
-总大小严格大于 `50 * 1024` 字节时，返回结果会建议将文件拆分到至少两次后续读取中。该提示用于控制后续 MCP 返回体和上下文规模，不改变 `shallow_read` 本身仍需读取文本以统计行数的行为。
+提供 `shallow_read_content_limit_bytes` 时，成功处理文件的原始磁盘总大小小于或等于该配置值便同时返回浅读统计和文件内容；超过配置值则只返回浅读统计。该参数必须是正整数并显式搭配 `shallow_read: true`。参数比较不计入行号前缀、文件分隔符、浅读统计、截断警告、内容结束标记或 MCP 返回壳，因此配置值不是最终响应体的硬上限。
 
-`show_line_numbers: true` 时，每一行内容会添加原始 1-based 行号前缀，例如 `12: print("xxx")`。这个选项会增加输出体积，只有需要精确定位或引用行号时才建议开启。
+`SHALLOW_READ_BATCH_SIZE_BYTES` 是建议的内容返回批次大小，值为 `50 * 1024` 字节，不限制调用者配置更大的 `shallow_read_content_limit_bytes`。实际附带内容的原始磁盘总大小超过该建议值时，服务器仍返回内容并追加接收端风险警告：
+
+```text
+WARNING: Included file contents exceed the recommended 50.0 KB batch size. The response may be truncated or otherwise limited by the receiving client or host.
+```
+
+该警告表示 MCP 接收端或宿主可能进一步限制响应。服务器自身因单文件行数或单行长度限制而发生的内容截断，仍通过逐文件截断警告明确报告。
+
+`show_line_numbers: true` 时，每一行返回内容会添加原始 1-based 行号前缀，例如 `12: print("xxx")`。这个选项会增加输出体积，只有需要精确定位或引用行号时才建议开启；行号前缀不计入 `shallow_read_content_limit_bytes` 的比较值。
 
 ### 并行读取
 
@@ -162,13 +172,35 @@ Read 2 file(s).
 Shallow read: file contents omitted.
 Total lines: 120.
 Total size: 62.4 KB (63898 bytes).
-Recommendation: Total size exceeds 50 KB. Split the files across at least two read calls.
 Files:
 - src/Foo.kt: 40 line(s), 12.1 KB (12390 bytes), would be truncated: no.
 - src/Large.kt: 80 line(s), 50.3 KB (51508 bytes), would be truncated: no.
 ```
 
 AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容。
+
+配置阈值允许返回内容时，浅读统计之后追加与普通读取相同的截断状态、文件内容分隔符和结束标记：
+
+```text
+Read 2 file(s).
+Shallow read: file contents included because total size is within the configured 10.0 KB (10240 bytes) limit.
+Total lines: 120.
+Total size: 8.5 KB (8704 bytes).
+Files:
+- src/Foo.kt: 40 line(s), 3.1 KB (3174 bytes), would be truncated: no.
+- src/Bar.kt: 80 line(s), 5.4 KB (5530 bytes), would be truncated: no.
+No truncation: all returned file contents are complete.
+
+--- src/Foo.kt ---
+
+<文件内容>
+
+--- src/Bar.kt ---
+
+<文件内容>
+
+--- End of content ---
+```
 
 ### Ignore、deny 与 mixed result
 
