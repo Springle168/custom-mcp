@@ -366,29 +366,144 @@ async function testShallowRead() {
 
 }
 
-async function testShallowReadSizeRecommendation() {
+async function testShallowReadContentAtConfiguredLimit() {
+
+  const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
+  const readmePath = path.join(FIXTURES_DIR, 'docs', 'README.md');
+  const [fooStat, readmeStat] = await Promise.all([
+    fs.stat(fooPath),
+    fs.stat(readmePath),
+  ]);
+  const totalSizeBytes = fooStat.size + readmeStat.size;
+  const result = await readManyFilesTool.handler(
+    {
+      include: ['src/Foo.kt', 'docs/README.md'],
+      shallow_read: true,
+      shallow_read_content_limit_bytes: totalSizeBytes,
+      show_line_numbers: true,
+    },
+    testContext
+  );
+
+  assert(result.isError !== true, 'Should succeed at the configured limit');
+  const text = getResultText(result);
+
+  assertIncludes(
+    text,
+    `Shallow read: file contents included because total size is within the configured ${totalSizeBytes} bytes limit.`,
+    'Should explain why contents are included'
+  );
+  assertIncludes(text, `Total size: ${totalSizeBytes} bytes.`, 'Should report the compared original file size');
+  assertIncludes(text, 'Files:', 'Should retain shallow-read file statistics');
+  assertIncludes(text, '1: package com.example.demo', 'Should apply line numbers to included contents');
+  assertIncludes(text, '--- End of content ---', 'Should include the content terminator');
+
+}
+
+async function testShallowReadContentAboveConfiguredLimit() {
+
+  const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
+  const readmePath = path.join(FIXTURES_DIR, 'docs', 'README.md');
+  const [fooStat, readmeStat] = await Promise.all([
+    fs.stat(fooPath),
+    fs.stat(readmePath),
+  ]);
+  const totalSizeBytes = fooStat.size + readmeStat.size;
+  const result = await readManyFilesTool.handler(
+    {
+      include: ['src/Foo.kt', 'docs/README.md'],
+      shallow_read: true,
+      shallow_read_content_limit_bytes: totalSizeBytes - 1,
+    },
+    testContext
+  );
+
+  assert(result.isError !== true, 'Should succeed above the configured limit');
+  const text = getResultText(result);
+
+  assertIncludes(
+    text,
+    `Shallow read: file contents omitted because total size exceeds the configured ${totalSizeBytes - 1} bytes limit.`,
+    'Should explain why contents are omitted'
+  );
+  assertIncludes(text, `Total size: ${totalSizeBytes} bytes.`, 'Should report the compared original file size');
+  assertNotIncludes(text, 'data class Foo', 'Should omit file contents');
+  assertNotIncludes(text, '--- End of content ---', 'Should omit the content terminator');
+
+}
+
+async function testShallowReadContentLimitValidation() {
+
+  const invalidValues = [0, -1, 1.5, '1024'];
+  for (const value of invalidValues) {
+    const result = await readManyFilesTool.handler(
+      {
+        include: ['src/Foo.kt'],
+        shallow_read: true,
+        shallow_read_content_limit_bytes: value,
+      },
+      testContext
+    );
+    assert(result.isError === true, `Should reject invalid limit: ${String(value)}`);
+    assertIncludes(
+      getResultText(result),
+      "The 'shallow_read_content_limit_bytes' parameter must be a positive integer (JSON number).",
+      'Should explain the positive integer requirement'
+    );
+  }
+
+  const withoutShallowRead = await readManyFilesTool.handler(
+    {
+      include: ['src/Foo.kt'],
+      shallow_read_content_limit_bytes: 1024,
+    },
+    testContext
+  );
+  assert(withoutShallowRead.isError === true, 'Should require shallow_read=true');
+  assertIncludes(
+    getResultText(withoutShallowRead),
+    "The 'shallow_read_content_limit_bytes' parameter requires 'shallow_read' to be true.",
+    'Should explain the parameter dependency'
+  );
+
+}
+
+async function testShallowReadRecommendedBatchWarning() {
 
   const firstPath = path.join(FIXTURES_DIR, 'shallow-size-a.txt');
   const secondPath = path.join(FIXTURES_DIR, 'shallow-size-b.txt');
-  const halfThresholdContent = 'a\n'.repeat(25 * 1024 / 2);
+  const halfThresholdContent = 'a'.repeat(25 * 1024);
 
   try {
     await fs.writeFile(firstPath, halfThresholdContent, 'utf-8');
     await fs.writeFile(secondPath, halfThresholdContent, 'utf-8');
 
     const atThresholdResult = await readManyFilesTool.handler(
-      { include: [firstPath, secondPath], shallow_read: true },
+      {
+        include: [firstPath, secondPath],
+        shallow_read: true,
+        shallow_read_content_limit_bytes: 51200,
+      },
       testContext
     );
-    assert(atThresholdResult.isError !== true, 'Threshold read should succeed');
+    assert(atThresholdResult.isError !== true, 'Recommended-threshold read should succeed');
     const atThresholdText = getResultText(atThresholdResult);
-    assertIncludes(atThresholdText, 'Total size: 50.0 KB (51200 bytes).', 'Should report an exact 50 KB total');
-    assertNotIncludes(atThresholdText, 'Recommendation:', 'Should not recommend splitting at exactly 50 KB');
+    assertIncludes(atThresholdText, 'Total size: 50.0 KB (51200 bytes).', 'Should report the exact recommended threshold');
+    assertNotIncludes(
+      atThresholdText,
+      'WARNING: Included file contents exceed the recommended',
+      'Should not emit the receiving-side warning at the recommended threshold'
+    );
+    assertIncludes(atThresholdText, '--- End of content ---', 'Should include contents at the recommended threshold');
 
     await fs.appendFile(secondPath, 'b', 'utf-8');
 
     const overThresholdResult = await readManyFilesTool.handler(
-      { include: [firstPath, secondPath], shallow_read: true },
+      {
+        include: [firstPath, secondPath],
+        shallow_read: true,
+        shallow_read_content_limit_bytes: 51201,
+      },
       testContext
     );
     assert(overThresholdResult.isError !== true, 'Over-threshold read should succeed');
@@ -396,9 +511,11 @@ async function testShallowReadSizeRecommendation() {
     assertIncludes(overThresholdText, 'Total size: 50.0 KB (51201 bytes).', 'Should report the exact over-threshold total');
     assertIncludes(
       overThresholdText,
-      'Recommendation: Total size exceeds 50 KB. Split the files across at least two read calls.',
-      'Should recommend splitting reads above 50 KB'
+      'WARNING: Included file contents exceed the recommended 50.0 KB batch size. The response may be truncated or otherwise limited by the receiving client or host.',
+      'Should warn about receiving-side limits above the recommended batch size'
     );
+    assertIncludes(overThresholdText, `--- ${firstPath} ---`, 'Should still include contents above the recommended size');
+    assertIncludes(overThresholdText, '--- End of content ---', 'Should include the content terminator');
   } finally {
     await Promise.all([
       fs.rm(firstPath, { force: true }),
@@ -449,7 +566,10 @@ async function main(): Promise<void> {
       { name: 'Binary file is skipped (extension-based detection)', run: testBinaryFileSkipped },
       { name: 'Binary files are filtered out in glob results', run: testBinaryFileInGlob },
       { name: 'Shallow read returns file list and line counts', run: testShallowRead },
-      { name: 'Shallow read recommends split reads above 50 KB', run: testShallowReadSizeRecommendation },
+      { name: 'Shallow read includes content at the configured limit', run: testShallowReadContentAtConfiguredLimit },
+      { name: 'Shallow read omits content above the configured limit', run: testShallowReadContentAboveConfiguredLimit },
+      { name: 'Shallow read content limit validates values and dependencies', run: testShallowReadContentLimitValidation },
+      { name: 'Shallow read warns above the recommended batch size', run: testShallowReadRecommendedBatchWarning },
       { name: 'show_line_numbers prefixes returned content lines', run: testShowLineNumbers },
     ],
   });
