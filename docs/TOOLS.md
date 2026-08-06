@@ -47,6 +47,7 @@ src/tools/
 ├── read-many-files.ts               # read_many_files 工具
 ├── write-file.ts                    # write_file 工具
 ├── ask-user.ts                      # ask_user 工具
+├── ask-user-routes.ts               # ask_user 浏览器交互 HTTP 路由
 ├── android-build-shared.ts          # Android 构建工具共享逻辑
 ├── android-assemble-debug.ts        # android.assembleDebug 工具
 └── android-test-debug-unit-test.ts  # android.testDebugUnitTest 工具

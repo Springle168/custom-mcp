@@ -21,7 +21,7 @@
 ```text
 custom-mcp/test/
 ├── android-build/              # Android 构建工具测试，见 docs/tools/android-build.md
-├── ask-user/                   # ask_user 答案格式测试与人工交互脚本，见 docs/tools/ask-user.md
+├── ask-user/                   # ask_user 答案、HTTP 路由测试与人工交互脚本，见 docs/tools/ask-user.md
 ├── config/                     # 全局配置、workspace selection、env override 和 snapshot 测试，见 docs/CONFIG.md
 ├── fixtures/                   # 测试数据与运行期生成的 fixture 目录
 ├── helpers/                    # 测试辅助函数，如 runtime-config.ts
@@ -89,10 +89,11 @@ node --import tsx test/tools/tool-definitions.test.ts
 
 这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离和 `tools/list` 不暴露 `outputSchema`。
 
-`ask_user` 答案规范化与结果格式化测试：
+`ask_user` 答案规范化、结果格式化与 HTTP 路由测试：
 
 ```bash
 node --import tsx test/ask-user/ask-user-result.test.ts
+node --import tsx test/ask-user/ask-user-routes.test.ts
 ```
 
 ---

@@ -141,11 +141,13 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/ask-user.ts` | 工具定义、Schema、参数校验、handler 实现、答案规范化/格式化 helper、HTML 生成 |
-| `src/index.ts` | HTTP 路由（`/ask`, `/answer`, `/cancel`） |
+| `src/tools/ask-user.ts` | 工具定义、Schema、参数校验、handler 实现、待回答会话、答案规范化/格式化 helper、HTML 生成 |
+| `src/tools/ask-user-routes.ts` | 浏览器 HTTP 路由（`/ask`, `/answer`, `/cancel`）及 `/answer` 的表单解析中间件 |
+| `src/index.ts` | HTTP server 创建和 `ask_user` 路由注册 |
 | `src/tools/index.ts` | 工具注册 |
 | `src/tools/types.ts` | `MCPTool` 接口定义 |
 | `test/ask-user/ask-user-result.test.ts` | 答案规范化、结果格式化与 handler 返回测试 |
+| `test/ask-user/ask-user-routes.test.ts` | 浏览器路由的表单渲染、提交、取消和未知会话响应测试 |
 | `test/ask-user/ask-user.manual.ts` | 人工交互脚本（模拟 MCP 客户端调用） |
 
 ---

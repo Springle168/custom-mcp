@@ -13,13 +13,9 @@ import {
 import { generateMcpSessionId } from './runtime/mcp-identifiers.js';
 import { formatFileAccessPolicyStartupLines } from './runtime/startup-logging.js';
 import { createWorkspaceToolService } from './tools/index.js';
+import { registerAskUserRoutes } from './tools/ask-user-routes.js';
 import { Logger } from './utils/logger.js';
 import { buildHttpUrl, formatHostPort } from './utils/http-url.js';
-import {
-  pendingQuestions,
-  generateQuestionForm,
-  normalizeAskUserAnswerPayload,
-} from './tools/ask-user.js';
 
 function logWorkspaceRoots(configStore: ConfigStore, logger: Logger): void {
   const { pathSafetyContext } = configStore.getSnapshot();
@@ -95,8 +91,7 @@ async function main() {
 
   const app = express();
   app.use(express.json());
-  // Accept form submissions from the ask_user page.
-  app.use(express.urlencoded({ extended: true }));
+  registerAskUserRoutes(app);
 
   const sessions = new Map<string, McpPostSession>();
 
@@ -165,56 +160,6 @@ async function main() {
     await session.server.close();
     sessions.delete(sessionId);
     logger.info(`Session closed: ${sessionId}`);
-  });
-
-  // Browser endpoints for ask_user prompts.
-  app.get('/ask/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    const pending = pendingQuestions.get(sessionId);
-
-    if (!pending) {
-      res.status(404).send('<h1>Session not found or expired</h1>');
-      return;
-    }
-
-    const html = generateQuestionForm(sessionId, pending.questions);
-    res.send(html);
-  });
-
-  app.post('/answer/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    const pending = pendingQuestions.get(sessionId);
-
-    if (!pending) {
-      res.status(404).send('<h1>Session not found or expired</h1>');
-      return;
-    }
-
-    const payload = normalizeAskUserAnswerPayload(
-      pending.questions,
-      req.body as Record<string, unknown>,
-    );
-
-    pending.resolve(payload);
-
-    res.send(`
-      <h1>Submitted</h1>
-      <p>Your answers have been recorded. You can close this window.</p>
-    `);
-  });
-
-  app.post('/cancel/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    const pending = pendingQuestions.get(sessionId);
-
-    if (!pending) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-
-    pending.resolve(null);
-
-    res.json({ success: true });
   });
 
   app.listen(initialSnapshot.port, initialSnapshot.host, () => {
