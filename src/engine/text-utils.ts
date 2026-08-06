@@ -1,7 +1,3 @@
-// ============
-// 安全字面替换
-// ============
-
 /**
  * 安全的字面文本替换，避免 String.replace() 中 $ 符号被当作替换模式。
  * 替换所有出现的 search。
@@ -11,13 +7,8 @@ export function safeLiteralReplace(
   search: string,
   replace: string,
 ): string {
-  // split/join 是最安全的字面替换方式，完全不解释特殊字符
   return content.split(search).join(replace);
 }
-
-// ============
-// 行尾符相关
-// ============
 
 export function detectLineEnding(content: string): '\r\n' | '\n' {
   const crlfCount = (content.match(/\r\n/g) || []).length;
@@ -25,20 +16,22 @@ export function detectLineEnding(content: string): '\r\n' | '\n' {
   return crlfCount > lfCount ? '\r\n' : '\n';
 }
 
+/**
+ * 解析配置的行尾符策略。
+ * auto 模式会保留已有文件检测到的行尾符；新建文件默认使用 LF。
+ */
 export function resolveLineEnding(
   configLineEnding: 'auto' | 'lf' | 'crlf',
-  detectedLineEnding: '\r\n' | '\n' | null, // null = 新建文件
+  detectedLineEnding: '\r\n' | '\n' | null,
 ): '\r\n' | '\n' {
   if (configLineEnding === 'lf') return '\n';
   if (configLineEnding === 'crlf') return '\r\n';
-  // auto 模式
-  if (detectedLineEnding) return detectedLineEnding; // 已有文件，保留原始
-  return '\n'; // 新建文件，默认 LF
+  if (detectedLineEnding) return detectedLineEnding;
+  return '\n';
 }
 
 /**
  * 保持修改后的内容与原始内容在尾部换行符上一致。
- * 平移自 edit.ts restoreTrailingNewline
  */
 export function restoreTrailingNewline(
   originalContent: string,
@@ -52,10 +45,6 @@ export function restoreTrailingNewline(
   }
   return modifiedContent;
 }
-
-// ============
-// 省略占位符检测
-// ============
 
 const OMITTED_PREFIXES = new Set([
   'rest of',

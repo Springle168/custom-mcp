@@ -1,11 +1,5 @@
-// src/utils/file-read.ts
-
 import * as fs from 'node:fs/promises';
 import { extname } from 'node:path';
-
-// ================
-// Constants
-// ================
 
 /** Maximum number of lines to include from a single text file. */
 export const MAX_LINES_PER_FILE = 2000;
@@ -81,10 +75,6 @@ export const BINARY_EXTENSIONS = new Set([
   '.apk', '.aab', '.dex',
 ]);
 
-// ================
-// Types
-// ================
-
 export interface TextFileContent {
   /** File content (after truncation if applicable). */
   content: string;
@@ -126,10 +116,6 @@ export interface ReadTextFileOptions {
 export type TextFileResult =
   | ({ ok: true } & TextFileContent)
   | { ok: false; reason: string };
-
-// ================
-// Binary Detection
-// ================
 
 /**
  * Determines whether a file is likely binary.
@@ -180,10 +166,6 @@ export async function isBinaryFile(filePath: string): Promise<boolean> {
     }
   }
 }
-
-// ================
-// Text File Reading
-// ================
 
 /**
  * Reads a text file with optional automatic truncation for large content.
@@ -256,7 +238,6 @@ export async function readTextFile(
     const isPartialRead = actualStart > 0 || actualEnd < originalLineCount;
     const lineLimitTruncated = actualEnd < requestedEnd;
 
-    // Truncate long lines
     const truncationSuffix = '... [truncated]';
     let lineLengthTruncated = false;
     const formattedLines = selectedLines.map((line, index) => {

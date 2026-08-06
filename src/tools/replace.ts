@@ -23,10 +23,6 @@ import { withFileLock } from '../utils/file-lock.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 
-// ================
-// Types
-// ================
-
 type MatchMode = 'default' | 'regex';
 
 interface ReplaceTextPayload {
@@ -49,10 +45,6 @@ interface ValidationResult {
   ok: boolean;
   note?: string;
 }
-
-// ================
-// Tool Schema（MCP tools/list 返回给宿主的）
-// ================
 
 export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text' as const,
@@ -115,10 +107,6 @@ Best practices:
     additionalProperties: false,
   },
 };
-
-// ================
-// Response Helpers
-// ================
 
 function successResult(payload: ReplaceTextPayload): ToolCallResult {
   return textResult(JSON.stringify(payload));
@@ -198,10 +186,6 @@ function formatFileReadinessError(
 ): string {
   return `Could not prepare ${filePath}: ${reason}. Check the path, permissions, and file type before retrying.`;
 }
-
-// ================
-// Parameter Validation
-// ================
 
 const ALLOWED_KEYS = new Set([
   'file_path',
@@ -331,10 +315,6 @@ function validateParams(args: Record<string, unknown>): ValidationResult {
   return { ok: true };
 }
 
-// ================
-// Omission Placeholder Warning
-// ================
-
 function isDotsOnly(text: string): boolean {
   if (text.length < 3) return false;
   return [...text].every((char) => char === '.');
@@ -452,10 +432,6 @@ function getRegexMultilineMatchWarning(
   return "Warning: regex target matched across multiple lines. If this was not intended, check dotAll ('s') usage; for line-local captures prefer '[^\\n]+' over '.+'.";
 }
 
-// ================
-// File Preparation
-// ================
-
 async function readExistingTextFile(
   resolved: string,
   filePath: string,
@@ -529,10 +505,6 @@ async function writeTextContent(
   }
 }
 
-// ================
-// Replacement Results
-// ================
-
 function buildMatchedFailure(
   args: Record<string, unknown>,
   note: string,
@@ -552,10 +524,6 @@ function buildMatchedFailure(
     }),
   );
 }
-
-// ================
-// Tool Handler
-// ================
 
 export async function handleReplace(
   args: Record<string, unknown>,

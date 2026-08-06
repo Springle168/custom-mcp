@@ -1,9 +1,5 @@
 import { restoreTrailingNewline } from './text-utils.js';
 
-// ================
-// Types
-// ================
-
 export interface ReplaceParams {
   file_path: string;
   target: string;
@@ -36,10 +32,6 @@ export type RegexReplacementResult =
       hasMultilineMatch: boolean;
     } & ReplacementResult)
   | { ok: false; reason: 'invalid_regex' | 'zero_length_match'; message: string };
-
-// ================
-// Shared helpers
-// ================
 
 function normalizeInput(text: string): string {
   return text.replace(/\r\n|\r/g, '\n');
@@ -124,10 +116,6 @@ export function calculateMatchedSpan(
   };
 }
 
-// ================
-// Default Literal Matching
-// ================
-
 function exactMatch(
   currentContent: string,
   params: ReplaceParams,
@@ -159,10 +147,6 @@ function exactMatch(
     matchRanges,
   };
 }
-
-// ================
-// Explicit Regex Mode
-// ================
 
 function buildRegexFlags(regexFlags: string | undefined): string {
   const requestedFlags = regexFlags ?? 'ms';
@@ -311,10 +295,6 @@ export function calculateRegexReplacement(
     hasMultilineMatch,
   };
 }
-
-// ================
-// Default Replacement
-// ================
 
 export function calculateReplacement(
   currentContent: string,

@@ -1,5 +1,3 @@
-// src/tools/read-many-files.ts
-
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
@@ -19,10 +17,6 @@ import {
   MAX_LINES_PER_FILE,
 } from '../utils/file-read.js';
 
-// ================
-// Constants
-// ================
-
 /** Maximum number of files to process in a single call. */
 const MAX_FILES = 100;
 
@@ -31,10 +25,6 @@ const SHALLOW_READ_BATCH_SIZE_BYTES = 50 * 1024;
 
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 const OUTPUT_TERMINATOR = '--- End of content ---';
-
-// ================
-// Tool Schema
-// ================
 
 const READ_MANY_FILES_TOOL_DEFINITION = {
   name: 'read_many_files' as const,
@@ -80,10 +70,6 @@ For broad file sets, use shallow_read first to inspect their size and truncation
     additionalProperties: false,
   },
 };
-
-// ================
-// Parameter Validation
-// ================
 
 function validateParams(args: Record<string, unknown>): string | null {
   const allowedKeys = new Set([
@@ -132,10 +118,6 @@ function validateParams(args: Record<string, unknown>): string | null {
   }
   return null;
 }
-
-// ================
-// File Collection Helpers
-// ================
 
 interface FileEntry {
   readPath: string;
@@ -260,15 +242,10 @@ async function expandGlobPattern(
   };
 }
 
-// ================
-// Tool Handler
-// ================
-
 async function handleReadManyFiles(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  // 1. Parameter validation
   const validationError = validateParams(args);
   if (validationError) return textErrorResult(validationError);
 
@@ -280,7 +257,7 @@ async function handleReadManyFiles(
   const showLineNumbers =
     (args.show_line_numbers as boolean | undefined) ?? false;
 
-  // 2. Resolve literals first, then expand only the inputs that qualify as globs.
+  // Prefer an existing literal file, even when its name contains glob metacharacters.
   const fileMap = new Map<string, FileEntry>();
   const skipped: SkippedEntry[] = [];
   const fileAccessPolicyContext = context.fileAccessPolicyContext;
@@ -328,7 +305,6 @@ async function handleReadManyFiles(
     }
   }
 
-  // 4. Early exit when nothing was found at all
   if (fileMap.size === 0 && skipped.length === 0) {
     return textErrorResult(
       'No files matched the given include patterns. ' +
@@ -336,7 +312,6 @@ async function handleReadManyFiles(
     );
   }
 
-  // 5. Sort and enforce file count limit
   const sortedFiles = Array.from(fileMap.values()).sort((a, b) =>
     a.readPath.localeCompare(b.readPath),
   );
@@ -346,7 +321,6 @@ async function handleReadManyFiles(
     sortedFiles.length = MAX_FILES;
   }
 
-  // 6. Read files in parallel (binary check → text read)
   const readResults = await Promise.allSettled(
     sortedFiles.map(async (file) => {
       if (await isBinaryFile(file.readPath)) {
@@ -385,7 +359,6 @@ async function handleReadManyFiles(
     }),
   );
 
-  // 7. Assemble file content blocks
   const contentParts: string[] = [];
   const processedFiles: Array<{
     filePath: string;
@@ -431,7 +404,6 @@ async function handleReadManyFiles(
     });
   }
 
-  // 8. Build summary header
   const summaryParts: string[] = [];
 
   summaryParts.push(
@@ -542,10 +514,6 @@ async function handleReadManyFiles(
     ? textResult(output)
     : textErrorResult(output);
 }
-
-// ================
-// Export
-// ================
 
 const readManyFilesTool: MCPTool = {
   definition: READ_MANY_FILES_TOOL_DEFINITION,

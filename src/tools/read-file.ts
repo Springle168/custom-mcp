@@ -21,10 +21,6 @@ interface LineRange {
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 const OUTPUT_TERMINATOR = '--- End of content ---';
 
-// ================
-// Tool Schema
-// ================
-
 const READ_FILE_TOOL_DEFINITION = {
   name: 'read_file' as const,
   description: `Reads and returns the content of a specified text file.
@@ -67,10 +63,6 @@ Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not app
     additionalProperties: false,
   },
 };
-
-// ================
-// Parameter Validation
-// ================
 
 function getReadMode(args: Record<string, unknown>): ReadMode | null {
   if (args.read_mode === undefined) return 'line';
@@ -200,10 +192,6 @@ async function resolveLineRange(
   return resolveRegexRange(resolvedPath, args);
 }
 
-// ================
-// Tool Handler
-// ================
-
 async function handleReadFile(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
@@ -285,10 +273,6 @@ async function handleReadFile(
     `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${OUTPUT_TERMINATOR}`,
   );
 }
-
-// ================
-// Export
-// ================
 
 const readFileTool: MCPTool = {
   definition: READ_FILE_TOOL_DEFINITION,

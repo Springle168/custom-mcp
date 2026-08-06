@@ -1,5 +1,3 @@
-// test/read-many-files/read-many-files.test.ts
-
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,15 +14,9 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Fixtures directory
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'read-many-files');
 
-// Test config
 const testContext = createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
-
-// ================
-// Test Cases
-// ================
 
 async function testSingleFileAbsolutePath() {
   
@@ -75,7 +67,6 @@ async function testMixedPathsAndGlobs() {
   assert(!result.isError, 'Should succeed');
   const text = getResultText(result);
   
-  // Should read README.md + Foo.kt + Bar.kt (but not nested/Deep.kt)
   assertIncludes(text, 'Read 3 file(s)', 'Should read 3 files');
   assertIncludes(text, 'README.md', 'Should include README.md');
   assertIncludes(text, 'Foo.kt', 'Should include Foo.kt');
@@ -88,7 +79,7 @@ async function testMixedPathsAndGlobs() {
 async function testGlobStartingWithSlash() {
   
   const result = await readManyFilesTool.handler(
-    { include: ['/**/Foo.kt'] },  // 以 / 开头但包含 glob 元字符
+    { include: ['/**/Foo.kt'] },
     testContext
   );
   
@@ -109,7 +100,6 @@ async function testNoBuiltInDefaultExcludes() {
   assert(!result.isError, 'Should succeed');
   const text = getResultText(result);
   
-  // Automatic discovery has no hard-coded ignore layer.
   assertIncludes(text, 'Foo.kt', 'Should include Foo.kt');
   assertIncludes(text, 'README.md', 'Should include README.md');
   assertIncludes(text, 'node_modules', 'Should include node_modules without configured ignore');
@@ -268,7 +258,6 @@ async function testPartialSuccess() {
 
 async function testRelativePathWithGlobChars() {
   
-  // 使用相对路径读取文件名含 [ ] 的文件
   const result = await readManyFilesTool.handler(
     { include: ['special-names/file[test].kt'] },
     testContext
@@ -317,10 +306,9 @@ async function testPathIsDirectory() {
 
 async function testBinaryFileSkipped() {
   
-  // 使用绝对路径绕过 exclude，或者关闭 useDefaultExcludes
   const pngPath = path.join(FIXTURES_DIR, 'binary', 'fake.png');
   const result = await readManyFilesTool.handler(
-    { include: [pngPath] },  // 绝对路径绕过 exclude
+    { include: [pngPath] },
     testContext
   );
   
@@ -343,7 +331,6 @@ async function testBinaryFileInGlob() {
   assert(result.isError !== true, 'Should succeed (kt files found)');
   const text = getResultText(result);
   
-  // Should read .kt files but skip .png
   assertIncludes(text, 'Foo.kt', 'Should include Kotlin files');
   assertIncludes(text, 'skipped', 'Should report skipped files');
   assertIncludes(text, 'fake.png', 'Should mention the PNG file');
@@ -436,10 +423,6 @@ async function testShowLineNumbers() {
   assertIncludes(text, '6: data class Foo(', 'Should preserve original line numbers');
 
 }
-
-// ================
-// Main Test Runner
-// ================
 
 async function main(): Promise<void> {
   await runTestSuite({

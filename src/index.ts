@@ -81,10 +81,6 @@ function indentBlock(text: string): string {
     .join('\n');
 }
 
-// ================
-// HTTP + Session Management
-// ================
-
 async function main() {
   const cliOptions = parseCliArgs(process.argv.slice(2));
   const initialConfig = loadRuntimeConfigWithIdentity({
@@ -99,15 +95,11 @@ async function main() {
 
   const app = express();
   app.use(express.json());
-  // 解析表单数据
+  // Accept form submissions from the ask_user page.
   app.use(express.urlencoded({ extended: true }));
 
   const sessions = new Map<string, McpPostSession>();
 
-  // Unknown session IDs return 404 so Streamable HTTP clients can treat them as
-  // stale and reinitialize after a server restart.
-
-  // POST /mcp — JSON-RPC 请求
   app.post('/mcp', async (req, res) => {
     await handleMcpPostRequest({
       req,
@@ -139,7 +131,6 @@ async function main() {
     });
   });
 
-  // GET /mcp — SSE 通道
   app.get('/mcp', async (req, res) => {
     const sessionId = getMcpSessionId(req);
     if (!sessionId) {
@@ -149,6 +140,7 @@ async function main() {
 
     const session = sessions.get(sessionId);
     if (!session) {
+      // A 404 prompts Streamable HTTP clients to reinitialize stale sessions.
       logger.info(`Unknown MCP session on GET: ${sessionId}`);
       res.status(404).json({ error: 'Session not found or expired' });
       return;
@@ -156,7 +148,6 @@ async function main() {
     await session.transport.handleRequest(req, res);
   });
 
-  // DELETE /mcp — 会话终止
   app.delete('/mcp', async (req, res) => {
     const sessionId = getMcpSessionId(req);
     if (!sessionId) {
@@ -176,11 +167,7 @@ async function main() {
     logger.info(`Session closed: ${sessionId}`);
   });
 
-  // ================
-  // ask_user 路由
-  // ================
-
-  // GET /ask/:sessionId — 渲染问题表单
+  // Browser endpoints for ask_user prompts.
   app.get('/ask/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     const pending = pendingQuestions.get(sessionId);
@@ -194,7 +181,6 @@ async function main() {
     res.send(html);
   });
 
-  // POST /answer/:sessionId — 接收答案
   app.post('/answer/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     const pending = pendingQuestions.get(sessionId);
@@ -209,7 +195,6 @@ async function main() {
       req.body as Record<string, unknown>,
     );
 
-    // Resolve Promise
     pending.resolve(payload);
 
     res.send(`
@@ -218,7 +203,6 @@ async function main() {
     `);
   });
 
-  // POST /cancel/:sessionId — 取消
   app.post('/cancel/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     const pending = pendingQuestions.get(sessionId);
@@ -228,13 +212,11 @@ async function main() {
       return;
     }
 
-    // Resolve with null
     pending.resolve(null);
 
     res.json({ success: true });
   });
 
-  // 启动
   app.listen(initialSnapshot.port, initialSnapshot.host, () => {
     logger.info('MCP Replace Server started');
     logger.info(`  Bind address: ${formatHostPort(initialSnapshot.host, initialSnapshot.port)}`);

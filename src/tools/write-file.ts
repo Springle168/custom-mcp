@@ -15,10 +15,6 @@ import {
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 
-// ================
-// Tool Schema
-// ================
-
 const WRITE_FILE_TOOL_DEFINITION = {
   name: 'write_file' as const,
   description: `Writes complete text content to a file, creating missing parent directories and overwriting existing files.
@@ -43,10 +39,6 @@ Parallel batching best practice: When creating or overwriting multiple files wit
     required: ['file_path', 'content'],
   },
 };
-
-// ================
-// Parameter Validation
-// ================
 
 function isDotsOnly(text: string): boolean {
   if (text.length < 3) return false;
@@ -112,10 +104,6 @@ function validateParams(args: Record<string, unknown>): string | null {
   return null;
 }
 
-// ================
-// Content Helpers
-// ================
-
 function normalizeLineEndings(
   content: string,
   lineEnding: '\r\n' | '\n',
@@ -133,10 +121,6 @@ function countLines(content: string): number {
 function appendWarning(message: string, warning: string | null): string {
   return warning ? `${message}\n${warning}` : message;
 }
-
-// ================
-// Tool Handler
-// ================
 
 async function handleWriteFile(
   args: Record<string, unknown>,
