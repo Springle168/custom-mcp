@@ -7,13 +7,17 @@ import {
 } from '../test-utils.js';
 import {
   assertDeepEqual,
+  createReplaceTextFixtureHarness,
+  parseResultJson,
+} from './helpers.js';
+
+const {
   callReplace,
   cleanupFixtures,
   createTestToolContext,
-  parseResultJson,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('schema');
 
 function getReplaceDefinition(): Record<string, unknown> {
   const definition = getAllToolDefinitions().find((tool) => tool.name === 'replace_text');

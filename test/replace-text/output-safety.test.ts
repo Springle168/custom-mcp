@@ -5,24 +5,35 @@ import {
   runTestSuite,
 } from '../test-utils.js';
 import {
-  FIXTURES_DIR,
   assertErrorResult,
-  assertFixtureContent,
-  assertFixtureMissing,
   assertJsonDefaults,
   assertNoSpan,
   assertSuccessResult,
+  createReplaceTextFixtureHarness,
+} from './helpers.js';
+
+const {
+  assertFixtureContent,
+  assertFixtureMissing,
   callReplace,
   cleanupFixtures,
   createTestToolContext,
   fixturePath,
+  fixturesDir: FIXTURES_DIR,
   makeFixtureDir,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('output-safety');
 
-const OUTSIDE_ROOT_FILE = path.join(FIXTURES_DIR, '..', 'outside-root.txt');
-const OUTSIDE_CREATE_FILE = path.join(FIXTURES_DIR, '..', 'created-outside.txt');
+const OUTSIDE_ROOT_FILE = `${FIXTURES_DIR}-outside-root.txt`;
+const OUTSIDE_CREATE_RELATIVE_PATH = path.join(
+  '..',
+  `${path.basename(FIXTURES_DIR)}-created-outside.txt`,
+);
+const OUTSIDE_CREATE_FILE = path.resolve(
+  FIXTURES_DIR,
+  OUTSIDE_CREATE_RELATIVE_PATH,
+);
 
 async function cleanupAll(): Promise<void> {
   await cleanupFixtures();
@@ -117,7 +128,7 @@ async function testParentTraversalCreateRejected(): Promise<void> {
   await resetFixtures();
 
   const result = await callReplace({
-    file_path: path.join('..', 'created-outside.txt'),
+    file_path: OUTSIDE_CREATE_RELATIVE_PATH,
     target: '',
     replacement: 'created\n',
     match_mode: 'default',

@@ -1,5 +1,4 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import {
   assert,
   assertEqual,
@@ -7,19 +6,23 @@ import {
 } from '../test-utils.js';
 import {
   assertErrorResult,
-  assertFixtureContent,
   assertJsonNoteIncludes,
   assertNoSpan,
   assertSuccessResult,
+  createReplaceTextFixtureHarness,
+} from './helpers.js';
+
+const {
+  assertFixtureContent,
   callReplace,
   cleanupFixtures,
   createTestToolContext,
   fixturePath,
-  FIXTURES_DIR,
+  fixturesDir: FIXTURES_DIR,
   makeFixtureDir,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('io-safety');
 
 async function testAbsolutePathInsideRootEchoesOriginalPath(): Promise<void> {
   await resetFixtures();
@@ -38,7 +41,7 @@ async function testAbsolutePathInsideRootEchoesOriginalPath(): Promise<void> {
 
 async function testOutsideRootPathRejected(): Promise<void> {
   await resetFixtures();
-  const outsidePath = path.join(path.dirname(FIXTURES_DIR), 'outside-root.txt');
+  const outsidePath = `${FIXTURES_DIR}-outside-root.txt`;
   await fs.rm(outsidePath, { force: true });
 
   const result = await callReplace({

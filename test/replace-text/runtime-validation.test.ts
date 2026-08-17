@@ -4,17 +4,21 @@ import {
 } from '../test-utils.js';
 import {
   assertErrorResult,
-  assertFixtureContent,
   assertJsonDefaults,
   assertJsonNoteIncludes,
   assertNoSpan,
   assertSuccessResult,
+  createReplaceTextFixtureHarness,
+} from './helpers.js';
+
+const {
+  assertFixtureContent,
   callReplace,
   cleanupFixtures,
   createTestToolContext,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('runtime-validation');
 
 async function testNewParameterNamesAndDefaults(): Promise<void> {
   await resetFixtures();

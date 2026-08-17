@@ -5,17 +5,21 @@ import {
 } from '../test-utils.js';
 import {
   assertErrorResult,
-  assertFixtureContent,
   assertJsonNoteIncludes,
   assertNoSpan,
   assertSpan,
   assertSuccessResult,
+  createReplaceTextFixtureHarness,
+} from './helpers.js';
+
+const {
+  assertFixtureContent,
   callReplace,
   cleanupFixtures,
   fixtureExists,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('regex-mode');
 
 async function testRegexSingleMatch(): Promise<void> {
   await resetFixtures();

@@ -16,7 +16,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const FIXTURES_DIR = path.join(__dirname, 'fixtures');
+const FIXTURES_ROOT = path.join(__dirname, '..', 'fixtures', 'replace-text');
 
 export interface MatchedSpan {
   start_line: number;
@@ -39,59 +39,99 @@ export interface ReplaceTextV2Json {
   note?: string;
 }
 
-export function createTestToolContext(
-  lineEnding: LineEnding = 'auto',
-): ToolRuntimeContext {
-  return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR, lineEnding });
-}
+export function createReplaceTextFixtureHarness(suiteName: string) {
+  assert(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(suiteName),
+    'Fixture suite name should use kebab-case',
+  );
 
-export async function resetFixtures(): Promise<void> {
-  await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
-  await fs.mkdir(FIXTURES_DIR, { recursive: true });
-}
+  const fixturesDir = path.join(FIXTURES_ROOT, suiteName);
 
-export async function cleanupFixtures(): Promise<void> {
-  await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
-}
-
-export function fixturePath(...segments: string[]): string {
-  return path.join(FIXTURES_DIR, ...segments);
-}
-
-export async function writeFixture(
-  relativePath: string,
-  content: string | Uint8Array,
-): Promise<string> {
-  const absolutePath = fixturePath(relativePath);
-  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-  await fs.writeFile(absolutePath, content);
-  return absolutePath;
-}
-
-export async function readFixture(relativePath: string): Promise<string> {
-  return fs.readFile(fixturePath(relativePath), 'utf-8');
-}
-
-export async function makeFixtureDir(relativePath: string): Promise<string> {
-  const absolutePath = fixturePath(relativePath);
-  await fs.mkdir(absolutePath, { recursive: true });
-  return absolutePath;
-}
-
-export async function fixtureExists(relativePath: string): Promise<boolean> {
-  try {
-    await fs.access(fixturePath(relativePath));
-    return true;
-  } catch {
-    return false;
+  function createTestToolContext(
+    lineEnding: LineEnding = 'auto',
+  ): ToolRuntimeContext {
+    return createTestToolRuntimeContext({ rootDir: fixturesDir, lineEnding });
   }
-}
 
-export async function callReplace(
-  args: Record<string, unknown>,
-  context: ToolRuntimeContext = createTestToolContext(),
-): Promise<ToolCallResult> {
-  return replaceTool.handler(args, context);
+  async function resetFixtures(): Promise<void> {
+    await fs.rm(fixturesDir, { recursive: true, force: true });
+    await fs.mkdir(fixturesDir, { recursive: true });
+  }
+
+  async function cleanupFixtures(): Promise<void> {
+    await fs.rm(fixturesDir, { recursive: true, force: true });
+  }
+
+  function fixturePath(...segments: string[]): string {
+    return path.join(fixturesDir, ...segments);
+  }
+
+  async function writeFixture(
+    relativePath: string,
+    content: string | Uint8Array,
+  ): Promise<string> {
+    const absolutePath = fixturePath(relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content);
+    return absolutePath;
+  }
+
+  async function readFixture(relativePath: string): Promise<string> {
+    return fs.readFile(fixturePath(relativePath), 'utf-8');
+  }
+
+  async function makeFixtureDir(relativePath: string): Promise<string> {
+    const absolutePath = fixturePath(relativePath);
+    await fs.mkdir(absolutePath, { recursive: true });
+    return absolutePath;
+  }
+
+  async function fixtureExists(relativePath: string): Promise<boolean> {
+    try {
+      await fs.access(fixturePath(relativePath));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function callReplace(
+    args: Record<string, unknown>,
+    context: ToolRuntimeContext = createTestToolContext(),
+  ): Promise<ToolCallResult> {
+    return replaceTool.handler(args, context);
+  }
+
+  async function assertFixtureContent(
+    relativePath: string,
+    expected: string,
+    message: string,
+  ): Promise<void> {
+    const actual = await readFixture(relativePath);
+    assertEqual(actual, expected, message);
+  }
+
+  async function assertFixtureMissing(
+    relativePath: string,
+    message: string,
+  ): Promise<void> {
+    assertEqual(await fixtureExists(relativePath), false, message);
+  }
+
+  return {
+    fixturesDir,
+    createTestToolContext,
+    resetFixtures,
+    cleanupFixtures,
+    fixturePath,
+    writeFixture,
+    readFixture,
+    makeFixtureDir,
+    fixtureExists,
+    callReplace,
+    assertFixtureContent,
+    assertFixtureMissing,
+  };
 }
 
 export function parseResultJson(result: ToolCallResult): ReplaceTextV2Json {
@@ -146,22 +186,6 @@ export function assertNoSpan(
   message: string,
 ): void {
   assertEqual(json.matched_span, null, message);
-}
-
-export async function assertFixtureContent(
-  relativePath: string,
-  expected: string,
-  message: string,
-): Promise<void> {
-  const actual = await readFixture(relativePath);
-  assertEqual(actual, expected, message);
-}
-
-export async function assertFixtureMissing(
-  relativePath: string,
-  message: string,
-): Promise<void> {
-  assertEqual(await fixtureExists(relativePath), false, message);
 }
 
 export function assertJsonNoteIncludes(

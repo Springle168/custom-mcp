@@ -4,16 +4,20 @@ import {
   runTestSuite,
 } from '../test-utils.js';
 import {
-  assertFixtureContent,
   assertSpan,
   assertSuccessResult,
+  createReplaceTextFixtureHarness,
+} from './helpers.js';
+
+const {
+  assertFixtureContent,
   callReplace,
   cleanupFixtures,
   createTestToolContext,
   readFixture,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('line-ending-concurrency');
 
 async function testAutoPreservesExistingLf(): Promise<void> {
   await resetFixtures();
