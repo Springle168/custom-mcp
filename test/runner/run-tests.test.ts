@@ -55,10 +55,6 @@ async function testDiscoversOnlyAutomatedScripts(): Promise<void> {
     'Should exclude manual scripts',
   );
   assert(
-    !tests.includes('test/fixtures/read-many-files/setup.ts'),
-    'Should exclude fixture setup scripts',
-  );
-  assert(
     !tests.includes('test/tools/inspect-tools.ts'),
     'Should exclude inspection scripts',
   );

@@ -15,7 +15,7 @@ test/read-file/
 └── read-file.test.ts   # read_file 参数校验、行号/regex 范围、完整读取和二进制拒绝
 ```
 
-该测试复用 `test/fixtures/read-many-files/` 中的文本与二进制 fixture；路径安全的跨工具回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)。
+该测试在 `test/fixtures/read-file/` 中创建并清理 suite 自有的文本与二进制 fixture；路径安全的跨工具回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)。
 
 ---
 
