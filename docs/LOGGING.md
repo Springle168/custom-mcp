@@ -127,7 +127,7 @@ node --import tsx test/logger/logger.test.ts
 运行 `test/logger/request-header-rules-logging.test.ts` 可以测试 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界：
 
 ```bash
-node --import tsx test/logger/request-header-rules-logging.test.ts
+npm test -- test/logger/request-header-rules-logging.test.ts
 ```
 
 默认会跳过超大 JSON 演示，避免 Agent 或自动化运行时输出大量噪音；需要验证 50KB 阈值下的大输出降级行为时，追加 `--verbose`：

@@ -45,7 +45,9 @@
 - 生产源码编译：`npm run build`。
 - 生产源码与测试代码的静态类型检查：`npm run typecheck:test`。
 - 依次执行生产构建和测试类型检查：`npm run check`。
-- 单个脚本测试：`node --import tsx test/<file>.ts`。
+- 全部自动化测试：`npm test`。
+- 主题测试：`npm test -- <topic>`。
+- 单个脚本测试：`npm test -- test/<file>.ts`。
 - 调整测试代码时，单个脚本运行与 `npm run typecheck:test` 分别验证运行行为和静态类型，不能相互替代。
 - 避免运行会改写源码、文档或快照的格式化/生成命令，除非用户明确要求或当前任务必须如此。
 
