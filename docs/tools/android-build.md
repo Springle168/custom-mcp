@@ -104,7 +104,7 @@ BUILD SUCCESSFUL
 
 Android 构建相关测试集中在 `test/android-build/`：
 
-- `test/android-build/test-android-build-tools.ts`：工具参数校验、缺失配置、缺失 wrapper
-- `test/android-build/test-android-gradle-output.ts`：输出裁剪、首个错误块、到达顺序
-- `test/android-build/test-android-gradle-timeout.ts`：超时后终止整棵进程树
-- `test/android-build/test-android-gradle-launcher.ts`：特殊 Windows 路径下的启动行为
+- `test/android-build/android-build-tools.test.ts`：工具参数校验、缺失配置、缺失 wrapper
+- `test/android-build/android-gradle-output.test.ts`：输出裁剪、首个错误块、到达顺序
+- `test/android-build/android-gradle-timeout.test.ts`：超时后终止整棵进程树
+- `test/android-build/android-gradle-launcher.test.ts`：特殊 Windows 路径下的启动行为

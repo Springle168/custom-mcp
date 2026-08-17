@@ -4,10 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { glob } from 'glob';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const AUTOMATED_TEST_PATTERNS = [
-  'test/**/*.test.ts',
-  'test/android-build/test-*.ts',
-];
+const AUTOMATED_TEST_PATTERN = 'test/**/*.test.ts';
 const EXCLUDED_AUTOMATED_TESTS = new Set([
   'test/logger/logger.test.ts',
 ]);
@@ -79,7 +76,7 @@ export function parseTestRunnerArgs(args: readonly string[]): TestRunnerCliOptio
 export async function discoverAutomatedTests(
   projectRoot = PROJECT_ROOT,
 ): Promise<string[]> {
-  const matches = await glob(AUTOMATED_TEST_PATTERNS, {
+  const matches = await glob(AUTOMATED_TEST_PATTERN, {
     cwd: projectRoot,
     nodir: true,
   });

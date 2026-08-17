@@ -50,7 +50,7 @@ custom-mcp/test/
 - 使用 `runTestSuite()` 注册测试用例；默认输出测试套件标题、失败用例和最终 `Results: ...` 汇总，并静默测试用例内的 `console.*` 输出。需要查看逐用例 `Test: ...` / `✓ Passed` 和测试内 `console.*` 输出时，在测试命令末尾追加 `--verbose`。
 - 需要准备或清理 fixture 时，通过 `beforeAll` / `afterAll` 挂到 `runTestSuite()`；`afterAll` 会在测试失败后继续执行。
 
-`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括 `test/**/*.test.ts` 与 Android 构建目录下历史命名的 `test-*.ts`，但排除日志演示脚本 `test/logger/logger.test.ts`。manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
+`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括 `test/**/*.test.ts`，但排除日志演示脚本 `test/logger/logger.test.ts`。manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
 
 测试脚本使用独立 Node 子进程逐个串行运行，避免共享 fixture 的跨脚本竞态。默认模式捕获子脚本输出：成功脚本的内部输出被折叠，runner 按主题汇总脚本数量与耗时；失败脚本的捕获输出会自动展开，runner 随后继续执行剩余脚本，最终汇总所有失败并返回非零退出码。单个脚本的捕获输出限制为 256 KB，超过部分以截断提示代替，避免异常日志无限占用内存。
 
