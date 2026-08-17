@@ -84,8 +84,8 @@ npm test
 # 按主题筛选测试脚本
 npm test -- read-file
 
-# 直接运行单个脚本
-node --import tsx test/read-file/read-file.test.ts
+# 按仓库相对路径筛选单个脚本
+npm test -- test/read-file/read-file.test.ts
 ```
 
 更多测试命令见 [docs/TESTING.md](TESTING.md)。

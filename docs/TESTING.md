@@ -31,10 +31,12 @@ custom-mcp/test/
 ├── read-file/                  # read_file 工具测试，见 docs/tools/read-file.md
 ├── read-many-files/            # read_many_files 工具测试，见 docs/tools/read-many-files.md
 ├── replace-text/               # replace_text 工具测试，见 docs/tools/replace-text.md
+├── runner/                     # 统一测试 runner 的发现、筛选与失败继续回归
 ├── runtime/                    # ConfigStore、request context、request header policy 和 tool-call handler 测试，见 docs/CONFIG.md
 ├── tools/                      # tools/list 检查脚本和 definition shape 回归，见 docs/TOOLS.md
 ├── write-file/                 # write_file 工具测试，见 docs/tools/write-file.md
-└── test-utils.ts               # 脚本测试公共断言与 runner
+├── run-tests.ts                # 自动化脚本发现、串行调度、计时和汇总入口
+└── test-utils.ts               # 脚本测试公共断言与 suite runner
 ```
 
 ---
@@ -79,31 +81,28 @@ npm test -- value-policy.test.ts
 
 # 查看逐用例与测试内部输出
 npm test -- config --verbose
-
-# 直接运行单个脚本
-node --import tsx test/read-file/read-file.test.ts
 ```
 
 `npm run build` 使用 `tsconfig.json`，只覆盖生产源码。`npm run typecheck:test` 使用 `tsconfig.test.json`，在复用生产编译选项的同时检查生产源码与测试代码，并通过 `noEmit` 禁止生成文件。
 
-`npm test` 不执行生产构建或静态类型检查。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本或 `npm test -- <selector>` 与 `npm run typecheck:test`。单个脚本也可以直接用 `node --import tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+`npm test` 不执行生产构建或静态类型检查。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本的 `npm test -- <selector>` 与 `npm run typecheck:test`。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
 
 selector 支持主题名、仓库相对路径和文件名，接受 `/` 或 `\\` 路径分隔符。多个 selector 按 OR 组合；任一 selector 没有匹配自动化脚本时，runner 会在执行前报错，避免静默空跑。
 
 Request header rules 与 `structuredContentDup` feature / `structuredContent` wrapper focused tests：
 
 ```bash
-node --import tsx test/config/request-header-rules.test.ts
-node --import tsx test/config/runtime-snapshot.test.ts
-node --import tsx test/runtime/request-header-view.test.ts
-node --import tsx test/runtime/request-context.test.ts
-node --import tsx test/runtime/request-header-policy.test.ts
-node --import tsx test/runtime/tool-result-adapter.test.ts
-node --import tsx test/runtime/tool-call-handler.test.ts
-node --import tsx test/runtime/mcp-post-request-context.test.ts
-node --import tsx test/logger/request-header-rules-logging.test.ts
-node --import tsx test/runtime/request-context-concurrency.test.ts
-node --import tsx test/tools/tool-definitions.test.ts
+npm test -- test/config/request-header-rules.test.ts
+npm test -- test/config/runtime-snapshot.test.ts
+npm test -- test/runtime/request-header-view.test.ts
+npm test -- test/runtime/request-context.test.ts
+npm test -- test/runtime/request-header-policy.test.ts
+npm test -- test/runtime/tool-result-adapter.test.ts
+npm test -- test/runtime/tool-call-handler.test.ts
+npm test -- test/runtime/mcp-post-request-context.test.ts
+npm test -- test/logger/request-header-rules-logging.test.ts
+npm test -- test/runtime/request-context-concurrency.test.ts
+npm test -- test/tools/tool-definitions.test.ts
 ```
 
 这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离和 `tools/list` 不暴露 `outputSchema`。
@@ -111,8 +110,8 @@ node --import tsx test/tools/tool-definitions.test.ts
 `ask_user` 答案规范化、结果格式化与 HTTP 路由测试：
 
 ```bash
-node --import tsx test/ask-user/ask-user-result.test.ts
-node --import tsx test/ask-user/ask-user-routes.test.ts
+npm test -- test/ask-user/ask-user-result.test.ts
+npm test -- test/ask-user/ask-user-routes.test.ts
 ```
 
 ---
