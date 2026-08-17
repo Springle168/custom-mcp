@@ -12,16 +12,17 @@
 
 ```text
 test/read-many-files/
-└── read-many-files.test.ts      # include/exclude、glob、shallow_read、行号、二进制跳过及 suite fixture 生命周期
+├── fixtures.ts                  # suite 自有 fixture 文件树的生成与清理
+└── read-many-files.test.ts      # include/exclude、glob、shallow_read、行号和二进制跳过
 
 test/file-access-policy/
 └── file-tools.test.ts           # literal/glob ignore、deny、mixed-result 隐私与写入拒绝
 
 test/fixtures/read-many-files/
-└── <runtime-generated>          # 由 read-many-files.test.ts 创建并清理的 suite 自有文件树
+└── <runtime-generated>          # 由同主题 fixtures.ts 创建并清理的 suite 自有文件树
 ```
 
-测试脚本声明 glob、嵌套路径、特殊文件名、二进制文件和无内置 ignore 回归所需的数据，不依赖手动 fixture 生成步骤。
+同主题 fixture 模块声明 glob、嵌套路径、特殊文件名、二进制文件和无内置 ignore 回归所需的数据，测试不依赖手动 fixture 生成步骤。
 
 跨 allowed roots、glob static base、exclude 与 symlink 的横向路径安全回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)。
 

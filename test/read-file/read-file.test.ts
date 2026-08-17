@@ -1,10 +1,13 @@
 // test/read-file/read-file.test.ts
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import readFileTool from '../../src/tools/read-file.js';
+import {
+  cleanupFixtures,
+  FIXTURES_DIR,
+  prepareFixtures,
+  withTempTextFile,
+} from './fixtures.js';
 import {
   assert,
   assertEqual,
@@ -14,51 +17,12 @@ import {
   runTestSuite,
 } from '../test-utils.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'read-file');
-
 let testContext: ReturnType<typeof createTestToolRuntimeContext>;
 
-const FOO_CONTENT = `package com.example.demo
-
-/**
- * A simple data class representing a user.
- */
-data class Foo(
-    val id: Long,
-    val name: String,
-    val email: String
-) {
-    fun isValid(): Boolean {
-        return name.isNotBlank() && email.contains("@")
-    }
-}
-`;
-
-const PNG_BYTES = Uint8Array.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-]);
-
-async function prepareFixtures(): Promise<void> {
-  await cleanupFixtures();
-  await Promise.all([
-    fs.mkdir(path.join(FIXTURES_DIR, 'src'), { recursive: true }),
-    fs.mkdir(path.join(FIXTURES_DIR, 'binary'), { recursive: true }),
-  ]);
-  await Promise.all([
-    fs.writeFile(path.join(FIXTURES_DIR, 'src', 'Foo.kt'), FOO_CONTENT, 'utf-8'),
-    fs.writeFile(path.join(FIXTURES_DIR, 'binary', 'fake.png'), PNG_BYTES),
-  ]);
+async function prepareTestContext(): Promise<void> {
+  await prepareFixtures();
   testContext = createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
 }
-
-async function cleanupFixtures(): Promise<void> {
-  await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
-}
-
 
 function getReturnedContent(text: string): string {
   const separatorMatch = text.match(/\n\n--- .+ ---\n\n/);
@@ -73,21 +37,6 @@ function getReturnedContent(text: string): string {
   }
 
   return text.slice(contentStart, contentEnd);
-}
-
-async function withTempTextFile(
-  fileName: string,
-  content: string,
-  run: (fileName: string, filePath: string) => Promise<void>,
-): Promise<void> {
-  const filePath = path.join(FIXTURES_DIR, fileName);
-  await fs.writeFile(filePath, content, 'utf-8');
-
-  try {
-    await run(fileName, filePath);
-  } finally {
-    await fs.rm(filePath, { force: true });
-  }
 }
 
 async function testReadFullFile() {
@@ -391,7 +340,7 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing read_file tool',
     details: `Fixtures directory: ${FIXTURES_DIR}`,
-    beforeAll: prepareFixtures,
+    beforeAll: prepareTestContext,
     afterAll: cleanupFixtures,
     tests: [
       { name: 'line mode reads full text file', run: testReadFullFile },
