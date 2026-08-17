@@ -18,6 +18,17 @@ const __dirname = path.dirname(__filename);
 
 const FIXTURES_ROOT = path.join(__dirname, '..', 'fixtures', 'replace-text');
 
+async function removeFixturesRootIfEmpty(): Promise<void> {
+  try {
+    await fs.rmdir(FIXTURES_ROOT);
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Another concurrently running suite may still own a child directory.
+    if (code === 'ENOENT' || code === 'ENOTEMPTY') return;
+    throw error;
+  }
+}
+
 export interface MatchedSpan {
   start_line: number;
   end_line: number;
@@ -60,6 +71,7 @@ export function createReplaceTextFixtureHarness(suiteName: string) {
 
   async function cleanupFixtures(): Promise<void> {
     await fs.rm(fixturesDir, { recursive: true, force: true });
+    await removeFixturesRootIfEmpty();
   }
 
   function fixturePath(...segments: string[]): string {
