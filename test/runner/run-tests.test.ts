@@ -1,16 +1,29 @@
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   discoverAutomatedTests,
+  executeTestScript,
   parseTestRunnerArgs,
   runTestScripts,
   selectAutomatedTests,
+  summarizeTestTopics,
   type TestExecutionResult,
+  type TestScriptResult,
 } from '../run-tests.js';
 import {
   assert,
   assertEqual,
+  assertIncludes,
+  assertNotIncludes,
   runTestSuite,
 } from '../test-utils.js';
 
+const PROJECT_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+);
 const SAMPLE_TESTS = [
   'test/config/value-policy.test.ts',
   'test/config/workspace-selection.test.ts',
@@ -52,6 +65,10 @@ async function testDiscoversOnlyAutomatedScripts(): Promise<void> {
   assert(
     !tests.includes('test/replace-text/helpers.ts'),
     'Should exclude helper modules',
+  );
+  assert(
+    !tests.includes('test/runner/fixtures/failing-script.ts'),
+    'Should exclude runner fixture scripts',
   );
 }
 
@@ -141,6 +158,7 @@ async function testContinuesAfterFailures(): Promise<void> {
         exitCode: exitCodes.get(testPath) ?? 1,
         signal: null,
         durationMs: 1,
+        output: `output-${testPath}`,
       };
     },
   );
@@ -157,6 +175,16 @@ async function testContinuesAfterFailures(): Promise<void> {
   );
   assertEqual(summary.passed, 1, 'Should count successful scripts');
   assertEqual(summary.failed, 2, 'Should collect all failed scripts');
+  assertEqual(
+    summary.results[0]?.output,
+    'output-first.test.ts',
+    'Should retain failed script output',
+  );
+  assertEqual(
+    summary.results[1]?.output,
+    undefined,
+    'Should discard successful script output after completion',
+  );
 }
 
 async function testTreatsExecutorErrorsAsFailures(): Promise<void> {
@@ -180,6 +208,148 @@ async function testTreatsExecutorErrorsAsFailures(): Promise<void> {
     'spawn failed',
     'Should retain the executor error',
   );
+}
+
+function testSummarizesResultsByTopic(): void {
+  const results: TestScriptResult[] = [
+    scriptResult('test/config/first.test.ts', true, 10),
+    scriptResult('test/config/second.test.ts', false, 20),
+    scriptResult('test/runtime/third.test.ts', true, 30),
+  ];
+
+  const summaries = summarizeTestTopics(results);
+  const config = summaries[0];
+  const runtime = summaries[1];
+
+  assertEqual(summaries.length, 2, 'Should produce one summary per topic');
+  assertEqual(config?.topic, 'config', 'Should derive the config topic');
+  assertEqual(config?.total, 2, 'Should count all config scripts');
+  assertEqual(config?.passed, 1, 'Should count passed config scripts');
+  assertEqual(config?.failed, 1, 'Should count failed config scripts');
+  assertEqual(config?.durationMs, 30, 'Should add config script durations');
+  assertEqual(runtime?.topic, 'runtime', 'Should preserve topic order');
+  assertEqual(runtime?.passed, 1, 'Should count passed runtime scripts');
+}
+
+async function testCapturesFailedScriptOutput(): Promise<void> {
+  const result = await executeTestScript(
+    'test/runner/fixtures/failing-script.ts',
+    false,
+  );
+
+  assertEqual(result.exitCode, 1, 'Fixture script should fail');
+  assertIncludes(
+    result.output,
+    'captured stdout marker',
+    'Should capture failed script stdout',
+  );
+  assertIncludes(
+    result.output,
+    'captured stderr marker',
+    'Should capture failed script stderr',
+  );
+}
+
+async function testTruncatesExcessiveCapturedOutput(): Promise<void> {
+  const result = await executeTestScript(
+    'test/runner/fixtures/large-output-script.ts',
+    false,
+  );
+
+  assertEqual(result.exitCode, 1, 'Large-output fixture script should fail');
+  assertIncludes(
+    result.output,
+    '...[captured output truncated at 256 KB]',
+    'Should mark captured output truncation',
+  );
+  assert(
+    (result.output?.length ?? 0) < 263_000,
+    'Should keep captured output near the configured byte limit',
+  );
+}
+
+function testDefaultCliUsesCompactOutput(): void {
+  const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts']);
+
+  assertEqual(result.status, 0, 'Compact runner invocation should pass');
+  assertIncludes(
+    result.stdout,
+    'Test module summary',
+    'Should print the module summary',
+  );
+  assertIncludes(
+    result.stdout,
+    'PASS runtime',
+    'Should summarize the selected topic',
+  );
+  assertIncludes(
+    result.stdout,
+    'PASS 1/1 test scripts',
+    'Should print the aggregate result',
+  );
+  assertNotIncludes(
+    result.stdout,
+    'Testing MCP identifier generation',
+    'Should suppress successful child output by default',
+  );
+}
+
+function testVerboseCliStreamsChildOutput(): void {
+  const result = runRunnerCli([
+    'test/runtime/mcp-identifiers.test.ts',
+    '--verbose',
+  ]);
+
+  assertEqual(result.status, 0, 'Verbose runner invocation should pass');
+  assertIncludes(
+    result.stdout,
+    'Testing MCP identifier generation',
+    'Should show the child suite title in verbose mode',
+  );
+  assertIncludes(
+    result.stdout,
+    'Test: session IDs use session prefix',
+    'Should forward verbose mode to the child script',
+  );
+}
+
+function scriptResult(
+  testPath: string,
+  passed: boolean,
+  durationMs: number,
+): TestScriptResult {
+  return {
+    testPath,
+    passed,
+    exitCode: passed ? 0 : 1,
+    signal: null,
+    durationMs,
+  };
+}
+
+function runRunnerCli(args: string[]): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', 'test/run-tests.ts', ...args],
+    {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf-8',
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 
 function assertThrows(run: () => unknown, expectedMessage: string): void {
@@ -215,6 +385,14 @@ async function main(): Promise<void> {
       { name: 'rejects every unmatched selector', run: testRejectsEveryUnmatchedSelector },
       { name: 'continues after failures', run: testContinuesAfterFailures },
       { name: 'treats executor errors as failures', run: testTreatsExecutorErrorsAsFailures },
+      { name: 'summarizes results by topic', run: testSummarizesResultsByTopic },
+      { name: 'captures failed script output', run: testCapturesFailedScriptOutput },
+      {
+        name: 'truncates excessive captured output',
+        run: testTruncatesExcessiveCapturedOutput,
+      },
+      { name: 'default CLI uses compact output', run: testDefaultCliUsesCompactOutput },
+      { name: 'verbose CLI streams child output', run: testVerboseCliStreamsChildOutput },
     ],
   });
 }

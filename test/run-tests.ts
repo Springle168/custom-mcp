@@ -11,6 +11,7 @@ const AUTOMATED_TEST_PATTERNS = [
 const EXCLUDED_AUTOMATED_TESTS = new Set([
   'test/logger/logger.test.ts',
 ]);
+const MAX_CAPTURED_OUTPUT_BYTES = 256 * 1024;
 
 export interface TestRunnerCliOptions {
   selectors: string[];
@@ -22,6 +23,7 @@ export interface TestExecutionResult {
   signal: NodeJS.Signals | null;
   durationMs: number;
   error?: Error;
+  output?: string;
 }
 
 export interface TestScriptResult extends TestExecutionResult {
@@ -31,6 +33,14 @@ export interface TestScriptResult extends TestExecutionResult {
 
 export interface TestRunSummary {
   results: TestScriptResult[];
+  passed: number;
+  failed: number;
+  durationMs: number;
+}
+
+export interface TestTopicSummary {
+  topic: string;
+  total: number;
   passed: number;
   failed: number;
   durationMs: number;
@@ -127,10 +137,12 @@ export async function runTestScripts(
       };
     }
 
+    const passed = execution.exitCode === 0 && !execution.error;
     const result: TestScriptResult = {
       ...execution,
+      output: passed ? undefined : execution.output,
       testPath,
-      passed: execution.exitCode === 0 && !execution.error,
+      passed,
     };
     results.push(result);
     callbacks.onComplete?.(result);
@@ -145,7 +157,35 @@ export async function runTestScripts(
   };
 }
 
-async function executeTestScript(
+export function summarizeTestTopics(
+  results: readonly TestScriptResult[],
+): TestTopicSummary[] {
+  const summaries = new Map<string, TestTopicSummary>();
+
+  for (const result of results) {
+    const topic = getTestTopic(result.testPath);
+    const summary = summaries.get(topic) ?? {
+      topic,
+      total: 0,
+      passed: 0,
+      failed: 0,
+      durationMs: 0,
+    };
+
+    summary.total++;
+    summary.durationMs += result.durationMs;
+    if (result.passed) {
+      summary.passed++;
+    } else {
+      summary.failed++;
+    }
+    summaries.set(topic, summary);
+  }
+
+  return [...summaries.values()];
+}
+
+export async function executeTestScript(
   testPath: string,
   verbose: boolean,
 ): Promise<TestExecutionResult> {
@@ -159,10 +199,17 @@ async function executeTestScript(
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: PROJECT_ROOT,
-      stdio: 'inherit',
+      stdio: verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
     });
+    const capturedOutput = verbose ? undefined : new BoundedOutputBuffer();
     let spawnError: Error | undefined;
 
+    child.stdout?.on('data', (chunk: Buffer) => {
+      capturedOutput?.append(chunk);
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      capturedOutput?.append(chunk);
+    });
     child.once('error', (error) => {
       spawnError = error;
     });
@@ -172,6 +219,7 @@ async function executeTestScript(
         signal,
         durationMs: performance.now() - startedAt,
         error: spawnError,
+        output: capturedOutput?.toString(),
       });
     });
   });
@@ -181,6 +229,9 @@ async function main(): Promise<void> {
   const options = parseTestRunnerArgs(process.argv.slice(2));
   const discoveredTests = await discoverAutomatedTests();
   const selectedTests = selectAutomatedTests(discoveredTests, options.selectors);
+  if (selectedTests.length === 0) {
+    throw new Error('No automated test scripts were discovered.');
+  }
 
   console.log(`Running ${selectedTests.length} test script(s) serially...`);
 
@@ -188,37 +239,95 @@ async function main(): Promise<void> {
     selectedTests,
     options.verbose,
     executeTestScript,
-    {
-      onStart(testPath) {
-        console.log(`\n▶ ${testPath}`);
-      },
-      onComplete(result) {
-        const status = result.passed ? 'PASS' : 'FAIL';
-        console.log(
-          `${status} ${result.testPath} (${formatDuration(result.durationMs)})`,
-        );
-        if (result.error) {
-          console.error(`  ${result.error.message}`);
-        } else if (result.signal) {
-          console.error(`  Terminated by signal: ${result.signal}`);
+    options.verbose
+      ? {
+          onStart(testPath) {
+            console.log(`\n▶ ${testPath}`);
+          },
+          onComplete(result) {
+            printVerboseResult(result);
+          },
         }
-      },
-    },
+      : {
+          onComplete(result) {
+            if (!result.passed) {
+              printFailure(result);
+            }
+          },
+        },
   );
 
-  console.log('\nTest script summary');
-  console.log(`  Selected: ${summary.results.length}`);
-  console.log(`  Passed: ${summary.passed}`);
-  console.log(`  Failed: ${summary.failed}`);
-  console.log(`  Duration: ${formatDuration(summary.durationMs)}`);
+  printTopicSummary(summary);
 
   if (summary.failed > 0) {
-    console.error('\nFailed test scripts:');
+    console.log('\nFailed test scripts:');
     for (const result of summary.results.filter((item) => !item.passed)) {
-      console.error(`  - ${result.testPath}`);
+      console.log(`  - ${result.testPath}`);
     }
     process.exitCode = 1;
   }
+}
+
+function printVerboseResult(result: TestScriptResult): void {
+  const status = result.passed ? 'PASS' : 'FAIL';
+  console.log(`${status} ${result.testPath} (${formatDuration(result.durationMs)})`);
+  if (result.error) {
+    console.error(`  ${result.error.message}`);
+  } else if (result.signal) {
+    console.error(`  Terminated by signal: ${result.signal}`);
+  }
+}
+
+function printFailure(result: TestScriptResult): void {
+  console.log(
+    `\nFAIL ${result.testPath} (${describeFailure(result)}, ${formatDuration(result.durationMs)})`,
+  );
+
+  if (result.error) {
+    console.log(result.error.message);
+  }
+
+  if (result.output) {
+    console.log('\n--- Captured output ---');
+    process.stdout.write(result.output);
+    if (!result.output.endsWith('\n')) {
+      process.stdout.write('\n');
+    }
+    console.log('--- End of captured output ---');
+  }
+}
+
+function printTopicSummary(summary: TestRunSummary): void {
+  const topicSummaries = summarizeTestTopics(summary.results);
+  const topicWidth = Math.max(...topicSummaries.map((item) => item.topic.length));
+  const countWidth = Math.max(
+    ...topicSummaries.map((item) => `${item.passed}/${item.total}`.length),
+  );
+
+  console.log('\nTest module summary');
+  for (const topic of topicSummaries) {
+    const status = topic.failed === 0 ? 'PASS' : 'FAIL';
+    const count = `${topic.passed}/${topic.total}`;
+    console.log(
+      `${status} ${topic.topic.padEnd(topicWidth)}  ${count.padStart(countWidth)}  ${formatDuration(topic.durationMs)}`,
+    );
+  }
+
+  const status = summary.failed === 0 ? 'PASS' : 'FAIL';
+  console.log(
+    `\n${status} ${summary.passed}/${summary.results.length} test scripts in ${formatDuration(summary.durationMs)}`,
+  );
+}
+
+function describeFailure(result: TestScriptResult): string {
+  if (result.error) return 'runner error';
+  if (result.signal) return `signal ${result.signal}`;
+  return `exit code ${result.exitCode ?? 'unknown'}`;
+}
+
+function getTestTopic(testPath: string): string {
+  const [root, topic] = normalizeTestPath(testPath).split('/');
+  return root === 'test' && topic ? topic : '(root)';
 }
 
 function matchesSelector(testPath: string, selector: string): boolean {
@@ -247,6 +356,43 @@ function formatDuration(durationMs: number): string {
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+class BoundedOutputBuffer {
+  readonly #chunks: Buffer[] = [];
+  #size = 0;
+  #truncated = false;
+
+  append(chunk: Buffer): void {
+    const remaining = MAX_CAPTURED_OUTPUT_BYTES - this.#size;
+    if (remaining <= 0) {
+      this.#truncated = true;
+      return;
+    }
+
+    if (chunk.length > remaining) {
+      this.#chunks.push(chunk.subarray(0, remaining));
+      this.#size += remaining;
+      this.#truncated = true;
+      return;
+    }
+
+    this.#chunks.push(chunk);
+    this.#size += chunk.length;
+  }
+
+  toString(): string | undefined {
+    if (this.#size === 0 && !this.#truncated) {
+      return undefined;
+    }
+
+    const output = Buffer.concat(this.#chunks, this.#size).toString('utf-8');
+    if (!this.#truncated) {
+      return output;
+    }
+
+    return `${output}\n...[captured output truncated at 256 KB]\n`;
+  }
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
