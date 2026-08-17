@@ -5,17 +5,17 @@
 ## 项目上下文
 
 - 这是一个 TypeScript / Node.js MCP 工具集，通过 Streamable HTTP 协议提供工具能力。
-- 当任务目标涉及本项目的代码、配置、构建或测试时，请在操作前阅读 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、更深层目录下的 `AGENTS.md` 以及与当前任务相关的文档。
+- 当任务目标涉及本项目的代码、配置、构建或测试时，请在操作前阅读 [开发文档入口](docs/DEVELOPMENT.md)、更深层目录下的 `AGENTS.md` 以及与当前任务相关的文档。
 
 ## 操作边界
 
 - 除非任务明确需要，否则保持改动小而聚焦，不顺手重构无关代码，不修复与任务无关的问题。
 - **未经用户明确授权**：
-  * 禁止读取或修改工作区外文件；禁止执行未知的、用户本地私有的或与任务无关的工作区外程序。
-  * 例外：为完成本仓库任务所需的常规开发命令（如 git、npm、npx、node、powershell.exe、cmd）按本文“验证方式”和“Git 使用规则”执行。
-  * 禁止为绕过路径、安全或并发约束而创建临时目录或迁移路径。
-  * 禁止主动安装依赖。
-  * 确有必要时先说明原因并征得用户同意。
+  - 禁止读取或修改工作区外文件；禁止执行未知的、用户本地私有的或与任务无关的工作区外程序。
+  - 例外：为完成本仓库任务所需的常规开发命令（如 git、npm、npx、node、powershell.exe、cmd）按本文“验证方式”和“Git 使用规则”执行。
+  - 禁止为绕过路径、安全或并发约束而创建临时目录或迁移路径。
+  - 禁止主动安装依赖。
+  - 确有必要时先说明原因并征得用户同意。
 - 禁止泄露或覆盖用户本地配置中的私有路径与环境信息。
 - 修改前用只读方式确认工作树状态；已有未提交或未跟踪内容视为用户资产，未经用户明确授权时不得覆盖、删除或重置它们。
 
@@ -55,12 +55,12 @@
 
 ## Git 使用规则
 
-- 默认允许只读 Git 操作：`git status`、`git diff`、`git log`、`git blame`。
+- 默认允许只读 Git 操作，例如 `git status`、`git diff`、`git log`、`git blame`。
 - 未经用户明确同意和授权，不要执行 `git add`、`git commit`、`git branch`、`git tag` 或其他会改变仓库状态的 Git 操作。
 - 如果用户明确允许或要求创建提交：
-  * **按需读取**：当下一步是进行提交时，阅读 [docs/guidelines/commit-guidelines.md](docs/guidelines/commit-guidelines.md) 并遵循其中对于“约定式提交”的指引；避免不必要的提前读取。
-  * 提交修改：基于实际改动生成提交信息。
-- 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式**提权**流程运行 `git commit`，因为提交需要写入 `.git/`（如 `.git/index.lock`）。
+  - **按需读取**：即将创建提交时，阅读 [提交指南](docs/guidelines/commit-guidelines.md) 并遵循其中对于“约定式提交”的指引。
+  - 提交修改：基于实际改动生成提交信息。
+- 在沙箱或受限权限环境中创建提交时，必须通过当前环境的正式提权流程运行 `git add` 和 `git commit`。
 - 未经用户明确授权，不要执行历史改写或破坏性操作，包括但不限于 `git commit --amend`、`git rebase`、`git reset`、`git clean`、`git stash`、`git cherry-pick`。
 - 未经用户明确授权，不要执行远端操作，包括但不限于 `git push`、`git pull`、`git fetch` 或 force-push。
 - 会话开始时已有的提交历史是受保护基线，未经用户明确授权时不得改写、压缩、删除或重排。
@@ -68,5 +68,5 @@
 ## sub-agent 的使用
 
 - 仅当用户明确表示允许使用时主 Agent 才考虑创建 sub-agent。
-- **按需读取**：获得用户授权后，仅当准备创建 sub-agent 时，主 Agent 阅读 [docs/guidelines/sub-agent-guidelines.md](docs/guidelines/sub-agent-guidelines.md)；避免不必要的提前读取。
+- **按需读取**：获得用户授权且即将调用工具创建 sub-agent 时，主 Agent 才阅读 [sub-agent 指南](docs/guidelines/sub-agent-guidelines.md)；避免不必要的提前读取。
 - **注意：`docs/guidelines/sub-agent-guidelines.md` 只面向拥有创建 sub-agent 能力的主 Agent。sub-agent 禁止读取、搜索、引用或总结其内容。**

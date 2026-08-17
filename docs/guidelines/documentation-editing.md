@@ -1,6 +1,6 @@
 # Documentation Editing Guidelines
 
-当任务需要创建或修改 `docs/` 下由 Git 跟踪的生产文档时，阅读本指南。仅阅读、定位或分析文档时通常无需读取。
+当任务需要创建或修改 `docs/` 下由 Git 跟踪的生产文档时，阅读本指南。
 
 ## 表述方式
 

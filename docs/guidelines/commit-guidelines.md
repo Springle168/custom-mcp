@@ -1,4 +1,4 @@
-Generate a commit message strictly following the "Conventional Commits" specification based on the provided diffs.
+Generate a commit message following the "Conventional Commits" specification based on the diffs.
 
 ## Format
 
@@ -35,15 +35,10 @@ A noun describing the section of the codebase (e.g., auth, api, ui, parser, conf
 ### Body (optional, use when changes are complex)
 - Explain the "what" and "why", not just "how"
 - Use a hyphen (-) for bullet points, start each point with uppercase
-- CRITICAL: Keep each bullet point on a SINGLE line. Do NOT insert manual line breaks. Let the editor handle wrapping
-- CRITICAL: Do NOT use Markdown formatting (no **bold**, no ### headers). Keep it plain text suitable for terminal git log
+- Keep each bullet point on a SINGLE line. Do NOT insert manual line breaks. Let the editor handle wrapping
+- Do NOT use Markdown formatting (no **bold**, no ### headers). Keep it plain text suitable for terminal git log
 
 ## Constraints
-- Output ONLY the raw commit message. No explanations, no code fences, no extra commentary
 - Do NOT output names, email addresses, or any PII not explicitly in the diffs
 - Do NOT output bug IDs or unique identifiers not explicitly in the diffs
 - If multiple logical changes exist, focus on the primary change for the type
-
----
-
-**Use `require_escalated` or a similar parameter for Git operations.**
