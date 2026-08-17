@@ -41,13 +41,16 @@ custom-mcp/test/
 
 ## 脚本测试
 
-测试脚本默认保持独立运行，当前不依赖 `npm test` 或第三方测试框架。新增或调整普通脚本测试时，优先复用 `test/test-utils.ts`：
+普通测试脚本保持独立运行并复用 `test/test-utils.ts`：
 
 - 使用 `assert()`、`assertEqual()`、`assertIncludes()`、`assertNotIncludes()` 统一断言错误格式。
 - 使用 `getResultText()` 提取 MCP 工具调用结果中的首段文本，避免各测试重复定义结果结构。
 - 使用 `runTestSuite()` 注册测试用例；默认输出测试套件标题、失败用例和最终 `Results: ...` 汇总，并静默测试用例内的 `console.*` 输出。需要查看逐用例 `Test: ...` / `✓ Passed` 和测试内 `console.*` 输出时，在测试命令末尾追加 `--verbose`。
 - 需要准备或清理 fixture 时，通过 `beforeAll` / `afterAll` 挂到 `runTestSuite()`；`afterAll` 会在测试失败后继续执行。
-- `test/ask-user/ask-user.manual.ts`、`test/tools/inspect-tools.ts`、`test/logger/logger.test.ts` 属于交互、检查或日志演示脚本，可按自身输出需求保留独立结构。
+
+`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括 `test/**/*.test.ts` 与 Android 构建目录下历史命名的 `test-*.ts`，但排除日志演示脚本 `test/logger/logger.test.ts`。manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
+
+测试脚本使用独立 Node 子进程逐个串行运行，避免共享 fixture 的跨脚本竞态。单个脚本失败后 runner 继续执行剩余脚本，最终汇总所有失败并返回非零退出码。`--verbose` 会传递给每个被选中的测试脚本。
 
 ---
 
@@ -63,13 +66,29 @@ npm run typecheck:test
 # 依次执行生产构建和测试类型检查
 npm run check
 
-# 脚本测试示例
+# 串行运行默认自动化测试集
+npm test
+
+# 按主题筛选；多个 selector 使用 OR 语义
+npm test -- config
+npm test -- config runtime
+
+# 按仓库相对路径或文件名筛选
+npm test -- test/config/value-policy.test.ts
+npm test -- value-policy.test.ts
+
+# 查看逐用例与测试内部输出
+npm test -- config --verbose
+
+# 直接运行单个脚本
 node --import tsx test/read-file/read-file.test.ts
 ```
 
 `npm run build` 使用 `tsconfig.json`，只覆盖生产源码。`npm run typecheck:test` 使用 `tsconfig.test.json`，在复用生产编译选项的同时检查生产源码与测试代码，并通过 `noEmit` 禁止生成文件。
 
-单个脚本测试直接用 `node --import tsx` 运行对应 `test/<topic>/*.ts` 文件。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本与 `npm run typecheck:test`。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+`npm test` 不执行生产构建或静态类型检查。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本或 `npm test -- <selector>` 与 `npm run typecheck:test`。单个脚本也可以直接用 `node --import tsx` 运行对应 `test/<topic>/*.ts` 文件。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+
+selector 支持主题名、仓库相对路径和文件名，接受 `/` 或 `\\` 路径分隔符。多个 selector 按 OR 组合；任一 selector 没有匹配自动化脚本时，runner 会在执行前报错，避免静默空跑。
 
 Request header rules 与 `structuredContentDup` feature / `structuredContent` wrapper focused tests：
 

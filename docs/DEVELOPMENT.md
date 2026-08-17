@@ -78,7 +78,13 @@ custom-mcp/
 # 编译
 npm run build
 
-# 单个脚本测试
+# 串行运行全部自动化测试脚本
+npm test
+
+# 按主题筛选测试脚本
+npm test -- read-file
+
+# 直接运行单个脚本
 node --import tsx test/read-file/read-file.test.ts
 ```
 
