@@ -1,8 +1,3 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
-import replaceTool from '../../src/tools/replace.js';
 import {
   assert,
   assertEqual,
@@ -10,14 +5,16 @@ import {
   getResultText,
   runTestSuite,
 } from '../test-utils.js';
+import { createReplaceTextFixtureHarness } from './helpers.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'smoke');
-
-function createToolContext() {
-  return createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
-}
+const {
+  callReplace,
+  cleanupFixtures,
+  fixturesDir: FIXTURES_DIR,
+  readFixture,
+  resetFixtures: prepareFixtures,
+  writeFixture,
+} = createReplaceTextFixtureHarness('smoke');
 
 interface ReplaceJsonPayload {
   success: boolean;
@@ -29,31 +26,18 @@ interface ReplaceJsonPayload {
   file_line_count: { previous: number; current: number };
 }
 
-async function prepareFixtures(): Promise<void> {
-  await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
-  await fs.mkdir(FIXTURES_DIR, { recursive: true });
-}
-
-async function cleanupFixtures(): Promise<void> {
-  await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
-}
-
 function parsePayload(result: { content?: Array<{ text?: string }> }): ReplaceJsonPayload {
   return JSON.parse(getResultText(result)) as ReplaceJsonPayload;
 }
 
 async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
-  const targetPath = path.join(FIXTURES_DIR, 'warns.ts');
-  await fs.writeFile(targetPath, 'function demo() {\n  return 1;\n}\n', 'utf-8');
+  await writeFixture('warns.ts', 'function demo() {\n  return 1;\n}\n');
 
-  const result = await replaceTool.handler(
-    {
-      file_path: 'warns.ts',
-      target: '  return 1;',
-      replacement: '  // ...\n  return 2;',
-    },
-    createToolContext(),
-  );
+  const result = await callReplace({
+    file_path: 'warns.ts',
+    target: '  return 1;',
+    replacement: '  // ...\n  return 2;',
+  });
 
   assert(result.isError !== true, 'Should succeed');
   const payload = parsePayload(result);
@@ -68,7 +52,7 @@ async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
     'Should report matched start line',
   );
 
-  const raw = await fs.readFile(targetPath, 'utf-8');
+  const raw = await readFixture('warns.ts');
   assertEqual(
     raw,
     'function demo() {\n  // ...\n  return 2;\n}\n',
@@ -77,24 +61,20 @@ async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
 }
 
 async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
-  const targetPath = path.join(FIXTURES_DIR, 'existing-placeholder.txt');
-  await fs.writeFile(targetPath, 'before\n// ...\nafter\n', 'utf-8');
+  await writeFixture('existing-placeholder.txt', 'before\n// ...\nafter\n');
 
-  const result = await replaceTool.handler(
-    {
-      file_path: 'existing-placeholder.txt',
-      target: '// ...',
-      replacement: '// ...\nactual content',
-    },
-    createToolContext(),
-  );
+  const result = await callReplace({
+    file_path: 'existing-placeholder.txt',
+    target: '// ...',
+    replacement: '// ...\nactual content',
+  });
 
   assert(result.isError !== true, 'Should succeed');
   const payload = parsePayload(result);
   assert(payload.success, 'Payload should report success');
   assertEqual(payload.note, undefined, 'Should not warn for existing placeholder');
 
-  const raw = await fs.readFile(targetPath, 'utf-8');
+  const raw = await readFixture('existing-placeholder.txt');
   assertEqual(
     raw,
     'before\n// ...\nactual content\nafter\n',
@@ -103,15 +83,12 @@ async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
 }
 
 async function testRejectsNonBooleanAllowMultiple(): Promise<void> {
-  const result = await replaceTool.handler(
-    {
-      file_path: 'unused.txt',
-      target: 'old',
-      replacement: 'new',
-      allow_multiple: 'false',
-    },
-    createToolContext(),
-  );
+  const result = await callReplace({
+    file_path: 'unused.txt',
+    target: 'old',
+    replacement: 'new',
+    allow_multiple: 'false',
+  });
 
   assert(result.isError === true, 'Should fail');
   const payload = parsePayload(result);
@@ -120,24 +97,20 @@ async function testRejectsNonBooleanAllowMultiple(): Promise<void> {
 }
 
 async function testRejectsOldFieldAliases(): Promise<void> {
-  const targetPath = path.join(FIXTURES_DIR, 'old-fields.txt');
-  await fs.writeFile(targetPath, 'old\n', 'utf-8');
+  await writeFixture('old-fields.txt', 'old\n');
 
-  const result = await replaceTool.handler(
-    {
-      file_path: 'old-fields.txt',
-      old_string: 'old',
-      new_string: 'new',
-    },
-    createToolContext(),
-  );
+  const result = await callReplace({
+    file_path: 'old-fields.txt',
+    old_string: 'old',
+    new_string: 'new',
+  });
 
   assert(result.isError === true, 'Should fail');
   const text = getResultText(result);
   assertIncludes(text, 'old_string', 'Should mention rejected old field');
   assertIncludes(text, 'target/replacement', 'Should suggest v2 parameter names');
 
-  const raw = await fs.readFile(targetPath, 'utf-8');
+  const raw = await readFixture('old-fields.txt');
   assertEqual(raw, 'old\n', 'Should not modify the file');
 }
 

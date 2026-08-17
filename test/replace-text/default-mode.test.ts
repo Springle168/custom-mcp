@@ -6,18 +6,22 @@ import {
 } from '../test-utils.js';
 import {
   assertErrorResult,
-  assertFixtureContent,
   assertJsonNoteIncludes,
   assertNoSpan,
   assertSpan,
   assertSuccessResult,
+  countSpecLines,
+  createReplaceTextFixtureHarness,
+} from './helpers.js';
+
+const {
+  assertFixtureContent,
   callReplace,
   cleanupFixtures,
-  countSpecLines,
   fixtureExists,
   resetFixtures,
   writeFixture,
-} from './helpers.js';
+} = createReplaceTextFixtureHarness('default-mode');
 
 async function testExactSingleMatchCountsAndSpan(): Promise<void> {
   await resetFixtures();
