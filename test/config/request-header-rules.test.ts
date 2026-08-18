@@ -5,13 +5,14 @@ import {
   ConfigError,
   loadRuntimeConfig,
 } from '../../src/config.js';
-import { parseGlobalConfig } from '../../src/config/schema.js';
+import { parseWorkspaceConfig } from '../../src/config/schema.js';
 import {
   assert,
   assertEqual,
   assertIncludes,
   assertNotIncludes,
   runTestSuite,
+  writeSplitConfigFixture,
 } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,8 +39,7 @@ async function cleanupFixtures(): Promise<void> {
 }
 
 async function writeGlobalConfig(config: unknown): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  await writeSplitConfigFixture(CONFIG_FILE, config);
 }
 
 function workspace(
@@ -72,7 +72,13 @@ function rule(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 function parseConfig(config: unknown) {
-  return parseGlobalConfig(config, { configFilePath: CONFIG_FILE });
+  const workspaces = (config as { workspaces: unknown[] }).workspaces;
+  const workspaceConfig = workspaces[0] as Record<string, unknown>;
+  const { id: _id, ...fields } = workspaceConfig;
+  return parseWorkspaceConfig(
+    { version: 1, ...fields },
+    { configFilePath: CONFIG_FILE },
+  );
 }
 
 function captureConfigError(run: () => unknown): ConfigError {
@@ -114,7 +120,7 @@ async function testRulesDefaultsNormalizeToEmpty(): Promise<void> {
 
   for (const overrides of cases) {
     const parsed = parseConfig(globalConfig([workspace(0, overrides)]));
-    assertEqual(parsed.workspaces[0]?.rules.requestHeaders.length, 0, 'Missing or empty rules should normalize to an empty requestHeaders array');
+    assertEqual(parsed.rules.requestHeaders.length, 0, 'Missing or empty rules should normalize to an empty requestHeaders array');
   }
 }
 
@@ -124,12 +130,12 @@ async function testRulesShapeFailures(): Promise<void> {
     readonly message: string;
     readonly fieldPath: string;
   }> = [
-    { overrides: { rules: null }, message: 'must be a JSON object', fieldPath: 'workspaces[0].rules' },
-    { overrides: { rules: [] }, message: 'must be a JSON object', fieldPath: 'workspaces[0].rules' },
-    { overrides: { rules: { requestHeaders: {} } }, message: 'must be an array', fieldPath: 'workspaces[0].rules.requestHeaders' },
-    { overrides: { rules: { requestHeaders: [null] } }, message: 'must be a JSON object', fieldPath: 'workspaces[0].rules.requestHeaders[0]' },
-    { overrides: { rules: { requestHeaders: [rule({ match: null })] } }, message: 'must be a non-empty JSON object', fieldPath: 'workspaces[0].rules.requestHeaders[0].match' },
-    { overrides: { rules: { requestHeaders: [rule({ enable: 'structuredContentDup' })] } }, message: 'must be a non-empty array', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable' },
+    { overrides: { rules: null }, message: 'must be a JSON object', fieldPath: 'rules' },
+    { overrides: { rules: [] }, message: 'must be a JSON object', fieldPath: 'rules' },
+    { overrides: { rules: { requestHeaders: {} } }, message: 'must be an array', fieldPath: 'rules.requestHeaders' },
+    { overrides: { rules: { requestHeaders: [null] } }, message: 'must be a JSON object', fieldPath: 'rules.requestHeaders[0]' },
+    { overrides: { rules: { requestHeaders: [rule({ match: null })] } }, message: 'must be a non-empty JSON object', fieldPath: 'rules.requestHeaders[0].match' },
+    { overrides: { rules: { requestHeaders: [rule({ enable: 'structuredContentDup' })] } }, message: 'must be a non-empty array', fieldPath: 'rules.requestHeaders[0].enable' },
   ];
 
   for (const testCase of cases) {
@@ -140,28 +146,28 @@ async function testRulesShapeFailures(): Promise<void> {
 async function testUnknownAndRequiredFields(): Promise<void> {
   await expectParseError(
     { rules: { unexpected: true } },
-    'Unknown config field workspaces[0].rules.unexpected',
-    'workspaces[0].rules.unexpected',
+    'Unknown config field rules.unexpected',
+    'rules.unexpected',
   );
   await expectParseError(
     { rules: { requestHeaders: [rule({ unexpected: true })] } },
-    'Unknown config field workspaces[0].rules.requestHeaders[0].unexpected',
-    'workspaces[0].rules.requestHeaders[0].unexpected',
+    'Unknown config field rules.requestHeaders[0].unexpected',
+    'rules.requestHeaders[0].unexpected',
   );
   await expectParseError(
     { rules: { requestHeaders: [{ enable: ['structuredContentDup'] }] } },
-    'workspaces[0].rules.requestHeaders[0].match is required',
-    'workspaces[0].rules.requestHeaders[0].match',
+    'rules.requestHeaders[0].match is required',
+    'rules.requestHeaders[0].match',
   );
   await expectParseError(
     { rules: { requestHeaders: [{ match: { 'x-client': 'android-studio' } }] } },
-    'workspaces[0].rules.requestHeaders[0].enable is required',
-    'workspaces[0].rules.requestHeaders[0].enable',
+    'rules.requestHeaders[0].enable is required',
+    'rules.requestHeaders[0].enable',
   );
   await expectParseError(
     { rules: { requestHeaders: [rule({ match: {} })] } },
     'must be a non-empty JSON object',
-    'workspaces[0].rules.requestHeaders[0].match',
+    'rules.requestHeaders[0].match',
   );
 }
 
@@ -181,7 +187,7 @@ async function testHeaderNamesNormalizeAndValidate(): Promise<void> {
       },
     }),
   ]));
-  const match = parsed.workspaces[0]?.rules.requestHeaders[0]?.match ?? [];
+  const match = parsed.rules.requestHeaders[0]?.match ?? [];
 
   assertEqual(match.map((condition) => condition.name).join(','), 'x-client,mcp-session-id,x-internal-space,x-internal-tab', 'Header names should be lowercased and mcp-session-id accepted normally');
   assertEqual(match[0]?.value, 'android studio', 'Internal spaces should be preserved');
@@ -190,12 +196,12 @@ async function testHeaderNamesNormalizeAndValidate(): Promise<void> {
   await expectParseError(
     { rules: { requestHeaders: [rule({ match: { 'Bad Header': 'value' } })] } },
     'contains invalid HTTP header name "Bad Header"',
-    'workspaces[0].rules.requestHeaders[0].match.Bad Header',
+    'rules.requestHeaders[0].match.Bad Header',
   );
   await expectParseError(
     { rules: { requestHeaders: [rule({ match: { 'X-Client': 'one', 'x-client': 'two' } })] } },
     'duplicates header name "x-client"',
-    'workspaces[0].rules.requestHeaders[0].match.x-client',
+    'rules.requestHeaders[0].match.x-client',
   );
 }
 
@@ -220,7 +226,7 @@ async function testHeaderValueValidationAndRedaction(): Promise<void> {
     const error = await expectParseError(
       { rules: { requestHeaders: [rule({ match: { 'x-client': testCase.value } })] } },
       testCase.message,
-      'workspaces[0].rules.requestHeaders[0].match.x-client',
+      'rules.requestHeaders[0].match.x-client',
     );
 
     assertNotIncludes(error.message, 'secret-value', 'Typed-string errors should not include rejected header values');
@@ -234,15 +240,15 @@ async function testEnableValidation(): Promise<void> {
     readonly message: string;
     readonly fieldPath: string;
   }> = [
-    { enable: [], message: 'must be a non-empty array', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable' },
-    { enable: [42], message: 'must be a string', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: [''], message: 'must be a non-empty string', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['   '], message: 'must be a non-empty string', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: [' structuredContentDup'], message: 'must not contain leading or trailing whitespace', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['structuredContentDup '], message: 'must not contain leading or trailing whitespace', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['unknownFeature'], message: 'must be one of: structuredContentDup', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['StructuredContent'], message: 'must be one of: structuredContentDup', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[0]' },
-    { enable: ['structuredContentDup', 'structuredContentDup'], message: 'contains duplicate feature "structuredContentDup"', fieldPath: 'workspaces[0].rules.requestHeaders[0].enable[1]' },
+    { enable: [], message: 'must be a non-empty array', fieldPath: 'rules.requestHeaders[0].enable' },
+    { enable: [42], message: 'must be a string', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: [''], message: 'must be a non-empty string', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: ['   '], message: 'must be a non-empty string', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: [' structuredContentDup'], message: 'must not contain leading or trailing whitespace', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: ['structuredContentDup '], message: 'must not contain leading or trailing whitespace', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: ['unknownFeature'], message: 'must be one of: structuredContentDup', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: ['StructuredContent'], message: 'must be one of: structuredContentDup', fieldPath: 'rules.requestHeaders[0].enable[0]' },
+    { enable: ['structuredContentDup', 'structuredContentDup'], message: 'contains duplicate feature "structuredContentDup"', fieldPath: 'rules.requestHeaders[0].enable[1]' },
   ];
 
   for (const testCase of cases) {
@@ -254,23 +260,23 @@ async function testEnableValidation(): Promise<void> {
   }
 }
 
-async function testUnselectedWorkspaceInvalidRulesStillFail(): Promise<void> {
+async function testUnselectedWorkspaceInvalidRulesAreNotRead(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig([
     workspace(0),
     workspace(1, { rules: { requestHeaders: [rule({ enable: ['unknownFeature'] })] } }),
   ]));
 
-  const error = captureConfigError(() =>
-    loadRuntimeConfig({
-      homeDir: HOME_DIR,
-      workspaceId: 'workspace-0',
-      env: {},
-    })
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'workspace-0',
+    env: {},
+  });
+  assertEqual(
+    snapshot.rules.requestHeaders.length,
+    0,
+    'Invalid rules in an unselected workspace file must not block or enter the snapshot',
   );
-
-  assertEqual(error.fieldPath, 'workspaces[1].rules.requestHeaders[0].enable[0]', 'Unselected workspace rules should still be schema-validated');
-  assertIncludes(error.message, 'must be one of: structuredContentDup', 'Unselected invalid feature should fail startup');
 }
 
 async function testOnlySelectedWorkspaceRulesEnterSnapshot(): Promise<void> {
@@ -316,7 +322,7 @@ async function testRulesEnvOverridesAreForbiddenBeforeEnvRead(): Promise<void> {
       })
     );
 
-    assertEqual(error.fieldPath, 'workspaces[0].envOverrides.allowedFields[0]', `${selector} should fail in schema allowlist validation`);
+    assertEqual(error.fieldPath, 'envOverrides.allowedFields[0]', `${selector} should fail in schema allowlist validation`);
     assertIncludes(error.message, `forbidden field "${selector}"`, `${selector} should be treated as a forbidden field`);
     assertNotIncludes(error.message, 'MCP_LOGS_DIR', 'Forbidden rules selectors should fail before reading env values');
   }
@@ -333,7 +339,7 @@ async function main(): Promise<void> {
       { name: 'header names normalize and validate', run: testHeaderNamesNormalizeAndValidate },
       { name: 'header value validation redacts values', run: testHeaderValueValidationAndRedaction },
       { name: 'enable validation', run: testEnableValidation },
-      { name: 'unselected workspace invalid rules still fail', run: testUnselectedWorkspaceInvalidRulesStillFail },
+      { name: 'unselected workspace invalid rules are not read', run: testUnselectedWorkspaceInvalidRulesAreNotRead },
       { name: 'only selected workspace rules enter snapshot', run: testOnlySelectedWorkspaceRulesEnterSnapshot },
       { name: 'rules env overrides are forbidden before env read', run: testRulesEnvOverridesAreForbiddenBeforeEnvRead },
     ],

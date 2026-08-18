@@ -16,6 +16,12 @@ export interface ExistingDirectoryPathOptions {
   readonly allowPosixAbsolute?: boolean;
 }
 
+export interface LocalAbsolutePathOptions {
+  readonly fieldPath: string;
+  readonly platform?: NodeJS.Platform;
+  readonly allowPosixAbsolute?: boolean;
+}
+
 interface PathShapeOptions {
   readonly fieldPath: string;
   readonly platform: NodeJS.Platform;
@@ -29,20 +35,12 @@ export function readExistingDirectoryPath(
   value: unknown,
   options: ExistingDirectoryPathOptions,
 ): ValuePolicyResult<string> {
-  const stringResult = readTypedString(value, options);
-  if (!stringResult.ok) return stringResult;
-
-  const platform = options.platform ?? process.platform;
-  const allowPosixAbsolute = options.allowPosixAbsolute ?? true;
-  const shapeResult = validateLocalAbsolutePathShape(stringResult.value, {
-    fieldPath: options.fieldPath,
-    platform,
-    allowPosixAbsolute,
-  });
+  const shapeResult = readLocalAbsolutePath(value, options);
   if (!shapeResult.ok) return shapeResult;
 
+  const platform = options.platform ?? process.platform;
   const pathApi = getPathApi(platform);
-  const resolvedPath = pathApi.resolve(stringResult.value);
+  const resolvedPath = pathApi.resolve(shapeResult.value);
   const stat = options.stat ?? defaultStat;
 
   try {
@@ -60,6 +58,25 @@ export function readExistingDirectoryPath(
       `${options.fieldPath} does not exist or cannot be accessed: ${resolvedPath}. ${message}`,
     );
   }
+
+  return ok(shapeResult.value);
+}
+
+export function readLocalAbsolutePath(
+  value: unknown,
+  options: LocalAbsolutePathOptions,
+): ValuePolicyResult<string> {
+  const stringResult = readTypedString(value, options);
+  if (!stringResult.ok) return stringResult;
+
+  const platform = options.platform ?? process.platform;
+  const allowPosixAbsolute = options.allowPosixAbsolute ?? true;
+  const shapeResult = validateLocalAbsolutePathShape(stringResult.value, {
+    fieldPath: options.fieldPath,
+    platform,
+    allowPosixAbsolute,
+  });
+  if (!shapeResult.ok) return shapeResult;
 
   return ok(stringResult.value);
 }

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "rootDir": "E:/ExistingWorkspaces/YourProject",
+  "otherRootDirs": [
+    "E:/ExistingWorkspaces/AnotherProject"
+  ],
+  "lineEnding": "auto",
+  "host": "127.0.0.1",
+  "port": 3100,
+  "logsDir": "E:/ExistingLogs/custom-mcp",
+  "fileAccess": {
+    "rootDir": {
+      "ignoreFiles": [
+        "C:/Users/username/.custom-mcp/policies/project.ignore"
+      ],
+      "denyFiles": [
+        "C:/Users/username/.custom-mcp/policies/project.deny"
+      ]
+    },
+    "otherRootDirs": {
+      "E:/ExistingWorkspaces/AnotherProject": {
+        "denyFiles": [
+          "C:/Users/username/.custom-mcp/policies/additional.deny"
+        ]
+      }
+    }
+  },
+  "rules": {
+    "requestHeaders": [
+      {
+        "match": {
+          "x-custom-mcp-client": "android-studio"
+        },
+        "enable": [
+          "structuredContentDup"
+        ]
+      }
+    ]
+  },
+  "tools": {
+    "disabled": [
+      "android.testDebugUnitTest"
+    ]
+  },
+  "android": {
+    "workspaceRoot": "E:/ExistingAndroidProjects/YourProject",
+    "javaHome": "E:/ExistingAndroidStudio/jbr",
+    "buildTimeoutMs": 900000,
+    "maxErrorBlockChars": 2500,
+    "maxLogTailChars": 4000
+  },
+  "envOverrides": {
+    "allowedFields": [
+      "lineEnding",
+      "logsDir",
+      "android.javaHome"
+    ]
+  }
+}

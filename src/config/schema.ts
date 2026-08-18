@@ -11,14 +11,12 @@ import {
   readJsonPositiveInteger,
   readLineEndingToken,
   readSelectorToken,
-  readWorkspaceIdToken,
   type ValuePolicyResult,
 } from './value-policy.js';
 import {
   readOptionalRulesConfig,
   type RuntimeRulesConfig,
 } from './request-header-rules.js';
-import { validateWorkspaceRootPathSet } from '../utils/paths.js';
 
 export type ParsedLineEnding = 'auto' | 'lf' | 'crlf';
 const DEFAULT_WORKSPACE_HOST = '127.0.0.1';
@@ -58,7 +56,7 @@ export interface ParsedFileAccessConfig {
 }
 
 export interface ParsedWorkspaceConfig {
-  readonly id: string;
+  readonly version: 1;
   readonly rootDir: string;
   readonly host: string;
   readonly port: number;
@@ -72,12 +70,7 @@ export interface ParsedWorkspaceConfig {
   readonly fileAccess?: ParsedFileAccessConfig;
 }
 
-export interface ParsedGlobalConfig {
-  readonly version: 1;
-  readonly workspaces: readonly ParsedWorkspaceConfig[];
-}
-
-export interface ParseGlobalConfigOptions {
+export interface ParseWorkspaceConfigOptions {
   readonly configFilePath: string;
 }
 
@@ -85,9 +78,8 @@ interface ParseContext {
   readonly configFilePath: string;
 }
 
-const TOP_LEVEL_FIELDS = new Set(['version', 'workspaces']);
 const WORKSPACE_FIELDS = new Set([
-  'id',
+  'version',
   'rootDir',
   'host',
   'port',
@@ -130,121 +122,68 @@ const FORBIDDEN_ENV_OVERRIDE_FIELDS = new Set([
   'rules',
 ]);
 
-export function parseGlobalConfig(
+export function parseWorkspaceConfig(
   value: unknown,
-  options: ParseGlobalConfigOptions,
-): ParsedGlobalConfig {
-  const context: ParseContext = { configFilePath: options.configFilePath };
-  const rawConfig = readObject(context, value, undefined, 'Config file must contain a JSON object.');
-
-  assertKnownFields(context, rawConfig, TOP_LEVEL_FIELDS, undefined);
-
-  if (rawConfig.version !== 1) {
-    fail(
-      context,
-      'version',
-      'version must be the number 1. The current server only supports global config schema version 1.',
-    );
-  }
-
-  const rawWorkspaces = rawConfig.workspaces;
-  if (!Array.isArray(rawWorkspaces)) {
-    fail(context, 'workspaces', 'workspaces must be a non-empty array.');
-  }
-
-  if (rawWorkspaces.length === 0) {
-    fail(context, 'workspaces', 'workspaces must contain at least one workspace.');
-  }
-
-  const seenIds = new Set<string>();
-  const seenPorts = new Set<number>();
-  const workspaces = rawWorkspaces.map((rawWorkspace, index) => {
-    const workspace = parseWorkspace(context, rawWorkspace, index);
-
-    if (seenIds.has(workspace.id)) {
-      fail(
-        context,
-        `workspaces[${index}].id`,
-        `workspace id "${workspace.id}" must be unique across workspaces.`,
-      );
-    }
-    seenIds.add(workspace.id);
-
-    if (seenPorts.has(workspace.port)) {
-      fail(
-        context,
-        `workspaces[${index}].port`,
-        `workspace port ${workspace.port} must be unique across workspaces.`,
-      );
-    }
-    seenPorts.add(workspace.port);
-
-    return workspace;
-  });
-
-  validateGlobalWorkspaceRoots(context, workspaces);
-
-  return deepFreezeParsedConfig({
-    version: 1,
-    workspaces,
-  });
-}
-
-function parseWorkspace(
-  context: ParseContext,
-  value: unknown,
-  index: number,
+  options: ParseWorkspaceConfigOptions,
 ): ParsedWorkspaceConfig {
-  const fieldPath = `workspaces[${index}]`;
+  const context: ParseContext = { configFilePath: options.configFilePath };
+  const fieldPath = undefined;
   const rawWorkspace = readObject(
     context,
     value,
     fieldPath,
-    `${fieldPath} must be a JSON object.`,
+    'Workspace config file must contain a JSON object.',
   );
 
   assertKnownFields(context, rawWorkspace, WORKSPACE_FIELDS, fieldPath);
+  if (rawWorkspace.version !== 1) {
+    fail(
+      context,
+      'version',
+      'version must be the number 1. The current server only supports workspace config schema version 1.',
+    );
+  }
 
-  const android = readOptionalAndroidConfig(context, rawWorkspace.android, `${fieldPath}.android`);
+  const android = readOptionalAndroidConfig(context, rawWorkspace.android, 'android');
   const envOverrides = readOptionalEnvOverridesConfig(
     context,
     rawWorkspace.envOverrides,
-    `${fieldPath}.envOverrides`,
+    'envOverrides',
     android !== undefined,
   );
   const rootDir = readRequiredExistingDirectoryPath(context, rawWorkspace, 'rootDir', fieldPath);
   const otherRootDirs = readOptionalExistingDirectoryPathArray(
     context,
     rawWorkspace.otherRootDirs,
-    `${fieldPath}.otherRootDirs`,
+    'otherRootDirs',
   );
 
-  return {
-    id: readRequiredWorkspaceId(context, rawWorkspace, 'id', fieldPath),
+  return deepFreezeParsedConfig({
+    version: 1,
     rootDir,
-    host: readOptionalHost(context, rawWorkspace.host, `${fieldPath}.host`),
+    host: readOptionalHost(context, rawWorkspace.host, 'host'),
     port: readRequiredPositiveInteger(context, rawWorkspace, 'port', fieldPath, {
       max: MAX_PORT,
       rangeDescription: `between 1 and ${MAX_PORT}`,
     }),
     lineEnding: readRequiredLineEnding(context, rawWorkspace, 'lineEnding', fieldPath),
-    ...readOptionalLogsDir(context, rawWorkspace.logsDir, `${fieldPath}.logsDir`),
+    ...readOptionalLogsDir(context, rawWorkspace.logsDir, 'logsDir'),
     otherRootDirs,
     ...(android !== undefined ? { android } : {}),
     ...(envOverrides !== undefined ? { envOverrides } : {}),
     toolExposure: readOptionalToolExposureConfig(rawWorkspace.tools, {
       configFilePath: context.configFilePath,
-      fieldPath: `${fieldPath}.tools`,
+      fieldPath: 'tools',
     }),
-    rules: readOptionalRulesConfig(context, rawWorkspace.rules, `${fieldPath}.rules`),
+    rules: readOptionalRulesConfig(context, rawWorkspace.rules, 'rules'),
     fileAccess: readOptionalFileAccessConfig(
       context,
       rawWorkspace.fileAccess,
-      `${fieldPath}.fileAccess`,
+      'fileAccess',
       rootDir,
       otherRootDirs,
     ),
-  };
+  });
 }
 
 function readOptionalFileAccessConfig(
@@ -536,35 +475,6 @@ function readAllowedFields(
   });
 }
 
-function validateGlobalWorkspaceRoots(
-  context: ParseContext,
-  workspaces: readonly ParsedWorkspaceConfig[],
-): void {
-  try {
-    validateWorkspaceRootPathSet(
-      workspaces.map((workspace, index) => ({
-        label: `workspaces[${index}].rootDir`,
-        rootDir: workspace.rootDir,
-      })),
-    );
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new ConfigError({
-      code: 'config_validation_failed',
-      configFilePath: context.configFilePath,
-      fieldPath: inferWorkspaceRootFieldPath(message),
-      message,
-      suggestion:
-        'Fix workspace rootDir values so each one is an existing absolute local directory, and no workspace root duplicates or contains another workspace root.',
-      cause: err,
-    });
-  }
-}
-
-function inferWorkspaceRootFieldPath(message: string): string {
-  return message.match(/workspaces\[\d+\]\.rootDir/)?.[0] ?? 'workspaces';
-}
-
 function readObject(
   context: ParseContext,
   value: unknown,
@@ -595,22 +505,11 @@ function assertKnownFields(
   }
 }
 
-function readRequiredWorkspaceId(
-  context: ParseContext,
-  value: Record<string, unknown>,
-  key: string,
-  parentPath: string,
-): string {
-  const fieldPath = joinFieldPath(parentPath, key);
-  assertRequired(context, value, key, fieldPath);
-  return unwrapPolicy(context, readWorkspaceIdToken(value[key], { fieldPath }));
-}
-
 function readRequiredExistingDirectoryPath(
   context: ParseContext,
   value: Record<string, unknown>,
   key: string,
-  parentPath: string,
+  parentPath: string | undefined,
 ): string {
   const fieldPath = joinFieldPath(parentPath, key);
   assertRequired(context, value, key, fieldPath);
@@ -647,7 +546,7 @@ function readRequiredLineEnding(
   context: ParseContext,
   value: Record<string, unknown>,
   key: string,
-  parentPath: string,
+  parentPath: string | undefined,
 ): ParsedLineEnding {
   const fieldPath = joinFieldPath(parentPath, key);
   assertRequired(context, value, key, fieldPath);
@@ -658,7 +557,7 @@ function readRequiredPositiveInteger(
   context: ParseContext,
   value: Record<string, unknown>,
   key: string,
-  parentPath: string,
+  parentPath: string | undefined,
   options: { readonly max?: number; readonly rangeDescription?: string } = {},
 ): number {
   const fieldPath = joinFieldPath(parentPath, key);

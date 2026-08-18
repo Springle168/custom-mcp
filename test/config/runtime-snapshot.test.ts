@@ -16,6 +16,7 @@ import {
   assertEqual,
   assertIncludes,
   runTestSuite,
+  writeSplitConfigFixture,
 } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,6 +25,7 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'runtime-snapshot');
 const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const WORKSPACE_CONFIG_FILE = path.join(CONFIG_DIR, 'workspace-0.json');
 const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const PRIMARY_CHILD_DIR = path.join(PRIMARY_DIR, 'child');
@@ -62,8 +64,7 @@ async function cleanupFixtures(): Promise<void> {
 }
 
 async function writeGlobalConfig(config: unknown): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  await writeSplitConfigFixture(CONFIG_FILE, config);
 }
 
 async function removeLinkIfExists(linkPath: string): Promise<void> {
@@ -138,7 +139,8 @@ async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
   });
 
   assertEqual(snapshot.snapshotVersion, 1, 'Initial runtime snapshot version should be 1');
-  assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the config file path');
+  assertEqual(snapshot.globalConfigFilePath, CONFIG_FILE, 'Snapshot should record the global config file path');
+  assertEqual(snapshot.workspaceConfigFilePath, WORKSPACE_CONFIG_FILE, 'Snapshot should record the workspace config file path');
   assertEqual(snapshot.workspaceId, 'runtime-workspace', 'Snapshot should record selected workspace id');
   assertEqual(snapshot.host, '127.0.0.1', 'Snapshot should use the default IPv4 loopback host');
   assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Snapshot should use the default home dotdir logs dir');
@@ -197,7 +199,7 @@ async function testEmptyLogsDirEnvFailsBeforeSnapshot(): Promise<void> {
     })
   );
 
-  assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'Empty MCP_LOGS_DIR should identify the target config field');
+  assertEqual(error.fieldPath, 'logsDir', 'Empty MCP_LOGS_DIR should identify the target config field');
   assertIncludes(error.message, 'MCP_LOGS_DIR must be a non-empty string', 'Empty MCP_LOGS_DIR should fail as an env value');
   assertIncludes(error.suggestion, 'Fix MCP_LOGS_DIR', 'Empty MCP_LOGS_DIR suggestion should point at the environment');
 }
@@ -215,7 +217,7 @@ async function testMissingDefaultLogsDirFailsStartup(): Promise<void> {
     })
   );
 
-  assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'Missing default logs root should identify the effective logsDir field');
+  assertEqual(error.fieldPath, 'logsDir', 'Missing default logs root should identify the effective logsDir field');
   assertIncludes(error.message, 'does not exist or cannot be accessed', 'Missing default logs root should fail existing-directory policy');
   assertIncludes(error.suggestion, 'Create the default logs root', 'Missing default logs root suggestion should ask for directory creation');
 }
@@ -234,7 +236,7 @@ async function testDefaultLogsDirMustBeDirectory(): Promise<void> {
     })
   );
 
-  assertEqual(error.fieldPath, 'workspaces[0].logsDir', 'File default logs root should identify the effective logsDir field');
+  assertEqual(error.fieldPath, 'logsDir', 'File default logs root should identify the effective logsDir field');
   assertIncludes(error.message, 'must point to an existing directory', 'File default logs root should fail directory policy');
   assertIncludes(error.suggestion, 'Create the default logs root', 'File default logs root suggestion should ask for a directory');
 }
@@ -242,7 +244,8 @@ async function testDefaultLogsDirMustBeDirectory(): Promise<void> {
 async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
   await resetFixtures();
   const baseInput = {
-    configFilePath: CONFIG_FILE,
+    globalConfigFilePath: CONFIG_FILE,
+    workspaceConfigFilePath: WORKSPACE_CONFIG_FILE,
     workspaceId: 'runtime-workspace',
     rootDir: PRIMARY_DIR,
     otherRootDirs: [ADDITIONAL_A_DIR],
@@ -264,53 +267,38 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
     {
       name: 'rootDir',
       run: () =>
-        createRuntimeConfigSnapshot(
-          { ...baseInput, rootDir: `${PRIMARY_DIR} ` },
-          { workspaceIndex: 0 },
-        ),
-      expectedFieldPath: 'workspaces[0].rootDir',
+        createRuntimeConfigSnapshot({ ...baseInput, rootDir: `${PRIMARY_DIR} ` }),
+      expectedFieldPath: 'rootDir',
     },
     {
       name: 'otherRootDirs',
       run: () =>
-        createRuntimeConfigSnapshot(
-          { ...baseInput, otherRootDirs: [`${ADDITIONAL_A_DIR} `] },
-          { workspaceIndex: 0 },
-        ),
-      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
+        createRuntimeConfigSnapshot({ ...baseInput, otherRootDirs: [`${ADDITIONAL_A_DIR} `] }),
+      expectedFieldPath: 'otherRootDirs[0]',
     },
     {
       name: 'logsDir',
       run: () =>
-        createRuntimeConfigSnapshot(
-          { ...baseInput, logsDir: `${DEFAULT_LOGS_DIR} ` },
-          { workspaceIndex: 0 },
-        ),
-      expectedFieldPath: 'workspaces[0].logsDir',
+        createRuntimeConfigSnapshot({ ...baseInput, logsDir: `${DEFAULT_LOGS_DIR} ` }),
+      expectedFieldPath: 'logsDir',
     },
     {
       name: 'android.workspaceRoot',
       run: () =>
-        createRuntimeConfigSnapshot(
-          {
-            ...baseInput,
-            android: { ...baseInput.android, workspaceRoot: `${ANDROID_WORKSPACE_DIR} ` },
-          },
-          { workspaceIndex: 0 },
-        ),
-      expectedFieldPath: 'workspaces[0].android.workspaceRoot',
+        createRuntimeConfigSnapshot({
+          ...baseInput,
+          android: { ...baseInput.android, workspaceRoot: `${ANDROID_WORKSPACE_DIR} ` },
+        }),
+      expectedFieldPath: 'android.workspaceRoot',
     },
     {
       name: 'android.javaHome',
       run: () =>
-        createRuntimeConfigSnapshot(
-          {
-            ...baseInput,
-            android: { ...baseInput.android, javaHome: `${ANDROID_JAVA_HOME_DIR} ` },
-          },
-          { workspaceIndex: 0 },
-        ),
-      expectedFieldPath: 'workspaces[0].android.javaHome',
+        createRuntimeConfigSnapshot({
+          ...baseInput,
+          android: { ...baseInput.android, javaHome: `${ANDROID_JAVA_HOME_DIR} ` },
+        }),
+      expectedFieldPath: 'android.javaHome',
     },
   ];
 
@@ -358,25 +346,25 @@ async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
     {
       name: 'duplicates primary root',
       otherRootDirs: [`${PRIMARY_DIR}${path.sep}`],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
+      expectedFieldPath: 'otherRootDirs[0]',
       expectedMessage: 'rootDir and otherRootDirs[0]',
     },
     {
       name: 'is nested under primary root',
       otherRootDirs: [PRIMARY_CHILD_DIR],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[0]',
+      expectedFieldPath: 'otherRootDirs[0]',
       expectedMessage: 'otherRootDirs[0]',
     },
     {
       name: 'duplicates another additional root',
       otherRootDirs: [ADDITIONAL_A_DIR, `${ADDITIONAL_A_DIR}${path.sep}`],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[1]',
+      expectedFieldPath: 'otherRootDirs[1]',
       expectedMessage: 'otherRootDirs[0] and otherRootDirs[1]',
     },
     {
       name: 'is nested under another additional root',
       otherRootDirs: [ADDITIONAL_A_DIR, ADDITIONAL_A_CHILD_DIR],
-      expectedFieldPath: 'workspaces[0].otherRootDirs[1]',
+      expectedFieldPath: 'otherRootDirs[1]',
       expectedMessage: 'otherRootDirs[1]',
     },
   ];
@@ -417,7 +405,7 @@ async function testOtherRootDirsRealpathDuplicateValidation(): Promise<void> {
       })
     );
 
-    assertEqual(error.fieldPath, 'workspaces[0].otherRootDirs[1]', 'Realpath duplicate should identify the symlinked additional root');
+    assertEqual(error.fieldPath, 'otherRootDirs[1]', 'Realpath duplicate should identify the symlinked additional root');
     assertIncludes(error.message, 'unique at the real path layer', 'Realpath duplicate additional roots should be rejected');
     assertIncludes(error.message, 'otherRootDirs[0] and otherRootDirs[1]', 'Realpath duplicate error should mention both additional roots');
   } finally {
@@ -442,7 +430,7 @@ async function testOtherRootDirsRealpathNestedValidation(): Promise<void> {
       })
     );
 
-    assertEqual(error.fieldPath, 'workspaces[0].otherRootDirs[1]', 'Realpath nested root should identify the symlinked nested additional root');
+    assertEqual(error.fieldPath, 'otherRootDirs[1]', 'Realpath nested root should identify the symlinked nested additional root');
     assertIncludes(error.message, 'must not be nested at the real path layer', 'Realpath nested additional roots should be rejected');
     assertIncludes(error.message, 'otherRootDirs[1]', 'Realpath nested error should mention the nested additional root');
   } finally {
@@ -548,8 +536,8 @@ async function testToolRuntimeContextUsesSnapshotAndroidMessage(): Promise<void>
   );
   assertIncludes(
     context.missingAndroidConfigMessage,
-    CONFIG_FILE,
-    'Android missing message should point to the global config file',
+    WORKSPACE_CONFIG_FILE,
+    'Android missing message should point to the selected workspace config file',
   );
   assertIncludes(
     context.missingAndroidConfigMessage,
@@ -563,7 +551,8 @@ async function testToolExposureSnapshotCloneAndOwnership(): Promise<void> {
 
   const createSnapshot = (toolExposure: RuntimeToolExposure) =>
     createRuntimeConfigSnapshot({
-      configFilePath: CONFIG_FILE,
+      globalConfigFilePath: CONFIG_FILE,
+      workspaceConfigFilePath: WORKSPACE_CONFIG_FILE,
       workspaceId: 'runtime-workspace',
       rootDir: PRIMARY_DIR,
       otherRootDirs: [],

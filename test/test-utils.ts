@@ -69,6 +69,58 @@ export function assertNotIncludes(
   }
 }
 
+export async function writeSplitConfigFixture(
+  globalConfigFilePath: string,
+  embeddedConfig: unknown,
+): Promise<readonly string[]> {
+  if (
+    typeof embeddedConfig !== 'object' ||
+    embeddedConfig === null ||
+    !('workspaces' in embeddedConfig) ||
+    !Array.isArray(embeddedConfig.workspaces)
+  ) {
+    throw new Error('Split config fixture must contain a workspaces array.');
+  }
+
+  const configDir = path.dirname(globalConfigFilePath);
+  await fs.mkdir(configDir, { recursive: true });
+
+  const workspaceConfigFiles: string[] = [];
+  const references = embeddedConfig.workspaces.map((value, index) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new Error(`Test fixture workspace ${index} must be an object.`);
+    }
+    const workspace = value as Record<string, unknown>;
+    const id = workspace.id;
+    if (typeof id !== 'string') {
+      throw new Error(`Test fixture workspace ${index} must have a string id.`);
+    }
+
+    const workspaceConfigFile = path.join(configDir, `workspace-${index}.json`);
+    const { id: _id, ...workspaceConfig } = workspace;
+    workspaceConfigFiles.push(workspaceConfigFile);
+    return {
+      id,
+      configFile: workspaceConfigFile,
+      workspaceConfig: { version: 1, ...workspaceConfig },
+    };
+  });
+
+  await Promise.all(references.map(({ configFile, workspaceConfig }) =>
+    fs.writeFile(configFile, JSON.stringify(workspaceConfig, null, 2), 'utf-8')
+  ));
+  await fs.writeFile(
+    globalConfigFilePath,
+    JSON.stringify({
+      version: 2,
+      workspaces: references.map(({ id, configFile }) => ({ id, configFile })),
+    }, null, 2),
+    'utf-8',
+  );
+
+  return Object.freeze([...workspaceConfigFiles]);
+}
+
 export function getResultText(result: TextResultLike): string {
   return result.content?.[0]?.text ?? '';
 }
@@ -213,3 +265,5 @@ function formatText(text: string | null | undefined): string {
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';

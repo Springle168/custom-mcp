@@ -16,7 +16,6 @@ import {
 export interface ApplyEnvOverridesOptions {
   readonly configFilePath: string;
   readonly workspace: ParsedWorkspaceConfig;
-  readonly workspaceIndex: number;
   readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -81,7 +80,7 @@ function assertAndroidOverridesHaveBaseConfig(
   failConfig(
     options,
     allowedFieldPath(options, androidFieldIndex),
-    `envOverrides.allowedFields contains Android field "${allowedFields[androidFieldIndex]}", but workspaces[${options.workspaceIndex}].android is not configured. Android env overrides can only override an existing complete android config block.`,
+    `envOverrides.allowedFields contains Android field "${allowedFields[androidFieldIndex]}", but android is not configured. Android env overrides can only override an existing complete android config block.`,
   );
 }
 
@@ -198,16 +197,12 @@ function isEnvOverrideField(field: string): field is EnvOverrideField {
   return Object.prototype.hasOwnProperty.call(ALLOWED_FIELD_ENV_VARS, field);
 }
 
-function workspaceFieldPath(options: ApplyEnvOverridesOptions): string {
-  return `workspaces[${options.workspaceIndex}]`;
+function targetFieldPath(_options: ApplyEnvOverridesOptions, field: EnvOverrideField): string {
+  return field;
 }
 
-function targetFieldPath(options: ApplyEnvOverridesOptions, field: EnvOverrideField): string {
-  return `${workspaceFieldPath(options)}.${field}`;
-}
-
-function allowedFieldPath(options: ApplyEnvOverridesOptions, index: number): string {
-  return `${workspaceFieldPath(options)}.envOverrides.allowedFields[${index}]`;
+function allowedFieldPath(_options: ApplyEnvOverridesOptions, index: number): string {
+  return `envOverrides.allowedFields[${index}]`;
 }
 
 function failConfig(

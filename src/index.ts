@@ -80,7 +80,7 @@ function indentBlock(text: string): string {
 async function main() {
   const cliOptions = parseCliArgs(process.argv.slice(2));
   const initialConfig = loadRuntimeConfigWithIdentity({
-    ...(cliOptions.workspaceId !== undefined ? { workspaceId: cliOptions.workspaceId } : {}),
+    workspaceId: cliOptions.workspaceId,
   });
   const initialSnapshot = initialConfig.snapshot;
   const configStore = createConfigStore(initialConfig);
@@ -167,9 +167,9 @@ async function main() {
     logger.info(`  Bind address: ${formatHostPort(initialSnapshot.host, initialSnapshot.port)}`);
     logger.info(`  Endpoint: ${buildHttpUrl(initialSnapshot.host, initialSnapshot.port, '/mcp')}`);
     logger.info(`  Workspace id: ${initialSnapshot.workspaceId}`);
-    logger.info(`  Selection mode: ${initialConfig.identity.selectionMode}`);
     logger.info(`  Snapshot version: ${initialSnapshot.snapshotVersion}`);
-    logger.info(`  Config file: ${initialSnapshot.configFilePath}`);
+    logger.info(`  Global config file: ${initialSnapshot.globalConfigFilePath}`);
+    logger.info(`  Workspace config file: ${initialSnapshot.workspaceConfigFilePath}`);
     logWorkspaceRoots(configStore, logger);
     for (const line of formatFileAccessPolicyStartupLines(
       initialSnapshot.fileAccessPolicyFiles,
