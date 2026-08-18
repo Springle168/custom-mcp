@@ -21,7 +21,6 @@ pnpm-debug.log*
 # ========================
 # Runtime Config & Secrets
 # ========================
-config.json
 .env
 .env.local
 .env.development

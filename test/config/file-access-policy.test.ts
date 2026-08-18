@@ -10,6 +10,7 @@ import {
   assertEqual,
   assertIncludes,
   runTestSuite,
+  writeSplitConfigFixture,
 } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,8 +41,7 @@ async function cleanupFixtures(): Promise<void> {
 }
 
 async function writeConfig(config: unknown): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  await writeSplitConfigFixture(CONFIG_FILE, config);
 }
 
 function workspace(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -163,7 +163,7 @@ async function testOnlySelectedWorkspacePolicyFilesEnterSnapshot(): Promise<void
   );
 }
 
-async function testValidatesUnselectedWorkspacePolicyFilesBeforeSelection(): Promise<void> {
+async function testDoesNotReadUnselectedWorkspacePolicyFiles(): Promise<void> {
   await resetFixtures();
   const missingPolicy = path.join(POLICIES_DIR, 'missing.deny');
   await writeConfig({
@@ -180,12 +180,16 @@ async function testValidatesUnselectedWorkspacePolicyFilesBeforeSelection(): Pro
     ],
   });
 
-  const error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'primary',
+    env: {},
+  });
+  assertEqual(
+    snapshot.workspaceId,
+    'primary',
+    'A missing policy referenced only by an unselected workspace must not block startup',
   );
-  assertEqual(error.fieldPath, 'workspaces[1].fileAccess.rootDir.denyFiles[0]', 'Error should identify the unselected workspace policy entry');
-  assertIncludes(error.message, 'workspace "secondary"', 'Error should identify the workspace id');
-  assertIncludes(error.message, missingPolicy, 'Policy I/O error should include the referenced file path');
 }
 
 async function testRejectsInvalidUtf8PolicyFile(): Promise<void> {
@@ -199,8 +203,10 @@ async function testRejectsInvalidUtf8PolicyFile(): Promise<void> {
     })],
   });
 
-  const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
-  assertEqual(error.fieldPath, 'workspaces[0].fileAccess.rootDir.ignoreFiles[0]', 'UTF-8 error should identify the policy array entry');
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  );
+  assertEqual(error.fieldPath, 'fileAccess.rootDir.ignoreFiles[0]', 'UTF-8 error should identify the policy array entry');
   assertIncludes(error.message, 'strict UTF-8', 'Invalid UTF-8 must fail closed');
 }
 
@@ -217,7 +223,9 @@ async function testRejectsUnassociatedAdditionalRootKey(): Promise<void> {
     })],
   });
 
-  const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  );
   assertIncludes(error.fieldPath ?? '', 'fileAccess.otherRootDirs', 'Additional root key error should identify the map');
   assertIncludes(error.message, 'configured otherRootDirs entry', 'Unassociated key should fail lexical association');
 }
@@ -231,8 +239,10 @@ async function testFileAccessCannotBeEnvOverridden(): Promise<void> {
     })],
   });
 
-  const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
-  assertEqual(error.fieldPath, 'workspaces[0].envOverrides.allowedFields[0]', 'Forbidden selector should identify its allowlist entry');
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  );
+  assertEqual(error.fieldPath, 'envOverrides.allowedFields[0]', 'Forbidden selector should identify its allowlist entry');
   assertIncludes(error.message, 'forbidden field "fileAccess"', 'fileAccess must be forbidden from env overrides');
 }
 
@@ -243,7 +253,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'compiles root-specific queries and freezes snapshot', run: testCompilesRootSpecificQueriesAndFreezesSnapshot },
       { name: 'only selected workspace policy files enter snapshot', run: testOnlySelectedWorkspacePolicyFilesEnterSnapshot },
-      { name: 'validates unselected workspace policy files before selection', run: testValidatesUnselectedWorkspacePolicyFilesBeforeSelection },
+      { name: 'does not read unselected workspace policy files', run: testDoesNotReadUnselectedWorkspacePolicyFiles },
       { name: 'rejects invalid UTF-8 policy file', run: testRejectsInvalidUtf8PolicyFile },
       { name: 'rejects unassociated additional root key', run: testRejectsUnassociatedAdditionalRootKey },
       { name: 'fileAccess cannot be env overridden', run: testFileAccessCannotBeEnvOverridden },

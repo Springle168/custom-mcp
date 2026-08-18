@@ -1,21 +1,21 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import {
   buildRuntimeConfigSnapshot,
   type RuntimeConfigSnapshot,
 } from './config/runtime-snapshot.js';
 import { applyEnvOverridesToWorkspace } from './config/env-overrides.js';
-import {
-  compileGlobalFileAccessPolicies,
-} from './config/file-access-policy.js';
+import { compileWorkspaceFileAccessPolicy } from './config/file-access-policy.js';
 import { ConfigError } from './config/errors.js';
 import {
   getDefaultGlobalConfigPath,
   getDefaultGlobalLogsDir,
   type DefaultGlobalConfigPathOptions,
 } from './config/global-config-path.js';
-import { parseGlobalConfig } from './config/schema.js';
+import { parseGlobalConfig } from './config/global-config-schema.js';
+import { parseWorkspaceConfig } from './config/schema.js';
 import {
-  selectRuntimeWorkspace,
+  createRuntimeConfigIdentity,
+  selectWorkspaceReference,
   type RuntimeConfigIdentity,
 } from './config/workspace-selection.js';
 import type { PathSafetyContext } from './utils/paths.js';
@@ -44,8 +44,7 @@ export type {
 } from './config/request-header-rules.js';
 
 export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions {
-  readonly workspaceId?: string;
-  readonly cwd?: string;
+  readonly workspaceId: string;
   /** Environment values considered only for the selected workspace allowlist. */
   readonly env?: NodeJS.ProcessEnv;
   readonly snapshotVersion?: number;
@@ -57,14 +56,11 @@ export interface LoadedRuntimeConfig {
 }
 
 const MINIMAL_GLOBAL_CONFIG_EXAMPLE = `{
-  "version": 1,
+  "version": 2,
   "workspaces": [
     {
       "id": "your-workspace",
-      "rootDir": "E:/Workspace/YourProject",
-      "host": "127.0.0.1",
-      "port": 3100,
-      "lineEnding": "auto"
+      "configFile": "C:/Users/username/.custom-mcp/workspaces/your-workspace.json"
     }
   ]
 }`;
@@ -76,70 +72,61 @@ export function getPathSafetyContext(config: {
 }
 
 export function loadRuntimeConfig(
-  options: LoadRuntimeConfigOptions = {},
+  options: LoadRuntimeConfigOptions,
 ): RuntimeConfigSnapshot {
   return loadRuntimeConfigWithIdentity(options).snapshot;
 }
 
 export function loadRuntimeConfigWithIdentity(
-  options: LoadRuntimeConfigOptions = {},
+  options: LoadRuntimeConfigOptions,
 ): LoadedRuntimeConfig {
   const location = getDefaultGlobalConfigPath(options);
   const defaultLogsDir = getDefaultGlobalLogsDir(options);
-  const raw = readConfigFile(location.configFilePath);
-  const parsed = parseConfigFile(raw, location.configFilePath);
+  const globalConfig = parseGlobalConfig(
+    readJsonConfigFile(location.configFilePath, 'global'),
+    { configFilePath: location.configFilePath },
+  );
+  const reference = selectWorkspaceReference({
+    globalConfigFilePath: location.configFilePath,
+    workspaces: globalConfig.workspaces,
+    workspaceId: options.workspaceId,
+  });
+  const parsedWorkspace = parseWorkspaceConfig(
+    readJsonConfigFile(reference.configFile, 'workspace'),
+    { configFilePath: reference.configFile },
+  );
 
   try {
-    const globalConfig = parseGlobalConfig(parsed, {
-      configFilePath: location.configFilePath,
-    });
-    const compiledWorkspaces = compileGlobalFileAccessPolicies(
-      location.configFilePath,
-      globalConfig.workspaces,
+    const compiledWorkspace = compileWorkspaceFileAccessPolicy(
+      reference.configFile,
+      reference.id,
+      parsedWorkspace,
     );
-    const selection = selectRuntimeWorkspace({
-      configFilePath: location.configFilePath,
-      workspaces: compiledWorkspaces,
-      ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
-      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+    const identity = createRuntimeConfigIdentity({
+      globalConfigFilePath: location.configFilePath,
+      workspaceConfigFilePath: reference.configFile,
+      workspaceId: reference.id,
+      workspace: compiledWorkspace,
     });
-    const selectedWorkspaceIndex = getSelectedWorkspaceIndex(
-      compiledWorkspaces,
-      selection.identity.workspaceId,
-      location.configFilePath,
-    );
-    const selectedWorkspace = compiledWorkspaces[selectedWorkspaceIndex];
-    if (selectedWorkspace === undefined) {
-      throw new ConfigError({
-        code: 'config_validation_failed',
-        configFilePath: location.configFilePath,
-        fieldPath: 'workspace',
-        message: `Selected workspace "${selection.identity.workspaceId}" has no compiled file access policy entry.`,
-        suggestion: 'Restart the server after fixing the global workspace configuration.',
-      });
-    }
     const workspaceWithOverrides = applyEnvOverridesToWorkspace({
-      configFilePath: location.configFilePath,
-      workspace: selectedWorkspace,
-      workspaceIndex: selectedWorkspaceIndex,
+      configFilePath: reference.configFile,
+      workspace: compiledWorkspace,
       env: options.env,
     });
     const workspace = {
       ...workspaceWithOverrides,
-      compiledFileAccessPolicy: selectedWorkspace.compiledFileAccessPolicy,
+      compiledFileAccessPolicy: compiledWorkspace.compiledFileAccessPolicy,
     };
     const snapshot = buildRuntimeConfigSnapshot({
-      configFilePath: location.configFilePath,
+      globalConfigFilePath: location.configFilePath,
+      workspaceConfigFilePath: reference.configFile,
+      workspaceId: reference.id,
       workspace,
-      workspaceIndex: selectedWorkspaceIndex,
       defaultLogsDir,
       snapshotVersion: options.snapshotVersion ?? 1,
     });
 
-    return Object.freeze({
-      snapshot,
-      identity: selection.identity,
-    });
+    return Object.freeze({ snapshot, identity });
   } catch (err: unknown) {
     if (err instanceof ConfigError) {
       throw err;
@@ -148,47 +135,46 @@ export function loadRuntimeConfigWithIdentity(
     const message = err instanceof Error ? err.message : String(err);
     throw new ConfigError({
       code: 'config_validation_failed',
-      configFilePath: location.configFilePath,
+      configFilePath: reference.configFile,
       message,
-      suggestion: `Fix the configuration in ${location.configFilePath} and restart the server.`,
+      suggestion: `Fix the configuration in ${reference.configFile} and restart the server.`,
       cause: err,
     });
   }
 }
 
-function getSelectedWorkspaceIndex(
-  workspaces: readonly { readonly id: string }[],
-  workspaceId: string,
+function readJsonConfigFile(
   configFilePath: string,
-): number {
-  const index = workspaces.findIndex((workspace) => workspace.id === workspaceId);
-  if (index !== -1) {
-    return index;
-  }
+  kind: 'global' | 'workspace',
+): unknown {
+  const label = kind === 'global' ? 'Global config file' : 'Workspace config file';
 
-  throw new ConfigError({
-    code: 'config_validation_failed',
-    configFilePath,
-    fieldPath: 'workspace',
-    message: `Selected workspace "${workspaceId}" was not found after workspace selection.`,
-    suggestion: 'Restart the server and choose a workspace id that exists in the global config workspaces array.',
-  });
-}
-
-function readConfigFile(configFilePath: string): string {
+  let raw: Buffer;
   try {
-    return readFileSync(configFilePath, 'utf-8');
+    const stats = statSync(configFilePath);
+    if (!stats.isFile()) {
+      throw new ConfigError({
+        code: 'config_file_read_failed',
+        configFilePath,
+        message: `${label} must be a regular file: ${configFilePath}`,
+        suggestion: 'Point the configuration reference to a readable JSON file.',
+      });
+    }
+    raw = readFileSync(configFilePath);
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
+    if (err instanceof ConfigError) {
+      throw err;
+    }
 
+    const error = err as NodeJS.ErrnoException;
     if (error.code === 'ENOENT') {
       throw new ConfigError({
         code: 'config_file_not_found',
         configFilePath,
-        message: `Global config file does not exist: ${configFilePath}`,
-        suggestion:
-          `Create ${configFilePath}. The server no longer reads config.json from the repository root.\n` +
-          `Minimum global config:\n${MINIMAL_GLOBAL_CONFIG_EXAMPLE}`,
+        message: `${label} does not exist: ${configFilePath}`,
+        suggestion: kind === 'global'
+          ? `Create ${configFilePath}.\nMinimum global config:\n${MINIMAL_GLOBAL_CONFIG_EXAMPLE}`
+          : `Create the referenced workspace config file at ${configFilePath}, or fix its configFile entry in the global config.`,
         cause: err,
       });
     }
@@ -196,22 +182,33 @@ function readConfigFile(configFilePath: string): string {
     throw new ConfigError({
       code: 'config_file_read_failed',
       configFilePath,
-      message: `Failed to read global config file at ${configFilePath}: ${error.message}`,
-      suggestion: 'Check that the file exists and that the current user can read it.',
+      message: `Failed to read ${label.toLowerCase()} at ${configFilePath}: ${error.message}`,
+      suggestion: 'Check that the file exists, is a regular file, and that the current user can read it.',
       cause: err,
     });
   }
-}
 
-function parseConfigFile(raw: string, configFilePath: string): unknown {
+  let text: string;
   try {
-    return JSON.parse(raw);
+    text = new TextDecoder('utf-8', { fatal: true }).decode(raw);
+  } catch (err: unknown) {
+    throw new ConfigError({
+      code: 'config_file_read_failed',
+      configFilePath,
+      message: `${label} must contain valid UTF-8 text: ${configFilePath}`,
+      suggestion: 'Save the JSON file as UTF-8 and restart the server.',
+      cause: err,
+    });
+  }
+
+  try {
+    return JSON.parse(text);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ConfigError({
       code: 'config_json_invalid',
       configFilePath,
-      message: `Config file contains invalid JSON: ${message}`,
+      message: `${label} contains invalid JSON: ${message}`,
       suggestion: `Fix the JSON syntax in ${configFilePath} and restart the server.`,
       cause: err,
     });

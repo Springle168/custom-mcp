@@ -30,7 +30,8 @@ export interface TestRuntimeConfigOptions {
   readonly port?: number;
   readonly android?: RuntimeAndroidConfig;
   readonly logsDir?: string;
-  readonly configFilePath?: string;
+  readonly globalConfigFilePath?: string;
+  readonly workspaceConfigFilePath?: string;
   readonly workspaceId?: string;
   readonly snapshotVersion?: number;
   readonly rules?: RuntimeRulesConfig;
@@ -43,7 +44,9 @@ export function createTestRuntimeConfigSnapshot(
   const logsDir = options.logsDir ?? getDefaultTestLogsDir();
 
   return createRuntimeConfigSnapshot({
-    configFilePath: options.configFilePath ?? path.join(options.rootDir, 'config.json'),
+    globalConfigFilePath: options.globalConfigFilePath ?? path.join(options.rootDir, 'config.json'),
+    workspaceConfigFilePath:
+      options.workspaceConfigFilePath ?? path.join(options.rootDir, 'workspace.json'),
     workspaceId: options.workspaceId ?? 'test-workspace',
     rootDir: options.rootDir,
     otherRootDirs: options.otherRootDirs ?? [],
@@ -67,12 +70,12 @@ export function createTestRuntimeConfigIdentity(
   snapshot: RuntimeConfigSnapshot,
 ): RuntimeConfigIdentity {
   return Object.freeze({
-    configFilePath: snapshot.configFilePath,
+    globalConfigFilePath: snapshot.globalConfigFilePath,
+    workspaceConfigFilePath: snapshot.workspaceConfigFilePath,
     workspaceId: snapshot.workspaceId,
     rootDir: snapshot.rootDir,
     host: snapshot.host,
     port: snapshot.port,
-    selectionMode: 'explicit',
   });
 }
 

@@ -11,6 +11,7 @@ import {
   assertEqual,
   assertIncludes,
   runTestSuite,
+  writeSplitConfigFixture,
 } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -62,8 +63,7 @@ async function cleanupFixtures(): Promise<void> {
 }
 
 async function writeGlobalConfig(config: unknown): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  await writeSplitConfigFixture(CONFIG_FILE, config);
 }
 
 function captureConfigError(run: () => unknown): ConfigError {
@@ -290,7 +290,7 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
     {
       name: 'empty lineEnding',
       env: { MCP_LINE_ENDING: '' },
-      fieldPath: 'workspaces[0].lineEnding',
+      fieldPath: 'lineEnding',
       envVar: 'MCP_LINE_ENDING',
       message: 'must be a non-empty string',
       selector: 'lineEnding',
@@ -298,7 +298,7 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
     {
       name: 'whitespace-only lineEnding',
       env: { MCP_LINE_ENDING: '   ' },
-      fieldPath: 'workspaces[0].lineEnding',
+      fieldPath: 'lineEnding',
       envVar: 'MCP_LINE_ENDING',
       message: 'must be a non-empty string',
       selector: 'lineEnding',
@@ -306,7 +306,7 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
     {
       name: 'leading whitespace logsDir',
       env: { MCP_LOGS_DIR: ` ${OVERRIDE_LOGS_DIR}` },
-      fieldPath: 'workspaces[0].logsDir',
+      fieldPath: 'logsDir',
       envVar: 'MCP_LOGS_DIR',
       message: 'must not contain leading or trailing whitespace',
       selector: 'logsDir',
@@ -314,7 +314,7 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
     {
       name: 'trailing whitespace Android path',
       env: { ANDROID_JAVA_HOME: `${ANDROID_OVERRIDE_JAVA_HOME} ` },
-      fieldPath: 'workspaces[0].android.javaHome',
+      fieldPath: 'android.javaHome',
       envVar: 'ANDROID_JAVA_HOME',
       message: 'must not contain leading or trailing whitespace',
       selector: 'android.javaHome',
@@ -322,7 +322,7 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
     {
       name: 'empty numeric Android value',
       env: { ANDROID_BUILD_TIMEOUT_MS: '' },
-      fieldPath: 'workspaces[0].android.buildTimeoutMs',
+      fieldPath: 'android.buildTimeoutMs',
       envVar: 'ANDROID_BUILD_TIMEOUT_MS',
       message: 'must be a non-empty string',
       selector: 'android.buildTimeoutMs',
@@ -375,7 +375,7 @@ async function testInvalidTokenEnvValuesFailStartup(): Promise<void> {
 
   assertEnvValueError(
     error,
-    'workspaces[0].lineEnding',
+    'lineEnding',
     'MCP_LINE_ENDING',
     'must be one of: auto, lf, crlf',
     'lineEnding',
@@ -413,7 +413,7 @@ async function testPathEnvOverridesRequireExistingDirectories(): Promise<void> {
 
     assertEnvValueError(
       error,
-      'workspaces[0].logsDir',
+      'logsDir',
       'MCP_LOGS_DIR',
       testCase.message,
       'logsDir',
@@ -440,7 +440,7 @@ async function testAndroidPathEnvOverridesRequireExistingDirectories(): Promise<
 
   assertEnvValueError(
     error,
-    'workspaces[0].android.workspaceRoot',
+    'android.workspaceRoot',
     'ANDROID_WORKSPACE_ROOT',
     'must point to an existing directory',
     'android.workspaceRoot',
@@ -524,7 +524,7 @@ async function testNumericEnvOverridesUseRawPositiveIntegerGrammar(): Promise<vo
 
     assertEnvValueError(
       error,
-      `workspaces[0].${testCase.selector}`,
+      `${testCase.selector}`,
       testCase.envVar,
       testCase.message,
       testCase.selector,
@@ -549,7 +549,7 @@ async function testAndroidAllowlistCannotCreateMissingAndroidConfig(): Promise<v
   );
 
   assertIncludes(error.message, 'android is not configured', 'Android allowlist fields should require an existing android config block');
-  assertEqual(error.fieldPath, 'workspaces[0].envOverrides.allowedFields[0]', 'Missing Android config should identify the allowlist entry');
+  assertEqual(error.fieldPath, 'envOverrides.allowedFields[0]', 'Missing Android config should identify the allowlist entry');
 }
 
 async function testEnvOverridesOnlySelectedWorkspace(): Promise<void> {
@@ -579,7 +579,7 @@ async function testEnvOverridesOnlySelectedWorkspace(): Promise<void> {
   assertEqual(selectedB.lineEnding, 'crlf', 'Selected workspace-b allowlist should apply to workspace-b');
 }
 
-async function testEnvOverridesDoNotParticipateInCwdSelection(): Promise<void> {
+async function testEnvOverridesDoNotParticipateInExplicitSelection(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig([
     workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
@@ -590,7 +590,7 @@ async function testEnvOverridesDoNotParticipateInCwdSelection(): Promise<void> {
 
   const loaded = loadRuntimeConfigWithIdentity({
     homeDir: HOME_DIR,
-    cwd: WORKSPACE_A_DIR,
+    workspaceId: 'workspace-a',
     env: envValues({
       MCP_ROOT_DIR: WORKSPACE_B_DIR,
       MCP_HOST: '127.0.0.2',
@@ -599,7 +599,7 @@ async function testEnvOverridesDoNotParticipateInCwdSelection(): Promise<void> {
     }),
   });
 
-  assertEqual(loaded.snapshot.workspaceId, 'workspace-a', 'Default cwd selection should use cwd/rootDir identity, not env');
+  assertEqual(loaded.snapshot.workspaceId, 'workspace-a', 'Explicit selection should use the requested id, not env');
   assertEqual(loaded.snapshot.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not change selected rootDir');
   assertEqual(loaded.snapshot.host, '127.0.0.1', 'MCP_HOST should not change selected host');
   assertEqual(loaded.snapshot.port, 4701, 'MCP_PORT should not change selected port');
@@ -627,7 +627,7 @@ async function main(): Promise<void> {
       { name: 'numeric env overrides use raw positive integer grammar', run: testNumericEnvOverridesUseRawPositiveIntegerGrammar },
       { name: 'Android allowlist cannot create missing Android config', run: testAndroidAllowlistCannotCreateMissingAndroidConfig },
       { name: 'env overrides only selected workspace', run: testEnvOverridesOnlySelectedWorkspace },
-      { name: 'env overrides do not participate in cwd selection', run: testEnvOverridesDoNotParticipateInCwdSelection },
+      { name: 'env overrides do not participate in explicit selection', run: testEnvOverridesDoNotParticipateInExplicitSelection },
     ],
   });
 }

@@ -19,7 +19,7 @@ export interface CreateMCPServerOptions {
 
 export function createMCPServer(options: CreateMCPServerOptions): Server {
   const server = new Server(
-    { name: 'custom-mcp', version: '1.0.0' },
+    { name: 'custom-mcp', version: '1.1.0' },
     { capabilities: { tools: {} } },
   );
 

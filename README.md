@@ -22,21 +22,7 @@ npm ci
 npm run build
 ```
 
-在 `~/.custom-mcp/config.json` 创建运行配置。以下是一个最小示例，其中 `rootDir` 必须替换为已存在的本地绝对目录：
-
-```json
-{
-  "version": 1,
-  "workspaces": [
-    {
-      "id": "my-workspace",
-      "rootDir": "E:/ExistingWorkspaces/YourProject",
-      "port": 3100,
-      "lineEnding": "auto"
-    }
-  ]
-}
-```
+根据 [全局配置示例](examples/config.example.json) 创建 `~/.custom-mcp/config.json`，并让其中的 `configFile` 指向按 [workspace 配置示例](examples/workspace-config.example.json) 创建的独立 JSON 文件。使用前必须替换示例中的本地绝对路径。
 
 启动前确保默认日志目录 `~/.custom-mcp/logs` 已存在，然后运行：
 
@@ -50,7 +36,7 @@ npm run start -- --workspace my-workspace
 http://127.0.0.1:3100/mcp
 ```
 
-完整配置模板见 [config.example.json](config.example.json)，配置字段与 workspace 选择规则见 [docs/CONFIG.md](docs/CONFIG.md)。
+全局与 workspace 配置模板见 [examples/](examples/)，配置字段与 workspace 选择规则见 [docs/CONFIG.md](docs/CONFIG.md)。
 
 ## 文档
 

@@ -11,6 +11,7 @@ import {
   assertEqual,
   assertIncludes,
   runTestSuite,
+  writeSplitConfigFixture,
 } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,6 +20,7 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'load-runtime-config
 const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const WORKSPACE_CONFIG_FILE = path.join(CONFIG_DIR, 'workspace-0.json');
 const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 const ADDITIONAL_DIR = path.join(FIXTURES_DIR, 'additional');
@@ -49,8 +51,7 @@ async function cleanupFixtures(): Promise<void> {
 }
 
 async function writeGlobalConfig(config: unknown): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  await writeSplitConfigFixture(CONFIG_FILE, config);
 }
 
 function captureConfigError(run: () => unknown): ConfigError {
@@ -103,7 +104,8 @@ async function testLoadsRuntimeSnapshotFromHomeDotdirConfig(): Promise<void> {
     env: {},
   });
 
-  assertEqual(snapshot.configFilePath, CONFIG_FILE, 'Snapshot should record the home-level dotdir config path');
+  assertEqual(snapshot.globalConfigFilePath, CONFIG_FILE, 'Snapshot should record the home-level global config path');
+  assertEqual(snapshot.workspaceConfigFilePath, WORKSPACE_CONFIG_FILE, 'Snapshot should record the selected workspace config path');
   assertEqual(snapshot.workspaceId, 'primary-workspace', 'Snapshot should use the explicitly selected workspace');
   assertEqual(snapshot.rootDir, PRIMARY_DIR, 'Snapshot should use rootDir from the selected workspace');
   assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should keep additional roots from the selected workspace');
@@ -231,7 +233,7 @@ async function testAndroidConfigRelativePathsFailStartup(): Promise<void> {
     })
   );
 
-  assertEqual(error.fieldPath, 'workspaces[0].android.workspaceRoot', 'Relative Android path should identify the invalid field');
+  assertEqual(error.fieldPath, 'android.workspaceRoot', 'Relative Android path should identify the invalid field');
   assertIncludes(error.message, 'must be an absolute local path', 'Android paths should use typed path policy');
 }
 
@@ -247,7 +249,9 @@ async function testMissingConfigThrowsWithoutProcessExit(): Promise<void> {
   }) as typeof process.exit;
 
   try {
-    const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
+    const error = captureConfigError(() =>
+      loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary-workspace', env: {} })
+    );
 
     assertEqual(error.code, 'config_file_not_found', 'Missing config should have a precise error code');
     assertEqual(error.configFilePath, CONFIG_FILE, 'Missing config error should point to the expanded absolute path');
@@ -276,7 +280,9 @@ async function testDoesNotReadCurrentDirectoryConfigJson(): Promise<void> {
   const previousCwd = process.cwd();
   process.chdir(cwdDir);
   try {
-    const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
+    const error = captureConfigError(() =>
+      loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary-workspace', env: {} })
+    );
 
     assertEqual(error.code, 'config_file_not_found', 'Missing home-level config should fail even when cwd has config.json');
     assertEqual(error.configFilePath, CONFIG_FILE, 'Runtime config should only look at the home-level dotdir path');
@@ -290,7 +296,9 @@ async function testInvalidJsonThrowsStructuredError(): Promise<void> {
   await fs.mkdir(CONFIG_DIR, { recursive: true });
   await fs.writeFile(CONFIG_FILE, '{ invalid json', 'utf-8');
 
-  const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary-workspace', env: {} })
+  );
 
   assertEqual(error.code, 'config_json_invalid', 'Invalid JSON should be reported as a JSON config error');
   assertEqual(error.configFilePath, CONFIG_FILE, 'Invalid JSON error should include the config file path');

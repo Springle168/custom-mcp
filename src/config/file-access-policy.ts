@@ -27,21 +27,26 @@ export interface WorkspaceWithCompiledFileAccessPolicy extends ParsedWorkspaceCo
   readonly compiledFileAccessPolicy: CompiledFileAccessPolicy;
 }
 
-export function compileGlobalFileAccessPolicies(
+export function compileWorkspaceFileAccessPolicy(
   configFilePath: string,
-  workspaces: readonly ParsedWorkspaceConfig[],
-): readonly WorkspaceWithCompiledFileAccessPolicy[] {
-  const fileCache = new Map<string, string>();
-
-  return workspaces.map((workspace, workspaceIndex) => ({
+  workspaceId: string,
+  workspace: ParsedWorkspaceConfig,
+): WorkspaceWithCompiledFileAccessPolicy {
+  return {
     ...workspace,
-    compiledFileAccessPolicy: compileWorkspaceFileAccessPolicy(
+    compiledFileAccessPolicy: compileRootPolicies(
+      workspace.rootDir,
+      workspace.otherRootDirs,
+      workspace.fileAccess ?? {
+        rootDir: EMPTY_ROOT_POLICY_CONFIG,
+        otherRootDirs: Object.freeze({}),
+      },
       configFilePath,
-      workspace,
-      workspaceIndex,
-      fileCache,
+      `workspace "${workspaceId}"`,
+      undefined,
+      new Map(),
     ),
-  }));
+  };
 }
 
 export function createEmptyCompiledFileAccessPolicy(
@@ -59,26 +64,6 @@ export function createEmptyCompiledFileAccessPolicy(
     'runtime workspace',
     undefined,
     new Map(),
-  );
-}
-
-function compileWorkspaceFileAccessPolicy(
-  configFilePath: string,
-  workspace: ParsedWorkspaceConfig,
-  workspaceIndex: number,
-  fileCache: Map<string, string>,
-): CompiledFileAccessPolicy {
-  return compileRootPolicies(
-    workspace.rootDir,
-    workspace.otherRootDirs,
-    workspace.fileAccess ?? {
-      rootDir: EMPTY_ROOT_POLICY_CONFIG,
-      otherRootDirs: Object.freeze({}),
-    },
-    configFilePath,
-    `workspace "${workspace.id}"`,
-    workspaceIndex,
-    fileCache,
   );
 }
 

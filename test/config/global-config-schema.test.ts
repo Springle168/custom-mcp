@@ -1,10 +1,9 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  ConfigError,
-  loadRuntimeConfig,
-} from '../../src/config.js';
+import { ConfigError, loadRuntimeConfig } from '../../src/config.js';
+import { parseGlobalConfig } from '../../src/config/global-config-schema.js';
+import { parseWorkspaceConfig } from '../../src/config/schema.js';
 import {
   assert,
   assertEqual,
@@ -19,43 +18,40 @@ const HOME_DIR = path.join(FIXTURES_DIR, 'home');
 const CONFIG_DIR = path.join(HOME_DIR, '.custom-mcp');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const DEFAULT_LOGS_DIR = path.join(CONFIG_DIR, 'logs');
-const WORKSPACE_A_DIR = path.join(FIXTURES_DIR, 'workspace-a');
-const WORKSPACE_B_DIR = path.join(FIXTURES_DIR, 'workspace-b');
-const WORKSPACE_C_DIR = path.join(FIXTURES_DIR, 'workspace-c');
-const WORKSPACE_WITH_SPACE_DIR = path.join(FIXTURES_DIR, 'workspace with spaces');
-const NESTED_A_DIR = path.join(WORKSPACE_A_DIR, 'nested');
-const NOT_DIRECTORY_PATH = path.join(FIXTURES_DIR, 'not-a-directory.txt');
-const ANDROID_WORKSPACE_ROOT = path.join(FIXTURES_DIR, 'android-project');
-const ANDROID_JAVA_HOME = path.join(FIXTURES_DIR, 'jbr');
-const LOGS_DIR = path.join(FIXTURES_DIR, 'service-logs');
-const LOGS_WITH_SPACE_DIR = path.join(FIXTURES_DIR, 'service logs with spaces');
-const ANDROID_NUMERIC_FIELDS = [
-  'buildTimeoutMs',
-  'maxErrorBlockChars',
-  'maxLogTailChars',
-] as const;
+const WORKSPACE_CONFIG_A = path.join(CONFIG_DIR, 'workspace-a.json');
+const WORKSPACE_CONFIG_B = path.join(CONFIG_DIR, 'workspace-b.json');
+const ROOT_DIR = path.join(FIXTURES_DIR, 'workspace');
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
   await fs.mkdir(DEFAULT_LOGS_DIR, { recursive: true });
-  await fs.mkdir(NESTED_A_DIR, { recursive: true });
-  await fs.mkdir(WORKSPACE_B_DIR, { recursive: true });
-  await fs.mkdir(WORKSPACE_C_DIR, { recursive: true });
-  await fs.mkdir(WORKSPACE_WITH_SPACE_DIR, { recursive: true });
-  await fs.mkdir(ANDROID_WORKSPACE_ROOT, { recursive: true });
-  await fs.mkdir(ANDROID_JAVA_HOME, { recursive: true });
-  await fs.mkdir(LOGS_DIR, { recursive: true });
-  await fs.mkdir(LOGS_WITH_SPACE_DIR, { recursive: true });
-  await fs.writeFile(NOT_DIRECTORY_PATH, 'not a directory\n', 'utf-8');
+  await fs.mkdir(ROOT_DIR, { recursive: true });
 }
 
 async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
 }
 
-async function writeGlobalConfig(config: unknown): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+async function writeJson(filePath: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(value, null, 2), 'utf-8');
+}
+
+function workspaceConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    version: 1,
+    rootDir: ROOT_DIR,
+    port: 4100,
+    lineEnding: 'auto',
+    ...overrides,
+  };
+}
+
+function globalConfig(
+  workspaces: unknown[] = [{ id: 'workspace-a', configFile: WORKSPACE_CONFIG_A }],
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { version: 2, workspaces, ...overrides };
 }
 
 function captureConfigError(run: () => unknown): ConfigError {
@@ -63,888 +59,218 @@ function captureConfigError(run: () => unknown): ConfigError {
     run();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Expected a structured ConfigError');
-    assertEqual(error.code, 'config_validation_failed', 'Schema failures should use config_validation_failed');
     return error;
   }
-
-  throw new Error('Expected loadRuntimeConfig() to throw.');
+  throw new Error('Expected configuration validation to fail.');
 }
 
-async function expectValidationError(
+function expectGlobalParseError(
   config: unknown,
+  expectedFieldPath: string,
   expectedMessage: string,
-  expectedFieldPath?: string,
-): Promise<ConfigError> {
-  await resetFixtures();
-  await writeGlobalConfig(config);
-
-  const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
-
-  assertIncludes(error.message, expectedMessage, 'Error message should identify the schema failure');
-  if (expectedFieldPath !== undefined) {
-    assertEqual(error.fieldPath, expectedFieldPath, 'Error should identify the invalid field');
-  }
-
-  return error;
+): void {
+  const error = captureConfigError(() =>
+    parseGlobalConfig(config, { configFilePath: CONFIG_FILE })
+  );
+  assertEqual(error.configFilePath, CONFIG_FILE, 'Global schema errors should point to the global config');
+  assertEqual(error.fieldPath, expectedFieldPath, 'Global schema error should identify its field');
+  assertIncludes(error.message, expectedMessage, 'Global schema error should explain the failure');
 }
 
-function workspace(
-  index: number,
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  const rootDirs = [WORKSPACE_A_DIR, WORKSPACE_B_DIR, WORKSPACE_C_DIR, WORKSPACE_WITH_SPACE_DIR];
+function testAcceptsVersionTwoWorkspaceReferences(): void {
+  const parsed = parseGlobalConfig(globalConfig([
+    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
+  ]), { configFilePath: CONFIG_FILE });
 
-  return {
-    id: `workspace-${index}`,
-    rootDir: rootDirs[index] ?? path.join(FIXTURES_DIR, `workspace-${index}`),
-    port: 4100 + index,
-    lineEnding: 'auto',
-    ...overrides,
-  };
+  assertEqual(parsed.version, 2, 'Global schema should use version 2');
+  assertEqual(parsed.workspaces.length, 2, 'Global schema should retain workspace references');
+  assertEqual(parsed.workspaces[0]?.configFile, WORKSPACE_CONFIG_A, 'Reference should retain its absolute config path');
+  assert(Object.isFrozen(parsed), 'Parsed global config should be frozen');
+  assert(Object.isFrozen(parsed.workspaces), 'Parsed workspace references should be frozen');
 }
 
-function globalConfig(
-  workspaces: unknown[] = [workspace(0)],
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    version: 1,
-    workspaces,
-    ...overrides,
-  };
-}
-
-async function removeLinkIfExists(linkPath: string): Promise<void> {
-  try {
-    await fs.unlink(linkPath);
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') return;
-    await fs.rm(linkPath, { recursive: true, force: true });
-  }
-}
-
-async function createDirectoryLink(
-  linkPath: string,
-  targetPath: string,
-): Promise<boolean> {
-  await removeLinkIfExists(linkPath);
-  try {
-    await fs.symlink(
-      targetPath,
-      linkPath,
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-    return true;
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    console.log(`  - Skipped symlink schema assertion: ${error.message}`);
-    return false;
-  }
-}
-
-async function testValidGlobalConfigLoadsExplicitWorkspace(): Promise<void> {
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(0, { logsDir: LOGS_DIR }),
-    workspace(1, { lineEnding: 'crlf' }),
-  ]));
-
-  const snapshot = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'workspace-0',
-    env: {},
-  });
-
-  assertEqual(snapshot.workspaceId, 'workspace-0', 'Snapshot should use the explicitly selected workspace');
-  assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'Snapshot should use the selected workspace rootDir');
-  assertEqual(snapshot.host, '127.0.0.1', 'Snapshot should default host to IPv4 loopback');
-  assertEqual(snapshot.logsDir, path.resolve(LOGS_DIR), 'Snapshot should use the selected workspace logsDir');
-  assertEqual(snapshot.otherRootDirs.length, 0, 'otherRootDirs should default to an empty array');
-  assert(snapshot.android === undefined, 'Android config should be optional');
-}
-
-async function testPathLikeFieldsAllowInternalSpaces(): Promise<void> {
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(3, {
-      id: 'space-workspace',
-      logsDir: LOGS_WITH_SPACE_DIR,
-      otherRootDirs: [WORKSPACE_B_DIR],
-    }),
-  ]));
-
-  const snapshot = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'space-workspace',
-    env: {},
-  });
-
-  assertEqual(snapshot.rootDir, path.resolve(WORKSPACE_WITH_SPACE_DIR), 'Path policy should allow internal spaces in rootDir');
-  assertEqual(snapshot.logsDir, path.resolve(LOGS_WITH_SPACE_DIR), 'Path policy should allow internal spaces in logsDir');
-}
-
-async function testCompleteAndroidConfigIsAccepted(): Promise<void> {
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(0, {
-      android: {
-        workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        javaHome: ANDROID_JAVA_HOME,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-      },
-    }),
-  ]));
-
-  const snapshot = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'workspace-0',
-    env: {},
-  });
-
-  assert(snapshot.android !== undefined, 'Complete Android config should be present in the snapshot');
-  assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'Android workspaceRoot should be normalized');
-  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'Android javaHome should be normalized');
-  assertEqual(snapshot.android.buildTimeoutMs, 900000, 'Android positive integer fields should be preserved');
-}
-
-async function testVersionAndWorkspacesAreRequired(): Promise<void> {
-  await expectValidationError(
-    [],
-    'Config file must contain a JSON object',
-  );
-  await expectValidationError(
-    { workspaces: [workspace(0)] },
-    'version must be the number 1',
-    'version',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0)], { version: '1' }),
-    'version must be the number 1',
-    'version',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0)], { version: 2 }),
-    'version must be the number 1',
-    'version',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0)], { version: 1.1 }),
-    'version must be the number 1',
-    'version',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0)], { version: true }),
-    'version must be the number 1',
-    'version',
-  );
-  await expectValidationError(
-    { version: 1 },
-    'workspaces must be a non-empty array',
-    'workspaces',
-  );
-  await expectValidationError(
-    { version: 1, workspaces: 'not-array' },
-    'workspaces must be a non-empty array',
-    'workspaces',
-  );
-  await expectValidationError(
-    { version: 1, workspaces: [] },
-    'workspaces must contain at least one workspace',
-    'workspaces',
-  );
-  await expectValidationError(
-    globalConfig([42]),
-    'workspaces[0] must be a JSON object',
-    'workspaces[0]',
+function testRejectsLegacyAndMalformedGlobalSchemas(): void {
+  expectGlobalParseError(globalConfig(undefined, { version: 1 }), 'version', 'number 2');
+  expectGlobalParseError(globalConfig(undefined, { version: '2' }), 'version', 'number 2');
+  expectGlobalParseError({ version: 2 }, 'workspaces', 'non-empty array');
+  expectGlobalParseError({ version: 2, workspaces: [] }, 'workspaces', 'at least one workspace');
+  expectGlobalParseError(globalConfig(undefined, { legacy: true }), 'legacy', 'Unknown config field');
+  expectGlobalParseError(globalConfig([42]), 'workspaces[0]', 'must be a JSON object');
+  expectGlobalParseError(
+    globalConfig([{ id: 'workspace-a', configFile: WORKSPACE_CONFIG_A, rootDir: ROOT_DIR }]),
+    'workspaces[0].rootDir',
+    'Unknown config field',
   );
 }
 
-async function testUnknownFieldsAreRejected(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0)], { legacy: true }),
-    'Unknown config field legacy',
-    'legacy',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { legacy: true })]),
-    'Unknown config field workspaces[0].legacy',
-    'workspaces[0].legacy',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        javaHome: ANDROID_JAVA_HOME,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-        legacy: true,
-      },
-    })]),
-    'Unknown config field workspaces[0].android.legacy',
-    'workspaces[0].android.legacy',
-  );
-}
-
-async function testWorkspaceIdValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { id: undefined })]),
-    'workspaces[0].id is required',
+function testValidatesReferenceIds(): void {
+  expectGlobalParseError(
+    globalConfig([{ configFile: WORKSPACE_CONFIG_A }]),
     'workspaces[0].id',
+    'is required',
   );
-  await expectValidationError(
-    globalConfig([workspace(0, { id: 42 })]),
-    'workspaces[0].id must be a string',
+  expectGlobalParseError(
+    globalConfig([{ id: 'Workspace-A', configFile: WORKSPACE_CONFIG_A }]),
     'workspaces[0].id',
+    'lowercase',
   );
-  await expectValidationError(
-    globalConfig([workspace(0, { id: '' })]),
-    'workspaces[0].id must be a non-empty string',
-    'workspaces[0].id',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { id: '   ' })]),
-    'workspaces[0].id must be a non-empty string',
-    'workspaces[0].id',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { id: ' workspace_0' })]),
-    'workspaces[0].id must not contain leading or trailing whitespace',
-    'workspaces[0].id',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { id: 'workspace_0 ' })]),
-    'workspaces[0].id must not contain leading or trailing whitespace',
-    'workspaces[0].id',
-  );
-
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig([workspace(0, { id: 'workspace_0' })]));
-  const snapshot = loadRuntimeConfig({
-    homeDir: HOME_DIR,
-    workspaceId: 'workspace_0',
-    env: {},
-  });
-  assertEqual(snapshot.workspaceId, 'workspace_0', 'Workspace id should allow underscores');
-
-  for (const invalidId of [
-    'Workspace-0',
-    '_workspace',
-    '-workspace',
-    'team/alpha',
-    'team.alpha',
-    'team alpha',
-    'a'.repeat(65),
-  ]) {
-    await expectValidationError(
-      globalConfig([workspace(0, { id: invalidId })]),
-      'workspaces[0].id must be 1-64 characters, start with a lowercase letter or digit',
-      'workspaces[0].id',
-    );
-  }
-
-  await expectValidationError(
+  expectGlobalParseError(
     globalConfig([
-      workspace(0, { id: 'duplicate' }),
-      workspace(1, { id: 'duplicate' }),
+      { id: 'duplicate', configFile: WORKSPACE_CONFIG_A },
+      { id: 'duplicate', configFile: WORKSPACE_CONFIG_B },
     ]),
-    'workspace id "duplicate" must be unique',
     'workspaces[1].id',
+    'must be unique',
   );
 }
 
-async function testWorkspacePortValidation(): Promise<void> {
-  for (const invalidPort of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, 65536]) {
-    await expectValidationError(
-      globalConfig([workspace(0, { port: invalidPort })]),
-      'workspaces[0].port must be a JSON number positive integer between 1 and 65535',
-      'workspaces[0].port',
-    );
-  }
+function testValidatesConfigFileLexicallyWithoutReadingIt(): void {
+  expectGlobalParseError(
+    globalConfig([{ id: 'workspace-a' }]),
+    'workspaces[0].configFile',
+    'is required',
+  );
+  expectGlobalParseError(
+    globalConfig([{ id: 'workspace-a', configFile: 'relative/workspace.json' }]),
+    'workspaces[0].configFile',
+    'absolute local path',
+  );
+  expectGlobalParseError(
+    globalConfig([{ id: 'workspace-a', configFile: ` ${WORKSPACE_CONFIG_A}` }]),
+    'workspaces[0].configFile',
+    'leading or trailing whitespace',
+  );
 
-  for (const invalidPort of ['3100', ' 3100', '3100 ', '123abc']) {
-    await expectValidationError(
-      globalConfig([workspace(0, { port: invalidPort })]),
-      'workspaces[0].port must be a JSON number positive integer between 1 and 65535',
-      'workspaces[0].port',
-    );
-  }
-
-  await expectValidationError(
-    globalConfig([
-      workspace(0, { port: 4100 }),
-      workspace(1, { port: 4100 }),
-    ]),
-    'workspace port 4100 must be unique',
-    'workspaces[1].port',
+  const missingConfigFile = path.join(CONFIG_DIR, 'missing.json');
+  const parsed = parseGlobalConfig(
+    globalConfig([{ id: 'workspace-a', configFile: missingConfigFile }]),
+    { configFilePath: CONFIG_FILE },
+  );
+  assertEqual(
+    parsed.workspaces[0]?.configFile,
+    missingConfigFile,
+    'Global parsing should not stat or read unselected workspace config files',
   );
 }
 
-async function testWorkspaceHostValidation(): Promise<void> {
+function testAllowsDuplicateConfigFileReferences(): void {
+  const parsed = parseGlobalConfig(globalConfig([
+    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_A },
+  ]), { configFilePath: CONFIG_FILE });
+
+  assertEqual(parsed.workspaces.length, 2, 'Different ids may intentionally share one workspace config file');
+}
+
+function testWorkspaceSchemaHasIndependentVersionAndNoId(): void {
+  const parsed = parseWorkspaceConfig(workspaceConfig(), {
+    configFilePath: WORKSPACE_CONFIG_A,
+  });
+  assertEqual(parsed.version, 1, 'Workspace config should use its own version 1 schema');
+  assertEqual(parsed.rootDir, ROOT_DIR, 'Workspace schema should parse runtime fields');
+
+  const versionError = captureConfigError(() =>
+    parseWorkspaceConfig(workspaceConfig({ version: 2 }), {
+      configFilePath: WORKSPACE_CONFIG_A,
+    })
+  );
+  assertEqual(versionError.fieldPath, 'version', 'Workspace version error should use file-local paths');
+  assertEqual(versionError.configFilePath, WORKSPACE_CONFIG_A, 'Workspace errors should point to the workspace file');
+
+  const idError = captureConfigError(() =>
+    parseWorkspaceConfig(workspaceConfig({ id: 'duplicated-id' }), {
+      configFilePath: WORKSPACE_CONFIG_A,
+    })
+  );
+  assertEqual(idError.fieldPath, 'id', 'Workspace id should be rejected as an unknown field');
+}
+
+async function testLoadsOnlySelectedWorkspaceConfig(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(0, { host: '::1' }),
-    workspace(1, { host: '::1' }),
+  await writeJson(WORKSPACE_CONFIG_A, workspaceConfig());
+  await writeJson(CONFIG_FILE, globalConfig([
+    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
   ]));
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
-    workspaceId: 'workspace-1',
+    workspaceId: 'workspace-a',
     env: {},
   });
-  assertEqual(snapshot.host, '::1', 'IPv6 hosts should load and duplicate hosts should be allowed');
-
-  const invalidHosts = [
-    { value: 42, message: 'workspaces[0].host must be a string' },
-    { value: '', message: 'workspaces[0].host must be a non-empty string' },
-    { value: '   ', message: 'workspaces[0].host must be a non-empty string' },
-    {
-      value: ' 127.0.0.1',
-      message: 'workspaces[0].host must not contain leading or trailing whitespace',
-    },
-    {
-      value: '127.0.0.1 ',
-      message: 'workspaces[0].host must not contain leading or trailing whitespace',
-    },
-    { value: 'localhost', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
-    { value: 'example.com', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
-    { value: '127.0.0.1:3100', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
-    { value: '999.1.1.1', message: 'workspaces[0].host must be an IPv4 or IPv6 address' },
-  ] as const;
-
-  for (const invalidHost of invalidHosts) {
-    await expectValidationError(
-      globalConfig([workspace(0, { host: invalidHost.value })]),
-      invalidHost.message,
-      'workspaces[0].host',
-    );
-  }
-}
-
-async function testLineEndingValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: undefined })]),
-    'workspaces[0].lineEnding is required',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: 42 })]),
-    'workspaces[0].lineEnding must be a string',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: '' })]),
-    'workspaces[0].lineEnding must be a non-empty string',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: '   ' })]),
-    'workspaces[0].lineEnding must be a non-empty string',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: ' lf' })]),
-    'workspaces[0].lineEnding must not contain leading or trailing whitespace',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: 'lf ' })]),
-    'workspaces[0].lineEnding must not contain leading or trailing whitespace',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: 'LF' })]),
-    'workspaces[0].lineEnding must be one of',
-    'workspaces[0].lineEnding',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { lineEnding: 'native' })]),
-    'workspaces[0].lineEnding must be one of',
-    'workspaces[0].lineEnding',
+  assertEqual(snapshot.workspaceId, 'workspace-a', 'Selected valid workspace should load');
+  assertEqual(
+    snapshot.workspaceConfigFilePath,
+    WORKSPACE_CONFIG_A,
+    'Snapshot should identify the selected workspace config source',
   );
 }
 
-async function testOtherRootDirsPathValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: 'not-array' })]),
-    'workspaces[0].otherRootDirs must be an array of non-empty strings',
-    'workspaces[0].otherRootDirs',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: [WORKSPACE_B_DIR, 42] })]),
-    'workspaces[0].otherRootDirs[1] must be a string',
-    'workspaces[0].otherRootDirs[1]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: ['   '] })]),
-    'workspaces[0].otherRootDirs[0] must be a non-empty string',
-    'workspaces[0].otherRootDirs[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: [` ${WORKSPACE_B_DIR}`] })]),
-    'workspaces[0].otherRootDirs[0] must not contain leading or trailing whitespace',
-    'workspaces[0].otherRootDirs[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: [`${WORKSPACE_B_DIR} `] })]),
-    'workspaces[0].otherRootDirs[0] must not contain leading or trailing whitespace',
-    'workspaces[0].otherRootDirs[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: ['relative-other-root'] })]),
-    'workspaces[0].otherRootDirs[0] must be an absolute local path',
-    'workspaces[0].otherRootDirs[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: [path.join(FIXTURES_DIR, 'missing-other-root')] })]),
-    'workspaces[0].otherRootDirs[0] does not exist or cannot be accessed',
-    'workspaces[0].otherRootDirs[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { otherRootDirs: [NOT_DIRECTORY_PATH] })]),
-    'workspaces[0].otherRootDirs[0] must point to an existing directory',
-    'workspaces[0].otherRootDirs[0]',
-  );
-}
-
-async function testLogsDirShapeAndPathValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: '' })]),
-    'workspaces[0].logsDir must be a non-empty string',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: '   ' })]),
-    'workspaces[0].logsDir must be a non-empty string',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: 42 })]),
-    'workspaces[0].logsDir must be a string',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: ` ${LOGS_DIR}` })]),
-    'workspaces[0].logsDir must not contain leading or trailing whitespace',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: `${LOGS_DIR} ` })]),
-    'workspaces[0].logsDir must not contain leading or trailing whitespace',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: 'relative/logs' })]),
-    'workspaces[0].logsDir must be an absolute local path',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: path.join(FIXTURES_DIR, 'missing-logs') })]),
-    'workspaces[0].logsDir does not exist or cannot be accessed',
-    'workspaces[0].logsDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { logsDir: NOT_DIRECTORY_PATH })]),
-    'workspaces[0].logsDir must point to an existing directory',
-    'workspaces[0].logsDir',
-  );
-
-  if (process.platform !== 'win32') {
-    return;
-  }
-
-  const unsupportedWindowsPaths = [
-    { name: 'UNC slash path', value: '//server/share/logs' },
-    { name: 'UNC backslash path', value: '\\\\server\\share\\logs' },
-    { name: 'namespace path', value: '\\\\?\\E:\\Logs' },
-    { name: 'device namespace path', value: '\\\\.\\C:\\Logs' },
-    { name: 'drive-relative path', value: 'C:logs' },
-    { name: 'rooted without drive slash path', value: '/logs' },
-    { name: 'rooted without drive backslash path', value: '\\logs' },
-    { name: 'tilde path', value: '~/logs' },
-  ];
-
-  for (const testCase of unsupportedWindowsPaths) {
-    await expectValidationError(
-      globalConfig([workspace(0, { logsDir: testCase.value })]),
-      testCase.name === 'tilde path'
-        ? 'workspaces[0].logsDir must be an absolute local path and cannot use ~ expansion'
-        : 'workspaces[0].logsDir must be an absolute local path',
-      'workspaces[0].logsDir',
-    );
-  }
-}
-
-async function testAndroidCompletenessAndStrictIntegers(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { android: 'enabled' })]),
-    'workspaces[0].android must be a JSON object when configured',
-    'workspaces[0].android',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-      },
-    })]),
-    'workspaces[0].android.javaHome is required',
-    'workspaces[0].android.javaHome',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: 'relative-android-project',
-        javaHome: ANDROID_JAVA_HOME,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-      },
-    })]),
-    'workspaces[0].android.workspaceRoot must be an absolute local path',
-    'workspaces[0].android.workspaceRoot',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: `${ANDROID_WORKSPACE_ROOT} `,
-        javaHome: ANDROID_JAVA_HOME,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-      },
-    })]),
-    'workspaces[0].android.workspaceRoot must not contain leading or trailing whitespace',
-    'workspaces[0].android.workspaceRoot',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        javaHome: path.join(FIXTURES_DIR, 'missing-jbr'),
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-      },
-    })]),
-    'workspaces[0].android.javaHome does not exist or cannot be accessed',
-    'workspaces[0].android.javaHome',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, {
-      android: {
-        workspaceRoot: ANDROID_WORKSPACE_ROOT,
-        javaHome: NOT_DIRECTORY_PATH,
-        buildTimeoutMs: 900000,
-        maxErrorBlockChars: 2500,
-        maxLogTailChars: 4000,
-      },
-    })]),
-    'workspaces[0].android.javaHome must point to an existing directory',
-    'workspaces[0].android.javaHome',
-  );
-
-  const invalidNumericValues: Record<typeof ANDROID_NUMERIC_FIELDS[number], unknown> = {
-    buildTimeoutMs: '900000',
-    maxErrorBlockChars: 1.5,
-    maxLogTailChars: 0,
-  };
-  for (const field of ANDROID_NUMERIC_FIELDS) {
-    await expectValidationError(
-      globalConfig([workspace(0, {
-        android: {
-          workspaceRoot: ANDROID_WORKSPACE_ROOT,
-          javaHome: ANDROID_JAVA_HOME,
-          buildTimeoutMs: 900000,
-          maxErrorBlockChars: 2500,
-          maxLogTailChars: 4000,
-          [field]: invalidNumericValues[field],
-        },
-      })]),
-      `workspaces[0].android.${field} must be a JSON number positive integer`,
-      `workspaces[0].android.${field}`,
-    );
-  }
-}
-
-async function testEnvOverridesSelectorValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: [], legacy: true } })]),
-    'Unknown config field workspaces[0].envOverrides.legacy',
-    'workspaces[0].envOverrides.legacy',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: 'lineEnding' })]),
-    'workspaces[0].envOverrides must be a JSON object when configured',
-    'workspaces[0].envOverrides',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: {} })]),
-    'workspaces[0].envOverrides.allowedFields is required',
-    'workspaces[0].envOverrides.allowedFields',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: 'lineEnding' } })]),
-    'workspaces[0].envOverrides.allowedFields must be an array of non-empty strings',
-    'workspaces[0].envOverrides.allowedFields',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: [42] } })]),
-    'workspaces[0].envOverrides.allowedFields[0] must be a string',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: [''] } })]),
-    'workspaces[0].envOverrides.allowedFields[0] must be a non-empty string',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['   '] } })]),
-    'workspaces[0].envOverrides.allowedFields[0] must be a non-empty string',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: [' logsDir'] } })]),
-    'workspaces[0].envOverrides.allowedFields[0] must not contain leading or trailing whitespace',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['logsDir '] } })]),
-    'workspaces[0].envOverrides.allowedFields[0] must not contain leading or trailing whitespace',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['lineEnding', 'lineEnding'] } })]),
-    'envOverrides.allowedFields contains duplicate field "lineEnding"',
-    'workspaces[0].envOverrides.allowedFields[1]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['rootDir'] } })]),
-    'envOverrides.allowedFields contains forbidden field "rootDir"',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['host'] } })]),
-    'envOverrides.allowedFields contains forbidden field "host"',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['android.unknown'] } })]),
-    'envOverrides.allowedFields contains unknown field "android.unknown"',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['MCP_LOGS_DIR'] } })]),
-    'envOverrides.allowedFields contains environment variable name "MCP_LOGS_DIR"',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['MCP_HOST'] } })]),
-    'envOverrides.allowedFields contains environment variable name "MCP_HOST"',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { envOverrides: { allowedFields: ['android.javaHome'] } })]),
-    'android is not configured',
-    'workspaces[0].envOverrides.allowedFields[0]',
-  );
-
+async function testAllowsRootAndPortReuseAcrossWorkspaceFiles(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([workspace(0, { envOverrides: { allowedFields: [] } })]));
-  const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-0', env: {} });
-  assertEqual(snapshot.workspaceId, 'workspace-0', 'Empty allowedFields should be legal and disable env override');
-}
-
-async function testUnselectedWorkspaceInvalidAllowlistStillFails(): Promise<void> {
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(0),
-    workspace(1, { envOverrides: { allowedFields: ['android.javaHome'] } }),
+  await writeJson(WORKSPACE_CONFIG_A, workspaceConfig());
+  await writeJson(WORKSPACE_CONFIG_B, workspaceConfig());
+  await writeJson(CONFIG_FILE, globalConfig([
+    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
   ]));
 
-  const error = captureConfigError(() =>
-    loadRuntimeConfig({
-      homeDir: HOME_DIR,
-      workspaceId: 'workspace-0',
-      env: {},
-    })
-  );
-
-  assertEqual(error.fieldPath, 'workspaces[1].envOverrides.allowedFields[0]', 'Schema validation should cover unselected workspace allowlists');
-  assertIncludes(error.message, 'android is not configured', 'Android allowlist base config should be checked before workspace selection finishes');
+  const first = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} });
+  const second = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-b', env: {} });
+  assertEqual(first.rootDir, second.rootDir, 'Workspace roots may be reused globally');
+  assertEqual(first.port, second.port, 'Workspace ports may be reused globally');
 }
 
-async function testRootDirPathValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: 42 })]),
-    'workspaces[0].rootDir must be a string',
-    'workspaces[0].rootDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: '' })]),
-    'workspaces[0].rootDir must be a non-empty string',
-    'workspaces[0].rootDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: ` ${WORKSPACE_A_DIR}` })]),
-    'workspaces[0].rootDir must not contain leading or trailing whitespace',
-    'workspaces[0].rootDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: `${WORKSPACE_A_DIR} ` })]),
-    'workspaces[0].rootDir must not contain leading or trailing whitespace',
-    'workspaces[0].rootDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: 'relative/root' })]),
-    'workspaces[0].rootDir must be an absolute local path',
-    'workspaces[0].rootDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: path.join(FIXTURES_DIR, 'missing') })]),
-    'workspaces[0].rootDir does not exist or cannot be accessed',
-    'workspaces[0].rootDir',
-  );
-  await expectValidationError(
-    globalConfig([workspace(0, { rootDir: NOT_DIRECTORY_PATH })]),
-    'workspaces[0].rootDir must point to an existing directory',
-    'workspaces[0].rootDir',
-  );
-}
-
-async function testUnselectedWorkspaceInvalidRootDirStillFails(): Promise<void> {
+async function testSelectedWorkspaceFailuresPointToWorkspaceFile(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(0),
-    workspace(1, { rootDir: path.join(FIXTURES_DIR, 'missing-unselected') }),
+  await writeJson(WORKSPACE_CONFIG_A, workspaceConfig({ rootDir: 'relative' }));
+  await writeJson(CONFIG_FILE, globalConfig());
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} })
+  );
+  assertEqual(error.configFilePath, WORKSPACE_CONFIG_A, 'Selected workspace validation should point to its file');
+  assertEqual(error.fieldPath, 'rootDir', 'Selected workspace errors should use file-local field paths');
+}
+
+async function testSelectedWorkspaceFileReadFailuresAreStructured(): Promise<void> {
+  await resetFixtures();
+  await writeJson(CONFIG_FILE, globalConfig([
+    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
   ]));
 
-  const error = captureConfigError(() =>
-    loadRuntimeConfig({
-      homeDir: HOME_DIR,
-      workspaceId: 'workspace-0',
-      env: {},
-    })
+  const missing = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} })
   );
+  assertEqual(missing.code, 'config_file_not_found', 'Missing selected workspace file should have a precise code');
+  assertEqual(missing.configFilePath, WORKSPACE_CONFIG_A, 'Missing workspace error should point to the reference target');
 
-  assertEqual(error.fieldPath, 'workspaces[1].rootDir', 'Global root validation should identify the invalid unselected workspace root');
-  assertIncludes(error.message, 'workspaces[1].rootDir does not exist', 'Global validation should run before explicit workspace selection completes');
-}
-
-async function testUnselectedWorkspaceInvalidLogsDirStillFails(): Promise<void> {
-  await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace(0),
-    workspace(1, { logsDir: 'relative-unselected-logs' }),
-  ]));
-
-  const error = captureConfigError(() =>
-    loadRuntimeConfig({
-      homeDir: HOME_DIR,
-      workspaceId: 'workspace-0',
-      env: {},
-    })
+  await fs.writeFile(WORKSPACE_CONFIG_A, Buffer.from([0xc3, 0x28]));
+  const invalidUtf8 = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} })
   );
-
-  assertEqual(error.fieldPath, 'workspaces[1].logsDir', 'Global schema validation should identify the invalid unselected workspace logsDir');
-  assertIncludes(error.message, 'workspaces[1].logsDir must be an absolute local path', 'Global schema validation should run before explicit workspace selection completes');
-}
-
-async function testRootDirLexicalDuplicateAndNestedValidation(): Promise<void> {
-  await expectValidationError(
-    globalConfig([
-      workspace(0),
-      workspace(1, { rootDir: `${WORKSPACE_A_DIR}${path.sep}` }),
-    ]),
-    'unique at the lexical path layer',
-  );
-  await expectValidationError(
-    globalConfig([
-      workspace(0),
-      workspace(1, { rootDir: NESTED_A_DIR }),
-    ]),
-    'must not be nested at the lexical path layer',
-  );
-
-  if (process.platform === 'win32') {
-    await expectValidationError(
-      globalConfig([
-        workspace(0, { rootDir: WORKSPACE_A_DIR.toUpperCase() }),
-        workspace(1, { rootDir: WORKSPACE_A_DIR.toLowerCase() }),
-      ]),
-      'unique at the lexical path layer',
-    );
-  }
-}
-
-async function testRootDirRealpathDuplicateValidation(): Promise<void> {
-  await resetFixtures();
-  const linkPath = path.join(FIXTURES_DIR, 'link-to-workspace-a');
-  const linkCreated = await createDirectoryLink(linkPath, WORKSPACE_A_DIR);
-  if (!linkCreated) return;
-
-  try {
-    await writeGlobalConfig(globalConfig([
-      workspace(0),
-      workspace(1, { rootDir: linkPath }),
-    ]));
-
-    const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
-    assertIncludes(error.message, 'unique at the real path layer', 'Realpath duplicate roots should be rejected');
-  } finally {
-    await removeLinkIfExists(linkPath);
-  }
-}
-
-async function testRootDirRealpathNestedValidation(): Promise<void> {
-  await resetFixtures();
-  const linkPath = path.join(FIXTURES_DIR, 'link-to-nested-a');
-  const linkCreated = await createDirectoryLink(linkPath, NESTED_A_DIR);
-  if (!linkCreated) return;
-
-  try {
-    await writeGlobalConfig(globalConfig([
-      workspace(0),
-      workspace(1, { rootDir: linkPath }),
-    ]));
-
-    const error = captureConfigError(() => loadRuntimeConfig({ homeDir: HOME_DIR, env: {} }));
-    assertIncludes(error.message, 'must not be nested at the real path layer', 'Realpath nested roots should be rejected');
-  } finally {
-    await removeLinkIfExists(linkPath);
-  }
+  assertEqual(invalidUtf8.code, 'config_file_read_failed', 'Invalid workspace UTF-8 should fail during file reading');
+  assertEqual(invalidUtf8.configFilePath, WORKSPACE_CONFIG_A, 'UTF-8 error should point to the selected workspace file');
+  assertIncludes(invalidUtf8.message, 'valid UTF-8', 'Workspace config decoding must fail closed');
 }
 
 async function main(): Promise<void> {
+  await resetFixtures();
   await runTestSuite({
-    title: 'Testing global config schema validation',
+    title: 'Testing global and workspace config schemas',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'valid global config loads explicit workspace', run: testValidGlobalConfigLoadsExplicitWorkspace },
-      { name: 'path-like fields allow internal spaces', run: testPathLikeFieldsAllowInternalSpaces },
-      { name: 'complete Android config is accepted', run: testCompleteAndroidConfigIsAccepted },
-      { name: 'version and workspaces are required', run: testVersionAndWorkspacesAreRequired },
-      { name: 'unknown fields are rejected', run: testUnknownFieldsAreRejected },
-      { name: 'workspace id validation', run: testWorkspaceIdValidation },
-      { name: 'workspace port validation', run: testWorkspacePortValidation },
-      { name: 'workspace host validation', run: testWorkspaceHostValidation },
-      { name: 'lineEnding validation', run: testLineEndingValidation },
-      { name: 'otherRootDirs path validation', run: testOtherRootDirsPathValidation },
-      { name: 'logsDir shape and path validation', run: testLogsDirShapeAndPathValidation },
-      { name: 'Android completeness and strict integers', run: testAndroidCompletenessAndStrictIntegers },
-      { name: 'envOverrides selector validation', run: testEnvOverridesSelectorValidation },
-      { name: 'unselected workspace invalid allowlist still fails', run: testUnselectedWorkspaceInvalidAllowlistStillFails },
-      { name: 'rootDir path validation', run: testRootDirPathValidation },
-      { name: 'unselected workspace invalid rootDir still fails', run: testUnselectedWorkspaceInvalidRootDirStillFails },
-      { name: 'unselected workspace invalid logsDir still fails', run: testUnselectedWorkspaceInvalidLogsDirStillFails },
-      { name: 'rootDir lexical duplicate and nested validation', run: testRootDirLexicalDuplicateAndNestedValidation },
-      { name: 'rootDir realpath duplicate validation', run: testRootDirRealpathDuplicateValidation },
-      { name: 'rootDir realpath nested validation', run: testRootDirRealpathNestedValidation },
+      { name: 'accepts version 2 workspace references', run: testAcceptsVersionTwoWorkspaceReferences },
+      { name: 'rejects legacy and malformed global schemas', run: testRejectsLegacyAndMalformedGlobalSchemas },
+      { name: 'validates reference ids', run: testValidatesReferenceIds },
+      { name: 'validates configFile lexically without reading it', run: testValidatesConfigFileLexicallyWithoutReadingIt },
+      { name: 'allows duplicate configFile references', run: testAllowsDuplicateConfigFileReferences },
+      { name: 'workspace schema has independent version and no id', run: testWorkspaceSchemaHasIndependentVersionAndNoId },
+      { name: 'loads only selected workspace config', run: testLoadsOnlySelectedWorkspaceConfig },
+      { name: 'allows root and port reuse across workspace files', run: testAllowsRootAndPortReuseAcrossWorkspaceFiles },
+      { name: 'selected workspace failures point to workspace file', run: testSelectedWorkspaceFailuresPointToWorkspaceFile },
+      { name: 'selected workspace file read failures are structured', run: testSelectedWorkspaceFileReadFailuresAreStructured },
     ],
   });
 }

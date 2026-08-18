@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "workspaces": [
+    {
+      "id": "your-workspace",
+      "configFile": "C:/Users/username/.custom-mcp/workspaces/your-workspace.json"
+    }
+  ]
+}

@@ -50,7 +50,7 @@ HTTP server 开始监听后，`src/index.ts` 输出 selected workspace 的启动
         - C:\Policies\additional.deny
 ```
 
-策略文件路径保持配置顺序和重复引用，不排序或去重。日志不输出策略文件内容、matcher 内容或 symbolic link 的 real target。所有 allowed root 均未配置 ignore / deny 文件时，摘要输出 `File access policies: none`。所有 workspace 的策略仍在 workspace 选择前验证和编译，但启动摘要只包含 selected workspace。
+策略文件路径保持配置顺序和重复引用，不排序或去重。日志不输出策略文件内容、matcher 内容或 symbolic link 的 real target。所有 allowed root 均未配置 ignore / deny 文件时，摘要输出 `File access policies: none`。启动时只读取和编译 selected workspace 的策略，启动摘要也只包含该 workspace。
 
 ### Session 与 Call ID
 

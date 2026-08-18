@@ -26,7 +26,7 @@
 
 配置加载阶段分两层处理路径：
 
-1. `parseGlobalConfig()` 通过 `src/config/path-policy.ts` 校验所有 workspace 的 path-like 配置字段。该层负责 typed string whitespace、本地绝对路径形态、Windows drive-absolute 要求、UNC / namespace / drive-relative / rooted-without-drive / `~` 拒绝，以及路径真实存在且为目录。
+1. `parseGlobalConfig()` 只校验全局索引中所有 `configFile` 的本地绝对路径形态；选中 reference 后，`parseWorkspaceConfig()` 通过 `src/config/path-policy.ts` 校验 selected workspace 的 path-like 配置字段。该层负责 typed string whitespace、本地绝对路径形态、Windows drive-absolute 要求、UNC / namespace / drive-relative / rooted-without-drive / `~` 拒绝，以及 workspace directory 字段真实存在且为目录。
 2. `buildRuntimeConfigSnapshot()` 对 selected workspace 的 `rootDir + otherRootDirs` 创建并校验 `PathSafetyContext`。该层只把文件工具 allowed roots 交给 path safety；`logsDir` 和 Android paths 只写入 snapshot runtime path，不进入 `PathSafetyContext`。
 
 `PathSafetyContext` 的不变量：

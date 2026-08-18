@@ -1,7 +1,7 @@
 import { readWorkspaceIdToken } from './config/value-policy.js';
 
 export interface CliOptions {
-  readonly workspaceId?: string;
+  readonly workspaceId: string;
 }
 
 export class CliError extends Error {
@@ -28,21 +28,20 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
       continue;
     }
 
-    if (arg.startsWith('--workspace=')) {
-      workspaceId = readWorkspaceIdValue(
-        arg.slice('--workspace='.length),
-        workspaceId,
-      );
-      continue;
-    }
-
     throw new CliError(
       `Unknown argument: ${arg}`,
-      'Supported arguments: --workspace <id> or --workspace=<id>.',
+      'Supported arguments: --workspace <id>.',
     );
   }
 
-  return workspaceId === undefined ? {} : { workspaceId };
+  if (workspaceId === undefined) {
+    throw new CliError(
+      '--workspace <id> is required.',
+      'Pass exactly one workspace id from the global config using --workspace <id>.',
+    );
+  }
+
+  return { workspaceId };
 }
 
 function readWorkspaceIdValue(
@@ -52,7 +51,7 @@ function readWorkspaceIdValue(
   if (value === undefined || value.startsWith('--')) {
     throw new CliError(
       '--workspace requires a non-empty workspace id.',
-      'Use --workspace <id> or --workspace=<id> to select a workspace from the global config.',
+      'Use --workspace <id> to select a workspace from the global config.',
     );
   }
 
