@@ -88,13 +88,13 @@ Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny
 
 ## `tools`
 
-`tools` 必须且只能配置 `allowed` 或 `disabled` 之一：
+`tools` 必须且只能配置 `enabled` 或 `disabled` 之一：
 
 - 缺省时归一化为 `{ mode: "all" }`。
-- `allowed: []` 表示不暴露工具；`disabled: []` 表示暴露全部 canonical 工具。
+- `enabled: []` 表示不暴露工具；`disabled: []` 表示暴露全部 canonical 工具。
 - 名称必须精确匹配 `src/tools/names.ts` 中的 canonical tool name；未知或重复名称无效。
 - selected workspace 的策略进入 runtime snapshot 并随其 deep-freeze；未选中 workspace 文件中的工具策略不会在本次启动时验证。
-- 未配置 `tools` 或使用 `disabled` 时，所有未被禁用的 canonical 工具都暴露；使用 `allowed` 时，只有明确列出的名称暴露。
+- 未配置 `tools` 或使用 `disabled` 时，所有未被禁用的 canonical 工具都暴露；使用 `enabled` 时，只有明确列出的名称暴露。
 
 workspace tool service 对 `tools/list` 和 `tools/call` 应用同一暴露边界。registry 与 service 的维护方式见 [工具开发](../TOOLS.md)。
 

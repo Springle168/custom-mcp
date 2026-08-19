@@ -47,7 +47,7 @@ export function createWorkspaceToolService(
     }
 
     const configured = configuredNames.has(tool.definition.name);
-    return exposure.mode === 'allow' ? configured : !configured;
+    return exposure.mode === 'enable' ? configured : !configured;
   });
   const definitions = Object.freeze(filteredRegistry.map((tool) => tool.definition));
   const routeMap = new Map<string, MCPTool['handler']>(

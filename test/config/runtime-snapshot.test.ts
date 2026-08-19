@@ -570,7 +570,7 @@ async function testToolExposureSnapshotCloneAndOwnership(): Promise<void> {
   assert(Object.isFrozen(allSnapshot.toolExposure), 'All exposure clone should be frozen');
   assert(!Object.isFrozen(allInput), 'Snapshot construction should not freeze the caller all exposure object');
 
-  for (const mode of ['allow', 'disable'] as const) {
+  for (const mode of ['enable', 'disable'] as const) {
     const sourceNames: ToolName[] = ['read_file'];
     const sourceExposure: RuntimeToolExposure = { mode, names: sourceNames };
     const snapshot = createSnapshot(sourceExposure);
@@ -595,7 +595,7 @@ async function testToolExposureSnapshotCloneAndOwnership(): Promise<void> {
 async function testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig({
-    tools: { allowed: ['read_file'] },
+    tools: { enabled: ['read_file'] },
   }));
 
   const loaded = loadRuntimeConfigWithIdentity({

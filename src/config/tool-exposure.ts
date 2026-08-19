@@ -4,7 +4,7 @@ import { isToolName, TOOL_NAMES, type ToolName } from '../tools/names.js';
 
 export type RuntimeToolExposure =
   | { readonly mode: 'all' }
-  | { readonly mode: 'allow'; readonly names: readonly ToolName[] }
+  | { readonly mode: 'enable'; readonly names: readonly ToolName[] }
   | { readonly mode: 'disable'; readonly names: readonly ToolName[] };
 
 export interface ReadOptionalToolExposureConfigOptions {
@@ -12,7 +12,7 @@ export interface ReadOptionalToolExposureConfigOptions {
   readonly fieldPath: string;
 }
 
-const TOOL_EXPOSURE_FIELDS = new Set(['allowed', 'disabled']);
+const TOOL_EXPOSURE_FIELDS = new Set(['enabled', 'disabled']);
 
 export function readOptionalToolExposureConfig(
   value: unknown,
@@ -30,22 +30,22 @@ export function readOptionalToolExposureConfig(
   for (const key of Object.keys(rawExposure)) {
     if (!TOOL_EXPOSURE_FIELDS.has(key)) {
       const fieldPath = `${options.fieldPath}.${key}`;
-      fail(options, fieldPath, `Unknown config field ${fieldPath}. Only allowed and disabled are supported.`);
+      fail(options, fieldPath, `Unknown config field ${fieldPath}. Only enabled and disabled are supported.`);
     }
   }
 
-  const hasAllowed = hasOwn(rawExposure, 'allowed');
+  const hasEnabled = hasOwn(rawExposure, 'enabled');
   const hasDisabled = hasOwn(rawExposure, 'disabled');
-  if (hasAllowed === hasDisabled) {
+  if (hasEnabled === hasDisabled) {
     fail(
       options,
       options.fieldPath,
-      `${options.fieldPath} must configure exactly one of allowed or disabled. Configure only allowed or only disabled.`,
+      `${options.fieldPath} must configure exactly one of enabled or disabled. Configure only enabled or only disabled.`,
     );
   }
 
-  const mode = hasAllowed ? 'allow' : 'disable';
-  const key = hasAllowed ? 'allowed' : 'disabled';
+  const mode = hasEnabled ? 'enable' : 'disable';
+  const key = hasEnabled ? 'enabled' : 'disabled';
   const fieldPath = `${options.fieldPath}.${key}`;
   const rawNames = rawExposure[key];
   if (!Array.isArray(rawNames)) {

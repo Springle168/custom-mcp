@@ -41,15 +41,15 @@ function testAllModeReturnsCanonicalRegistry(): void {
   );
 }
 
-function testAllowModeFiltersAndKeepsCanonicalOrder(): void {
+function testEnableModeFiltersAndKeepsCanonicalOrder(): void {
   const service = createWorkspaceToolService({
-    mode: 'allow',
+    mode: 'enable',
     names: ['ask_user', 'read_file', 'replace_text'],
   });
   assertEqual(
     definitionNames(service.getDefinitions()).join(','),
     'replace_text,read_file,ask_user',
-    'Allow mode should filter without using config order as display order',
+    'Enable mode should filter without using config order as display order',
   );
 }
 
@@ -66,10 +66,10 @@ function testDisableModeFiltersAndKeepsCanonicalOrder(): void {
 }
 
 function testEmptyListsHaveDefinedSemantics(): void {
-  const allowNone = createWorkspaceToolService({ mode: 'allow', names: [] });
+  const enableNone = createWorkspaceToolService({ mode: 'enable', names: [] });
   const disableNone = createWorkspaceToolService({ mode: 'disable', names: [] });
 
-  assertEqual(allowNone.getDefinitions().length, 0, 'Empty allowlist should expose no tools');
+  assertEqual(enableNone.getDefinitions().length, 0, 'Empty enabled list should expose no tools');
   assertEqual(
     definitionNames(disableNone.getDefinitions()).join(','),
     TOOL_NAMES.join(','),
@@ -77,9 +77,9 @@ function testEmptyListsHaveDefinedSemantics(): void {
   );
 }
 
-async function testAllowedToolReachesHandler(): Promise<void> {
+async function testEnabledToolReachesHandler(): Promise<void> {
   const service = createWorkspaceToolService({
-    mode: 'allow',
+    mode: 'enable',
     names: ['android.assembleDebug'],
   });
   const result = await service.routeToolCall('android.assembleDebug', {}, createContext());
@@ -88,13 +88,13 @@ async function testAllowedToolReachesHandler(): Promise<void> {
   assertIncludes(
     getResultText(result),
     'Android build config is not configured',
-    'Allowlisted Android tool should reach its existing handler',
+    'Enabled Android tool should reach its existing handler',
   );
 }
 
 async function testExcludedAndUnknownToolsShareUnknownError(): Promise<void> {
   const service = createWorkspaceToolService({
-    mode: 'allow',
+    mode: 'enable',
     names: ['read_file'],
   });
 
@@ -164,10 +164,10 @@ async function main(): Promise<void> {
     tests: [
       { name: 'registry matches canonical names', run: testRegistryMatchesCanonicalNames },
       { name: 'all mode returns canonical registry', run: testAllModeReturnsCanonicalRegistry },
-      { name: 'allow mode filters in canonical order', run: testAllowModeFiltersAndKeepsCanonicalOrder },
+      { name: 'enable mode filters in canonical order', run: testEnableModeFiltersAndKeepsCanonicalOrder },
       { name: 'disable mode filters in canonical order', run: testDisableModeFiltersAndKeepsCanonicalOrder },
       { name: 'empty lists have defined semantics', run: testEmptyListsHaveDefinedSemantics },
-      { name: 'allowed tool reaches handler', run: testAllowedToolReachesHandler },
+      { name: 'enabled tool reaches handler', run: testEnabledToolReachesHandler },
       { name: 'excluded and unknown tools share error', run: testExcludedAndUnknownToolsShareUnknownError },
       { name: 'disabled Android tool does not reach handler', run: testDisabledAndroidToolDoesNotReachHandler },
       { name: 'disabled ask_user does not create pending question', run: testDisabledAskUserDoesNotCreatePendingQuestion },

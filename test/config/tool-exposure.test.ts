@@ -109,31 +109,31 @@ async function testMissingToolsDefaultsToAll(): Promise<void> {
   assertExposure(snapshot.toolExposure, 'all');
 }
 
-async function testAllowedAndDisabledParseIntoSnapshot(): Promise<void> {
+async function testEnabledAndDisabledParseIntoSnapshot(): Promise<void> {
   await writeGlobalConfig(globalConfig([
     workspace('workspace-a', WORKSPACE_A_DIR, 4901, {
-      tools: { allowed: ['read_file', 'ask_user'] },
+      tools: { enabled: ['read_file', 'ask_user'] },
     }),
     workspace('workspace-b', WORKSPACE_B_DIR, 4902, {
       tools: { disabled: ['write_file', 'replace_text'] },
     }),
   ]));
 
-  const allowed = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} });
+  const enabled = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} });
   const disabled = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-b', env: {} });
-  assertExposure(allowed.toolExposure, 'allow', ['read_file', 'ask_user']);
+  assertExposure(enabled.toolExposure, 'enable', ['read_file', 'ask_user']);
   assertExposure(disabled.toolExposure, 'disable', ['write_file', 'replace_text']);
 }
 
 async function testEmptyArraysAreValid(): Promise<void> {
   await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4901, { tools: { allowed: [] } }),
+    workspace('workspace-a', WORKSPACE_A_DIR, 4901, { tools: { enabled: [] } }),
     workspace('workspace-b', WORKSPACE_B_DIR, 4902, { tools: { disabled: [] } }),
   ]));
 
-  const allowed = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} });
+  const enabled = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} });
   const disabled = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-b', env: {} });
-  assertExposure(allowed.toolExposure, 'allow');
+  assertExposure(enabled.toolExposure, 'enable');
   assertExposure(disabled.toolExposure, 'disable');
 }
 
@@ -148,28 +148,37 @@ async function testToolsMustBeObject(): Promise<void> {
 }
 
 async function testExactlyOneConstraint(): Promise<void> {
-  for (const tools of [{}, { allowed: ['read_file'], disabled: ['write_file'] }]) {
+  for (const tools of [{}, { enabled: ['read_file'], disabled: ['write_file'] }]) {
     const error = await expectToolExposureError({
       tools,
       expectedFieldPath: 'tools',
-      expectedMessage: 'exactly one of allowed or disabled',
+      expectedMessage: 'exactly one of enabled or disabled',
     });
-    assertIncludes(error.message, 'only allowed or only disabled', 'Exactly-one error should state the valid alternatives');
+    assertIncludes(error.message, 'only enabled or only disabled', 'Exactly-one error should state the valid alternatives');
   }
 }
 
 async function testUnknownToolObjectFieldFailsFirst(): Promise<void> {
   await expectToolExposureError({
-    tools: { foo: [], allowed: ['read_file'] },
+    tools: { foo: [], enabled: ['read_file'] },
     expectedFieldPath: 'tools.foo',
     expectedMessage: 'Unknown config field',
   });
 }
 
+async function testLegacyAllowedFieldIsRejected(): Promise<void> {
+  const error = await expectToolExposureError({
+    tools: { allowed: ['read_file'] },
+    expectedFieldPath: 'tools.allowed',
+    expectedMessage: 'Unknown config field',
+  });
+  assertIncludes(error.message, 'Only enabled and disabled are supported', 'Legacy allowed field should name the supported fields');
+}
+
 async function testSelectedListMustBeArray(): Promise<void> {
   await expectToolExposureError({
-    tools: { allowed: 'read_file' },
-    expectedFieldPath: 'tools.allowed',
+    tools: { enabled: 'read_file' },
+    expectedFieldPath: 'tools.enabled',
     expectedMessage: 'must be an array',
   });
   await expectToolExposureError({
@@ -190,8 +199,8 @@ async function testEntryTypedStringValidation(): Promise<void> {
 
   for (const testCase of cases) {
     await expectToolExposureError({
-      tools: { allowed: [testCase.value] },
-      expectedFieldPath: 'tools.allowed[0]',
+      tools: { enabled: [testCase.value] },
+      expectedFieldPath: 'tools.enabled[0]',
       expectedMessage: testCase.message,
     });
   }
@@ -200,8 +209,8 @@ async function testEntryTypedStringValidation(): Promise<void> {
 async function testUnknownToolNamesReportCanonicalDirectory(): Promise<void> {
   for (const name of ['READ_FILE', 'android_assembleDebug', 'mcp__custom_mcp__android.assembleDebug']) {
     const error = await expectToolExposureError({
-      tools: { allowed: [name] },
-      expectedFieldPath: 'tools.allowed[0]',
+      tools: { enabled: [name] },
+      expectedFieldPath: 'tools.enabled[0]',
       expectedMessage: `Unknown tool name "${name}"`,
     });
     assertIncludes(
@@ -223,21 +232,21 @@ async function testDuplicateUsesSecondEntryPath(): Promise<void> {
 
 async function testEntryValidationIsFailFastInArrayOrder(): Promise<void> {
   await expectToolExposureError({
-    tools: { allowed: ['read_file', 'read_file', 42] },
-    expectedFieldPath: 'tools.allowed[1]',
+    tools: { enabled: ['read_file', 'read_file', 42] },
+    expectedFieldPath: 'tools.enabled[1]',
     expectedMessage: 'Duplicate tool name "read_file"',
   });
   await expectToolExposureError({
-    tools: { allowed: ['read_file', 'unknown_tool', 'read_file'] },
-    expectedFieldPath: 'tools.allowed[1]',
+    tools: { enabled: ['read_file', 'unknown_tool', 'read_file'] },
+    expectedFieldPath: 'tools.enabled[1]',
     expectedMessage: 'Unknown tool name "unknown_tool"',
   });
 }
 
 async function testUnselectedWorkspaceToolsAreNotValidated(): Promise<void> {
   const cases = [
-    { tools: {}, path: 'workspaces[1].tools', message: 'exactly one of allowed or disabled' },
-    { tools: { allowed: ['unknown_tool'] }, path: 'workspaces[1].tools.allowed[0]', message: 'Unknown tool name' },
+    { tools: {}, path: 'workspaces[1].tools', message: 'exactly one of enabled or disabled' },
+    { tools: { enabled: ['unknown_tool'] }, path: 'workspaces[1].tools.enabled[0]', message: 'Unknown tool name' },
     { tools: { disabled: ['read_file', 'read_file'] }, path: 'workspaces[1].tools.disabled[1]', message: 'Duplicate tool name' },
   ];
 
@@ -257,7 +266,7 @@ async function testUnselectedWorkspaceToolsAreNotValidated(): Promise<void> {
 
 async function testOnlySelectedWorkspaceExposureEntersSnapshot(): Promise<void> {
   await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4901, { tools: { allowed: ['read_file'] } }),
+    workspace('workspace-a', WORKSPACE_A_DIR, 4901, { tools: { enabled: ['read_file'] } }),
     workspace('workspace-b', WORKSPACE_B_DIR, 4902, { tools: { disabled: ['ask_user'] } }),
   ]));
 
@@ -269,7 +278,7 @@ async function testLegalEnvOverridesPreserveExposure(): Promise<void> {
   await writeGlobalConfig(globalConfig([
     workspace('workspace-a', WORKSPACE_A_DIR, 4901, {
       lineEnding: 'lf',
-      tools: { allowed: ['read_file', 'ask_user'] },
+      tools: { enabled: ['read_file', 'ask_user'] },
       envOverrides: { allowedFields: ['lineEnding', 'logsDir'] },
     }),
   ]));
@@ -284,11 +293,11 @@ async function testLegalEnvOverridesPreserveExposure(): Promise<void> {
   });
   assertEqual(snapshot.lineEnding, 'crlf', 'Legal lineEnding override should still apply');
   assertEqual(snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Legal logsDir override should still apply');
-  assertExposure(snapshot.toolExposure, 'allow', ['read_file', 'ask_user']);
+  assertExposure(snapshot.toolExposure, 'enable', ['read_file', 'ask_user']);
 }
 
 async function testToolSelectorsAreForbiddenBeforeEnvRead(): Promise<void> {
-  const selectors = ['tools', 'tools.allowed', 'tools.disabled', 'tools.foo', 'tools.allowed.foo'];
+  const selectors = ['tools', 'tools.enabled', 'tools.disabled', 'tools.foo', 'tools.enabled.foo'];
 
   for (const selector of selectors) {
     await writeGlobalConfig(globalConfig([
@@ -319,11 +328,12 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'missing tools defaults to all', run: testMissingToolsDefaultsToAll },
-      { name: 'allowed and disabled parse into snapshots', run: testAllowedAndDisabledParseIntoSnapshot },
+      { name: 'enabled and disabled parse into snapshots', run: testEnabledAndDisabledParseIntoSnapshot },
       { name: 'empty arrays are valid', run: testEmptyArraysAreValid },
       { name: 'tools must be an object', run: testToolsMustBeObject },
       { name: 'tools enforces exactly one list', run: testExactlyOneConstraint },
       { name: 'unknown tools object field fails first', run: testUnknownToolObjectFieldFailsFirst },
+      { name: 'legacy allowed field is rejected', run: testLegacyAllowedFieldIsRejected },
       { name: 'selected list must be an array', run: testSelectedListMustBeArray },
       { name: 'entries use typed string validation', run: testEntryTypedStringValidation },
       { name: 'unknown names report canonical directory', run: testUnknownToolNamesReportCanonicalDirectory },
