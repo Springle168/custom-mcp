@@ -1,8 +1,15 @@
-import type { RuntimeToolExposure } from '../config.js';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type {
+  CompiledBuiltInTool,
+  CompiledWorkspaceToolCatalog,
+} from './catalog.js';
+import { compileInputSchemaValidator } from './input-schema-validator.js';
 import { TOOL_NAMES, type ToolName } from './names.js';
-import { textErrorResult } from './results.js';
-import type { MCPTool, ToolCallResult } from './types.js';
+import type {
+  MCPTool,
+  ToolCallResult,
+  ToolDefinition,
+} from './types.js';
 
 import replaceTool from './replace.js';
 import writeFileTool from './write-file.js';
@@ -23,51 +30,43 @@ const importedTools: readonly MCPTool[] = [
 ];
 
 const registry = buildCanonicalRegistry(importedTools);
+const compiledBuiltInRegistry = Object.freeze(
+  registry.map((tool): CompiledBuiltInTool => {
+    const definition = cloneAndFreezeDefinition(tool.definition);
+    return Object.freeze({
+      definition,
+      implementationValidator: compileInputSchemaValidator(definition.inputSchema),
+      executor: tool.handler,
+    });
+  }),
+);
+const builtInDefinitions = Object.freeze(
+  compiledBuiltInRegistry.map((tool) => tool.definition),
+);
 
 export interface WorkspaceToolService {
-  getDefinitions(): readonly MCPTool['definition'][];
+  getDefinitions(): readonly ToolDefinition[];
   routeToolCall(
     name: string,
-    args: Record<string, unknown>,
+    args: unknown,
     context: ToolRuntimeContext,
   ): Promise<ToolCallResult>;
 }
 
-export function getAllToolDefinitions(): readonly MCPTool['definition'][] {
-  return registry.map((tool) => tool.definition);
+export function getAllToolDefinitions(): readonly ToolDefinition[] {
+  return builtInDefinitions;
+}
+
+export function getCompiledBuiltInTools(): readonly CompiledBuiltInTool[] {
+  return compiledBuiltInRegistry;
 }
 
 export function createWorkspaceToolService(
-  exposure: RuntimeToolExposure,
+  catalog: CompiledWorkspaceToolCatalog,
 ): WorkspaceToolService {
-  const configuredNames = new Set<ToolName>(exposure.mode === 'all' ? [] : exposure.names);
-  const filteredRegistry = registry.filter((tool) => {
-    if (exposure.mode === 'all') {
-      return true;
-    }
-
-    const configured = configuredNames.has(tool.definition.name);
-    return exposure.mode === 'enable' ? configured : !configured;
-  });
-  const definitions = Object.freeze(filteredRegistry.map((tool) => tool.definition));
-  const routeMap = new Map<string, MCPTool['handler']>(
-    filteredRegistry.map((tool) => [tool.definition.name, tool.handler]),
-  );
-
   return Object.freeze({
-    getDefinitions: () => definitions,
-    routeToolCall: async (
-      name: string,
-      args: Record<string, unknown>,
-      context: ToolRuntimeContext,
-    ): Promise<ToolCallResult> => {
-      const handler = routeMap.get(name);
-      if (!handler) {
-        return textErrorResult(`Unknown tool: ${name}`);
-      }
-
-      return handler(args, context);
-    },
+    getDefinitions: () => catalog.definitions,
+    routeToolCall: catalog.routeToolCall,
   });
 }
 
@@ -97,4 +96,42 @@ function buildCanonicalRegistry(tools: readonly MCPTool[]): readonly MCPTool[] {
   }
 
   return Object.freeze(canonicalRegistry);
+}
+
+function cloneAndFreezeDefinition(
+  definition: MCPTool['definition'],
+): ToolDefinition {
+  return deepFreeze({
+    name: definition.name,
+    description: definition.description,
+    inputSchema: cloneJsonObject(definition.inputSchema),
+  });
+}
+
+function cloneJsonObject(
+  value: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, propertyValue]) => [key, cloneJsonValue(propertyValue)]),
+  );
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(cloneJsonValue);
+  }
+  if (typeof value === 'object' && value !== null) {
+    return cloneJsonObject(value as Readonly<Record<string, unknown>>);
+  }
+  return value;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const propertyValue of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(propertyValue);
+  }
+  return Object.freeze(value);
 }

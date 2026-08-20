@@ -32,8 +32,8 @@ custom-mcp/test/
 ├── read-many-files/            # read_many_files 工具测试，见 docs/tools/read-many-files.md
 ├── replace-text/               # replace_text 工具测试，见 docs/tools/replace-text.md
 ├── runner/                     # 统一测试 runner 的发现、筛选与失败继续回归
-├── runtime/                    # ConfigStore、request context、request header policy 和 tool-call handler 测试，见 docs/CONFIG.md
-├── tools/                      # tools/list 检查脚本和 definition shape 回归，见 docs/TOOLS.md
+├── runtime/                    # ConfigStore、startup catalog composition、request policy、tool-call handler 和 MCP wiring 测试
+├── tools/                      # custom definition loader、schema validator、catalog/exposure 和 tools/list shape 回归
 ├── write-file/                 # write_file 工具测试，见 docs/tools/write-file.md
 ├── run-tests.ts                # 自动化脚本发现、串行调度、计时和汇总入口
 └── test-utils.ts               # 脚本测试公共断言与 suite runner
@@ -108,6 +108,19 @@ npm test -- test/tools/tool-definitions.test.ts
 ```
 
 这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离和 `tools/list` 不暴露 `outputSchema`。
+
+Workspace custom definitions、effective catalog 与统一输入校验 focused tests：
+
+```bash
+npm test -- test/config/tool-exposure.test.ts
+npm test -- test/tools/custom-tool-config.test.ts
+npm test -- test/tools/tool-exposure.test.ts
+npm test -- test/runtime/startup-runtime.test.ts
+npm test -- test/runtime/tool-call-handler.test.ts
+npm test -- test/runtime/mcp-server-tool-exposure.test.ts
+```
+
+这些脚本分别覆盖 workspace `tools` 结构、referenced JSON 与 schema 编译、catalog merge/exposure/双重 contract、selected-only startup composition、arguments 归一化/result adapter，以及真实 MCP `tools/list` / `tools/call` 接线。
 
 `ask_user` 答案规范化、结果格式化与 HTTP 路由测试：
 

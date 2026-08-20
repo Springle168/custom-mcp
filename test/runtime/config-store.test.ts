@@ -168,7 +168,9 @@ async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
     configStore: store,
     logger: {
       logToolCall(toolName, args) {
-        loggerEvents.push(`call:${toolName}:${String(args.value)}`);
+        loggerEvents.push(
+          `call:${toolName}:${String((args as Record<string, unknown>).value)}`,
+        );
       },
       logToolResult(toolName, toolResult, durationMs) {
         loggerEvents.push(`result:${toolName}:${toolResult.content[0]?.text}:${durationMs}`);
@@ -180,7 +182,11 @@ async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
     },
     routeToolCall: async (name, args, context) => {
       assertEqual(name, 'fake_tool', 'Handler should pass the requested tool name to the router');
-      assertEqual(args.value, 42, 'Handler should pass request arguments to the router');
+      assertEqual(
+        (args as Record<string, unknown>).value,
+        42,
+        'Handler should pass request arguments to the router',
+      );
       assertEqual(getSnapshotCount, 1, 'Router should see exactly one snapshot read at call start');
       assertEqual(
         context.pathSafetyContext,

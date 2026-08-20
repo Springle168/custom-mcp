@@ -13,6 +13,7 @@ import {
 } from './config/global-config-path.js';
 import { parseGlobalConfig } from './config/global-config-schema.js';
 import { parseWorkspaceConfig } from './config/schema.js';
+import type { ParsedWorkspaceToolsConfig } from './config/tool-exposure.js';
 import {
   createRuntimeConfigIdentity,
   selectWorkspaceReference,
@@ -22,7 +23,10 @@ import type { PathSafetyContext } from './utils/paths.js';
 
 export { ConfigError, isConfigError } from './config/errors.js';
 export type { ConfigErrorCode } from './config/errors.js';
-export type { RuntimeToolExposure } from './config/tool-exposure.js';
+export type {
+  ParsedToolExposure,
+  ParsedWorkspaceToolsConfig,
+} from './config/tool-exposure.js';
 export { getDefaultGlobalConfigPath, getDefaultGlobalLogsDir } from './config/global-config-path.js';
 export type {
   DefaultGlobalConfigPathOptions,
@@ -53,6 +57,7 @@ export interface LoadRuntimeConfigOptions extends DefaultGlobalConfigPathOptions
 export interface LoadedRuntimeConfig {
   readonly snapshot: RuntimeConfigSnapshot;
   readonly identity: RuntimeConfigIdentity;
+  readonly workspaceTools: ParsedWorkspaceToolsConfig;
 }
 
 const MINIMAL_GLOBAL_CONFIG_EXAMPLE = `{
@@ -126,7 +131,11 @@ export function loadRuntimeConfigWithIdentity(
       snapshotVersion: options.snapshotVersion ?? 1,
     });
 
-    return Object.freeze({ snapshot, identity });
+    return Object.freeze({
+      snapshot,
+      identity,
+      workspaceTools: parsedWorkspace.tools,
+    });
   } catch (err: unknown) {
     if (err instanceof ConfigError) {
       throw err;

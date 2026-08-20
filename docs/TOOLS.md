@@ -38,9 +38,12 @@ docs/tools/
 
 ```text
 src/tools/
-├── names.ts                         # canonical 工具名目录、ToolName 类型和名称判断
-├── index.ts                         # canonical registry 与 workspace filtered service
-├── types.ts                         # MCPTool 与 ToolCallResult 类型
+├── names.ts                         # built-in canonical 工具名与顺序
+├── index.ts                         # built-in registry 编译与 workspace service facade
+├── catalog.ts                       # effective/exposed catalog、exposure 与调用路由
+├── custom-tool-config.ts            # custom tool config / definition 加载
+├── input-schema-validator.ts        # Draft 2020-12 validator facade
+├── types.ts                         # definition、executor 与 ToolCallResult 类型
 ├── results.ts                       # textResult / textErrorResult 等返回值 helper
 ├── replace.ts                       # replace_text 工具
 ├── read-file.ts                     # read_file 工具
@@ -74,13 +77,25 @@ src/tools/
 node --import tsx test/tools/inspect-tools.ts
 ```
 
-### Registry 与 workspace tool service
+### Built-in registry、catalog 与 workspace tool service
 
-`src/tools/names.ts` 的 `TOOL_NAMES` 是工具名称和顺序的 canonical 目录，不导入 handler。`src/tools/index.ts` 按该目录构建完整 registry，并在启动时检查缺失实现、额外实现和重复实现。
+`src/tools/names.ts` 的 `TOOL_NAMES` 只定义内置工具名称和 canonical 顺序。`src/tools/index.ts` 按该目录检查缺失、额外和重复实现，深冻结内置 definitions，并把每份原始 `inputSchema` 编译为 built-in implementation validator。
 
-`createWorkspaceToolService()` 使用 selected workspace snapshot 中的 `toolExposure` 过滤完整 registry。service 的 definitions 和 route map 来自同一个 filtered registry，因此 `tools/list` 与 `tools/call` 使用相同的暴露边界；被排除或未注册的名称统一返回 `Unknown tool`。definitions 保持 canonical registry 顺序，不跟随配置数组顺序。
+selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启动期加载。每份 definition 只描述 `name`、`description` 与 Draft 2020-12 `inputSchema`；它不携带 executor。schema 使用 `src/tools/input-schema-validator.ts` 在隔离 resolver context 中同步编译，validator 不执行类型转换、default 注入或字段删除。
 
-`src/runtime/mcp-server.ts` 提供可导入的 MCP server factory。factory 使用调用方传入的同一个 `WorkspaceToolService` 注册 list/call handlers；`tools/list` 在 SDK 协议边界返回 definitions 数组的浅拷贝。
+`compileWorkspaceToolCatalog()` 形成 exposure 前的 effective catalog：
+
+- 未覆盖的内置工具使用内置 definition、executor 与 implementation contract；
+- 同名 custom definition 完整替换对外 description/input schema，保留内置 executor 和 implementation contract；
+- custom-only definition 按 tool config reference 顺序追加并绑定 unavailable executor；
+- built-in 工具保持 canonical 顺序，override 保持原位置；
+- selector 在 effective names 构建后执行成员校验和过滤，过滤不重排。
+
+exposed catalog 同时派生 definitions view 与 route lookup。`createWorkspaceToolService()` 只包装调用方传入的 compiled catalog；`tools/list` 与 `tools/call` 因此共享完全相同的 exposure 边界。隐藏和未知名称统一返回 `Unknown tool`，不会运行 schema validator 或 executor。
+
+调用路由按以下顺序执行：effective input validation → built-in implementation validation（适用时）→ executor。未覆盖的内置工具复用同一 validator；override 必须同时满足 workspace 对外 contract 与内置实现 contract；custom-only 工具通过 effective validation 后返回未配置 execution route 的标准工具错误。所有这些结果继续通过 runtime result adapter 与 logger。
+
+catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保持固定，但职责独立。snapshot 只为 handler 提供 workspace runtime 能力；definitions、validators、executor bindings、source metadata 与 exposure 由 catalog 持有。修改 tool config 或 definition 文件后需要重启服务。
 
 ---
 
@@ -134,7 +149,7 @@ export default readFileTool;
 
 ### 步骤 2：登记 canonical 工具名
 
-编辑 `src/tools/names.ts`，把工具名加入 `TOOL_NAMES`。该数组同时定义合法配置名称和 canonical registry 顺序。
+编辑 `src/tools/names.ts`，把工具名加入 `TOOL_NAMES`。该数组只定义 built-in identity 与 canonical registry 顺序；workspace selector 的合法成员由 effective catalog 决定。
 
 ### 步骤 3：注册工具
 
@@ -169,9 +184,11 @@ npm run start
 
 工具暴露机制的回归入口：
 
-- `test/tools/tool-exposure.test.ts`：canonical registry、workspace 过滤、definitions 与路由一致性。
-- `test/runtime/mcp-server-tool-exposure.test.ts`：MCP server factory 的真实 `tools/list` / `tools/call` 接线和 service 复用。
-- `test/config/tool-exposure.test.ts`：workspace `tools` schema、snapshot 接入和 env override 禁止。
+- `test/config/tool-exposure.test.ts`：workspace `tools` 外壳、tool config path 与 selector grammar。
+- `test/tools/custom-tool-config.test.ts`：referenced files、strict definition 外壳与 Draft 2020-12 validator。
+- `test/tools/tool-exposure.test.ts`：effective/exposed catalog、override、双重 contract 与 unavailable executor。
+- `test/runtime/startup-runtime.test.ts`：selected-only 加载、启动期组合与运行期固定 catalog。
+- `test/runtime/mcp-server-tool-exposure.test.ts`：真实 `tools/list` / `tools/call` 接线、custom-only 路由和 service 复用。
 
 ---
 
@@ -194,6 +211,8 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 - 过长的描述（增加 token 消耗，降低 AI 注意力）。
 
 参考已实现工具的 description，它们在简洁和完整之间做了平衡。
+
+所有内置 `inputSchema` 同时作为 executor implementation contract，并在 catalog 编译时使用 Draft 2020-12 validator 编译。schema 应准确表达 handler 的结构边界；不接受未知字段的 executor 使用 `additionalProperties: false`。handler 继续负责路径、文件状态、正则可编译性、参数关系和环境条件等业务或运行时语义。
 
 ### Android Studio 嵌套 Schema 限制
 

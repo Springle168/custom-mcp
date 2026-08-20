@@ -208,6 +208,39 @@ async function testHandlerInvalidRequestViewLogsNoMatchMetadata(): Promise<void>
   assertNoMatchMetadata(loggedMetadata);
 }
 
+async function testArgumentsNormalizeOnlyWhenMissing(): Promise<void> {
+  const { store } = createCountingStore(matchingRules());
+  let loggedArgs: unknown;
+  let routedArgs: unknown;
+  const handler = createToolCallRequestHandler({
+    configStore: store,
+    logger: {
+      logToolCall(_toolName, args) {
+        loggedArgs = args;
+      },
+      logToolResult() {},
+    },
+    routeToolCall: async (_name, args) => {
+      routedArgs = args;
+      return textResult('ok');
+    },
+  });
+
+  await handler({ params: { name: 'fake_tool', arguments: null } });
+  assertEqual(loggedArgs, null, 'Explicit null should be logged without normalization');
+  assertEqual(routedArgs, null, 'Explicit null should reach effective validation unchanged');
+
+  await handler({ params: { name: 'fake_tool' } });
+  assert(
+    typeof loggedArgs === 'object' && loggedArgs !== null && !Array.isArray(loggedArgs),
+    'Missing arguments should be logged as an empty object',
+  );
+  assert(
+    typeof routedArgs === 'object' && routedArgs !== null && !Array.isArray(routedArgs),
+    'Missing arguments should route as an empty object',
+  );
+}
+
 async function testHandlerOrderUsesAdaptedResultForLogger(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
   const events: string[] = [];
@@ -246,6 +279,7 @@ async function main(): Promise<void> {
       { name: 'handler adapts and logs matched result', run: testHandlerAdaptsAndLogsMatchedResult },
       { name: 'handler without request context does not adapt', run: testHandlerWithoutRequestContextDoesNotAdapt },
       { name: 'handler invalid request view logs no-match metadata', run: testHandlerInvalidRequestViewLogsNoMatchMetadata },
+      { name: 'arguments normalize only when missing', run: testArgumentsNormalizeOnlyWhenMissing },
       { name: 'handler order uses adapted result for logger', run: testHandlerOrderUsesAdaptedResultForLogger },
     ],
   });

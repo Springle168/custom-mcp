@@ -38,6 +38,7 @@
     ]
   },
   "tools": {
+    "toolConfigFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/tool-config.json",
     "disabled": [
       "android.testDebugUnitTest"
     ]

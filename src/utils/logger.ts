@@ -138,7 +138,7 @@ export class Logger {
 
   logToolCall(
     toolName: string,
-    args: Record<string, unknown>,
+    args: unknown,
     context: ToolCallLogContext,
   ) {
     const timestamp = ts();

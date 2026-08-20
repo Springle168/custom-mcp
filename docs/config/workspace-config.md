@@ -33,7 +33,7 @@ workspace 配置文件名和扩展名没有额外要求。被选中后，文件�
 | `android` | object | 否 | Android 构建配置；出现时字段必须完整。 |
 | `envOverrides` | object | 否 | selected workspace 的字段级环境变量覆盖 allowlist。 |
 | `rules` | object | 否 | request header compatibility rules。 |
-| `tools` | object | 否 | workspace 工具暴露策略。 |
+| `tools` | object | 否 | workspace custom Tool definition reference 与 effective tool exposure。 |
 
 不同 workspace 可以复用 `rootDir` 或 `port`。同一个 selected workspace 中的 `rootDir + otherRootDirs` 仍必须满足 allowed-root 的重复、嵌套与 realpath 安全约束。
 
@@ -88,15 +88,46 @@ Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny
 
 ## `tools`
 
-`tools` 必须且只能配置 `enabled` 或 `disabled` 之一：
+`tools` 控制 selected workspace 的自定义 Tool definitions 与 effective tool exposure。该 object 只允许 `toolConfigFile`、`enabled`、`disabled`：
 
-- 缺省时归一化为 `{ mode: "all" }`。
-- `enabled: []` 表示不暴露工具；`disabled: []` 表示暴露全部 canonical 工具。
-- 名称必须精确匹配 `src/tools/names.ts` 中的 canonical tool name；未知或重复名称无效。
-- selected workspace 的策略进入 runtime snapshot 并随其 deep-freeze；未选中 workspace 文件中的工具策略不会在本次启动时验证。
-- 未配置 `tools` 或使用 `disabled` 时，所有未被禁用的 canonical 工具都暴露；使用 `enabled` 时，只有明确列出的名称暴露。
+| 字段 | 类型 | 说明 |
+|-|-|-|
+| `toolConfigFile` | string | 可选；指向 version 1 tool config 的本地绝对路径。 |
+| `enabled` | string[] | 可选；只暴露列出的 effective tool names。 |
+| `disabled` | string[] | 可选；暴露未列出的 effective tool names。 |
 
-workspace tool service 对 `tools/list` 和 `tools/call` 应用同一暴露边界。registry 与 service 的维护方式见 [工具开发](../TOOLS.md)。
+规则：
+
+- `tools` 缺失与 `tools: {}` 等价；两者都暴露全部 effective tools。
+- `toolConfigFile` 可以与 `enabled` 或 `disabled` 并存；`enabled` 与 `disabled` 不能同时出现。
+- `enabled: []` 表示不暴露工具；`disabled: []` 表示暴露全部 effective tools。
+- selector 名称使用 `^[A-Za-z0-9._-]{1,128}$`，区分大小写且数组内不能重复。
+- workspace 结构解析只校验 selector grammar。名称成员在 custom definitions 与内置 registry 合并成 effective catalog 后校验，因此 selector 可以引用 custom-only 工具。
+- selector 成员不存在时，错误归属 workspace 配置的 `tools.enabled[i]` 或 `tools.disabled[i]`。
+
+`toolConfigFile` 使用与 workspace reference 相同的本地文件边界：路径必须无首尾空白并为本地绝对路径；Windows 要求 drive-absolute，不接受相对、UNC、namespace、drive-relative、rooted-without-drive 或 `~`。它不要求位于 allowed roots 内。
+
+Tool config 的格式为：
+
+```json
+{
+  "version": 1,
+  "definitions": [
+    {
+      "id": "read-file-custom",
+      "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/read-file.json"
+    }
+  ]
+}
+```
+
+顶层只允许 `version` 与有序 `definitions` 数组。每个 reference 只允许唯一的 `id` 与本地绝对 `toolDefinitionFile`；`id` 使用 `^[A-Za-z0-9._-]{1,128}$`，仅作为配置诊断身份，不参与 MCP tool identity。
+
+Tool definition 文件只允许 `name`、`description`、`inputSchema`。`name` 使用相同 identity grammar；`description` 必须包含非空白字符；`inputSchema` 使用 JSON Schema Draft 2020-12，根 `type` 必须为 `object`。`$schema` 可省略，出现时必须精确为 `https://json-schema.org/draft/2020-12/schema`。每份 schema 在隔离 resolver context 中同步编译，不读取网络、文件或其它 definition 来解析 references。
+
+所有 referenced 文件在启动期按顺序读取，必须为 regular file、strict UTF-8（允许 BOM）和合法 JSON。即使 definition 最终被 selector 隐藏，也必须完成外壳校验和 schema 编译。服务运行期不重新读取这些文件，修改后需要重启。
+
+custom definition 与内置工具同名时，完整替换 `tools/list` 暴露的 description 与 input schema，同时保留内置 executor 和 implementation contract；调用必须同时通过两份 schema。custom-only definition 会被列出，并在输入通过 schema 后返回未配置 execution route 的工具错误。catalog 顺序、exposure 与调用行为见 [工具开发](../TOOLS.md)。
 
 ---
 
@@ -171,7 +202,7 @@ Env override 默认关闭。只有 `envOverrides.allowedFields` 明确列出的 
 - `host`
 - `port`
 
-`RuntimeConfigSnapshot` 另外保存 canonical roots、logs root、line ending、Android 配置、tool exposure、request rules、file access facade 与 policy file metadata。snapshot 与内部容器通过 deep-freeze 保持不可变。
+`RuntimeConfigSnapshot` 保存 canonical roots、logs root、line ending、Android 配置、request rules、file access facade 与 policy file metadata。snapshot 与内部容器通过 deep-freeze 保持不可变。工具 definitions、validators、executor bindings 与 exposure 由独立的 compiled workspace tool catalog 持有。
 
 snapshot 在 selected workspace 的 schema、file access policy 和 env override 处理后构建。每次工具调用从 `ConfigStore` 读取一次 snapshot，再派生本次调用的 `ToolRuntimeContext`；调用期间不重新读取配置。
 
@@ -188,12 +219,20 @@ selected workspace 文件的读取、JSON、schema、path、env override 和 pol
 | `src/config/env-overrides.ts` | selected workspace allowlist 与环境变量读取。 |
 | `src/config/runtime-snapshot.ts` | canonical roots、runtime snapshot 与 deep-freeze。 |
 | `src/config/request-header-rules.ts` | `rules.requestHeaders` schema 与 runtime rules。 |
-| `src/config/tool-exposure.ts` | `tools` schema 与 runtime exposure。 |
+| `src/config/tool-exposure.ts` | `tools` 外壳、tool config path 与未决 exposure selector。 |
+| `src/config/json-file.ts` | referenced JSON regular-file、strict UTF-8 与解析边界。 |
+| `src/tools/custom-tool-config.ts` | tool config / definition 加载、严格外壳和 source metadata。 |
+| `src/tools/input-schema-validator.ts` | 隔离的 Draft 2020-12 schema 编译与 validator facade。 |
+| `src/tools/catalog.ts` | effective catalog 合并、selector 成员校验与 exposed catalog。 |
+| `src/runtime/startup-runtime.ts` | snapshot 与 tool catalog 的启动期组合。 |
 | `test/config/load-runtime-config.test.ts` | 两层配置加载集成行为。 |
 | `test/config/file-access-policy.test.ts` | selected-only policy 编译与 file access schema。 |
 | `test/config/env-overrides.test.ts` | allowlist、值 grammar 与选择边界。 |
 | `test/config/runtime-snapshot.test.ts` | canonical roots、snapshot 与 immutable graph。 |
 | `test/config/request-header-rules.test.ts` | request header rules schema 与 snapshot 接入。 |
-| `test/config/tool-exposure.test.ts` | 工具暴露策略与 selected-only 校验。 |
+| `test/config/tool-exposure.test.ts` | workspace `tools` 结构、path、selector grammar 与重复项。 |
+| `test/tools/custom-tool-config.test.ts` | referenced files、definition 外壳、schema dialect 与 validator。 |
+| `test/tools/tool-exposure.test.ts` | effective/exposed catalog、override、双重 contract 与 unavailable executor。 |
+| `test/runtime/startup-runtime.test.ts` | selected-only 加载、启动期 catalog 组合与运行期不重读。 |
 
 测试组织和命令见 [测试](../TESTING.md)。

@@ -1,7 +1,12 @@
 import { pendingQuestions } from '../../src/tools/ask-user.js';
+import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
+import type { JsonObject } from '../../src/config/json-file.js';
+import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
+import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import {
   createWorkspaceToolService,
   getAllToolDefinitions,
+  getCompiledBuiltInTools,
 } from '../../src/tools/index.js';
 import { TOOL_NAMES } from '../../src/tools/names.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
@@ -13,9 +18,7 @@ import {
   runTestSuite,
 } from '../test-utils.js';
 
-function definitionNames(
-  definitions: readonly { readonly name: string }[],
-): string[] {
+function definitionNames(definitions: readonly { readonly name: string }[]): string[] {
   return definitions.map((definition) => definition.name);
 }
 
@@ -23,156 +26,182 @@ function createContext() {
   return createTestToolRuntimeContext({ rootDir: process.cwd() });
 }
 
+function customDefinition(
+  name: string,
+  inputSchema: JsonObject = {
+    type: 'object',
+    additionalProperties: false,
+  },
+  description = `Custom definition for ${name}`,
+  index = 0,
+): CompiledCustomToolDefinition {
+  const definition = Object.freeze({
+    name,
+    description,
+    inputSchema: Object.freeze(inputSchema),
+  });
+  return Object.freeze({
+    definition,
+    validator: compileInputSchemaValidator(definition.inputSchema),
+    source: Object.freeze({
+      toolConfigFilePath: 'E:/tools/tool-config.json',
+      definitionIndex: index,
+      referenceId: `ref-${index}`,
+      toolDefinitionFilePath: `E:/tools/${name}.json`,
+    }),
+  });
+}
+
+function createCatalog(options: {
+  customDefinitions?: readonly CompiledCustomToolDefinition[];
+  exposure?:
+    | { readonly mode: 'all' }
+    | { readonly mode: 'enable' | 'disable'; readonly names: readonly string[] };
+} = {}) {
+  return compileWorkspaceToolCatalog({
+    builtInTools: getCompiledBuiltInTools(),
+    customDefinitions: options.customDefinitions ?? [],
+    exposure: options.exposure ?? { mode: 'all' },
+    workspaceConfigFilePath: 'E:/config/workspace.json',
+  });
+}
+
 function testRegistryMatchesCanonicalNames(): void {
   const names = definitionNames(getAllToolDefinitions());
-  const uniqueNames = new Set(names);
-
-  assertEqual(names.join(','), TOOL_NAMES.join(','), 'Registry names and order should match TOOL_NAMES exactly');
-  assertEqual(uniqueNames.size, names.length, 'Registry should not contain duplicate tool names');
-  assertEqual(names.length, TOOL_NAMES.length, 'Every canonical tool name should have exactly one implementation');
+  assertEqual(names.join(','), TOOL_NAMES.join(','), 'Built-in registry order should remain canonical');
+  assertEqual(new Set(names).size, names.length, 'Built-in registry names should be unique');
 }
 
-function testAllModeReturnsCanonicalRegistry(): void {
-  const service = createWorkspaceToolService({ mode: 'all' });
-  assertEqual(
-    definitionNames(service.getDefinitions()).join(','),
-    TOOL_NAMES.join(','),
-    'All mode should expose every tool in canonical order',
+function testOverrideAndCustomOnlyOrdering(): void {
+  const readOverride = customDefinition(
+    'read_file',
+    { type: 'object', properties: { alias: { type: 'string' } }, required: ['alias'] },
+    'Workspace read contract',
+    0,
   );
+  const firstCustom = customDefinition('custom.first', undefined, undefined, 1);
+  const secondCustom = customDefinition('custom.second', undefined, undefined, 2);
+  const catalog = createCatalog({ customDefinitions: [readOverride, firstCustom, secondCustom] });
+  const names = definitionNames(catalog.definitions);
+
+  assertEqual(names.slice(0, TOOL_NAMES.length).join(','), TOOL_NAMES.join(','), 'Override should retain the built-in position');
+  assertEqual(names.slice(TOOL_NAMES.length).join(','), 'custom.first,custom.second', 'Custom-only tools should append in reference order');
+  const effectiveRead = catalog.definitions.find((definition) => definition.name === 'read_file');
+  assertEqual(effectiveRead?.description, 'Workspace read contract', 'Override should replace the public description');
+  assertEqual(effectiveRead?.inputSchema, readOverride.definition.inputSchema, 'Override should replace the public schema without merging');
 }
 
-function testEnableModeFiltersAndKeepsCanonicalOrder(): void {
-  const service = createWorkspaceToolService({
-    mode: 'enable',
-    names: ['ask_user', 'read_file', 'replace_text'],
+function testExposureFiltersWithoutReordering(): void {
+  const custom = customDefinition('custom_tool');
+  const enabled = createCatalog({
+    customDefinitions: [custom],
+    exposure: { mode: 'enable', names: ['custom_tool', 'read_file', 'replace_text'] },
   });
   assertEqual(
-    definitionNames(service.getDefinitions()).join(','),
-    'replace_text,read_file,ask_user',
-    'Enable mode should filter without using config order as display order',
+    definitionNames(enabled.definitions).join(','),
+    'replace_text,read_file,custom_tool',
+    'Enabled selector should filter canonical/effective order rather than selector order',
   );
+
+  const disabled = createCatalog({
+    customDefinitions: [custom],
+    exposure: { mode: 'disable', names: ['read_file', 'custom_tool'] },
+  });
+  assert(!definitionNames(disabled.definitions).includes('read_file'), 'Disabled built-in should be removed');
+  assert(!definitionNames(disabled.definitions).includes('custom_tool'), 'Disabled custom tool should be removed');
 }
 
-function testDisableModeFiltersAndKeepsCanonicalOrder(): void {
-  const service = createWorkspaceToolService({
-    mode: 'disable',
-    names: ['ask_user', 'replace_text'],
+async function testOverrideUsesBothContracts(): Promise<void> {
+  const override = customDefinition('read_file', {
+    type: 'object',
+    properties: { alias: { type: 'string' } },
+    required: ['alias'],
+    additionalProperties: false,
   });
+  const service = createWorkspaceToolService(createCatalog({ customDefinitions: [override] }));
+
+  const effectiveFailure = await service.routeToolCall('read_file', {}, createContext());
+  assertIncludes(getResultText(effectiveFailure), 'configured input schema', 'Effective schema should run first');
+  assert(
+    !getResultText(effectiveFailure).includes('E:/tools/'),
+    'Call validation errors should not expose local definition paths',
+  );
+
+  const implementationFailure = await service.routeToolCall('read_file', { alias: 'x' }, createContext());
+  assertIncludes(getResultText(implementationFailure), 'not supported by its current executor', 'Built-in implementation contract should protect overridden executors');
+}
+
+async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
+  const custom = customDefinition('custom_tool', {
+    type: 'object',
+    properties: { value: { type: 'string' } },
+    required: ['value'],
+    additionalProperties: false,
+  });
+  const service = createWorkspaceToolService(createCatalog({ customDefinitions: [custom] }));
+
+  for (const args of [{}, null, [], 'value']) {
+    const invalid = await service.routeToolCall('custom_tool', args, createContext());
+    assertIncludes(
+      getResultText(invalid),
+      'configured input schema',
+      'Custom-only tools should validate unchanged JSON arguments before routing',
+    );
+  }
+
+  const unavailable = await service.routeToolCall('custom_tool', { value: 'ok' }, createContext());
+  assertEqual(unavailable.isError, true, 'Unavailable executor should return a tool error');
   assertEqual(
-    definitionNames(service.getDefinitions()).join(','),
-    'write_file,read_many_files,read_file,android.assembleDebug,android.testDebugUnitTest',
-    'Disable mode should remove configured names and keep canonical order',
+    getResultText(unavailable),
+    'Tool "custom_tool" is exposed, but no execution route is configured for it.',
+    'Unavailable executor should return the deterministic route error',
   );
 }
 
-function testEmptyListsHaveDefinedSemantics(): void {
-  const enableNone = createWorkspaceToolService({ mode: 'enable', names: [] });
-  const disableNone = createWorkspaceToolService({ mode: 'disable', names: [] });
-
-  assertEqual(enableNone.getDefinitions().length, 0, 'Empty enabled list should expose no tools');
-  assertEqual(
-    definitionNames(disableNone.getDefinitions()).join(','),
-    TOOL_NAMES.join(','),
-    'Empty disable-list should expose all tools',
-  );
-}
-
-async function testEnabledToolReachesHandler(): Promise<void> {
-  const service = createWorkspaceToolService({
-    mode: 'enable',
-    names: ['android.assembleDebug'],
-  });
-  const result = await service.routeToolCall('android.assembleDebug', {}, createContext());
-
-  assertEqual(result.isError, true, 'Missing Android config should remain an error result');
-  assertIncludes(
-    getResultText(result),
-    'Android build config is not configured',
-    'Enabled Android tool should reach its existing handler',
-  );
-}
-
-async function testExcludedAndUnknownToolsShareUnknownError(): Promise<void> {
-  const service = createWorkspaceToolService({
-    mode: 'enable',
-    names: ['read_file'],
-  });
-
+async function testHiddenAndUnknownShareBoundary(): Promise<void> {
+  const service = createWorkspaceToolService(createCatalog({
+    exposure: { mode: 'enable', names: ['read_file'] },
+  }));
   for (const name of ['write_file', 'never_registered']) {
-    const result = await service.routeToolCall(name, { unexpected: true }, createContext());
-    assertEqual(result.isError, true, 'Rejected calls should be error results');
-    assertEqual(getResultText(result), `Unknown tool: ${name}`, 'Hidden and unknown tools should use identical error semantics');
+    const result = await service.routeToolCall(name, null, createContext());
+    assertEqual(getResultText(result), `Unknown tool: ${name}`, 'Hidden and unknown tools should be indistinguishable');
   }
 }
 
-async function testDisabledAndroidToolDoesNotReachHandler(): Promise<void> {
-  const service = createWorkspaceToolService({
-    mode: 'disable',
-    names: ['android.assembleDebug'],
-  });
-  const result = await service.routeToolCall('android.assembleDebug', {}, createContext());
-
-  assertEqual(getResultText(result), 'Unknown tool: android.assembleDebug', 'Disabled Android tool should not reveal its handler error');
-  assert(!getResultText(result).includes('Android build config'), 'Disabled Android tool should not execute the handler');
-}
-
-async function testDisabledAskUserDoesNotCreatePendingQuestion(): Promise<void> {
-  const service = createWorkspaceToolService({
-    mode: 'disable',
-    names: ['ask_user'],
-  });
+async function testDisabledAskUserDoesNotReachExecutor(): Promise<void> {
+  const service = createWorkspaceToolService(createCatalog({
+    exposure: { mode: 'disable', names: ['ask_user'] },
+  }));
   const beforeCount = pendingQuestions.size;
-  const result = await service.routeToolCall(
-    'ask_user',
-    {
-      questions: [{ question: 'Proceed?', header: 'Confirm', type: 'yesno' }],
-    },
-    createContext(),
-  );
-
-  assertEqual(getResultText(result), 'Unknown tool: ask_user', 'Disabled ask_user should return unknown tool');
-  assertEqual(pendingQuestions.size, beforeCount, 'Disabled ask_user should not create a pending question');
+  await service.routeToolCall('ask_user', {
+    questions: [{ question: 'Proceed?', header: 'Confirm', type: 'yesno' }],
+  }, createContext());
+  assertEqual(pendingQuestions.size, beforeCount, 'Hidden ask_user should not create pending state');
 }
 
-function testServiceAndDefinitionsAreFrozen(): void {
-  const service = createWorkspaceToolService({ mode: 'all' });
-  const definitions = service.getDefinitions();
-
-  assert(Object.isFrozen(service), 'Workspace tool service facade should be frozen');
-  assert(Object.isFrozen(definitions), 'Workspace tool definitions array should be frozen');
-  assertEqual(service.getDefinitions(), definitions, 'Service should return the same closed-over definitions array');
-}
-
-async function testAllModeKeepsAndroidToolsWithoutConfig(): Promise<void> {
-  const service = createWorkspaceToolService({ mode: 'all' });
-  const names = definitionNames(service.getDefinitions());
-
-  assert(names.includes('android.assembleDebug'), 'All mode should expose android.assembleDebug without Android config');
-  assert(names.includes('android.testDebugUnitTest'), 'All mode should expose android.testDebugUnitTest without Android config');
-
-  const result = await service.routeToolCall('android.testDebugUnitTest', {}, createContext());
-  assertIncludes(
-    getResultText(result),
-    'Android build config is not configured',
-    'Available Android tool should preserve the existing missing config error',
-  );
+function testCatalogAndServiceFacadesAreFrozen(): void {
+  const catalog = createCatalog();
+  const service = createWorkspaceToolService(catalog);
+  assert(Object.isFrozen(catalog), 'Catalog facade should be frozen');
+  assert(Object.isFrozen(catalog.effectiveEntries), 'Effective entries should be frozen');
+  assert(Object.isFrozen(catalog.exposedEntries), 'Exposed entries should be frozen');
+  assert(Object.isFrozen(catalog.definitions), 'Definitions view should be frozen');
+  assert(Object.isFrozen(service), 'Workspace tool service should be frozen');
+  assertEqual(service.getDefinitions(), catalog.definitions, 'Service should expose the catalog-owned definitions view');
 }
 
 async function main(): Promise<void> {
   await runTestSuite({
-    title: 'Testing workspace tool registry exposure',
+    title: 'Testing effective workspace tool catalog',
     tests: [
-      { name: 'registry matches canonical names', run: testRegistryMatchesCanonicalNames },
-      { name: 'all mode returns canonical registry', run: testAllModeReturnsCanonicalRegistry },
-      { name: 'enable mode filters in canonical order', run: testEnableModeFiltersAndKeepsCanonicalOrder },
-      { name: 'disable mode filters in canonical order', run: testDisableModeFiltersAndKeepsCanonicalOrder },
-      { name: 'empty lists have defined semantics', run: testEmptyListsHaveDefinedSemantics },
-      { name: 'enabled tool reaches handler', run: testEnabledToolReachesHandler },
-      { name: 'excluded and unknown tools share error', run: testExcludedAndUnknownToolsShareUnknownError },
-      { name: 'disabled Android tool does not reach handler', run: testDisabledAndroidToolDoesNotReachHandler },
-      { name: 'disabled ask_user does not create pending question', run: testDisabledAskUserDoesNotCreatePendingQuestion },
-      { name: 'service and definitions are frozen', run: testServiceAndDefinitionsAreFrozen },
-      { name: 'all mode keeps Android tools without config', run: testAllModeKeepsAndroidToolsWithoutConfig },
+      { name: 'built-in registry remains canonical', run: testRegistryMatchesCanonicalNames },
+      { name: 'override and custom-only ordering', run: testOverrideAndCustomOnlyOrdering },
+      { name: 'exposure filters without reordering', run: testExposureFiltersWithoutReordering },
+      { name: 'override uses effective and implementation contracts', run: testOverrideUsesBothContracts },
+      { name: 'custom-only validation precedes unavailable executor', run: testCustomOnlyValidationAndUnavailableExecutor },
+      { name: 'hidden and unknown tools share a boundary', run: testHiddenAndUnknownShareBoundary },
+      { name: 'disabled ask_user does not reach executor', run: testDisabledAskUserDoesNotReachExecutor },
+      { name: 'catalog and service facades are frozen', run: testCatalogAndServiceFacadesAreFrozen },
     ],
   });
 }
