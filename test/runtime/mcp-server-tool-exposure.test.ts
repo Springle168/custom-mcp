@@ -2,8 +2,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { createMCPServer } from '../../src/runtime/mcp-server.js';
+import type { JsonObject } from '../../src/config/json-file.js';
+import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
+import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
+import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
-import type { WorkspaceToolService } from '../../src/tools/index.js';
+import {
+  createWorkspaceToolService,
+  getCompiledBuiltInTools,
+  type WorkspaceToolService,
+} from '../../src/tools/index.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
 import {
   assert,
@@ -79,6 +87,36 @@ function createSpyService(): {
   };
 }
 
+function createCustomOnlyService(): WorkspaceToolService {
+  const inputSchema: JsonObject = Object.freeze({
+    type: 'object',
+    properties: Object.freeze({ value: Object.freeze({ type: 'string' }) }),
+    required: Object.freeze(['value']),
+    additionalProperties: false,
+  });
+  const custom: CompiledCustomToolDefinition = Object.freeze({
+    definition: Object.freeze({
+      name: 'custom_tool',
+      description: 'Custom-only MCP integration tool',
+      inputSchema,
+    }),
+    validator: compileInputSchemaValidator(inputSchema),
+    source: Object.freeze({
+      toolConfigFilePath: 'E:/tools/tool-config.json',
+      definitionIndex: 0,
+      referenceId: 'custom-tool',
+      toolDefinitionFilePath: 'E:/tools/custom-tool.json',
+    }),
+  });
+  const catalog = compileWorkspaceToolCatalog({
+    builtInTools: getCompiledBuiltInTools(),
+    customDefinitions: [custom],
+    exposure: { mode: 'enable', names: ['custom_tool'] },
+    workspaceConfigFilePath: 'E:/config/workspace.json',
+  });
+  return createWorkspaceToolService(catalog);
+}
+
 async function connectServer(service: WorkspaceToolService): Promise<ConnectedPair> {
   const server = createMCPServer({
     configStore: createTestConfigStore({ rootDir: process.cwd() }),
@@ -141,6 +179,30 @@ async function testTwoServersShareCallerOwnedService(): Promise<void> {
   }
 }
 
+async function testCustomOnlyToolListsValidatesAndReturnsUnavailable(): Promise<void> {
+  const pair = await connectServer(createCustomOnlyService());
+  try {
+    const listResult = await pair.client.listTools();
+    assertEqual(listResult.tools.length, 1, 'Exposure should list only the custom-only tool');
+    assertEqual(listResult.tools[0]?.name, 'custom_tool', 'tools/list should expose custom identity');
+
+    const invalid = await pair.client.callTool({ name: 'custom_tool', arguments: {} });
+    assertIncludes(getTextContent(invalid), 'configured input schema', 'MCP call should use effective validation');
+
+    const unavailable = await pair.client.callTool({
+      name: 'custom_tool',
+      arguments: { value: 'ok' },
+    });
+    assertIncludes(
+      getTextContent(unavailable),
+      'no execution route is configured',
+      'Valid custom-only calls should reach unavailable executor',
+    );
+  } finally {
+    await closePair(pair);
+  }
+}
+
 async function testIndexDoesNotUseUnfilteredRegistryEntrypoints(): Promise<void> {
   const source = await import('node:fs/promises').then((fs) => fs.readFile(new URL('../../src/index.ts', import.meta.url), 'utf-8'));
 
@@ -155,6 +217,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'list and call use passed service', run: testListAndCallUsePassedService },
       { name: 'two servers share caller-owned service', run: testTwoServersShareCallerOwnedService },
+      { name: 'custom-only tool lists, validates, and returns unavailable', run: testCustomOnlyToolListsValidatesAndReturnsUnavailable },
       { name: 'index avoids unfiltered registry entrypoints', run: testIndexDoesNotUseUnfilteredRegistryEntrypoints },
     ],
   });

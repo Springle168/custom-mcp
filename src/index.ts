@@ -3,9 +3,10 @@
 import express, { type Request } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CliError, parseCliArgs } from './cli.js';
-import { ConfigError, loadRuntimeConfigWithIdentity } from './config.js';
+import { ConfigError } from './config.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
 import { createMCPServer } from './runtime/mcp-server.js';
+import { loadApplicationRuntime } from './runtime/startup-runtime.js';
 import {
   handleMcpPostRequest,
   type McpPostSession,
@@ -79,12 +80,12 @@ function indentBlock(text: string): string {
 
 async function main() {
   const cliOptions = parseCliArgs(process.argv.slice(2));
-  const initialConfig = loadRuntimeConfigWithIdentity({
+  const initialRuntime = loadApplicationRuntime({
     workspaceId: cliOptions.workspaceId,
   });
-  const initialSnapshot = initialConfig.snapshot;
-  const configStore = createConfigStore(initialConfig);
-  const toolService = createWorkspaceToolService(initialSnapshot.toolExposure);
+  const initialSnapshot = initialRuntime.snapshot;
+  const configStore = createConfigStore(initialRuntime);
+  const toolService = createWorkspaceToolService(initialRuntime.toolCatalog);
   const logger = new Logger(initialSnapshot.logsDir, {
     workspaceId: initialSnapshot.workspaceId,
   });

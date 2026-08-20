@@ -7,14 +7,18 @@ export interface ToolCallResult {
   [key: string]: unknown;
 }
 
+export interface ToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Readonly<Record<string, unknown>>;
+}
+
+export type ToolExecutor = (
+  args: Record<string, unknown>,
+  context: ToolRuntimeContext,
+) => Promise<ToolCallResult>;
+
 export interface MCPTool {
-  readonly definition: {
-    readonly name: ToolName;
-    readonly description: string;
-    readonly inputSchema: object;
-  };
-  readonly handler: (
-    args: Record<string, unknown>,
-    context: ToolRuntimeContext,
-  ) => Promise<ToolCallResult>;
+  readonly definition: ToolDefinition & { readonly name: ToolName };
+  readonly handler: ToolExecutor;
 }

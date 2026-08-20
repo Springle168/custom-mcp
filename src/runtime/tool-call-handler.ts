@@ -23,7 +23,7 @@ export interface ToolCallRequestLike {
 export interface ToolCallLogger {
   logToolCall(
     toolName: string,
-    args: Record<string, unknown>,
+    args: unknown,
     context: ToolCallLogContext,
   ): void;
   logToolResult(
@@ -36,7 +36,7 @@ export interface ToolCallLogger {
 
 export type ToolCallRouter = (
   name: string,
-  args: Record<string, unknown>,
+  args: unknown,
   context: ToolRuntimeContext,
 ) => Promise<ToolCallResult>;
 
@@ -61,7 +61,7 @@ export function createToolCallRequestHandler(
 
   return async (request) => {
     const { name, arguments: args } = request.params;
-    const safeArgs = (args ?? {}) as Record<string, unknown>;
+    const normalizedArgs = args === undefined ? {} : args;
     const startTime = now();
     const logContext: ToolCallLogContext = {
       sessionId: options.getSessionId?.(),
@@ -72,9 +72,9 @@ export function createToolCallRequestHandler(
     const requestPolicy = evaluateRequestHeaderPolicy(snapshot.rules, requestHeaderView);
     const toolContext = createToolRuntimeContext(snapshot);
 
-    options.logger.logToolCall(name, safeArgs, logContext);
+    options.logger.logToolCall(name, normalizedArgs, logContext);
 
-    const result = await options.routeToolCall(name, safeArgs, toolContext);
+    const result = await options.routeToolCall(name, normalizedArgs, toolContext);
     const adaptedResult = adaptToolCallResultForRequestPolicy(result, requestPolicy);
     const resultLogContext: ToolCallResultLogContext = {
       ...logContext,

@@ -79,6 +79,19 @@
 
 ---
 
+## Catalog 与输入校验错误
+
+workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `ToolCallResult`：
+
+- effective input schema validation failure；
+- built-in implementation contract validation failure；
+- custom-only tool 的 unavailable executor；
+- hidden 或 unknown tool。
+
+这些结果通过 `textErrorResult()` 返回 `isError: true`，随后与 handler 结果经过同一个 request policy adapter 和 result logger。validation 文本区分 workspace configured contract 与 executor implementation contract，并只输出整理后的 instance location、message 和 keyword；不输出 Ajv 原始错误对象、schema path、tool config path 或 definition path。
+
+---
+
 ## 统一 helper
 
 文本结果统一通过 `src/tools/results.ts` 构造：

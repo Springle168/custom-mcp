@@ -2,8 +2,8 @@ import { realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { ConfigError } from './errors.js';
 import {
-  readOptionalToolExposureConfig,
-  type RuntimeToolExposure,
+  readOptionalWorkspaceToolsConfig,
+  type ParsedWorkspaceToolsConfig,
 } from './tool-exposure.js';
 import { readExistingDirectoryPath } from './path-policy.js';
 import {
@@ -65,7 +65,7 @@ export interface ParsedWorkspaceConfig {
   readonly otherRootDirs: readonly string[];
   readonly android?: ParsedAndroidConfig;
   readonly envOverrides?: ParsedEnvOverridesConfig;
-  readonly toolExposure: RuntimeToolExposure;
+  readonly tools: ParsedWorkspaceToolsConfig;
   readonly rules: RuntimeRulesConfig;
   readonly fileAccess?: ParsedFileAccessConfig;
 }
@@ -171,7 +171,7 @@ export function parseWorkspaceConfig(
     otherRootDirs,
     ...(android !== undefined ? { android } : {}),
     ...(envOverrides !== undefined ? { envOverrides } : {}),
-    toolExposure: readOptionalToolExposureConfig(rawWorkspace.tools, {
+    tools: readOptionalWorkspaceToolsConfig(rawWorkspace.tools, {
       configFilePath: context.configFilePath,
       fieldPath: 'tools',
     }),
