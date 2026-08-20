@@ -81,7 +81,7 @@ node --import tsx test/tools/inspect-tools.ts
 
 `src/tools/names.ts` 的 `TOOL_NAMES` 只定义内置工具名称和 canonical 顺序。`src/tools/index.ts` 按该目录检查缺失、额外和重复实现，深冻结内置 definitions，并把每份原始 `inputSchema` 编译为 built-in implementation validator。
 
-selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启动期加载。每份 definition 只描述 `name`、`description` 与 Draft 2020-12 `inputSchema`；它不携带 executor。schema 使用 `src/tools/input-schema-validator.ts` 在隔离 resolver context 中同步编译，validator 不执行类型转换、default 注入或字段删除。
+selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启动期加载。Tool config / definition 的文件格式、路径边界和示例见 [自定义 Tool 配置](config/tool-config.md)。每份 definition 只描述 `name`、`description` 与 Draft 2020-12 `inputSchema`；它不携带 executor。schema 使用 `src/tools/input-schema-validator.ts` 在隔离 resolver context 中同步编译，validator 不执行类型转换、default 注入或字段删除。
 
 `compileWorkspaceToolCatalog()` 形成 exposure 前的 effective catalog：
 

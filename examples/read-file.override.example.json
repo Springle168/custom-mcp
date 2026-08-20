@@ -1,0 +1,44 @@
+{
+  "name": "read_file",
+  "description": "Reads and returns the content of a specified text file. Use a line or regular-expression range when only part of the file is needed.",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "The path to the text file to read."
+      },
+      "start_line": {
+        "type": [
+          "integer",
+          "string"
+        ],
+        "description": "Optional start boundary. A positive 1-based line number in line mode, or a non-empty JavaScript RegExp pattern in regex mode."
+      },
+      "end_line": {
+        "type": [
+          "integer",
+          "string"
+        ],
+        "description": "Optional inclusive end boundary. A positive 1-based line number in line mode, or a non-empty JavaScript RegExp pattern in regex mode."
+      },
+      "read_mode": {
+        "type": "string",
+        "enum": [
+          "line",
+          "regex"
+        ],
+        "description": "How to interpret start_line and end_line. Defaults to line."
+      },
+      "show_line_numbers": {
+        "type": "boolean",
+        "description": "Whether to prefix returned content lines with their original 1-based line number. Defaults to false."
+      }
+    },
+    "required": [
+      "file_path"
+    ],
+    "additionalProperties": false
+  }
+}

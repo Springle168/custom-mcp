@@ -10,7 +10,7 @@
 
 | 主题 | 文档 | 内容 |
 |-|-|-|
-| 配置 | [配置概览](CONFIG.md)、[全局索引](config/global-index.md)、[workspace 配置](config/workspace-config.md) | 两层配置模型、全局 reference 索引、selected workspace schema、env override、runtime snapshot、配置相关源码与测试 |
+| 配置 | [配置概览](CONFIG.md)、[全局索引](config/global-index.md)、[workspace 配置](config/workspace-config.md)、[自定义 Tool 配置](config/tool-config.md) | 两层配置模型、全局 reference 索引、selected workspace schema、env override、runtime snapshot、Tool definition 与配置相关源码和测试 |
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、`src/tools/` 源码布局、添加新工具、schema 设计、返回值、并发模型 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
@@ -58,9 +58,9 @@ custom-mcp/
 
 | 源码区域 | 主要维护入口 |
 |-|-|
-| `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts`、`tool-exposure.ts` 与 `runtime-snapshot.ts` |
+| `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts` 与 `runtime-snapshot.ts`；[自定义 Tool 配置](config/tool-config.md) 承接 `tool-exposure.ts` |
 | `src/runtime/config-store.ts`, `src/runtime/startup-runtime.ts`, `src/runtime/mcp-server.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts`, `src/runtime/request-context.ts`, `src/runtime/request-header-policy.ts`, `src/runtime/request-header-view.ts`, `src/runtime/tool-result-adapter.ts`, `src/runtime/startup-logging.ts` | 配置 runtime、启动期 tool catalog composition、MCP server factory、request header rules policy 与启动配置摘要见 [配置概览](CONFIG.md)、[workspace 配置](config/workspace-config.md) 和 [日志](LOGGING.md)；workspace tool service 与调用管线见 [工具开发](TOOLS.md)，工具返回结果适配见 [工具返回结果](TOOL-RESULTS.md) |
-| `src/tools/names.ts`, `src/tools/index.ts`, `src/tools/catalog.ts`, `src/tools/custom-tool-config.ts`, `src/tools/input-schema-validator.ts`, `src/tools/*.ts` | built-in canonical registry、custom definitions、schema validator、effective/exposed catalog 与 workspace service 见 [docs/TOOLS.md](TOOLS.md)，单工具实现见 [docs/tools/](tools/) 下对应文档 |
+| `src/tools/names.ts`, `src/tools/index.ts`, `src/tools/catalog.ts`, `src/tools/custom-tool-config.ts`, `src/tools/input-schema-validator.ts`, `src/tools/*.ts` | Tool config / definition 格式、schema validator 与 effective/exposed catalog 见 [自定义 Tool 配置](config/tool-config.md)；built-in canonical registry、workspace service 与单工具实现见 [docs/TOOLS.md](TOOLS.md) 和 [docs/tools/](tools/) |
 | `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
 | `src/engine/android-gradle-output.ts` | [docs/tools/android-build.md](tools/android-build.md) |

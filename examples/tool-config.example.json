@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "definitions": [
+    {
+      "id": "read-file-override",
+      "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/read-file.override.json"
+    }
+  ]
+}
