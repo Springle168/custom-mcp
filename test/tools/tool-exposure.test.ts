@@ -149,6 +149,17 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
     );
   }
 
+  const unexpectedProperty = await service.routeToolCall(
+    'custom_tool',
+    { value: 'ok', remove_me: true },
+    createContext(),
+  );
+  assertIncludes(
+    getResultText(unexpectedProperty),
+    'unexpected property "remove_me"',
+    'Additional-property errors should identify the argument the caller must remove',
+  );
+
   const unavailable = await service.routeToolCall('custom_tool', { value: 'ok' }, createContext());
   assertEqual(unavailable.isError, true, 'Unavailable executor should return a tool error');
   assertEqual(

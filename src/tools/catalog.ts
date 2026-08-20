@@ -194,11 +194,23 @@ function freezeEntry(entry: WorkspaceToolCatalogEntry): WorkspaceToolCatalogEntr
 function formatValidationIssues(errors: readonly InputSchemaValidationIssue[]): string {
   const displayed = errors.slice(0, 5).map((error) => {
     const location = error.instancePath === '' ? '<root>' : error.instancePath;
-    return `${location} ${error.message} [${error.keyword}]`;
+    const detail = formatValidationIssueDetail(error);
+    return `${location} ${error.message}${detail} [${error.keyword}]`;
   });
   const omitted = errors.length - displayed.length;
   if (omitted > 0) {
     displayed.push(`${omitted} additional validation issue(s) omitted`);
   }
   return displayed.join('; ');
+}
+
+function formatValidationIssueDetail(error: InputSchemaValidationIssue): string {
+  if (error.keyword !== 'additionalProperties') {
+    return '';
+  }
+
+  const propertyName = error.params.additionalProperty;
+  return typeof propertyName === 'string'
+    ? ` (unexpected property ${JSON.stringify(propertyName)})`
+    : '';
 }
