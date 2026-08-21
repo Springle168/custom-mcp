@@ -1,3 +1,9 @@
+/**
+ * 人工视觉验证 Logger 的终端输出与日志文件。
+ *
+ * 此脚本不由 npm test 执行：颜色呈现需要人工确认，而 --verbose 模式会输出大量 JSON。
+ * 运行：node --import tsx test/logger/logger.manual.ts
+ */
 import { Logger } from '../../src/utils/logger.js';
 import type { ToolCallResultLogContext } from '../../src/runtime/tool-call-log-context.js';
 import { isVerboseTestOutput } from '../test-utils.js';
