@@ -47,11 +47,7 @@ async function testDiscoversOnlyAutomatedScripts(): Promise<void> {
     'Should discover the runner regression test',
   );
   assert(
-    !tests.includes('test/logger/logger.test.ts'),
-    'Should exclude the logger demo script',
-  );
-  assert(
-    !tests.includes('test/ask-user/ask-user.manual.ts'),
+    !tests.includes('test/logger/logger.manual.ts'),
     'Should exclude manual scripts',
   );
   assert(

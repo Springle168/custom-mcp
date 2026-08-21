@@ -8,7 +8,7 @@
 
 测试脚本按维护主题归类：
 
-- 有专题文档或单工具文档承接的测试，放在对应 `test/<topic>/` 目录，并在该专题文档中展开结构和命令。
+- 有专题文档或单工具文档承接的测试，放在对应 `test/<topic>/` 目录，并在该专题文档中展开测试边界和特有前置条件。
 - 跨工具或跨层的不变量测试，放在对应横向目录，例如 `test/path-safety/`。
 - 测试公共断言、runner 和 runtime 构造 helper 保留在 `test/test-utils.ts` 与 `test/helpers/`。
 - 检查、演示或人工交互脚本可放在专门目录中，并用文件名标明用途，例如 `*.manual.ts`。
@@ -25,7 +25,7 @@ custom-mcp/test/
 ├── config/                     # 全局配置、workspace selection、env override 和 snapshot 测试，见 docs/CONFIG.md
 ├── fixtures/                   # 测试数据与运行期生成的 fixture 目录
 ├── helpers/                    # 测试辅助函数，如 runtime-config.ts
-├── logger/                     # 日志系统演示/测试，见 docs/LOGGING.md
+├── logger/                     # 日志自动化测试与人工视觉验证，见 docs/LOGGING.md
 ├── logs/                       # 测试日志输出目录
 ├── path-safety/                # 路径安全横向回归，见 docs/PATH-SAFETY.md
 ├── read-file/                  # read_file 工具测试，见 docs/tools/read-file.md
@@ -50,11 +50,13 @@ custom-mcp/test/
 - 使用 `runTestSuite()` 注册测试用例；默认输出测试套件标题、失败用例和最终 `Results: ...` 汇总，并静默测试用例内的 `console.*` 输出。需要查看逐用例 `Test: ...` / `✓ Passed` 和测试内 `console.*` 输出时，在测试命令末尾追加 `--verbose`。
 - 需要准备或清理 fixture 时，通过 `beforeAll` / `afterAll` 挂到 `runTestSuite()`；`afterAll` 会在测试失败后继续执行。
 
-`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括 `test/**/*.test.ts`，但排除日志演示脚本 `test/logger/logger.test.ts`。manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
+`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括全部 `test/**/*.test.ts`；manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
 
 测试脚本使用独立 Node 子进程逐个串行运行，避免共享 fixture 的跨脚本竞态。默认模式捕获子脚本输出：成功脚本的内部输出被折叠，runner 按主题汇总脚本数量与耗时；失败脚本的捕获输出会自动展开，runner 随后继续执行剩余脚本，最终汇总所有失败并返回非零退出码。单个脚本的捕获输出限制为 256 KB，超过部分以截断提示代替，避免异常日志无限占用内存。
 
 `--verbose` 会传递给每个被选中的测试脚本，并将子脚本输出实时透传到终端，适合查看逐用例结果和测试内部的 `console.*` 输出。
+
+`*.manual.ts` 脚本需要显式以 `node --import tsx <script>` 运行；脚本自身及其专题文档负责说明特有的前置条件和人工操作。
 
 ---
 
@@ -87,47 +89,9 @@ npm test -- config --verbose
 
 `npm run build` 使用 `tsconfig.json`，只覆盖生产源码。`npm run typecheck:test` 使用 `tsconfig.test.json`，在复用生产编译选项的同时检查生产源码与测试代码，并通过 `noEmit` 禁止生成文件。
 
-`npm test` 不执行生产构建或静态类型检查。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本的 `npm test -- <selector>` 与 `npm run typecheck:test`。各主题的脚本位置见上方测试目录索引；更细的测试覆盖范围见对应专题文档或单工具文档。
+`npm test` 不执行生产构建或静态类型检查。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本的 `npm test -- <selector>` 与 `npm run typecheck:test`。各主题的脚本位置见上方测试目录索引，更细的测试覆盖范围见对应专题文档或单工具文档。
 
 selector 支持主题名、仓库相对路径和文件名，接受 `/` 或 `\\` 路径分隔符。多个 selector 按 OR 组合；任一 selector 没有匹配自动化脚本时，runner 会在执行前报错，避免静默空跑。
-
-Request header rules 与 `structuredContentDup` feature / `structuredContent` wrapper focused tests：
-
-```bash
-npm test -- test/config/request-header-rules.test.ts
-npm test -- test/config/runtime-snapshot.test.ts
-npm test -- test/runtime/request-header-view.test.ts
-npm test -- test/runtime/request-context.test.ts
-npm test -- test/runtime/request-header-policy.test.ts
-npm test -- test/runtime/tool-result-adapter.test.ts
-npm test -- test/runtime/tool-call-handler.test.ts
-npm test -- test/runtime/mcp-post-request-context.test.ts
-npm test -- test/logger/request-header-rules-logging.test.ts
-npm test -- test/runtime/request-context-concurrency.test.ts
-npm test -- test/tools/tool-definitions.test.ts
-```
-
-这些脚本覆盖配置解析、snapshot deep-freeze、strict header view、request context、policy、统一出口 result adapter、POST `/mcp` request context seam、`Rules:` 响应日志格式与隐私边界、request context 并发隔离和 `tools/list` 不暴露 `outputSchema`。
-
-Workspace custom definitions、effective catalog 与统一输入校验 focused tests：
-
-```bash
-npm test -- test/config/tool-exposure.test.ts
-npm test -- test/tools/custom-tool-config.test.ts
-npm test -- test/tools/tool-exposure.test.ts
-npm test -- test/runtime/startup-runtime.test.ts
-npm test -- test/runtime/tool-call-handler.test.ts
-npm test -- test/runtime/mcp-server-tool-exposure.test.ts
-```
-
-这些脚本分别覆盖 workspace `tools` 结构、referenced JSON 与 schema 编译、catalog merge/exposure/双重 contract、selected-only startup composition、arguments 归一化/result adapter，以及真实 MCP `tools/list` / `tools/call` 接线。
-
-`ask_user` 答案规范化、结果格式化与 HTTP 路由测试：
-
-```bash
-npm test -- test/ask-user/ask-user-result.test.ts
-npm test -- test/ask-user/ask-user-routes.test.ts
-```
 
 ---
 
@@ -136,9 +100,3 @@ npm test -- test/ask-user/ask-user-routes.test.ts
 Android 构建相关测试集中在 `test/android-build/`。其中 timeout / launcher 测试依赖 Windows 进程树和 `gradlew.bat` 启动行为，在沙箱或受限权限环境中的 AI Agent 需要**提权**才能跑测试验证。
 
 Android 构建工具本身的行为文档见 [docs/tools/android-build.md](tools/android-build.md)。
-
----
-
-## 测试日志
-
-日志测试说明见 [docs/LOGGING.md](LOGGING.md)。

@@ -14,7 +14,7 @@
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、`src/tools/` 源码布局、添加新工具、schema 设计、返回值、并发模型 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
-| 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、脚本测试约定、常用验证命令、测试日志 |
+| 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、统一 runner 与通用验证命令 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
 | Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、schema 转换层限制 |
 | 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
@@ -70,26 +70,6 @@ custom-mcp/
 | `src/utils/http-url.ts` | HTTP bind host 的 IPv6 host:port 格式和 MCP / `ask_user` endpoint URL 生成，见 [workspace 配置](config/workspace-config.md) |
 | `src/utils/logger.ts` | [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | [docs/tools/android-build.md](tools/android-build.md) |
-
----
-
-## 常用命令
-
-```bash
-# 编译
-npm run build
-
-# 串行运行全部自动化测试脚本
-npm test
-
-# 按主题筛选测试脚本
-npm test -- read-file
-
-# 按仓库相对路径筛选单个脚本
-npm test -- test/read-file/read-file.test.ts
-```
-
-更多测试命令见 [docs/TESTING.md](TESTING.md)。
 
 ---
 

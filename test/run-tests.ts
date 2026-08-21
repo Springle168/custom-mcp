@@ -5,9 +5,6 @@ import { glob } from 'glob';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const AUTOMATED_TEST_PATTERN = 'test/**/*.test.ts';
-const EXCLUDED_AUTOMATED_TESTS = new Set([
-  'test/logger/logger.test.ts',
-]);
 const MAX_CAPTURED_OUTPUT_BYTES = 256 * 1024;
 
 export interface TestRunnerCliOptions {
@@ -82,7 +79,6 @@ export async function discoverAutomatedTests(
   });
 
   return [...new Set(matches.map(normalizeTestPath))]
-    .filter((testPath) => !EXCLUDED_AUTOMATED_TESTS.has(testPath))
     .sort((left, right) => left.localeCompare(right, 'en'));
 }
 
