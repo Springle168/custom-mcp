@@ -11,6 +11,7 @@
 - 有专题文档或单工具文档承接的测试，放在对应 `test/<topic>/` 目录，并在该专题文档中展开测试边界和特有前置条件。
 - 跨工具或跨层的不变量测试，放在对应横向目录，例如 `test/path-safety/`。
 - 测试公共断言、runner 和 runtime 构造 helper 保留在 `test/test-utils.ts` 与 `test/helpers/`。
+- 需要默认受限环境之外权限的自动化脚本使用 `*.privileged.ts` 后缀，由维护者在满足权限前提的环境中显式运行。
 - 检查、演示或人工交互脚本可放在专门目录中，并用文件名标明用途，例如 `*.manual.ts`。
 - 测试生成物集中放在 `test/fixtures/` 或 `test/logs/`，不要混入源码、文档或生产日志目录。
 
@@ -50,13 +51,15 @@ custom-mcp/test/
 - 使用 `runTestSuite()` 注册测试用例；默认输出测试套件标题、失败用例和最终 `Results: ...` 汇总，并静默测试用例内的 `console.*` 输出。需要查看逐用例 `Test: ...` / `✓ Passed` 和测试内 `console.*` 输出时，在测试命令末尾追加 `--verbose`。
 - 需要准备或清理 fixture 时，通过 `beforeAll` / `afterAll` 挂到 `runTestSuite()`；`afterAll` 会在测试失败后继续执行。
 
-`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括全部 `test/**/*.test.ts`；manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
+`test/run-tests.ts` 负责脚本级发现、筛选、串行调度、计时和汇总。默认自动化测试集包括全部 `test/**/*.test.ts`；privileged、manual、helper、fixture setup 和 inspect 脚本不符合自动化发现规则，不由 `npm test` 执行。
 
 测试脚本使用独立 Node 子进程逐个串行运行，避免共享 fixture 的跨脚本竞态。默认模式捕获子脚本输出：成功脚本的内部输出被折叠，runner 按主题汇总脚本数量与耗时；失败脚本的捕获输出会自动展开，runner 随后继续执行剩余脚本，最终汇总所有失败并返回非零退出码。单个脚本的捕获输出限制为 256 KB，超过部分以截断提示代替，避免异常日志无限占用内存。
 
 `--verbose` 会传递给每个被选中的测试脚本，并将子脚本输出实时透传到终端，适合查看逐用例结果和测试内部的 `console.*` 输出。
 
 `*.manual.ts` 脚本需要显式以 `node --import tsx <script>` 运行；脚本自身及其专题文档负责说明特有的前置条件和人工操作。
+
+`*.privileged.ts` 脚本同样使用 `node --import tsx <script>` 显式运行；所需权限和具体命令由对应专题文档说明。
 
 ---
 
@@ -92,11 +95,3 @@ npm test -- config --verbose
 `npm test` 不执行生产构建或静态类型检查。`tsx` 负责转译并执行测试脚本，不执行与 `tsc` 等价的完整类型检查；脚本运行成功不表示测试代码通过静态类型检查。调整测试后，应分别运行对应脚本的 `npm test -- <selector>` 与 `npm run typecheck:test`。各主题的脚本位置见上方测试目录索引，更细的测试覆盖范围见对应专题文档或单工具文档。
 
 selector 支持主题名、仓库相对路径和文件名，接受 `/` 或 `\\` 路径分隔符。多个 selector 按 OR 组合；任一 selector 没有匹配自动化脚本时，runner 会在执行前报错，避免静默空跑。
-
----
-
-## Android 构建相关测试
-
-Android 构建相关测试集中在 `test/android-build/`。其中 timeout / launcher 测试依赖 Windows 进程树和 `gradlew.bat` 启动行为，在沙箱或受限权限环境中的 AI Agent 需要**提权**才能跑测试验证。
-
-Android 构建工具本身的行为文档见 [docs/tools/android-build.md](tools/android-build.md)。

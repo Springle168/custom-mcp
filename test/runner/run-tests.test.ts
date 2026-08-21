@@ -39,8 +39,8 @@ async function testDiscoversOnlyAutomatedScripts(): Promise<void> {
     'Should discover ordinary *.test.ts scripts',
   );
   assert(
-    tests.includes('test/android-build/android-gradle-timeout.test.ts'),
-    'Should discover Android automated scripts through the shared pattern',
+    !tests.includes('test/android-build/android-gradle-timeout.privileged.ts'),
+    'Should exclude privileged automated scripts',
   );
   assert(
     tests.includes('test/runner/run-tests.test.ts'),

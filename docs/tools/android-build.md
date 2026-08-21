@@ -106,5 +106,11 @@ Android 构建相关测试集中在 `test/android-build/`：
 
 - `test/android-build/android-build-tools.test.ts`：工具参数校验、缺失配置、缺失 wrapper
 - `test/android-build/android-gradle-output.test.ts`：输出裁剪、首个错误块、到达顺序
-- `test/android-build/android-gradle-timeout.test.ts`：超时后终止整棵进程树
+- `test/android-build/android-gradle-timeout.privileged.ts`：超时后终止整棵进程树
 - `test/android-build/android-gradle-launcher.test.ts`：特殊 Windows 路径下的启动行为
+
+进程树终止测试需要允许 `taskkill /t /f` 终止测试创建的完整 Windows 进程树，不由 `npm test` 执行。在满足权限前提的环境中显式运行：
+
+```bash
+node --import tsx test/android-build/android-gradle-timeout.privileged.ts
+```
