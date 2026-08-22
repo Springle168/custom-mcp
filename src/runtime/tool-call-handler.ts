@@ -6,18 +6,35 @@ import {
 } from './request-header-policy.js';
 import { adaptToolCallResultForRequestPolicy } from './tool-result-adapter.js';
 import type {
+  ToolInvocationContext,
+  ToolRequestId,
+} from './tool-invocation-context.js';
+import type {
   ToolCallLogContext,
   ToolCallResultLogContext,
 } from './tool-call-log-context.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
 import type { ConfigStore } from './config-store.js';
 import type { ToolCallResult } from '../tools/types.js';
+import { textErrorResult } from '../tools/results.js';
+
+const ROUTER_FAILURE_MESSAGE =
+  'The tool execution failed unexpectedly. Check server diagnostics and retry only if the operation is safe to run again.';
+const MALFORMED_RESULT_MESSAGE =
+  'The tool returned an invalid result. Check server diagnostics and retry only if the operation is safe to run again.';
 
 export interface ToolCallRequestLike {
   readonly params: {
     readonly name: string;
     readonly arguments?: unknown;
   };
+}
+
+/** The subset of MCP SDK request metadata consumed by the tool invocation pipeline. */
+export interface ToolCallRequestMetadata {
+  readonly signal: AbortSignal;
+  readonly sessionId?: string;
+  readonly requestId: ToolRequestId;
 }
 
 export interface ToolCallLogger {
@@ -38,19 +55,38 @@ export type ToolCallRouter = (
   name: string,
   args: unknown,
   context: ToolRuntimeContext,
+  invocation: ToolInvocationContext,
 ) => Promise<ToolCallResult>;
+
+/**
+ * Correlation-only pipeline diagnostics. Error objects, tool arguments, and
+ * tool results stay out of this sink because they can contain user data.
+ */
+export interface ToolCallPipelineDiagnostic {
+  readonly kind:
+    | 'router_exception'
+    | 'malformed_result'
+    | 'call_log_failed'
+    | 'result_log_failed';
+  readonly callId: string;
+}
+
+export type ToolCallDiagnosticSink = (
+  diagnostic: ToolCallPipelineDiagnostic,
+) => void | Promise<void>;
 
 export interface CreateToolCallRequestHandlerOptions {
   readonly configStore: ConfigStore;
   readonly logger: ToolCallLogger;
   readonly routeToolCall: ToolCallRouter;
-  readonly getSessionId?: () => string | undefined;
   readonly generateCallId?: () => string;
   readonly now?: () => number;
+  readonly onDiagnostic?: ToolCallDiagnosticSink;
 }
 
 export type ToolCallRequestHandler = (
   request: ToolCallRequestLike,
+  metadata?: ToolCallRequestMetadata,
 ) => Promise<ToolCallResult>;
 
 export function createToolCallRequestHandler(
@@ -58,30 +94,178 @@ export function createToolCallRequestHandler(
 ): ToolCallRequestHandler {
   const now = options.now ?? Date.now;
   const generateCallId = options.generateCallId ?? generateToolCallId;
+  const fallbackSignal = new AbortController().signal;
 
-  return async (request) => {
+  return async (request, metadata) => {
     const { name, arguments: args } = request.params;
     const normalizedArgs = args === undefined ? {} : args;
     const startTime = now();
-    const logContext: ToolCallLogContext = {
-      sessionId: options.getSessionId?.(),
+    const invocation = Object.freeze({
       callId: generateCallId(),
+      requestId: metadata?.requestId,
+      sessionId: metadata?.sessionId,
+      signal: metadata?.signal ?? fallbackSignal,
+    } satisfies ToolInvocationContext);
+    const logContext: ToolCallLogContext = {
+      sessionId: invocation.sessionId,
+      callId: invocation.callId,
     };
     const snapshot = options.configStore.getSnapshot();
     const requestHeaderView = getCurrentRequestHeaderView();
     const requestPolicy = evaluateRequestHeaderPolicy(snapshot.rules, requestHeaderView);
     const toolContext = createToolRuntimeContext(snapshot);
 
-    options.logger.logToolCall(name, normalizedArgs, logContext);
+    const callLogged = tryLogToolCall(
+      options.logger,
+      name,
+      normalizedArgs,
+      logContext,
+      options.onDiagnostic,
+    );
+    let result: ToolCallResult;
 
-    const result = await options.routeToolCall(name, normalizedArgs, toolContext);
+    try {
+      result = await options.routeToolCall(
+        name,
+        normalizedArgs,
+        toolContext,
+        invocation,
+      );
+    } catch {
+      emitToolCallDiagnostic(options.onDiagnostic, {
+        kind: 'router_exception',
+        callId: invocation.callId,
+      });
+      result = textErrorResult(ROUTER_FAILURE_MESSAGE);
+    }
+
+    if (!isToolCallResult(result)) {
+      emitToolCallDiagnostic(options.onDiagnostic, {
+        kind: 'malformed_result',
+        callId: invocation.callId,
+      });
+      result = textErrorResult(MALFORMED_RESULT_MESSAGE);
+    }
+
     const adaptedResult = adaptToolCallResultForRequestPolicy(result, requestPolicy);
     const resultLogContext: ToolCallResultLogContext = {
       ...logContext,
       requestHeaderPolicy: toRequestHeaderPolicyLogMetadata(requestPolicy),
     };
 
-    options.logger.logToolResult(name, adaptedResult, now() - startTime, resultLogContext);
+    if (callLogged) {
+      tryLogToolResult(
+        options.logger,
+        name,
+        adaptedResult,
+        now() - startTime,
+        resultLogContext,
+        options.onDiagnostic,
+      );
+    }
+
     return adaptedResult;
   };
+}
+
+function tryLogToolCall(
+  logger: ToolCallLogger,
+  toolName: string,
+  args: unknown,
+  context: ToolCallLogContext,
+  diagnosticSink: ToolCallDiagnosticSink | undefined,
+): boolean {
+  try {
+    logger.logToolCall(toolName, args, context);
+    return true;
+  } catch {
+    emitToolCallDiagnostic(diagnosticSink, {
+      kind: 'call_log_failed',
+      callId: context.callId,
+    });
+    return false;
+  }
+}
+
+function tryLogToolResult(
+  logger: ToolCallLogger,
+  toolName: string,
+  result: ToolCallResult,
+  durationMs: number,
+  context: ToolCallResultLogContext,
+  diagnosticSink: ToolCallDiagnosticSink | undefined,
+): void {
+  try {
+    logger.logToolResult(toolName, result, durationMs, context);
+  } catch {
+    emitToolCallDiagnostic(diagnosticSink, {
+      kind: 'result_log_failed',
+      callId: context.callId,
+    });
+  }
+}
+
+function emitToolCallDiagnostic(
+  sink: ToolCallDiagnosticSink | undefined,
+  diagnostic: ToolCallPipelineDiagnostic,
+): void {
+  if (sink === undefined) {
+    return;
+  }
+
+  try {
+    // Diagnostics run outside the response path; a slow or failing sink cannot
+    // leak errors, delay the caller, or expose the original exception.
+    void Promise.resolve(sink(Object.freeze({ ...diagnostic }))).catch(
+      ignoreToolCallDiagnosticFailure,
+    );
+  } catch {
+    // Synchronous sink failures are isolated just like rejected sink promises.
+  }
+}
+
+function ignoreToolCallDiagnosticFailure(): void {
+  // A diagnostics-only channel must never create an unhandled rejection.
+}
+
+function isToolCallResult(value: unknown): value is ToolCallResult {
+  try {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return false;
+    }
+
+    const result = value as Record<string, unknown>;
+    if (!hasOnlyDataProperties(result)) {
+      return false;
+    }
+
+    return (
+      typeof result.isError === 'boolean'
+      && Array.isArray(result.content)
+      && result.content.every(isTextContent)
+    );
+  } catch {
+    // Dependency implementations are allowed to be injected in tests. Treat
+    // exotic objects or throwing accessors as a malformed result boundary.
+    return false;
+  }
+}
+
+function isTextContent(value: unknown): value is ToolCallResult['content'][number] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const content = value as Record<string, unknown>;
+  return (
+    hasOnlyDataProperties(content)
+    && content.type === 'text'
+    && typeof content.text === 'string'
+  );
+}
+
+function hasOnlyDataProperties(value: Record<string, unknown>): boolean {
+  return Object.values(Object.getOwnPropertyDescriptors(value)).every(
+    (descriptor) => 'value' in descriptor,
+  );
 }

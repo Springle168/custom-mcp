@@ -1,6 +1,7 @@
 import { ConfigError } from '../config/errors.js';
 import type { ParsedToolExposure } from '../config/tool-exposure.js';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import type { CompiledCustomToolDefinition } from './custom-tool-config.js';
 import type { InputSchemaValidationIssue, InputSchemaValidator } from './input-schema-validator.js';
 import { textErrorResult } from './results.js';
@@ -20,13 +21,46 @@ export interface CompiledBuiltInTool {
   readonly executor: ToolExecutor;
 }
 
-export interface WorkspaceToolCatalogEntry {
+export interface ExternalToolInvocation {
+  readonly callId: string;
+  readonly name: string;
+  readonly arguments: Readonly<Record<string, unknown>>;
+  readonly signal: AbortSignal;
+}
+
+/**
+ * Catalog-facing subset of the application-owned external routing executor.
+ * External routes deliberately do not receive workspace runtime capability.
+ */
+export interface ExternalToolExecutor {
+  execute(invocation: ExternalToolInvocation): Promise<ToolCallResult>;
+}
+
+interface WorkspaceToolCatalogEntryBase {
   readonly definition: ToolDefinition;
   readonly effectiveValidator: InputSchemaValidator;
-  readonly implementationValidator?: InputSchemaValidator;
-  readonly executor: ToolExecutor;
   readonly source: ToolDefinitionSourceMetadata;
 }
+
+export interface BuiltInWorkspaceToolCatalogEntry extends WorkspaceToolCatalogEntryBase {
+  readonly binding: 'built-in';
+  readonly implementationValidator: InputSchemaValidator;
+  readonly executor: ToolExecutor;
+}
+
+export interface ExternalWorkspaceToolCatalogEntry extends WorkspaceToolCatalogEntryBase {
+  readonly binding: 'external';
+  readonly externalExecutor: ExternalToolExecutor;
+}
+
+export interface UnavailableWorkspaceToolCatalogEntry extends WorkspaceToolCatalogEntryBase {
+  readonly binding: 'unavailable';
+}
+
+export type WorkspaceToolCatalogEntry =
+  | BuiltInWorkspaceToolCatalogEntry
+  | ExternalWorkspaceToolCatalogEntry
+  | UnavailableWorkspaceToolCatalogEntry;
 
 export interface CompiledWorkspaceToolCatalog {
   readonly effectiveEntries: readonly WorkspaceToolCatalogEntry[];
@@ -36,6 +70,7 @@ export interface CompiledWorkspaceToolCatalog {
     name: string,
     args: unknown,
     context: ToolRuntimeContext,
+    invocationContext: ToolInvocationContext,
   ): Promise<ToolCallResult>;
 }
 
@@ -44,6 +79,12 @@ export interface CompileWorkspaceToolCatalogOptions {
   readonly customDefinitions: readonly CompiledCustomToolDefinition[];
   readonly exposure: ParsedToolExposure;
   readonly workspaceConfigFilePath: string;
+  /**
+   * Shared application-owned executor used only for custom-only definitions.
+   * When absent, those definitions compile for validation/exposure but retain
+   * the deterministic unavailable route.
+   */
+  readonly externalExecutor?: ExternalToolExecutor;
 }
 
 export function compileWorkspaceToolCatalog(
@@ -57,6 +98,7 @@ export function compileWorkspaceToolCatalog(
     const custom = customByName.get(builtIn.definition.name);
     if (custom === undefined) {
       return freezeEntry({
+        binding: 'built-in',
         definition: builtIn.definition,
         effectiveValidator: builtIn.implementationValidator,
         implementationValidator: builtIn.implementationValidator,
@@ -66,6 +108,7 @@ export function compileWorkspaceToolCatalog(
     }
 
     return freezeEntry({
+      binding: 'built-in',
       definition: custom.definition,
       effectiveValidator: custom.validator,
       implementationValidator: builtIn.implementationValidator,
@@ -83,15 +126,27 @@ export function compileWorkspaceToolCatalog(
       continue;
     }
 
+    const source = Object.freeze({
+      kind: 'custom' as const,
+      referenceId: custom.source.referenceId,
+      definitionFilePath: custom.source.toolDefinitionFilePath,
+    });
+    if (options.externalExecutor === undefined) {
+      effectiveEntries.push(freezeEntry({
+        binding: 'unavailable',
+        definition: custom.definition,
+        effectiveValidator: custom.validator,
+        source,
+      }));
+      continue;
+    }
+
     effectiveEntries.push(freezeEntry({
+      binding: 'external',
       definition: custom.definition,
       effectiveValidator: custom.validator,
-      executor: createUnavailableExecutor(custom.definition.name),
-      source: Object.freeze({
-        kind: 'custom' as const,
-        referenceId: custom.source.referenceId,
-        definitionFilePath: custom.source.toolDefinitionFilePath,
-      }),
+      externalExecutor: options.externalExecutor,
+      source,
     }));
   }
 
@@ -120,6 +175,7 @@ export function compileWorkspaceToolCatalog(
       name: string,
       args: unknown,
       context: ToolRuntimeContext,
+      invocationContext: ToolInvocationContext,
     ): Promise<ToolCallResult> => {
       const entry = routeMap.get(name);
       if (entry === undefined) {
@@ -135,8 +191,8 @@ export function compileWorkspaceToolCatalog(
       }
 
       if (
-        entry.implementationValidator !== undefined &&
-        entry.implementationValidator !== entry.effectiveValidator
+        entry.binding === 'built-in'
+        && entry.implementationValidator !== entry.effectiveValidator
       ) {
         const implementationResult = entry.implementationValidator.validate(args);
         if (!implementationResult.valid) {
@@ -147,7 +203,22 @@ export function compileWorkspaceToolCatalog(
         }
       }
 
-      return entry.executor(args as Record<string, unknown>, context);
+      if (entry.binding === 'built-in') {
+        return entry.executor(args as Record<string, unknown>, context);
+      }
+
+      if (entry.binding === 'external') {
+        return entry.externalExecutor.execute({
+          callId: invocationContext.callId,
+          name,
+          arguments: args as Readonly<Record<string, unknown>>,
+          signal: invocationContext.signal,
+        });
+      }
+
+      return textErrorResult(
+        `Tool "${name}" is exposed, but no execution route is configured for it.`,
+      );
     },
   });
 }
@@ -181,13 +252,7 @@ function validateExposureMembers(
   }
 }
 
-function createUnavailableExecutor(name: string): ToolExecutor {
-  return async () => textErrorResult(
-    `Tool "${name}" is exposed, but no execution route is configured for it.`,
-  );
-}
-
-function freezeEntry(entry: WorkspaceToolCatalogEntry): WorkspaceToolCatalogEntry {
+function freezeEntry<T extends WorkspaceToolCatalogEntry>(entry: T): T {
   return Object.freeze(entry);
 }
 

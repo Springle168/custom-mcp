@@ -6,6 +6,7 @@ import {
 import type { ConfigStore } from './config-store.js';
 import {
   createToolCallRequestHandler,
+  type ToolCallDiagnosticSink,
   type ToolCallLogger,
 } from './tool-call-handler.js';
 import type { WorkspaceToolService } from '../tools/index.js';
@@ -14,7 +15,7 @@ export interface CreateMCPServerOptions {
   readonly configStore: ConfigStore;
   readonly logger: ToolCallLogger;
   readonly toolService: WorkspaceToolService;
-  readonly getSessionId: () => string | undefined;
+  readonly onToolCallDiagnostic?: ToolCallDiagnosticSink;
 }
 
 export function createMCPServer(options: CreateMCPServerOptions): Server {
@@ -27,14 +28,17 @@ export function createMCPServer(options: CreateMCPServerOptions): Server {
     tools: [...options.toolService.getDefinitions()],
   }));
 
+  const handleToolCall = createToolCallRequestHandler({
+    configStore: options.configStore,
+    logger: options.logger,
+    routeToolCall: options.toolService.routeToolCall,
+    ...(options.onToolCallDiagnostic === undefined
+      ? {}
+      : { onDiagnostic: options.onToolCallDiagnostic }),
+  });
   server.setRequestHandler(
     CallToolRequestSchema,
-    createToolCallRequestHandler({
-      configStore: options.configStore,
-      logger: options.logger,
-      routeToolCall: options.toolService.routeToolCall,
-      getSessionId: options.getSessionId,
-    }),
+    (request, extra) => handleToolCall(request, extra),
   );
 
   return server;

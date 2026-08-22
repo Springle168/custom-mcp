@@ -1,8 +1,16 @@
 import { pendingQuestions } from '../../src/tools/ask-user.js';
-import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
+import {
+  compileWorkspaceToolCatalog,
+  type CompiledBuiltInTool,
+  type ExternalToolExecutor,
+  type ExternalToolInvocation,
+} from '../../src/tools/catalog.js';
 import type { JsonObject } from '../../src/config/json-file.js';
+import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
 import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
+import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   createWorkspaceToolService,
   getAllToolDefinitions,
@@ -24,6 +32,22 @@ function definitionNames(definitions: readonly { readonly name: string }[]): str
 
 function createContext() {
   return createTestToolRuntimeContext({ rootDir: process.cwd() });
+}
+
+function createInvocationContext(callId = 'call_tool_exposure'): ToolInvocationContext {
+  return Object.freeze({
+    callId,
+    requestId: 'request_tool_exposure',
+    sessionId: 'session_tool_exposure',
+    signal: new AbortController().signal,
+  });
+}
+
+function textResult(text: string): ToolCallResult {
+  return {
+    content: [{ type: 'text', text }],
+    isError: false,
+  };
 }
 
 function customDefinition(
@@ -53,16 +77,21 @@ function customDefinition(
 }
 
 function createCatalog(options: {
+  builtInTools?: readonly CompiledBuiltInTool[];
   customDefinitions?: readonly CompiledCustomToolDefinition[];
+  externalExecutor?: ExternalToolExecutor;
   exposure?:
     | { readonly mode: 'all' }
     | { readonly mode: 'enable' | 'disable'; readonly names: readonly string[] };
 } = {}) {
   return compileWorkspaceToolCatalog({
-    builtInTools: getCompiledBuiltInTools(),
+    builtInTools: options.builtInTools ?? getCompiledBuiltInTools(),
     customDefinitions: options.customDefinitions ?? [],
     exposure: options.exposure ?? { mode: 'all' },
     workspaceConfigFilePath: 'E:/config/workspace.json',
+    ...(options.externalExecutor === undefined
+      ? {}
+      : { externalExecutor: options.externalExecutor }),
   });
 }
 
@@ -120,14 +149,24 @@ async function testOverrideUsesBothContracts(): Promise<void> {
   });
   const service = createWorkspaceToolService(createCatalog({ customDefinitions: [override] }));
 
-  const effectiveFailure = await service.routeToolCall('read_file', {}, createContext());
+  const effectiveFailure = await service.routeToolCall(
+    'read_file',
+    {},
+    createContext(),
+    createInvocationContext(),
+  );
   assertIncludes(getResultText(effectiveFailure), 'configured input schema', 'Effective schema should run first');
   assert(
     !getResultText(effectiveFailure).includes('E:/tools/'),
     'Call validation errors should not expose local definition paths',
   );
 
-  const implementationFailure = await service.routeToolCall('read_file', { alias: 'x' }, createContext());
+  const implementationFailure = await service.routeToolCall(
+    'read_file',
+    { alias: 'x' },
+    createContext(),
+    createInvocationContext(),
+  );
   assertIncludes(getResultText(implementationFailure), 'not supported by its current executor', 'Built-in implementation contract should protect overridden executors');
 }
 
@@ -138,10 +177,22 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
     required: ['value'],
     additionalProperties: false,
   });
-  const service = createWorkspaceToolService(createCatalog({ customDefinitions: [custom] }));
+  const catalog = createCatalog({ customDefinitions: [custom] });
+  const entry = catalog.effectiveEntries.find((candidate) => candidate.definition.name === 'custom_tool');
+  assertEqual(
+    entry?.binding,
+    'unavailable',
+    'Custom-only definitions without an external executor should retain the unavailable binding',
+  );
+  const service = createWorkspaceToolService(catalog);
 
   for (const args of [{}, null, [], 'value']) {
-    const invalid = await service.routeToolCall('custom_tool', args, createContext());
+    const invalid = await service.routeToolCall(
+      'custom_tool',
+      args,
+      createContext(),
+      createInvocationContext(),
+    );
     assertIncludes(
       getResultText(invalid),
       'configured input schema',
@@ -153,6 +204,7 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
     'custom_tool',
     { value: 'ok', remove_me: true },
     createContext(),
+    createInvocationContext(),
   );
   assertIncludes(
     getResultText(unexpectedProperty),
@@ -160,7 +212,12 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
     'Additional-property errors should identify the argument the caller must remove',
   );
 
-  const unavailable = await service.routeToolCall('custom_tool', { value: 'ok' }, createContext());
+  const unavailable = await service.routeToolCall(
+    'custom_tool',
+    { value: 'ok' },
+    createContext(),
+    createInvocationContext(),
+  );
   assertEqual(unavailable.isError, true, 'Unavailable executor should return a tool error');
   assertEqual(
     getResultText(unavailable),
@@ -169,14 +226,166 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
   );
 }
 
-async function testHiddenAndUnknownShareBoundary(): Promise<void> {
+async function testCustomOnlyExternalRouteUsesSharedBinding(): Promise<void> {
+  const custom = customDefinition('custom_tool', {
+    type: 'object',
+    properties: { value: { type: 'string' } },
+    required: ['value'],
+    additionalProperties: false,
+  });
+  const invocations: ExternalToolInvocation[] = [];
+  const externalExecutor: ExternalToolExecutor = {
+    async execute(invocation) {
+      invocations.push(invocation);
+      return textResult('External custom tool completed.');
+    },
+  };
+  const catalog = createCatalog({
+    customDefinitions: [custom],
+    externalExecutor,
+  });
+  const service = createWorkspaceToolService(catalog);
+  const entry = catalog.effectiveEntries.find((candidate) => candidate.definition.name === 'custom_tool');
+  assertEqual(entry?.binding, 'external', 'Custom-only definitions should bind the shared external executor');
+  assertEqual(
+    service.routeToolCall,
+    catalog.routeToolCall,
+    'Workspace service should retain the catalog-owned route binding',
+  );
+
+  const invalid = await service.routeToolCall(
+    'custom_tool',
+    {},
+    createContext(),
+    createInvocationContext(),
+  );
+  assertIncludes(
+    getResultText(invalid),
+    'configured input schema',
+    'External routes should validate custom-only input before execution',
+  );
+  assertEqual(invocations.length, 0, 'Invalid external input must not reach the executor');
+
+  const args = { value: 'ok' };
+  const invocationContext = createInvocationContext('call_external_custom');
+  const result = await service.routeToolCall(
+    'custom_tool',
+    args,
+    createContext(),
+    invocationContext,
+  );
+  assertEqual(getResultText(result), 'External custom tool completed.', 'External executor result should be returned');
+  assertEqual(invocations.length, 1, 'Valid custom-only input should invoke the external executor once');
+  const externalInvocation = invocations[0];
+  assertEqual(externalInvocation?.callId, 'call_external_custom', 'External executor should receive the call ID');
+  assertEqual(externalInvocation?.name, 'custom_tool', 'External executor should receive the tool name');
+  assertEqual(externalInvocation?.arguments, args, 'External executor should receive the validated arguments');
+  assertEqual(externalInvocation?.signal, invocationContext.signal, 'External executor should receive the call signal');
+}
+
+async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
+  const inputSchema = Object.freeze({
+    type: 'object',
+    properties: Object.freeze({ value: Object.freeze({ type: 'string' }) }),
+    required: Object.freeze(['value']),
+    additionalProperties: false,
+  });
+  const implementationValidator = compileInputSchemaValidator(inputSchema);
+  let builtInCalls = 0;
+  let externalCalls = 0;
+  let receivedBuiltInArgs: Record<string, unknown> | undefined;
+  let receivedBuiltInContext: ToolRuntimeContext | undefined;
+  const builtIn: CompiledBuiltInTool = Object.freeze({
+    definition: Object.freeze({
+      name: 'bound_tool',
+      description: 'Built-in route binding test tool',
+      inputSchema,
+    }),
+    implementationValidator,
+    executor: async (args: Record<string, unknown>, context: ToolRuntimeContext) => {
+      builtInCalls++;
+      receivedBuiltInArgs = args;
+      receivedBuiltInContext = context;
+      return textResult('Built-in tool completed.');
+    },
+  });
+  const externalExecutor: ExternalToolExecutor = {
+    async execute() {
+      externalCalls++;
+      return textResult('External tool completed.');
+    },
+  };
+  const catalog = createCatalog({
+    builtInTools: [builtIn],
+    customDefinitions: [customDefinition('bound_tool', inputSchema)],
+    externalExecutor,
+  });
+  const service = createWorkspaceToolService(catalog);
+  const entry = catalog.effectiveEntries[0];
+  assertEqual(entry?.binding, 'built-in', 'Overrides should retain their built-in route binding');
+
+  const context = createContext();
+  const args = { value: 'ok' };
+  const result = await service.routeToolCall(
+    'bound_tool',
+    args,
+    context,
+    createInvocationContext('call_override'),
+  );
+  assertEqual(getResultText(result), 'Built-in tool completed.', 'Override should return the built-in executor result');
+  assertEqual(builtInCalls, 1, 'Override should invoke its built-in executor');
+  assertEqual(externalCalls, 0, 'Override must not invoke the external executor');
+  assertEqual(receivedBuiltInArgs, args, 'Built-in executor should receive its tool arguments');
+  assertEqual(receivedBuiltInContext, context, 'Built-in executor should receive workspace runtime context');
+}
+
+async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
+  const original = customDefinition('custom_tool');
+  let validationCalls = 0;
+  let executionCalls = 0;
+  const custom: CompiledCustomToolDefinition = Object.freeze({
+    ...original,
+    validator: Object.freeze({
+      validate(value: unknown) {
+        validationCalls++;
+        return original.validator.validate(value);
+      },
+    }),
+  });
+  const externalExecutor: ExternalToolExecutor = {
+    async execute() {
+      executionCalls++;
+      return textResult('Unexpected external execution.');
+    },
+  };
   const service = createWorkspaceToolService(createCatalog({
+    customDefinitions: [custom],
+    externalExecutor,
     exposure: { mode: 'enable', names: ['read_file'] },
   }));
+
   for (const name of ['write_file', 'never_registered']) {
-    const result = await service.routeToolCall(name, null, createContext());
+    const result = await service.routeToolCall(
+      name,
+      null,
+      createContext(),
+      createInvocationContext(),
+    );
     assertEqual(getResultText(result), `Unknown tool: ${name}`, 'Hidden and unknown tools should be indistinguishable');
   }
+  const hiddenCustom = await service.routeToolCall(
+    'custom_tool',
+    null,
+    createContext(),
+    createInvocationContext(),
+  );
+  assertEqual(
+    getResultText(hiddenCustom),
+    'Unknown tool: custom_tool',
+    'Hidden custom-only tools should share the unknown-tool boundary',
+  );
+  assertEqual(validationCalls, 0, 'Hidden and unknown routes must not run schema validation');
+  assertEqual(executionCalls, 0, 'Hidden and unknown routes must not run external executors');
 }
 
 async function testDisabledAskUserDoesNotReachExecutor(): Promise<void> {
@@ -186,7 +395,7 @@ async function testDisabledAskUserDoesNotReachExecutor(): Promise<void> {
   const beforeCount = pendingQuestions.size;
   await service.routeToolCall('ask_user', {
     questions: [{ question: 'Proceed?', header: 'Confirm', type: 'yesno' }],
-  }, createContext());
+  }, createContext(), createInvocationContext());
   assertEqual(pendingQuestions.size, beforeCount, 'Hidden ask_user should not create pending state');
 }
 
@@ -210,7 +419,9 @@ async function main(): Promise<void> {
       { name: 'exposure filters without reordering', run: testExposureFiltersWithoutReordering },
       { name: 'override uses effective and implementation contracts', run: testOverrideUsesBothContracts },
       { name: 'custom-only validation precedes unavailable executor', run: testCustomOnlyValidationAndUnavailableExecutor },
-      { name: 'hidden and unknown tools share a boundary', run: testHiddenAndUnknownShareBoundary },
+      { name: 'custom-only external route uses shared binding', run: testCustomOnlyExternalRouteUsesSharedBinding },
+      { name: 'override remains bound to its built-in executor', run: testOverrideRemainsBoundToBuiltInExecutor },
+      { name: 'hidden and unknown tools do not validate or execute', run: testHiddenAndUnknownDoNotValidateOrExecute },
       { name: 'disabled ask_user does not reach executor', run: testDisabledAskUserDoesNotReachExecutor },
       { name: 'catalog and service facades are frozen', run: testCatalogAndServiceFacadesAreFrozen },
     ],

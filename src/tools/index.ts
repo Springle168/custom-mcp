@@ -1,4 +1,5 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import type {
   CompiledBuiltInTool,
   CompiledWorkspaceToolCatalog,
@@ -50,6 +51,7 @@ export interface WorkspaceToolService {
     name: string,
     args: unknown,
     context: ToolRuntimeContext,
+    invocationContext: ToolInvocationContext,
   ): Promise<ToolCallResult>;
 }
 
