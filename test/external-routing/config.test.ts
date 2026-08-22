@@ -274,6 +274,15 @@ async function testProcessorDefinitionsAndReferences(): Promise<void> {
       message: 'bare command',
     },
     {
+      name: 'path search command rejects Windows drive-relative form',
+      config: {
+        processors: [processor('codec', { executable: { resolution: 'path-search', command: 'C:codec.exe' } })],
+        routingStrategy: [requestFilter, responseDecoder],
+      },
+      fieldPath: 'processors[0].executable.command',
+      message: 'drive prefix',
+    },
+    {
       name: 'working directory must exist',
       config: {
         processors: [processor('codec', { workingDirectory: path.join(FIXTURES_DIR, 'missing') })],

@@ -114,7 +114,7 @@ const BODY_ENCODER_STRATEGY_FIELDS = new Set([
   'contentType',
 ]);
 const PROCESSOR_NAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
-const PATH_SEARCH_COMMAND_RE = /^[^/\\]+$/;
+const PATH_SEARCH_COMMAND_RE = /^[^/\\:]+$/;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const FORBIDDEN_ENDPOINT_HEADERS = new Set([
   'host',
@@ -351,7 +351,7 @@ function parseExecutable(
       failConfig(
         processorConfigFilePath,
         `${fieldPath}.command`,
-        `${fieldPath}.command must be a bare command name without path separators.`,
+        `${fieldPath}.command must be a bare command name without path separators or a drive prefix.`,
       );
     }
     return deepFreeze({ resolution: 'path-search' as const, command });
