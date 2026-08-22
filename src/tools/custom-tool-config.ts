@@ -11,6 +11,10 @@ import {
   InputSchemaCompilationError,
   type InputSchemaValidator,
 } from './input-schema-validator.js';
+import {
+  loadExternalRoutingSpec,
+  type ExternalRoutingSpec,
+} from './external-routing/config.js';
 
 export interface CustomToolDefinition {
   readonly name: string;
@@ -34,6 +38,7 @@ export interface CompiledCustomToolDefinition {
 export interface LoadedCustomToolConfig {
   readonly toolConfigFilePath: string;
   readonly definitions: readonly CompiledCustomToolDefinition[];
+  readonly externalRouting?: ExternalRoutingSpec;
 }
 
 interface DefinitionReference {
@@ -42,7 +47,12 @@ interface DefinitionReference {
   readonly index: number;
 }
 
-const TOOL_CONFIG_FIELDS = new Set(['version', 'definitions']);
+interface ParsedToolConfig {
+  readonly references: readonly DefinitionReference[];
+  readonly processorConfigFilePath?: string;
+}
+
+const TOOL_CONFIG_FIELDS = new Set(['version', 'definitions', 'processorConfigFile']);
 const DEFINITION_REFERENCE_FIELDS = new Set(['id', 'toolDefinitionFile']);
 const TOOL_DEFINITION_FIELDS = new Set(['name', 'description', 'inputSchema']);
 const TOOL_IDENTITY_RE = /^[A-Za-z0-9._-]{1,128}$/;
@@ -55,23 +65,27 @@ export function loadCustomToolConfig(toolConfigFilePath: string): LoadedCustomTo
     readLocalAbsolutePath(toolConfigFilePath, { fieldPath: 'toolConfigFile' }),
   );
   const rawConfig = readJsonFile(validatedConfigPath, { label: 'Tool config file' });
-  const references = parseToolConfig(rawConfig, validatedConfigPath);
-  const definitions = references.map((reference) =>
+  const parsedConfig = parseToolConfig(rawConfig, validatedConfigPath);
+  const definitions = parsedConfig.references.map((reference) =>
     loadDefinition(validatedConfigPath, reference)
   );
 
   assertUniqueDefinitionNames(validatedConfigPath, definitions);
+  const externalRouting = parsedConfig.processorConfigFilePath === undefined
+    ? undefined
+    : loadExternalRoutingSpec(parsedConfig.processorConfigFilePath);
 
   return Object.freeze({
     toolConfigFilePath: validatedConfigPath,
     definitions: Object.freeze(definitions),
+    ...(externalRouting === undefined ? {} : { externalRouting }),
   });
 }
 
 function parseToolConfig(
   value: JsonValue,
   toolConfigFilePath: string,
-): readonly DefinitionReference[] {
+): ParsedToolConfig {
   const rawConfig = readObject(
     value,
     () => failConfig(
@@ -115,7 +129,22 @@ function parseToolConfig(
     return Object.freeze(reference);
   });
 
-  return Object.freeze(references);
+  const processorConfigFilePath = Object.prototype.hasOwnProperty.call(
+    rawConfig,
+    'processorConfigFile',
+  )
+    ? unwrapConfigPathPolicy(
+      toolConfigFilePath,
+      readLocalAbsolutePath(rawConfig.processorConfigFile, {
+        fieldPath: 'processorConfigFile',
+      }),
+    )
+    : undefined;
+
+  return Object.freeze({
+    references: Object.freeze(references),
+    ...(processorConfigFilePath === undefined ? {} : { processorConfigFilePath }),
+  });
 }
 
 function parseDefinitionReference(
