@@ -114,7 +114,8 @@ const BODY_ENCODER_STRATEGY_FIELDS = new Set([
   'contentType',
 ]);
 const PROCESSOR_NAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
-const PATH_SEARCH_COMMAND_RE = /^[^/\\:]+$/;
+const PATH_SEARCH_COMMAND_RE = /^[^/\\]+$/;
+const WINDOWS_DRIVE_PREFIX_RE = /^[A-Za-z]:/;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const FORBIDDEN_ENDPOINT_HEADERS = new Set([
   'host',
@@ -347,7 +348,10 @@ function parseExecutable(
       processorConfigFilePath,
       readTypedString(rawExecutable.command, { fieldPath: `${fieldPath}.command` }),
     );
-    if (!PATH_SEARCH_COMMAND_RE.test(command)) {
+    if (
+      !PATH_SEARCH_COMMAND_RE.test(command) ||
+      WINDOWS_DRIVE_PREFIX_RE.test(command)
+    ) {
       failConfig(
         processorConfigFilePath,
         `${fieldPath}.command`,

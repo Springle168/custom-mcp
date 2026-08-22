@@ -225,6 +225,21 @@ async function testProcessorDefinitionsAndReferences(): Promise<void> {
   assert(Object.isFrozen(loaded.processors[0]), 'Processor entries should be frozen');
   assert(Object.isFrozen(loaded.processors[0]?.arguments), 'Processor argument arrays should be frozen');
 
+  await writeJson(PROCESSOR_CONFIG_FILE, processorConfig({
+    processors: [processor('codec', {
+      executable: { resolution: 'path-search', command: 'vendor:codec' },
+    })],
+    routingStrategy: [requestFilter, responseDecoder],
+  }));
+  const posixCommand = loadExternalRoutingSpec(PROCESSOR_CONFIG_FILE);
+  assertEqual(
+    posixCommand.processors[0]?.executable.resolution === 'path-search'
+      ? posixCommand.processors[0].executable.command
+      : undefined,
+    'vendor:codec',
+    'A POSIX bare command may contain a non-drive-prefix colon',
+  );
+
   const cases: ReadonlyArray<{
     readonly name: string;
     readonly config: Record<string, unknown>;
