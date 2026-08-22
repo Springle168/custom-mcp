@@ -16,6 +16,8 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'custom-tool-config'
 const TOOL_CONFIG_FILE = path.join(FIXTURES_DIR, 'tool-config.json');
 const FIRST_DEFINITION_FILE = path.join(FIXTURES_DIR, 'first-definition.json');
 const SECOND_DEFINITION_FILE = path.join(FIXTURES_DIR, 'second-definition.json');
+const PROCESSOR_CONFIG_FILE = path.join(FIXTURES_DIR, 'processor-config.json');
+const ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'endpoint-config.json');
 
 async function resetFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
@@ -61,6 +63,27 @@ function definition(
       additionalProperties: false,
     },
     ...overrides,
+  };
+}
+
+function externalProcessorConfig(): Record<string, unknown> {
+  return {
+    version: 1,
+    httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
+    processors: [],
+    routingStrategy: [
+      { strategy: 'request-to-external', mode: 'direct' },
+      { strategy: 'response-from-external', mode: 'direct' },
+    ],
+  };
+}
+
+function externalEndpointConfig(): Record<string, unknown> {
+  return {
+    version: 1,
+    url: 'https://external.example.test/tool-calls',
+    timeoutMs: 30_000,
+    headers: {},
   };
 }
 
@@ -371,6 +394,54 @@ async function testRejectsDuplicateCustomNamesAtToolConfigBoundary(): Promise<vo
   assertIncludes(error.message, 'second-identity', 'Duplicate error should identify second reference');
 }
 
+async function testLoadsProcessorConfigFileAsFrozenExternalRoutingSpec(): Promise<void> {
+  await resetFixtures();
+  await writeJson(FIRST_DEFINITION_FILE, definition('external.custom'));
+  await writeJson(ENDPOINT_CONFIG_FILE, externalEndpointConfig());
+  await writeJson(PROCESSOR_CONFIG_FILE, externalProcessorConfig());
+  await writeJson(TOOL_CONFIG_FILE, toolConfig([
+    reference('external-reference', FIRST_DEFINITION_FILE),
+  ], {
+    processorConfigFile: PROCESSOR_CONFIG_FILE,
+  }));
+
+  const loaded = loadCustomToolConfig(TOOL_CONFIG_FILE);
+  const externalRouting = loaded.externalRouting;
+  assert(externalRouting !== undefined, 'processorConfigFile should load an external routing spec');
+  assertEqual(
+    externalRouting.processorConfigFilePath,
+    PROCESSOR_CONFIG_FILE,
+    'The processor config source should be retained',
+  );
+  assertEqual(
+    externalRouting.httpEndpointConfigFilePath,
+    ENDPOINT_CONFIG_FILE,
+    'The endpoint config source should be retained',
+  );
+  assert(Object.isFrozen(externalRouting), 'The external route spec should be immutable');
+  assert(Object.isFrozen(externalRouting.endpoint), 'Nested endpoint config should be immutable');
+
+  await writeJson(TOOL_CONFIG_FILE, toolConfig([
+    reference('external-reference', FIRST_DEFINITION_FILE),
+  ], {
+    processorConfigFile: 'relative-processor-config.json',
+  }));
+  let error = captureConfigError(() => loadCustomToolConfig(TOOL_CONFIG_FILE));
+  assertEqual(error.configFilePath, TOOL_CONFIG_FILE, 'processorConfigFile path errors belong to Tool config');
+  assertEqual(error.fieldPath, 'processorConfigFile', 'processorConfigFile path errors identify the field');
+  assertIncludes(error.message, 'absolute local path', 'processorConfigFile must use the standard local path policy');
+
+  await writeJson(TOOL_CONFIG_FILE, toolConfig([
+    reference('external-reference', FIRST_DEFINITION_FILE),
+  ], {
+    processorConfigFile: PROCESSOR_CONFIG_FILE,
+  }));
+  await fs.rm(PROCESSOR_CONFIG_FILE, { force: true });
+  error = captureConfigError(() => loadCustomToolConfig(TOOL_CONFIG_FILE));
+  assertEqual(error.code, 'config_file_not_found', 'Missing Processor config should retain referenced-file error code');
+  assertEqual(error.configFilePath, PROCESSOR_CONFIG_FILE, 'Missing Processor config should identify its actual file');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing custom tool config loading and input schema validators',
@@ -382,6 +453,7 @@ async function main(): Promise<void> {
       { name: 'compiles schemas in isolated resolver contexts', run: testCompilesSchemasInIsolatedResolverContexts },
       { name: 'referenced file failures use actual file and reference id', run: testReferencedFileFailuresUseActualFileAndReferenceId },
       { name: 'rejects duplicate custom names at tool config boundary', run: testRejectsDuplicateCustomNamesAtToolConfigBoundary },
+      { name: 'loads processor config file as frozen external routing spec', run: testLoadsProcessorConfigFileAsFrozenExternalRoutingSpec },
     ],
   });
 }
