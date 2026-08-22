@@ -26,7 +26,9 @@ import {
   ExternalRoutingStrategyAdapter,
   type ExternalRoutingCanonicalOutcome,
   type ExternalRoutingHttpTransport,
+  type ExternalRoutingProcessorDrainDiagnostic,
   type ExternalRoutingProcessorRunner,
+  type ExternalRoutingStrategyAdapterOptions,
   type ExternalRoutingStrategyFailure,
   type ExternalRoutingStrategyOutcome,
 } from '../../src/tools/external-routing/strategy-adapter.js';
@@ -224,11 +226,13 @@ function adapter(
   routeSpec: ExternalRoutingSpec,
   runner: FakeProcessorRunner,
   transport: FakeHttpTransport,
+  options: Pick<ExternalRoutingStrategyAdapterOptions, 'onProcessorDrain'> = {},
 ): ExternalRoutingStrategyAdapter {
   return new ExternalRoutingStrategyAdapter({
     spec: routeSpec,
     processorRunner: runner,
     httpTransport: transport,
+    ...options,
   });
 }
 
@@ -490,6 +494,22 @@ async function testBoundaryFailureClassification(): Promise<void> {
   ), responseFilterRunner, responseFilterTransport);
   requireFailure(await responseFilterRoute.execute({ request: canonicalRequest() }), 'processor_failed');
 
+  const decoderRunner = new FakeProcessorRunner([
+    () => processorExchange(processorSuccess(canonicalSuccess())),
+  ]);
+  const decoderTransport = new FakeHttpTransport([
+    () => successfulExchange(new Uint8Array([0, 1, 2]), 422),
+  ]);
+  const decoderRoute = adapter(spec(
+    { strategy: 'request-to-external', mode: 'direct' },
+    { strategy: 'response-from-external', mode: 'body-decoder', processor: 'response-decoder' },
+    [processor('response-decoder')],
+  ), decoderRunner, decoderTransport);
+  requireFailure(
+    await decoderRoute.execute({ request: canonicalRequest() }),
+    'processor_failed',
+  );
+
   const timeoutDrain = deferred<ProcessorRunDrainMetadata>();
   const timeoutRunner = new FakeProcessorRunner([
     () => processorExchange(processorFailure('timeout'), timeoutDrain.promise),
@@ -554,19 +574,25 @@ async function testCancellationStopsLaterStages(): Promise<void> {
 async function testSeparatesSettlementFromAllStageDrains(): Promise<void> {
   const processorDrain = deferred<ProcessorRunDrainMetadata>();
   const transportDrain = deferred<void>();
+  const filteredRequest = jsonBytes({
+    calls: [{ id: 'call_adapter_1', name: 'translated.tool', arguments: {} }],
+  });
   const runner = new FakeProcessorRunner([
-    () => processorExchange(processorSuccess(jsonBytes({
-      calls: [{ id: 'call_adapter_1', name: 'translated.tool', arguments: {} }],
-    })), processorDrain.promise),
+    () => processorExchange(processorSuccess(filteredRequest), processorDrain.promise),
   ]);
   const transport = new FakeHttpTransport([
     () => successfulExchange(canonicalSuccess(), 200, {}, transportDrain.promise),
   ]);
+  const diagnostics: ExternalRoutingProcessorDrainDiagnostic[] = [];
   const route = adapter(spec(
     { strategy: 'request-to-external', mode: 'canonical-filter', processor: 'request-filter' },
     { strategy: 'response-from-external', mode: 'direct' },
     [processor('request-filter')],
-  ), runner, transport);
+  ), runner, transport, {
+    onProcessorDrain: (diagnostic) => {
+      diagnostics.push(diagnostic);
+    },
+  });
 
   const execution = route.exchange({ request: canonicalRequest() });
   requireCanonical(await execution.settled, 'external_tool_completed');
@@ -583,11 +609,49 @@ async function testSeparatesSettlementFromAllStageDrains(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 10));
   assertEqual(drained, false, 'Outer drain must wait for all started stage cleanup.');
 
-  processorDrain.resolve(processorDrainMetadata());
-  await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  processorDrain.resolve({ durationMs: 37, cleanupFailed: true });
+  await waitFor(() => diagnostics.length === 1, 'Processor drain diagnostic');
+  const diagnostic = diagnostics[0];
+  assertEqual(diagnostic?.role, 'request.canonical-filter', 'Drain diagnostic should identify the Processor role.');
+  assertEqual(diagnostic?.processorName, 'request-filter', 'Drain diagnostic should identify the configured Processor.');
+  assertEqual(diagnostic?.cleanupFailed, true, 'Degraded Processor cleanup must remain observable.');
+  assertEqual(diagnostic?.settledDurationMs, 1, 'Drain diagnostic should retain safe settlement duration.');
+  assertEqual(diagnostic?.drainDurationMs, 37, 'Drain diagnostic should retain safe drain duration.');
+  assertEqual(diagnostic?.stdinBytes, 1, 'Drain diagnostic should retain safe stdin byte count.');
+  assertEqual(diagnostic?.stdoutBytes, filteredRequest.byteLength, 'Drain diagnostic should retain safe stdout byte count.');
   assertEqual(drained, false, 'Outer drain must still wait for HTTP cleanup.');
   transportDrain.resolve();
   await execution.drained;
+}
+
+async function testProcessorDrainSinkFailuresAreIsolated(): Promise<void> {
+  let callbackCalls = 0;
+  const runner = new FakeProcessorRunner([
+    () => processorExchange(processorSuccess(new Uint8Array([0, 1, 2]))),
+  ]);
+  const transport = new FakeHttpTransport([
+    () => successfulExchange(canonicalSuccess()),
+  ]);
+  const route = adapter(spec(
+    {
+      strategy: 'request-to-external',
+      mode: 'body-encoder',
+      processor: 'body-encoder',
+      contentType: 'application/octet-stream',
+    },
+    { strategy: 'response-from-external', mode: 'direct' },
+    [processor('body-encoder')],
+  ), runner, transport, {
+    onProcessorDrain: () => {
+      callbackCalls++;
+      throw new Error('processor drain diagnostic sink failure');
+    },
+  });
+
+  const execution = route.exchange({ request: canonicalRequest() });
+  requireCanonical(await execution.settled, 'external_tool_completed');
+  await execution.drained;
+  assertEqual(callbackCalls, 1, 'A throwing drain sink should still receive the safe diagnostic once.');
 }
 
 async function testExceptionsDoNotEscapeOrLeak(): Promise<void> {
@@ -640,6 +704,7 @@ async function main(): Promise<void> {
       { name: 'classifies HTTP and Processor contract failures by boundary', run: testBoundaryFailureClassification },
       { name: 'cancellation stops later strategy stages', run: testCancellationStopsLaterStages },
       { name: 'separates fast settlement from aggregate Processor and HTTP drain', run: testSeparatesSettlementFromAllStageDrains },
+      { name: 'isolates Processor drain diagnostic sink failures', run: testProcessorDrainSinkFailuresAreIsolated },
       { name: 'contains injected dependency exceptions', run: testExceptionsDoNotEscapeOrLeak },
     ],
   });

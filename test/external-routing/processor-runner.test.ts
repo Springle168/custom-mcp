@@ -270,6 +270,65 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   await stdioRunner.close();
 }
 
+async function testDrainsDescendantHeldStdioWithBoundedDegradedCleanup(): Promise<void> {
+  const originalUnref = ChildProcess.prototype.unref;
+  let unrefCalls = 0;
+  ChildProcess.prototype.unref = function recordUnref(): void {
+    unrefCalls++;
+    originalUnref.call(this);
+  };
+
+  try {
+    const runner = new ProcessorRunner({
+      terminationGracePeriodMs: 50,
+      forceTerminationGracePeriodMs: 50,
+    });
+    const exchange = runner.run(
+      fixtureInvocation('spawn-descendant-holding-stdio.ts', requestEnvironment(), {
+        timeoutMs: 350,
+      }),
+    );
+
+    requireFailure(
+      await exchange.settled,
+      'timeout',
+    );
+    assertEqual(
+      runner.activeInvocationCount,
+      1,
+      'Timeout must leave descendant-held stdio active until bounded cleanup drains.',
+    );
+    const close = runner.close();
+    let closeCompleted = false;
+    void close.then(() => {
+      closeCompleted = true;
+    });
+    await delay(20);
+    assertEqual(
+      closeCompleted,
+      false,
+      'runner.close() must wait while a descendant still holds the direct Processor stdio pipe.',
+    );
+
+    const drain = await exchange.drained;
+    assertEqual(
+      drain.cleanupFailed,
+      true,
+      'Descendant-held stdio must reach bounded degraded cleanup rather than masquerading as a clean close.',
+    );
+    assertEqual(unrefCalls, 1, 'Degraded cleanup must unref the unconfirmed direct Processor child.');
+    await close;
+    assertEqual(runner.activeInvocationCount, 0, 'Bounded degraded drain must release local active tracking.');
+    requireFailure(await runner.run(
+      fixtureInvocation('echo-environment.ts', requestEnvironment()),
+    ).settled, 'runner_closed');
+  } finally {
+    ChildProcess.prototype.unref = originalUnref;
+    // The descendant self-terminates after 600ms even when its inherited pipes are detached.
+    await delay(750);
+  }
+}
+
 async function testHandlesTimeoutCancellationAndBoundedDegradedCleanup(): Promise<void> {
   // Intercepting direct-child kill creates a bounded, deterministic cleanup delay.
   // The fixture exits itself soon afterwards, so the test leaves no long-lived orphan.
@@ -402,6 +461,7 @@ async function main(): Promise<void> {
       { name: 'rejects oversize stdin before admission', run: testRejectsOversizeStdinWithoutStartingAProcess },
       { name: 'terminates Processors that exceed stdout limit', run: testTerminatesOnOversizeStdout },
       { name: 'classifies spawn, exit, signal, and stdio failures', run: testClassifiesSpawnExitSignalAndStdioFailures },
+      { name: 'bounds descendant-held stdio cleanup without leaving an orphan', run: testDrainsDescendantHeldStdioWithBoundedDegradedCleanup },
       { name: 'handles timeout, cancellation, and bounded degraded cleanup', run: testHandlesTimeoutCancellationAndBoundedDegradedCleanup },
       { name: 'waits for complete output and closes idempotently', run: testWaitsForCompleteOutputAndClosesIdempotently },
     ],
