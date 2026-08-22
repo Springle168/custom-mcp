@@ -77,11 +77,6 @@ export interface ProcessorRunMetadata {
   readonly stdinBytes: number;
   readonly stdoutBytes: number;
   readonly stderr: ProcessorStderrMetadata;
-  /**
-   * True only when the direct child did not confirm `close` within bounded
-   * termination. The runner then permanently rejects future admissions.
-   */
-  readonly cleanupFailed: boolean;
 }
 
 export interface ProcessorRunSuccess extends ProcessorRunMetadata {
@@ -96,6 +91,29 @@ export interface ProcessorRunFailure extends ProcessorRunMetadata {
 }
 
 export type ProcessorRunOutcome = ProcessorRunSuccess | ProcessorRunFailure;
+
+/**
+ * Physical cleanup completion for a Processor invocation. This resolves after
+ * the direct child closes or after bounded degraded cleanup detaches it.
+ */
+export interface ProcessorRunDrainMetadata {
+  readonly durationMs: number;
+  /**
+   * True only when the direct child did not confirm `close` within bounded
+   * termination. The runner then permanently rejects future admissions.
+   */
+  readonly cleanupFailed: boolean;
+}
+
+/**
+ * One Processor invocation has separate caller-facing settlement and local
+ * resource-drain completions. A failure settles immediately; cleanup continues
+ * in the background until `drained`.
+ */
+export interface ProcessorRunExchange {
+  readonly settled: Promise<ProcessorRunOutcome>;
+  readonly drained: Promise<ProcessorRunDrainMetadata>;
+}
 
 export interface ProcessorRunnerOptions {
   /** Internal bounded wait before the direct child receives a forceful kill. */
@@ -134,24 +152,24 @@ export class ProcessorRunner {
   }
 
   /**
-   * Runs a single bytes-in/bytes-out Processor invocation. Failure outcomes
-   * are controlled metadata and intentionally exclude argv, paths, exceptions,
-   * stderr, and stdout that did not complete successfully.
+   * Starts a single bytes-in/bytes-out Processor invocation. Failure outcomes
+   * settle as soon as their terminal reason is known; `drained` completes
+   * separately after local subprocess cleanup.
    */
-  run(invocation: ProcessorInvocation): Promise<ProcessorRunOutcome> {
+  run(invocation: ProcessorInvocation): ProcessorRunExchange {
     const startedAt = Date.now();
     const stdinBytes = invocation.stdin.byteLength;
 
     if (!this.#accepting) {
-      return Promise.resolve(createImmediateFailure('runner_closed', startedAt, stdinBytes));
+      return createImmediateExchange('runner_closed', startedAt, stdinBytes);
     }
 
     if (stdinBytes > PROCESSOR_STREAM_LIMIT_BYTES) {
-      return Promise.resolve(createImmediateFailure('stdin_limit', startedAt, stdinBytes));
+      return createImmediateExchange('stdin_limit', startedAt, stdinBytes);
     }
 
     if (invocation.signal?.aborted === true) {
-      return Promise.resolve(createImmediateFailure('cancelled', startedAt, stdinBytes));
+      return createImmediateExchange('cancelled', startedAt, stdinBytes);
     }
 
     const active = new ActiveProcessorInvocation(
@@ -165,11 +183,11 @@ export class ProcessorRunner {
     );
     this.#activeInvocations.add(active);
 
-    const completion = active.start();
-    void completion.then(() => {
+    const exchange = active.start();
+    void exchange.drained.then(() => {
       this.#activeInvocations.delete(active);
     });
-    return completion;
+    return exchange;
   }
 
   /**
@@ -187,14 +205,16 @@ export class ProcessorRunner {
       invocation.cancel();
     }
 
-    this.#closePromise = Promise.all(active.map((invocation) => invocation.completion))
+    this.#closePromise = Promise.all(active.map((invocation) => invocation.drained))
       .then(() => undefined);
     return this.#closePromise;
   }
 }
 
 class ActiveProcessorInvocation {
-  readonly completion: Promise<ProcessorRunOutcome>;
+  readonly exchange: ProcessorRunExchange;
+  readonly settled: Promise<ProcessorRunOutcome>;
+  readonly drained: Promise<ProcessorRunDrainMetadata>;
   readonly #invocation: ProcessorInvocation;
   readonly #startedAt: number;
   readonly #terminationGracePeriodMs: number;
@@ -202,13 +222,15 @@ class ActiveProcessorInvocation {
   readonly #closeRunnerAdmission: () => void;
   readonly #stdoutChunks: Buffer[] = [];
   readonly #stderrChunks: Buffer[] = [];
-  #resolveCompletion: ((outcome: ProcessorRunOutcome) => void) | undefined;
+  #resolveSettled: ((outcome: ProcessorRunOutcome) => void) | undefined;
+  #resolveDrained: ((metadata: ProcessorRunDrainMetadata) => void) | undefined;
   #child: PipedChildProcess | undefined;
   #stdin: Writable | undefined;
   #stdout: Readable | undefined;
   #stderr: Readable | undefined;
   #terminalReason: ProcessorRunnerFailureReason | undefined;
-  #finished = false;
+  #settledResolved = false;
+  #drainedResolved = false;
   #spawned = false;
   #spawnFailed = false;
   #childClosed = false;
@@ -240,7 +262,7 @@ class ActiveProcessorInvocation {
     this.#exitSignal = signal;
 
     if (this.#terminalReason) {
-      this.#finish(false);
+      this.#finishDrain(false);
       return;
     }
 
@@ -268,7 +290,7 @@ class ActiveProcessorInvocation {
   };
 
   #onStdoutData = (chunk: Buffer): void => {
-    if (this.#finished) {
+    if (this.#drainedResolved || this.#terminalReason) {
       return;
     }
 
@@ -297,7 +319,7 @@ class ActiveProcessorInvocation {
   };
 
   #onStderrData = (chunk: Buffer): void => {
-    if (this.#finished) {
+    if (this.#drainedResolved || this.#terminalReason) {
       return;
     }
 
@@ -330,12 +352,19 @@ class ActiveProcessorInvocation {
     this.#terminationGracePeriodMs = terminationGracePeriodMs;
     this.#forceTerminationGracePeriodMs = forceTerminationGracePeriodMs;
     this.#closeRunnerAdmission = closeRunnerAdmission;
-    this.completion = new Promise<ProcessorRunOutcome>((resolve) => {
-      this.#resolveCompletion = resolve;
+    this.settled = new Promise<ProcessorRunOutcome>((resolve) => {
+      this.#resolveSettled = resolve;
     });
+    this.drained = new Promise<ProcessorRunDrainMetadata>((resolve) => {
+      this.#resolveDrained = resolve;
+    });
+    this.exchange = {
+      settled: this.settled,
+      drained: this.drained,
+    };
   }
 
-  start(): Promise<ProcessorRunOutcome> {
+  start(): ProcessorRunExchange {
     this.#wallClockTimer = setTimeout(() => {
       this.#fail('timeout');
     }, this.#invocation.timeoutMs);
@@ -347,7 +376,7 @@ class ActiveProcessorInvocation {
       this.#invocation.signal.addEventListener('abort', this.#abortListener, { once: true });
       if (this.#invocation.signal.aborted) {
         this.#fail('cancelled');
-        return this.completion;
+        return this.exchange;
       }
     }
 
@@ -370,7 +399,7 @@ class ActiveProcessorInvocation {
       this.#fail('spawn_error');
     }
 
-    return this.completion;
+    return this.exchange;
   }
 
   cancel(): void {
@@ -409,7 +438,7 @@ class ActiveProcessorInvocation {
 
   #succeedWhenComplete(): void {
     if (
-      this.#finished ||
+      this.#settledResolved ||
       this.#terminalReason ||
       !this.#childClosed ||
       this.#exitCode !== 0 ||
@@ -420,22 +449,24 @@ class ActiveProcessorInvocation {
       return;
     }
 
-    this.#finish(false);
+    this.#settleSuccess();
+    this.#finishDrain(false);
   }
 
   #fail(reason: ProcessorRunnerFailureReason): void {
-    if (this.#finished || this.#terminalReason) {
+    if (this.#settledResolved || this.#terminalReason) {
       return;
     }
 
     this.#terminalReason = reason;
     clearTimeout(this.#wallClockTimer);
     this.#wallClockTimer = undefined;
+    this.#settleFailure(reason);
 
     this.#destroyStdio();
 
     if (!this.#child || this.#spawnFailed || this.#childClosed) {
-      this.#finish(false);
+      this.#finishDrain(false);
       return;
     }
 
@@ -445,20 +476,20 @@ class ActiveProcessorInvocation {
   #terminateDirectChild(): void {
     this.#sendSignal('SIGTERM');
     this.#terminationTimer = setTimeout(() => {
-      if (this.#finished || this.#childClosed) {
+      if (this.#drainedResolved || this.#childClosed) {
         return;
       }
 
       this.#sendSignal('SIGKILL');
       this.#forceTerminationTimer = setTimeout(() => {
-        if (this.#finished || this.#childClosed) {
+        if (this.#drainedResolved || this.#childClosed) {
           return;
         }
 
         this.#cleanupFailed = true;
         this.#closeRunnerAdmission();
         this.#detachUnconfirmedChild();
-        this.#finish(true);
+        this.#finishDrain(true);
       }, this.#forceTerminationGracePeriodMs);
     }, this.#terminationGracePeriodMs);
   }
@@ -499,12 +530,32 @@ class ActiveProcessorInvocation {
     this.#stderr = undefined;
   }
 
-  #finish(cleanupFailed: boolean): void {
-    if (this.#finished) {
+  #settleSuccess(): void {
+    if (this.#settledResolved) {
       return;
     }
 
-    this.#finished = true;
+    this.#settledResolved = true;
+    this.#resolveSettled?.(this.#createSuccess());
+    this.#resolveSettled = undefined;
+  }
+
+  #settleFailure(reason: ProcessorRunnerFailureReason): void {
+    if (this.#settledResolved) {
+      return;
+    }
+
+    this.#settledResolved = true;
+    this.#resolveSettled?.(this.#createFailure(reason));
+    this.#resolveSettled = undefined;
+  }
+
+  #finishDrain(cleanupFailed: boolean): void {
+    if (this.#drainedResolved) {
+      return;
+    }
+
+    this.#drainedResolved = true;
     this.#cleanupFailed = this.#cleanupFailed || cleanupFailed;
     clearTimeout(this.#wallClockTimer);
     clearTimeout(this.#terminationTimer);
@@ -518,15 +569,14 @@ class ActiveProcessorInvocation {
     }
     this.#abortListener = undefined;
 
-    const outcome = this.#terminalReason
-      ? this.#createFailure(this.#terminalReason)
-      : this.#createSuccess();
-
     this.#detachListeners();
     this.#stdoutChunks.length = 0;
     this.#stderrChunks.length = 0;
-    this.#resolveCompletion?.(outcome);
-    this.#resolveCompletion = undefined;
+    this.#resolveDrained?.({
+      durationMs: Date.now() - this.#startedAt,
+      cleanupFailed: this.#cleanupFailed,
+    });
+    this.#resolveDrained = undefined;
   }
 
   #createSuccess(): ProcessorRunSuccess {
@@ -555,7 +605,6 @@ class ActiveProcessorInvocation {
         capturedByteCount: this.#stderrCapturedBytes,
         truncated: this.#stderrBytes > PROCESSOR_STDERR_CAPTURE_LIMIT_BYTES,
       },
-      cleanupFailed: this.#cleanupFailed,
     };
   }
 
@@ -593,6 +642,21 @@ class ActiveProcessorInvocation {
   }
 }
 
+function createImmediateExchange(
+  reason: ProcessorRunnerFailureReason,
+  startedAt: number,
+  stdinBytes: number,
+): ProcessorRunExchange {
+  const outcome = createImmediateFailure(reason, startedAt, stdinBytes);
+  return {
+    settled: Promise.resolve(outcome),
+    drained: Promise.resolve({
+      durationMs: outcome.durationMs,
+      cleanupFailed: false,
+    }),
+  };
+}
+
 function createImmediateFailure(
   reason: ProcessorRunnerFailureReason,
   startedAt: number,
@@ -609,7 +673,6 @@ function createImmediateFailure(
       capturedByteCount: 0,
       truncated: false,
     },
-    cleanupFailed: false,
   };
 }
 
