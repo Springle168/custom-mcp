@@ -128,7 +128,7 @@ async function testRunsBytesAndSanitizesResponseEnvironment(): Promise<void> {
     CUSTOM_MCP_EXTERNAL_UNRELATED: 'must-not-inherit',
   }, async () => runner.run(fixtureInvocation('echo-environment.ts', responseEnvironment(), {
     stdin: new Uint8Array([0, 1, 2, 253, 254, 255]),
-  })));
+  })).settled);
   const success = requireSuccess(outcome);
   const echo = JSON.parse(decoder.decode(success.stdout)) as EnvironmentEcho;
 
@@ -159,7 +159,7 @@ async function testClearsResponseOnlyEnvironmentForRequestProcessor(): Promise<v
     CUSTOM_MCP_EXTERNAL_HTTP_STATUS: '599',
     custom_mcp_external_content_type: 'old-value',
     CUSTOM_MCP_EXTERNAL_CONTENT_ENCODING: 'old-value',
-  }, async () => runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment())));
+  }, async () => runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment())).settled);
   const echo = JSON.parse(decoder.decode(requireSuccess(outcome).stdout)) as EnvironmentEcho;
 
   assertEqual(echo.environment.role, 'request.body-encoder', 'Request role should be injected.');
@@ -175,7 +175,7 @@ async function testBoundsStderrCaptureWhileContinuingToDrain(): Promise<void> {
   const runner = new ProcessorRunner();
   const outcome = requireSuccess(await runner.run(
     fixtureInvocation('stderr-over-limit.ts', requestEnvironment()),
-  ));
+  ).settled);
 
   assertEqual(
     decoder.decode(outcome.stdout),
@@ -201,7 +201,7 @@ async function testRejectsOversizeStdinWithoutStartingAProcess(): Promise<void> 
   const runner = new ProcessorRunner();
   const outcome = requireFailure(await runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment(), {
     stdin: new Uint8Array(PROCESSOR_STREAM_LIMIT_BYTES + 1),
-  })), 'stdin_limit');
+  })).settled, 'stdin_limit');
 
   assertEqual(outcome.stdoutBytes, 0, 'Rejected stdin must not produce output.');
   assertEqual(runner.activeInvocationCount, 0, 'Rejected stdin must not enter active tracking.');
@@ -215,7 +215,7 @@ async function testTerminatesOnOversizeStdout(): Promise<void> {
   });
   const outcome = requireFailure(await runner.run(
     fixtureInvocation('stdout-over-limit.ts', requestEnvironment(), { timeoutMs: 5_000 }),
-  ), 'stdout_limit');
+  ).settled, 'stdout_limit');
 
   assert(
     outcome.stdoutBytes > PROCESSOR_STREAM_LIMIT_BYTES,
@@ -235,7 +235,7 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   const spawnOutcome = requireFailure(await spawnRunner.run({
     ...fixtureInvocation('echo-environment.ts', requestEnvironment()),
     command: path.join(FIXTURES_DIR, 'missing-processor-command.exe'),
-  }), 'spawn_error');
+  }).settled, 'spawn_error');
   assertNotIncludes(
     JSON.stringify(spawnOutcome),
     'missing-processor-command.exe',
@@ -246,7 +246,7 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   const exitRunner = new ProcessorRunner();
   const exitOutcome = requireFailure(await exitRunner.run(
     fixtureInvocation('non-zero.ts', requestEnvironment()),
-  ), 'exit_code');
+  ).settled, 'exit_code');
   assertNotIncludes(
     JSON.stringify(exitOutcome),
     'untrusted',
@@ -257,7 +257,7 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   const signalRunner = new ProcessorRunner();
   requireFailure(await signalRunner.run(
     fixtureInvocation('self-signal.ts', requestEnvironment()),
-  ), process.platform === 'win32' ? 'exit_code' : 'signal');
+  ).settled, process.platform === 'win32' ? 'exit_code' : 'signal');
   await signalRunner.close();
 
   const stdioRunner = new ProcessorRunner({
@@ -266,35 +266,13 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   });
   requireFailure(await stdioRunner.run(fixtureInvocation('close-stdin.ts', requestEnvironment(), {
     stdin: new Uint8Array(8 * 1024 * 1024),
-  })), 'stdio_error');
+  })).settled, 'stdio_error');
   await stdioRunner.close();
 }
 
 async function testHandlesTimeoutCancellationAndBoundedDegradedCleanup(): Promise<void> {
-  const timeoutRunner = new ProcessorRunner({
-    terminationGracePeriodMs: 25,
-    forceTerminationGracePeriodMs: 25,
-  });
-  requireFailure(await timeoutRunner.run(
-    fixtureInvocation('wait-forever.ts', requestEnvironment(), { timeoutMs: 50 }),
-  ), 'timeout');
-  await timeoutRunner.close();
-
-  const cancellationRunner = new ProcessorRunner({
-    terminationGracePeriodMs: 25,
-    forceTerminationGracePeriodMs: 25,
-  });
-  const controller = new AbortController();
-  const pending = cancellationRunner.run(
-    fixtureInvocation('wait-forever.ts', requestEnvironment(), { signal: controller.signal }),
-  );
-  assertEqual(cancellationRunner.activeInvocationCount, 1, 'Started Processors should remain active until cleanup completes.');
-  controller.abort();
-  requireFailure(await pending, 'cancelled');
-  assertEqual(cancellationRunner.activeInvocationCount, 0, 'Cancelled Processor should leave active tracking after cleanup.');
-  await cancellationRunner.close();
-
-  // Intercepting direct-child kill keeps this branch deterministic; the fixture exits itself.
+  // Intercepting direct-child kill creates a bounded, deterministic cleanup delay.
+  // The fixture exits itself soon afterwards, so the test leaves no long-lived orphan.
   const originalKill = ChildProcess.prototype.kill;
   const originalUnref = ChildProcess.prototype.unref;
   let unrefCalls = 0;
@@ -306,20 +284,77 @@ async function testHandlesTimeoutCancellationAndBoundedDegradedCleanup(): Promis
     originalUnref.call(this);
   };
   try {
-    const degradedRunner = new ProcessorRunner({
-      terminationGracePeriodMs: 1,
-      forceTerminationGracePeriodMs: 1,
+    const timeoutRunner = new ProcessorRunner({
+      terminationGracePeriodMs: 50,
+      forceTerminationGracePeriodMs: 50,
     });
-    const degraded = requireFailure(await degradedRunner.run(
+    const timeoutExchange = timeoutRunner.run(
       fixtureInvocation('unconfirmed-child.ts', requestEnvironment(), { timeoutMs: 10 }),
-    ), 'timeout');
-    assertEqual(degraded.cleanupFailed, true, 'Unconfirmed direct child cleanup must be reported.');
-    assertEqual(degradedRunner.activeInvocationCount, 0, 'Degraded cleanup must still release local active tracking.');
-    assertEqual(unrefCalls, 1, 'Unconfirmed direct child must be unrefed after local cleanup detaches.');
-    requireFailure(await degradedRunner.run(
+    );
+    requireFailure(await timeoutExchange.settled, 'timeout');
+    assertEqual(
+      timeoutRunner.activeInvocationCount,
+      1,
+      'Timeout settlement must retain the active slot until local cleanup drains.',
+    );
+    const timeoutClose = timeoutRunner.close();
+    let timeoutCloseCompleted = false;
+    void timeoutClose.then(() => {
+      timeoutCloseCompleted = true;
+    });
+    await delay(20);
+    assertEqual(
+      timeoutCloseCompleted,
+      false,
+      'runner.close() must wait for timeout cleanup rather than only caller settlement.',
+    );
+    const timeoutDrain = await timeoutExchange.drained;
+    assertEqual(timeoutDrain.cleanupFailed, true, 'Unconfirmed timeout cleanup must be reported by drained.');
+    await timeoutClose;
+    assertEqual(timeoutRunner.activeInvocationCount, 0, 'Drain completion must release the active timeout slot.');
+
+    const cancellationRunner = new ProcessorRunner({
+      terminationGracePeriodMs: 50,
+      forceTerminationGracePeriodMs: 50,
+    });
+    const controller = new AbortController();
+    const cancellationExchange = cancellationRunner.run(
+      fixtureInvocation('unconfirmed-child.ts', requestEnvironment(), { signal: controller.signal }),
+    );
+    controller.abort();
+    requireFailure(await cancellationExchange.settled, 'cancelled');
+    assertEqual(
+      cancellationRunner.activeInvocationCount,
+      1,
+      'Cancellation settlement must retain the active slot until local cleanup drains.',
+    );
+    const cancellationClose = cancellationRunner.close();
+    let cancellationCloseCompleted = false;
+    void cancellationClose.then(() => {
+      cancellationCloseCompleted = true;
+    });
+    await delay(20);
+    assertEqual(
+      cancellationCloseCompleted,
+      false,
+      'runner.close() must wait for cancellation cleanup rather than only caller settlement.',
+    );
+    const cancellationDrain = await cancellationExchange.drained;
+    assertEqual(
+      cancellationDrain.cleanupFailed,
+      true,
+      'Unconfirmed cancellation cleanup must be reported by drained.',
+    );
+    await cancellationClose;
+    assertEqual(
+      cancellationRunner.activeInvocationCount,
+      0,
+      'Drain completion must release the active cancellation slot.',
+    );
+    assertEqual(unrefCalls, 2, 'Every unconfirmed direct child must be unrefed after local cleanup detaches.');
+    requireFailure(await cancellationRunner.run(
       fixtureInvocation('echo-environment.ts', requestEnvironment()),
-    ), 'runner_closed');
-    await degradedRunner.close();
+    ).settled, 'runner_closed');
   } finally {
     ChildProcess.prototype.kill = originalKill;
     ChildProcess.prototype.unref = originalUnref;
@@ -332,26 +367,29 @@ async function testWaitsForCompleteOutputAndClosesIdempotently(): Promise<void> 
     terminationGracePeriodMs: 25,
     forceTerminationGracePeriodMs: 25,
   });
-  const complete = requireSuccess(await runner.run(
+  const completeExchange = runner.run(
     fixtureInvocation('complete-output.ts', requestEnvironment()),
-  ));
+  );
+  const complete = requireSuccess(await completeExchange.settled);
   assertEqual(
     decoder.decode(complete.stdout),
     'complete-output',
     'Runner must wait for stdout EOF before returning a successful Processors result.',
   );
+  const completeDrain = await completeExchange.drained;
+  assertEqual(completeDrain.cleanupFailed, false, 'Successful Processor cleanup should drain normally.');
 
   const active = runner.run(fixtureInvocation('wait-forever.ts', requestEnvironment()));
   assertEqual(runner.activeInvocationCount, 1, 'Long-running Processor should be active before runner shutdown.');
   const firstClose = runner.close();
   const secondClose = runner.close();
   assert(Object.is(firstClose, secondClose), 'Processor runner close must be idempotent.');
-  requireFailure(await active, 'cancelled');
+  requireFailure(await active.settled, 'cancelled');
   await firstClose;
   assertEqual(runner.activeInvocationCount, 0, 'close() must wait for active local cleanup.');
   requireFailure(await runner.run(
     fixtureInvocation('echo-environment.ts', requestEnvironment()),
-  ), 'runner_closed');
+  ).settled, 'runner_closed');
 }
 
 async function main(): Promise<void> {
