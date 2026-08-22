@@ -1,5 +1,6 @@
 import { ApplicationDiagnostics } from '../../src/runtime/application-diagnostics.js';
 import {
+  assert,
   assertEqual,
   assertIncludes,
   assertNotIncludes,
@@ -59,12 +60,109 @@ async function testLoggerFailureNeverEscapesDiagnosticCallbacks(): Promise<void>
   });
 }
 
+async function testAsyncLoggerFailureUsesFallbackOnceWithoutUnhandledRejection(): Promise<void> {
+  const fallbackMessages: string[] = [];
+  const unhandledRejections: unknown[] = [];
+  const originalStderrWrite = process.stderr.write;
+  const onUnhandledRejection = (reason: unknown): void => {
+    unhandledRejections.push(reason);
+  };
+
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    fallbackMessages.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  process.on('unhandledRejection', onUnhandledRejection);
+
+  try {
+    const diagnostics = new ApplicationDiagnostics();
+    diagnostics.bind({
+      info() {
+        return Promise.reject(new Error('private async logger failure'));
+      },
+    });
+
+    diagnostics.onToolCallDiagnostic({ kind: 'call_log_failed', callId: 'call_test' });
+    diagnostics.onExternalProcessorDrain({
+      role: 'request.canonical-filter',
+      processorName: 'filter',
+      cleanupFailed: false,
+      settledDurationMs: 1,
+      drainDurationMs: 1,
+      stdinBytes: 1,
+      stdoutBytes: 1,
+      stderrByteCount: 0,
+      stderrCapturedByteCount: 0,
+      stderrTruncated: false,
+    });
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assertEqual(
+      fallbackMessages.length,
+      1,
+      'Repeated asynchronous logger failures should trigger fallback only once',
+    );
+    assertEqual(
+      unhandledRejections.length,
+      0,
+      'Asynchronous logger failures must not create unhandled rejections',
+    );
+  } finally {
+    process.off('unhandledRejection', onUnhandledRejection);
+    process.stderr.write = originalStderrWrite;
+  }
+}
+
+async function testExternalProcessorDrainDoesNotWaitForAsyncLogger(): Promise<void> {
+  let resolveLogger: (() => void) | undefined;
+  const loggerCompletion = new Promise<void>((resolve) => {
+    resolveLogger = resolve;
+  });
+  const diagnostics = new ApplicationDiagnostics();
+  diagnostics.bind({
+    info() {
+      return loggerCompletion;
+    },
+  });
+
+  const callbackResult = diagnostics.onExternalProcessorDrain({
+    role: 'response.body-decoder',
+    processorName: 'decoder',
+    cleanupFailed: false,
+    settledDurationMs: 1,
+    drainDurationMs: 1,
+    stdinBytes: 1,
+    stdoutBytes: 1,
+    stderrByteCount: 0,
+    stderrCapturedByteCount: 0,
+    stderrTruncated: false,
+  });
+
+  assertEqual(
+    callbackResult,
+    undefined,
+    'External processor drain diagnostics must not wait for asynchronous logger completion',
+  );
+  assert(resolveLogger !== undefined, 'Asynchronous logger test should expose its completion');
+  resolveLogger();
+  await loggerCompletion;
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing application diagnostics isolation',
     tests: [
       { name: 'formats safe structured metadata', run: testFormatsOnlySafeStructuredMetadata },
       { name: 'isolates logger failures', run: testLoggerFailureNeverEscapesDiagnosticCallbacks },
+      {
+        name: 'observes asynchronous logger failures without unhandled rejections',
+        run: testAsyncLoggerFailureUsesFallbackOnceWithoutUnhandledRejection,
+      },
+      {
+        name: 'external processor drain does not wait for asynchronous logger',
+        run: testExternalProcessorDrainDoesNotWaitForAsyncLogger,
+      },
     ],
   });
 }

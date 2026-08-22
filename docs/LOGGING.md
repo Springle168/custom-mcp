@@ -52,6 +52,17 @@ HTTP server 开始监听后，`src/index.ts` 输出 selected workspace 的启动
 
 策略文件路径保持配置顺序和重复引用，不排序或去重。日志不输出策略文件内容、matcher 内容或 symbolic link 的 real target。所有 allowed root 均未配置 ignore / deny 文件时，摘要输出 `File access policies: none`。启动时只读取和编译 selected workspace 的策略，启动摘要也只包含该 workspace。
 
+external routing 摘要由 `formatExternalRoutingStartupLines()` 生成。未配置 `processorConfigFile` 时只输出 `External routing: disabled`；启用时只输出 enabled 状态、request / response mode 和经过脱敏的 endpoint identity：
+
+```text
+  External routing: enabled
+    Request mode: direct
+    Response mode: canonical-filter
+    Endpoint: https://external.example.invalid/tool
+```
+
+endpoint identity 会剥离 URL query、credentials 与 fragment。该摘要不输出 endpoint headers、Processor config / endpoint config 文件路径、Processor executable path 或 argv。external routing 失败与 Processor post-drain diagnostics 的安全字段、以及 canonical business message 的边界见 [external routing](tools/external-routing.md)。
+
 ### Session 与 Call ID
 
 MCP session ID 是服务端生成的实际协议 ID，格式为 `session_<uuid>`。同一 session 的后续请求通过该值关联 transport、server 和工具日志。
@@ -121,5 +132,7 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 `test/logger/logger.manual.ts` 用于人工确认日志系统的终端颜色输出和日志文件；默认跳过超大 JSON 演示，避免产生大量噪音。需要验证 50KB 阈值下的大输出降级行为时，可传入 `--verbose`。
 
 `test/logger/request-header-rules-logging.test.ts` 覆盖 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界。
+
+`test/runtime/startup-logging.test.ts` 覆盖文件访问策略摘要，以及 external routing enabled / disabled 状态、mode 和 endpoint identity 的安全格式。
 
 日志演示生成的文件显式写入 `test/logs/` 目录。通用测试与手工脚本执行约定见 [docs/TESTING.md](TESTING.md)。

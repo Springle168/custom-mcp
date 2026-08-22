@@ -17,6 +17,7 @@ import {
   createExternalRoutingExecutor,
   type CreatedExternalRoutingExecutor,
 } from '../tools/external-routing/executor.js';
+import type { ExternalRoutingSpec } from '../tools/external-routing/config.js';
 import type { ExternalRoutingProcessorDrainDiagnostic } from '../tools/external-routing/strategy-adapter.js';
 import { getCompiledBuiltInTools } from '../tools/index.js';
 
@@ -31,6 +32,7 @@ export interface LoadApplicationRuntimeOptions extends LoadRuntimeConfigOptions 
 export interface LoadedApplicationRuntime extends LoadedRuntimeConfig {
   readonly toolCatalog: CompiledWorkspaceToolCatalog;
   readonly externalRouting?: CreatedExternalRoutingExecutor;
+  readonly externalRoutingSpec?: ExternalRoutingSpec;
   close(): Promise<void>;
 }
 
@@ -79,6 +81,7 @@ export function loadApplicationRuntime(
     ...loadedConfig,
     toolCatalog,
     externalRouting,
+    externalRoutingSpec: loadedTools.externalRouting,
     close: () => externalRouting.executor.close(),
   });
 }

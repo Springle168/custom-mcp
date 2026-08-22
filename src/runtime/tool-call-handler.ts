@@ -115,7 +115,7 @@ export function createToolCallRequestHandler(
     const requestPolicy = evaluateRequestHeaderPolicy(snapshot.rules, requestHeaderView);
     const toolContext = createToolRuntimeContext(snapshot);
 
-    const callLogged = tryLogToolCall(
+    const callLogged = await tryLogToolCall(
       options.logger,
       name,
       normalizedArgs,
@@ -154,7 +154,7 @@ export function createToolCallRequestHandler(
     };
 
     if (callLogged) {
-      tryLogToolResult(
+      await tryLogToolResult(
         options.logger,
         name,
         adaptedResult,
@@ -168,15 +168,15 @@ export function createToolCallRequestHandler(
   };
 }
 
-function tryLogToolCall(
+async function tryLogToolCall(
   logger: ToolCallLogger,
   toolName: string,
   args: unknown,
   context: ToolCallLogContext,
   diagnosticSink: ToolCallDiagnosticSink | undefined,
-): boolean {
+): Promise<boolean> {
   try {
-    logger.logToolCall(toolName, args, context);
+    await logger.logToolCall(toolName, args, context);
     return true;
   } catch {
     emitToolCallDiagnostic(diagnosticSink, {
@@ -187,16 +187,16 @@ function tryLogToolCall(
   }
 }
 
-function tryLogToolResult(
+async function tryLogToolResult(
   logger: ToolCallLogger,
   toolName: string,
   result: ToolCallResult,
   durationMs: number,
   context: ToolCallResultLogContext,
   diagnosticSink: ToolCallDiagnosticSink | undefined,
-): void {
+): Promise<void> {
   try {
-    logger.logToolResult(toolName, result, durationMs, context);
+    await logger.logToolResult(toolName, result, durationMs, context);
   } catch {
     emitToolCallDiagnostic(diagnosticSink, {
       kind: 'result_log_failed',
