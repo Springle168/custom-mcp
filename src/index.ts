@@ -4,6 +4,7 @@ import express, { type Request } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CliError, parseCliArgs } from './cli.js';
 import { ConfigError } from './config.js';
+import { ApplicationDiagnostics } from './runtime/application-diagnostics.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
 import { createMCPServer } from './runtime/mcp-server.js';
 import { loadApplicationRuntime } from './runtime/startup-runtime.js';
@@ -80,8 +81,10 @@ function indentBlock(text: string): string {
 
 async function main() {
   const cliOptions = parseCliArgs(process.argv.slice(2));
+  const diagnostics = new ApplicationDiagnostics();
   const initialRuntime = loadApplicationRuntime({
     workspaceId: cliOptions.workspaceId,
+    onExternalProcessorDrain: diagnostics.onExternalProcessorDrain,
   });
   const initialSnapshot = initialRuntime.snapshot;
   const configStore = createConfigStore(initialRuntime);
@@ -89,6 +92,7 @@ async function main() {
   const logger = new Logger(initialSnapshot.logsDir, {
     workspaceId: initialSnapshot.workspaceId,
   });
+  diagnostics.bind(logger);
 
   const app = express();
   app.use(express.json());
@@ -119,7 +123,7 @@ async function main() {
           configStore,
           logger,
           toolService,
-          getSessionId: () => transport.sessionId,
+          onToolCallDiagnostic: diagnostics.onToolCallDiagnostic,
         });
         await server.connect(transport);
         return { transport, server };

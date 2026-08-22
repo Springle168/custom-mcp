@@ -7,6 +7,7 @@ import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
 import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
+import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
 import {
   createWorkspaceToolService,
   getCompiledBuiltInTools,
@@ -60,6 +61,7 @@ function createSpyService(): {
   readonly service: WorkspaceToolService;
   readonly listCalls: () => number;
   readonly routeCalls: () => number;
+  readonly lastInvocation: () => ToolInvocationContext | undefined;
 } {
   const definitions = Object.freeze([
     {
@@ -70,17 +72,20 @@ function createSpyService(): {
   ]);
   let listCallCount = 0;
   let routeCallCount = 0;
+  let lastToolInvocation: ToolInvocationContext | undefined;
 
   return {
     listCalls: () => listCallCount,
     routeCalls: () => routeCallCount,
+    lastInvocation: () => lastToolInvocation,
     service: Object.freeze({
       getDefinitions() {
         listCallCount++;
         return definitions;
       },
-      async routeToolCall(name) {
+      async routeToolCall(name, _args, _context, invocation) {
         routeCallCount++;
+        lastToolInvocation = invocation;
         return textError(`Unknown tool: ${name}`);
       },
     } satisfies WorkspaceToolService),
@@ -122,7 +127,6 @@ async function connectServer(service: WorkspaceToolService): Promise<ConnectedPa
     configStore: createTestConfigStore({ rootDir: process.cwd() }),
     logger: createLogger(),
     toolService: service,
-    getSessionId: () => 'test-session',
   });
   const client = new Client({ name: 'tool-exposure-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -155,6 +159,14 @@ async function testListAndCallUsePassedService(): Promise<void> {
     assertEqual(spy.routeCalls(), 1, 'tools/call should call routeToolCall() on the same passed service');
     assertEqual(callResult.isError, true, 'Excluded tool should remain an error through the MCP boundary');
     assertEqual(getTextContent(callResult), 'Unknown tool: write_file', 'MCP call should return the service unknown-tool error');
+    const invocation = spy.lastInvocation();
+    assert(invocation !== undefined, 'MCP tools/call should pass SDK metadata into the tool invocation');
+    assert(Object.isFrozen(invocation), 'MCP invocation context should be frozen at the handler boundary');
+    assert(invocation.callId.startsWith('call_'), 'MCP invocation should receive a server-generated call ID');
+    assert(
+      typeof invocation.signal === 'object' && invocation.signal !== null,
+      'MCP invocation should receive the SDK cancellation signal',
+    );
   } finally {
     await closePair(pair);
   }
