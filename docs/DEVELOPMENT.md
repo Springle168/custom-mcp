@@ -16,6 +16,7 @@
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、统一 runner 与通用验证命令 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
+| External routing | [external routing](tools/external-routing.md) | `processorConfigFile`、Processor / endpoint schema、canonical route、容量、取消、shutdown 与日志边界 |
 | Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、schema 转换层限制 |
 | 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
 
@@ -58,9 +59,10 @@ custom-mcp/
 
 | 源码区域 | 主要维护入口 |
 |-|-|
-| `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts` 与 `runtime-snapshot.ts`；[自定义 Tool 配置](config/tool-config.md) 承接 `tool-exposure.ts` |
-| `src/runtime/config-store.ts`, `src/runtime/startup-runtime.ts`, `src/runtime/mcp-server.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts`, `src/runtime/request-context.ts`, `src/runtime/request-header-policy.ts`, `src/runtime/request-header-view.ts`, `src/runtime/tool-result-adapter.ts`, `src/runtime/startup-logging.ts` | 配置 runtime、启动期 tool catalog composition、MCP server factory、request header rules policy 与启动配置摘要见 [配置概览](CONFIG.md)、[workspace 配置](config/workspace-config.md) 和 [日志](LOGGING.md)；workspace tool service 与调用管线见 [工具开发](TOOLS.md)，工具返回结果适配见 [工具返回结果](TOOL-RESULTS.md) |
+| `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts` 与 `runtime-snapshot.ts`；[自定义 Tool 配置](config/tool-config.md) 承接 `tool-exposure.ts` 与 `processorConfigFile` 入口 |
+| `src/runtime/config-store.ts`, `src/runtime/startup-runtime.ts`, `src/runtime/application-lifecycle.ts`, `src/runtime/application-diagnostics.ts`, `src/runtime/mcp-server.ts`, `src/runtime/tool-call-handler.ts`, `src/runtime/tool-context.ts`, `src/runtime/tool-invocation-context.ts`, `src/runtime/request-context.ts`, `src/runtime/request-header-policy.ts`, `src/runtime/request-header-view.ts`, `src/runtime/tool-result-adapter.ts`, `src/runtime/startup-logging.ts` | 配置 runtime、application shutdown、诊断、启动期 tool catalog composition、MCP server factory、request header rules policy 与启动配置摘要见 [配置概览](CONFIG.md)、[workspace 配置](config/workspace-config.md)、[日志](LOGGING.md) 和 [external routing](tools/external-routing.md)；workspace tool service 与调用管线见 [工具开发](TOOLS.md)，工具返回结果适配见 [工具返回结果](TOOL-RESULTS.md) |
 | `src/tools/names.ts`, `src/tools/index.ts`, `src/tools/catalog.ts`, `src/tools/custom-tool-config.ts`, `src/tools/input-schema-validator.ts`, `src/tools/*.ts` | Tool config / definition 格式、schema validator 与 effective/exposed catalog 见 [自定义 Tool 配置](config/tool-config.md)；built-in canonical registry、workspace service 与单工具实现见 [docs/TOOLS.md](TOOLS.md) 和 [docs/tools/](tools/) |
+| `src/tools/external-routing/` | external custom-only binding、Processor / endpoint config、canonical protocol、HTTP / subprocess execution、容量和 lifecycle 见 [external routing](tools/external-routing.md) |
 | `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
 | `src/engine/android-gradle-output.ts` | [docs/tools/android-build.md](tools/android-build.md) |

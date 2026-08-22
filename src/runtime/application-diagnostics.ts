@@ -39,7 +39,12 @@ export class ApplicationDiagnostics {
         this.#reportFallbackFailure();
         return;
       }
-      this.#logger.info(message);
+      const loggerResult = this.#logger.info(message);
+      // Although the injected type is void, implementations can still return
+      // promises. Observe rejections without making processor cleanup wait.
+      void Promise.resolve(loggerResult).catch(() => {
+        this.#reportFallbackFailure();
+      });
     } catch {
       this.#reportFallbackFailure();
     }

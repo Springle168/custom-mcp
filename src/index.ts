@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CliError, parseCliArgs } from './cli.js';
 import { ConfigError } from './config.js';
 import { ApplicationDiagnostics } from './runtime/application-diagnostics.js';
+import { ApplicationLifecycle } from './runtime/application-lifecycle.js';
 import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
 import { createMCPServer } from './runtime/mcp-server.js';
 import { loadApplicationRuntime } from './runtime/startup-runtime.js';
@@ -13,7 +14,10 @@ import {
   type McpPostSession,
 } from './runtime/mcp-post-handler.js';
 import { generateMcpSessionId } from './runtime/mcp-identifiers.js';
-import { formatFileAccessPolicyStartupLines } from './runtime/startup-logging.js';
+import {
+  formatExternalRoutingStartupLines,
+  formatFileAccessPolicyStartupLines,
+} from './runtime/startup-logging.js';
 import { createWorkspaceToolService } from './tools/index.js';
 import { registerAskUserRoutes } from './tools/ask-user-routes.js';
 import { Logger } from './utils/logger.js';
@@ -99,6 +103,7 @@ async function main() {
   registerAskUserRoutes(app);
 
   const sessions = new Map<string, McpPostSession>();
+  let lifecycle: ApplicationLifecycle | undefined;
 
   app.post('/mcp', async (req, res) => {
     await handleMcpPostRequest({
@@ -106,6 +111,8 @@ async function main() {
       res,
       sessions,
       logger,
+      isAcceptingNewSessions: () =>
+        lifecycle?.isAcceptingNewSessions ?? true,
       createSession: async () => {
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: generateMcpSessionId,
@@ -162,12 +169,16 @@ async function main() {
       return;
     }
     await session.transport.handleRequest(req, res);
-    await session.server.close();
-    sessions.delete(sessionId);
+    if (lifecycle === undefined) {
+      await session.server.close();
+      sessions.delete(sessionId);
+    } else {
+      await lifecycle.closeSession(sessionId);
+    }
     logger.info(`Session closed: ${sessionId}`);
   });
 
-  app.listen(initialSnapshot.port, initialSnapshot.host, () => {
+  const listener = app.listen(initialSnapshot.port, initialSnapshot.host, () => {
     logger.info('MCP Replace Server started');
     logger.info(`  Bind address: ${formatHostPort(initialSnapshot.host, initialSnapshot.port)}`);
     logger.info(`  Endpoint: ${buildHttpUrl(initialSnapshot.host, initialSnapshot.port, '/mcp')}`);
@@ -181,9 +192,38 @@ async function main() {
     )) {
       logger.info(line);
     }
+    for (const line of formatExternalRoutingStartupLines(
+      initialRuntime.externalRoutingSpec,
+    )) {
+      logger.info(line);
+    }
     logger.info(`  Line ending: ${initialSnapshot.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
   });
+  lifecycle = new ApplicationLifecycle({
+    listener,
+    sessions,
+    externalRuntime: initialRuntime,
+    logger,
+  });
+
+  const requestShutdown = (signal: 'SIGINT' | 'SIGTERM'): void => {
+    try {
+      logger.info(`Received ${signal}; starting graceful shutdown.`);
+    } catch {
+      // Shutdown must proceed even when the primary observability sink fails.
+    }
+    void lifecycle?.close().catch(() => {
+      try {
+        process.stderr.write('Application shutdown did not complete cleanly.\n');
+      } catch {
+        // There is no remaining safe reporting channel during failed shutdown.
+      }
+      process.exitCode = 1;
+    });
+  };
+  process.once('SIGINT', () => requestShutdown('SIGINT'));
+  process.once('SIGTERM', () => requestShutdown('SIGTERM'));
 }
 
 main().catch((err) => {

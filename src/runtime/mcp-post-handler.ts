@@ -26,6 +26,7 @@ export interface HandleMcpPostRequestOptions {
   readonly sessions: Map<string, McpPostSession>;
   readonly logger: McpPostLogger;
   readonly createSession: () => Promise<McpPostSession> | McpPostSession;
+  readonly isAcceptingNewSessions?: () => boolean;
 }
 
 export async function handleMcpPostRequest(
@@ -46,8 +47,23 @@ export async function handleMcpPostRequest(
     return;
   }
 
+  if (options.isAcceptingNewSessions?.() === false) {
+    res.status(503).end();
+    return;
+  }
+
   const session = await options.createSession();
   await handleTransportRequestWithHeaderContext(session.transport, req, res);
+
+  // Shutdown can begin while the asynchronous initialization request is in
+  // flight. Recheck before atomically publishing the new session to the map.
+  if (options.isAcceptingNewSessions?.() === false) {
+    await session.server.close();
+    if (!res.headersSent) {
+      res.status(503).end();
+    }
+    return;
+  }
 
   if (session.transport.sessionId) {
     sessions.set(session.transport.sessionId, session);

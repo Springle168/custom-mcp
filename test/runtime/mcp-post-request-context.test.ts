@@ -199,6 +199,62 @@ async function testUnknownSessionReturns404WithoutContext(): Promise<void> {
   assertEqual(getCurrentRequestHeaderView(), undefined, 'Unknown session branch should not establish request context');
 }
 
+async function testShutdownRejectsNewSessionAdmission(): Promise<void> {
+  const sessions = new Map<string, McpPostSession>();
+  const res = createResponse();
+  let createCalls = 0;
+
+  await handleMcpPostRequest({
+    req: createRequest({ rawHeaders: [] }),
+    res,
+    sessions,
+    logger: { info() {} },
+    isAcceptingNewSessions: () => false,
+    createSession() {
+      createCalls++;
+      return createSession({ handleRequest() {} });
+    },
+  });
+
+  assertEqual(res.statusCodeValue, 503, 'Shutdown should reject new session initialization');
+  assertEqual(res.ended, true, 'Rejected initialization should end the response');
+  assertEqual(createCalls, 0, 'Rejected initialization must not allocate an MCP session');
+}
+
+async function testShutdownRaceClosesUnpublishedSession(): Promise<void> {
+  const sessions = new Map<string, McpPostSession>();
+  const res = createResponse();
+  let accepting = true;
+  let closeCalls = 0;
+
+  await handleMcpPostRequest({
+    req: createRequest({ rawHeaders: [] }),
+    res,
+    sessions,
+    logger: { info() {} },
+    isAcceptingNewSessions: () => accepting,
+    createSession() {
+      return {
+        transport: {
+          sessionId: 'raced-session',
+          handleRequest() {
+            accepting = false;
+          },
+        },
+        server: {
+          close() {
+            closeCalls++;
+          },
+        },
+      };
+    },
+  });
+
+  assertEqual(closeCalls, 1, 'A session initialized during shutdown should be closed immediately');
+  assertEqual(sessions.size, 0, 'A shutdown-raced session must never be published');
+  assertEqual(res.statusCodeValue, 503, 'An unsent initialization response should report shutdown');
+}
+
 async function testSessionCreationHeadersDoNotEnableLaterSessionRequest(): Promise<void> {
   const sessions = new Map<string, McpPostSession>();
   const results: ToolCallResult[] = [];
@@ -293,6 +349,8 @@ async function main(): Promise<void> {
       { name: 'existing session runs handleRequest in context', run: testExistingSessionRunsHandleRequestInContext },
       { name: 'new session runs handleRequest in context', run: testNewSessionRunsHandleRequestInContext },
       { name: 'unknown session returns 404 without context', run: testUnknownSessionReturns404WithoutContext },
+      { name: 'shutdown rejects new session admission', run: testShutdownRejectsNewSessionAdmission },
+      { name: 'shutdown race closes unpublished session', run: testShutdownRaceClosesUnpublishedSession },
       { name: 'session creation headers do not enable later session request', run: testSessionCreationHeadersDoNotEnableLaterSessionRequest },
     ],
   });

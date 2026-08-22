@@ -294,6 +294,53 @@ async function testHandlerOrderUsesAdaptedResultForLogger(): Promise<void> {
   assert('structuredContent' in returned, 'Returned result should be the adapted result');
 }
 
+async function testHandlerWaitsForAsyncCallLogBeforeRouting(): Promise<void> {
+  const { store } = createCountingStore(matchingRules());
+  const events: string[] = [];
+  let resolveCallLog: (() => void) | undefined;
+  const callLogCompletion = new Promise<void>((resolve) => {
+    resolveCallLog = () => {
+      events.push('call:complete');
+      resolve();
+    };
+  });
+  const handler = createToolCallRequestHandler({
+    configStore: store,
+    logger: {
+      logToolCall() {
+        events.push('call:start');
+        return callLogCompletion;
+      },
+      logToolResult() {
+        events.push('result');
+      },
+    },
+    routeToolCall: async () => {
+      events.push('route');
+      return textResult('ok');
+    },
+  });
+
+  const pendingResult = handler({ params: { name: 'async_call_log', arguments: {} } });
+  await Promise.resolve();
+  assertEqual(
+    events.join('>'),
+    'call:start',
+    'Routing must wait for the asynchronous CALL logger to succeed',
+  );
+  assert(resolveCallLog !== undefined, 'CALL logger test should expose its completion');
+  resolveCallLog();
+
+  const result = await pendingResult;
+
+  assertEqual(
+    events.join('>'),
+    'call:start>call:complete>route>result',
+    'RESULT logging should begin only after a successful asynchronous CALL log',
+  );
+  assertEqual(result.isError, false, 'Asynchronous CALL logging should preserve the tool result');
+}
+
 async function testHandlerContainsRouterFailuresAndMalformedResults(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
   const diagnostics: ToolCallPipelineDiagnostic[] = [];
@@ -366,7 +413,7 @@ async function testLoggerFailuresAreIsolatedAndResultIsAttemptedOnce(): Promise<
     configStore: store,
     logger: {
       logToolCall() {
-        throw new Error('CALL logger failure');
+        return Promise.reject(new Error('CALL logger failure'));
       },
       logToolResult() {
         resultAttemptsAfterCallLogFailure++;
@@ -399,7 +446,7 @@ async function testLoggerFailuresAreIsolatedAndResultIsAttemptedOnce(): Promise<
       logToolCall() {},
       logToolResult() {
         resultAttempts++;
-        throw new Error('RESULT logger failure');
+        return Promise.reject(new Error('RESULT logger failure'));
       },
     },
     routeToolCall: async () => textResult('ok'),
@@ -429,6 +476,7 @@ async function main(): Promise<void> {
       { name: 'handler invalid request view logs no-match metadata', run: testHandlerInvalidRequestViewLogsNoMatchMetadata },
       { name: 'arguments normalize only when missing', run: testArgumentsNormalizeOnlyWhenMissing },
       { name: 'handler order uses adapted result for logger', run: testHandlerOrderUsesAdaptedResultForLogger },
+      { name: 'handler waits for asynchronous CALL logging', run: testHandlerWaitsForAsyncCallLogBeforeRouting },
       { name: 'router failures and malformed results are contained', run: testHandlerContainsRouterFailuresAndMalformedResults },
       { name: 'logger failures are isolated with one RESULT attempt', run: testLoggerFailuresAreIsolatedAndResultIsAttemptedOnce },
     ],
