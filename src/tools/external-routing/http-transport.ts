@@ -112,6 +112,7 @@ const TRANSPORT_OWNED_HEADERS = new Set([
 ]);
 const HTTP_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const HTTP_FAILURE_DRAIN_GRACE_MS = 1_000;
+const REQUEST_WRITE_CHUNK_BYTES = 16 * 1024;
 const IGNORE_LATE_ERROR = (): void => {};
 
 const FAILURE_MESSAGES: Readonly<Record<ExternalHttpTransportFailureCode, string>> = {
@@ -260,6 +261,9 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
   #responseStatusCode: number | undefined;
   #timer: NodeJS.Timeout | undefined;
   #abortListener: (() => void) | undefined;
+  #requestWriteOffset = 0;
+  #requestEnded = false;
+  #writeContinuation: NodeJS.Immediate | undefined;
   #requestFinished = false;
   #requestClosed = false;
   #responseClosed = false;
@@ -272,12 +276,19 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
 
   readonly #onRequestClose = (): void => {
     this.#requestClosed = true;
+    if (!this.#settled && !this.#requestFinished) {
+      this.fail('external_transport_failed', 'connection');
+    }
     this.tryReleaseFailure();
   };
 
   readonly #onRequestFinish = (): void => {
     this.#requestFinished = true;
     this.trySettleStagedResponse();
+  };
+
+  readonly #onRequestDrain = (): void => {
+    this.writeRequestBody();
   };
 
   readonly #onRequestError = (): void => {
@@ -426,15 +437,67 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
     clientRequest.on('connect', this.#onRequestConnect);
     clientRequest.on('information', this.#onRequestInformation);
 
-    try {
-      clientRequest.end(requestBody);
-    } catch {
-      this.fail('external_transport_failed', 'request');
-    }
+    this.writeRequestBody();
   }
 
   cancelForTransportClose(): void {
     this.fail('cancelled', 'connection');
+  }
+
+  /**
+   * Writes incrementally so an early final response cannot be promoted before
+   * the client has actually finished its entity. Backpressure also avoids
+   * copying a 50 MiB body into Node's writable queue in one turn.
+   */
+  private writeRequestBody(): void {
+    if (this.#settled || this.#requestEnded) {
+      return;
+    }
+    const clientRequest = this.#clientRequest;
+    const requestBody = this.#requestBody;
+    if (!clientRequest || !requestBody) {
+      this.fail('external_transport_failed', 'request');
+      return;
+    }
+
+    if (this.#requestWriteOffset >= requestBody.byteLength) {
+      this.#requestEnded = true;
+      try {
+        clientRequest.end();
+      } catch {
+        this.fail('external_transport_failed', 'request');
+      }
+      return;
+    }
+
+    const nextOffset = Math.min(
+      this.#requestWriteOffset + REQUEST_WRITE_CHUNK_BYTES,
+      requestBody.byteLength,
+    );
+    const chunk = requestBody.subarray(this.#requestWriteOffset, nextOffset);
+    this.#requestWriteOffset = nextOffset;
+
+    try {
+      if (!clientRequest.write(chunk)) {
+        clientRequest.once('drain', this.#onRequestDrain);
+        return;
+      }
+    } catch {
+      this.fail('external_transport_failed', 'request');
+      return;
+    }
+
+    this.scheduleRequestWrite();
+  }
+
+  private scheduleRequestWrite(): void {
+    if (this.#settled || this.#writeContinuation) {
+      return;
+    }
+    this.#writeContinuation = setImmediate(() => {
+      this.#writeContinuation = undefined;
+      this.writeRequestBody();
+    });
   }
 
   private receiveResponse(response: IncomingMessage): void {
@@ -546,6 +609,10 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
       clearTimeout(this.#timer);
       this.#timer = undefined;
     }
+    if (this.#writeContinuation) {
+      clearImmediate(this.#writeContinuation);
+      this.#writeContinuation = undefined;
+    }
     if (this.#signal && this.#abortListener) {
       this.#signal.removeEventListener('abort', this.#abortListener);
       this.#abortListener = undefined;
@@ -589,6 +656,7 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
     if (clientRequest) {
       clientRequest.removeListener('close', this.#onRequestClose);
       clientRequest.removeListener('finish', this.#onRequestFinish);
+      clientRequest.removeListener('drain', this.#onRequestDrain);
       clientRequest.removeListener('error', this.#onRequestError);
       clientRequest.removeListener('response', this.#onRequestResponse);
       clientRequest.removeListener('upgrade', this.#onRequestUpgrade);

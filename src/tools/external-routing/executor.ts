@@ -11,6 +11,7 @@ import {
 } from './runtime.js';
 import {
   ExternalRoutingStrategyAdapter,
+  type ExternalRoutingProcessorDrainDiagnostic,
   type ExternalRoutingStrategyOutcome,
   type ExternalRoutingStrategyExchange,
 } from './strategy-adapter.js';
@@ -104,9 +105,17 @@ export interface CreatedExternalRoutingExecutor {
   readonly httpTransport: ExternalHttpTransport;
 }
 
+export interface CreateExternalRoutingExecutorOptions {
+  /** Receives safe post-drain Processor cleanup diagnostics for application logging. */
+  readonly onProcessorDrain?: (
+    diagnostic: ExternalRoutingProcessorDrainDiagnostic,
+  ) => void | Promise<void>;
+}
+
 /** Creates the one shared external-routing resource graph for a workspace. */
 export function createExternalRoutingExecutor(
   spec: ExternalRoutingSpec,
+  options: CreateExternalRoutingExecutorOptions = {},
 ): CreatedExternalRoutingExecutor {
   const processorRunner = new ProcessorRunner();
   const httpTransport = createExternalHttpTransport(spec.endpoint);
@@ -114,6 +123,9 @@ export function createExternalRoutingExecutor(
     spec,
     processorRunner,
     httpTransport,
+    ...(options.onProcessorDrain === undefined
+      ? {}
+      : { onProcessorDrain: options.onProcessorDrain }),
   });
   const executor = new ExternalRoutingExecutor({
     strategy,

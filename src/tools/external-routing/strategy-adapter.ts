@@ -20,6 +20,7 @@ import type {
 } from './http-transport.js';
 import type {
   ProcessorInvocation,
+  ProcessorRunDrainMetadata,
   ProcessorRunExchange,
   ProcessorRunOutcome,
 } from './processor-runner.js';
@@ -42,11 +43,36 @@ export interface ExternalRoutingHttpTransport {
   exchange(request: ExternalHttpTransportRequest): ExternalHttpTransportExchange;
 }
 
+/**
+ * Safe cleanup metadata emitted after one Processor invocation drains. It
+ * deliberately excludes executable paths, argv, stderr text, stdout bytes,
+ * and every other subprocess-owned value.
+ */
+export interface ExternalRoutingProcessorDrainDiagnostic {
+  readonly role: ProcessorInvocation['environment']['role'];
+  readonly processorName: string;
+  readonly cleanupFailed: boolean;
+  readonly settledDurationMs: number;
+  readonly drainDurationMs: number;
+  readonly stdinBytes: number;
+  readonly stdoutBytes: number;
+  readonly stderrByteCount: number;
+  readonly stderrCapturedByteCount: number;
+  readonly stderrTruncated: boolean;
+}
+
 export interface ExternalRoutingStrategyAdapterOptions {
   /** Startup-validated configuration snapshot for this external route. */
   readonly spec: ExternalRoutingSpec;
   readonly processorRunner: ExternalRoutingProcessorRunner;
   readonly httpTransport: ExternalRoutingHttpTransport;
+  /**
+   * Optional owner-supplied diagnostic sink. It is invoked after Processor
+   * drain and is fully isolated from caller outcome and cleanup completion.
+   */
+  readonly onProcessorDrain?: (
+    diagnostic: ExternalRoutingProcessorDrainDiagnostic,
+  ) => void | Promise<void>;
 }
 
 export interface ExecuteExternalRoutingStrategyOptions {
@@ -121,11 +147,13 @@ export class ExternalRoutingStrategyAdapter {
   readonly #spec: ExternalRoutingSpec;
   readonly #processorRunner: ExternalRoutingProcessorRunner;
   readonly #httpTransport: ExternalRoutingHttpTransport;
+  readonly #onProcessorDrain: ExternalRoutingStrategyAdapterOptions['onProcessorDrain'];
 
   constructor(options: ExternalRoutingStrategyAdapterOptions) {
     this.#spec = options.spec;
     this.#processorRunner = options.processorRunner;
     this.#httpTransport = options.httpTransport;
+    this.#onProcessorDrain = options.onProcessorDrain;
   }
 
   /**
@@ -438,8 +466,15 @@ export class ExternalRoutingStrategyAdapter {
     if (isFailure(response)) {
       return response;
     }
-    return hasLegalResponseStatus(statusCode, response)
-      ? response
+    if (hasLegalResponseStatus(statusCode, response)) {
+      return response;
+    }
+
+    // The body-decoder owns the construction of this otherwise-valid canonical
+    // response. A success response for an HTTP error status is therefore a
+    // Processor contract violation, rather than invalid direct HTTP input.
+    return isClientOrServerErrorStatus(statusCode) && isCanonicalSuccessResponse(response)
+      ? failure('processor_failed')
       : failure('external_protocol_failed');
   }
 
@@ -461,7 +496,11 @@ export class ExternalRoutingStrategyAdapter {
         environment,
         signal,
       });
-      drains.track(exchange.drained);
+      drains.track(this.#observeProcessorDrain(
+        processor.name,
+        environment.role,
+        exchange,
+      ));
     } catch {
       return failure('processor_failed');
     }
@@ -479,6 +518,56 @@ export class ExternalRoutingStrategyAdapter {
       return failure('cancelled');
     }
     return failure(outcome.reason === 'timeout' ? 'processor_timeout' : 'processor_failed');
+  }
+
+  async #observeProcessorDrain(
+    processorName: string,
+    role: ProcessorInvocation['environment']['role'],
+    exchange: ProcessorRunExchange,
+  ): Promise<void> {
+    let outcome: ProcessorRunOutcome;
+    try {
+      outcome = await exchange.settled;
+    } catch {
+      return;
+    }
+
+    let drainMetadata: ProcessorRunDrainMetadata;
+    try {
+      drainMetadata = await exchange.drained;
+    } catch {
+      return;
+    }
+
+    this.#emitProcessorDrainDiagnostic({
+      role,
+      processorName,
+      cleanupFailed: drainMetadata.cleanupFailed,
+      settledDurationMs: outcome.durationMs,
+      drainDurationMs: drainMetadata.durationMs,
+      stdinBytes: outcome.stdinBytes,
+      stdoutBytes: outcome.stdoutBytes,
+      stderrByteCount: outcome.stderr.byteCount,
+      stderrCapturedByteCount: outcome.stderr.capturedByteCount,
+      stderrTruncated: outcome.stderr.truncated,
+    });
+  }
+
+  #emitProcessorDrainDiagnostic(
+    diagnostic: ExternalRoutingProcessorDrainDiagnostic,
+  ): void {
+    const callback = this.#onProcessorDrain;
+    if (!callback) {
+      return;
+    }
+
+    try {
+      // Do not await arbitrary owner diagnostics: a slow or failing sink must
+      // neither revise the exchange outcome nor delay lifecycle cleanup.
+      void Promise.resolve(callback(diagnostic)).catch(ignoreProcessorDrainDiagnosticFailure);
+    } catch {
+      // Synchronous sink failures are isolated just like asynchronous ones.
+    }
   }
 
   async #runTransport(
@@ -558,10 +647,14 @@ function hasLegalResponseStatus(statusCode: number, response: CanonicalResponse)
   if (statusCode >= 200 && statusCode < 300) {
     return true;
   }
-  if (statusCode >= 400 && statusCode < 600) {
+  if (isClientOrServerErrorStatus(statusCode)) {
     return !isCanonicalSuccessResponse(response);
   }
   return false;
+}
+
+function isClientOrServerErrorStatus(statusCode: number): boolean {
+  return Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600;
 }
 
 function canonicalOutcome(response: CanonicalResponse): ExternalRoutingCanonicalOutcome {
@@ -597,4 +690,8 @@ function isFailure(value: unknown): value is ExternalRoutingStrategyFailure {
 
 function ignoreDrainFailure(): void {
   // Underlying runner/transport cleanup failures are intentionally opaque here.
+}
+
+function ignoreProcessorDrainDiagnosticFailure(): void {
+  // Owner diagnostic sinks cannot affect exchange settlement or cleanup.
 }

@@ -319,11 +319,15 @@ class ActiveProcessorInvocation {
   };
 
   #onStderrData = (chunk: Buffer): void => {
-    if (this.#drainedResolved || this.#terminalReason) {
+    if (this.#drainedResolved) {
       return;
     }
 
     this.#stderrBytes += chunk.byteLength;
+    if (this.#terminalReason) {
+      return;
+    }
+
     const remainingCaptureBytes = PROCESSOR_STDERR_CAPTURE_LIMIT_BYTES - this.#stderrCapturedBytes;
     if (remainingCaptureBytes <= 0) {
       return;
@@ -463,7 +467,9 @@ class ActiveProcessorInvocation {
     this.#wallClockTimer = undefined;
     this.#settleFailure(reason);
 
-    this.#destroyStdio();
+    this.#destroyStdio({
+      preserveOutputPipes: reason === 'timeout' || reason === 'cancelled',
+    });
 
     if (!this.#child || this.#spawnFailed || this.#childClosed) {
       this.#finishDrain(false);
@@ -502,8 +508,18 @@ class ActiveProcessorInvocation {
     }
   }
 
-  #destroyStdio(): void {
+  /**
+   * Timeout and cancellation leave output pipes flowing until child `close` so
+   * a descendant that inherited stdout/stderr cannot be hidden by a local
+   * destroy. Their raw bytes are discarded after settlement; final degraded
+   * cleanup still destroys every local stdio handle.
+   */
+  #destroyStdio(options: { readonly preserveOutputPipes?: boolean } = {}): void {
     destroyStream(this.#stdin);
+    if (options.preserveOutputPipes) {
+      return;
+    }
+
     destroyStream(this.#stdout);
     destroyStream(this.#stderr);
   }

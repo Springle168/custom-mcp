@@ -4,7 +4,11 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import type { Socket } from 'node:net';
+import {
+  createServer as createNetServer,
+  type Server as NetServer,
+  type Socket,
+} from 'node:net';
 import { gzipSync } from 'node:zlib';
 import type { ExternalHttpEndpointConfig } from '../../src/tools/external-routing/config.js';
 import {
@@ -57,7 +61,44 @@ async function startLoopbackServer(
   };
 }
 
+async function startRawLoopbackServer(
+  handler: (socket: Socket) => void,
+): Promise<LoopbackServer> {
+  const server = createNetServer();
+  const sockets = new Set<Socket>();
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    handler(socket);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  assert(address !== null && typeof address !== 'string', 'Raw loopback server should expose a TCP port.');
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    sockets,
+    close: () => closeRawServer(server, sockets),
+  };
+}
+
 async function closeServer(server: Server, sockets: ReadonlySet<Socket>): Promise<void> {
+  for (const socket of sockets) {
+    socket.destroy();
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+}
+
+async function closeRawServer(server: NetServer, sockets: ReadonlySet<Socket>): Promise<void> {
   for (const socket of sockets) {
     socket.destroy();
   }
@@ -200,6 +241,74 @@ async function testRawEncodedEntityAndBodyDecoderHeaders(): Promise<void> {
     );
     assertEqual(outcome.contentEncoding, 'gzip, br', 'Content-Encoding tokens should normalize for processors.');
   } finally {
+    await transport.close();
+    await server.close();
+  }
+}
+
+async function testEarlyFinalResponseCannotWinOverPendingRequestFailure(): Promise<void> {
+  const responseBody = '{"results":[{"id":"call_1","status":"completed","message":"done"}]}';
+  const responseBytes = Buffer.from([
+    'HTTP/1.1 200 OK',
+    'Content-Type: application/json; charset=utf-8',
+    `Content-Length: ${Buffer.byteLength(responseBody)}`,
+    'Connection: keep-alive',
+    '',
+    responseBody,
+  ].join('\r\n'), 'utf-8');
+  let responseSent = false;
+  let resetIssued = false;
+  let requestBytesBeforeResponse = 0;
+  let resetTimer: NodeJS.Timeout | undefined;
+  const server = await startRawLoopbackServer((socket) => {
+    socket.on('error', () => undefined);
+    socket.once('data', () => {
+      requestBytesBeforeResponse = socket.bytesRead;
+      socket.pause();
+      responseSent = true;
+      socket.write(responseBytes, () => {
+        // Pausing after the first input chunk keeps the client's large request
+        // pending while still allowing this complete final response to arrive.
+        resetTimer = setTimeout(() => {
+          resetIssued = true;
+          socket.resetAndDestroy();
+        }, 20);
+      });
+    });
+  });
+  const transport = createExternalHttpTransport(endpoint(server, { timeoutMs: 5_000 }));
+  const largeRequestBody = new Uint8Array(MAX_EXTERNAL_HTTP_BODY_BYTES);
+
+  try {
+    const exchange = transport.exchange({
+      body: largeRequestBody,
+      contentType: 'application/json; charset=utf-8',
+      responseMode: 'direct',
+    });
+    const outcome = failure(await exchange.settled);
+    await exchange.drained;
+
+    assert(responseSent, 'Raw endpoint should send the complete final response before resetting.');
+    assert(resetIssued, 'Raw endpoint should reset the pending request connection.');
+    assert(
+      requestBytesBeforeResponse < largeRequestBody.byteLength,
+      'Raw endpoint must answer before it has consumed the large request entity.',
+    );
+    assertEqual(
+      outcome.code,
+      'external_transport_failed',
+      'A pending request write/connection failure must beat a staged final response.',
+    );
+    assertEqual(
+      outcome.diagnostics.stage,
+      'connection',
+      'The winning outcome should identify the request connection failure.',
+    );
+    await waitFor(() => server.sockets.size === 0, 'race failure should not leave a raw loopback socket open');
+  } finally {
+    if (resetTimer) {
+      clearTimeout(resetTimer);
+    }
     await transport.close();
     await server.close();
   }
@@ -509,6 +618,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'sends POST with owned headers, exact length, and raw body', run: testPostHeadersLengthAndRawBody },
       { name: 'preserves encoded response entities for body decoders', run: testRawEncodedEntityAndBodyDecoderHeaders },
+      { name: 'rejects early final responses when pending request writes fail', run: testEarlyFinalResponseCannotWinOverPendingRequestFailure },
       { name: 'enforces representation metadata and duplicate field rules', run: testRepresentationRulesAndDuplicateHeaders },
       { name: 'rejects empty final entities for every response mode', run: testEmptyFinalEntitiesAreProtocolFailures },
       { name: 'handles final status classes without redirect or upgrade support', run: testStatusAndUpgradeOutcomesWithoutRedirectFollowing },
