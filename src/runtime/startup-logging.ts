@@ -1,24 +1,39 @@
 import type { RootFileAccessPolicyFiles } from '../config/file-access-policy.js';
-import type { ExternalRoutingSpec } from '../tools/external-routing/config.js';
+import type { CompiledExternalRoutingConfig } from '../tools/external-routing/config.js';
 
 /**
- * Formats the startup-safe identity and strategy summary for the optional
- * external route. Configuration source paths, Processor commands/arguments,
- * headers, and endpoint query/credentials must stay out of startup logs.
+ * Formats startup-safe route identities without configuration source paths,
+ * Processor details, headers, or endpoint query and credential material.
  */
 export function formatExternalRoutingStartupLines(
-  route: ExternalRoutingSpec | undefined,
+  config: CompiledExternalRoutingConfig | undefined,
 ): readonly string[] {
-  if (route === undefined) {
+  if (config === undefined) {
     return ['  External routing: disabled'];
   }
 
-  return [
+  const routes = [...config.routesByDefinitionId.values()];
+  if (routes.length === 0) {
+    return [
+      '  External routing: configured',
+      '    Routes: 0',
+    ];
+  }
+
+  const lines = [
     '  External routing: enabled',
-    `    Request mode: ${route.requestStrategy.mode}`,
-    `    Response mode: ${route.responseStrategy.mode}`,
-    `    Endpoint: ${formatExternalRoutingEndpointIdentity(route.endpoint.url)}`,
+    `    Routes: ${routes.length}`,
   ];
+  for (const route of routes) {
+    lines.push(
+      `    Route: ${route.definitionId}`,
+      `      Tool: ${route.toolName}`,
+      `      Request stages: ${route.requestStage.mode}`,
+      `      Response stages: ${route.responseStage.mode}`,
+      `      Endpoint: ${formatExternalRoutingEndpointIdentity(route.endpoint.url)}`,
+    );
+  }
+  return lines;
 }
 
 export function formatFileAccessPolicyStartupLines(

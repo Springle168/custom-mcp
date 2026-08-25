@@ -72,6 +72,8 @@ function formatProcessorDrainDiagnostic(
 ): string {
   return [
     'External Processor drain:',
+    `route=${diagnostic.definitionId}`,
+    `tool=${diagnostic.toolName}`,
     `role=${diagnostic.role}`,
     `processor=${diagnostic.processorName}`,
     `cleanupFailed=${diagnostic.cleanupFailed}`,

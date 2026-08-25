@@ -94,7 +94,7 @@ workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `
 
 ## External routing 结果
 
-配置 `processorConfigFile` 的 custom-only Tool 在 configured input schema 校验通过后进入共享 external executor。已校验 canonical `completed` result 映射为 `textResult()`；canonical `failed`、`cancelled` 和 endpoint `error` 映射为 `textErrorResult()`。这些业务 message 来自受信任 endpoint 的 canonical result，会按其已校验文本返回。
+External routing config 为 definition reference `id` 声明 route 的 custom-only Tool，在 configured input schema 校验通过后进入该 route-bound external executor。每个 route 选择自己的 endpoint 与 stage，但 route-bound executor 共享 workspace external runtime。已校验 canonical `completed` result 映射为 `textResult()`；canonical `failed`、`cancelled` 和 endpoint `error` 映射为 `textErrorResult()`。这些业务 message 来自受信任 endpoint 的 canonical result，会按其已校验文本返回。
 
 容量、取消、HTTP / Processor timeout、大小限制、transport、canonical protocol 与内部失败也都映射为 `textErrorResult()`。本地失败文本只说明稳定的失败类别和安全的下一步：不包含 endpoint URL 或 query、header、request / response entity、Processor stdout / stderr、executable path、argv 或底层异常。外部服务器可能已执行而未获得确认结果时，文本明确说明服务不会自动重试；调用方只应在操作可安全重复时自行重试。
 

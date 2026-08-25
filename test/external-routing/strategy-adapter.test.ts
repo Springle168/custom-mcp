@@ -4,10 +4,10 @@ import {
   type CanonicalRequest,
 } from '../../src/tools/external-routing/canonical-protocol.js';
 import type {
+  CompiledExternalRoute,
   ExternalProcessorDefinition,
-  ExternalRequestRoutingStrategy,
-  ExternalResponseRoutingStrategy,
-  ExternalRoutingSpec,
+  ExternalRequestRoutingStage,
+  ExternalResponseRoutingStage,
 } from '../../src/tools/external-routing/config.js';
 import type {
   ExternalHttpTransportExchange,
@@ -122,21 +122,22 @@ function processor(name: string): ExternalProcessorDefinition {
 }
 
 function spec(
-  requestStrategy: ExternalRequestRoutingStrategy,
-  responseStrategy: ExternalResponseRoutingStrategy,
+  requestStage: ExternalRequestRoutingStage,
+  responseStage: ExternalResponseRoutingStage,
   processors: readonly ExternalProcessorDefinition[] = [],
-): ExternalRoutingSpec {
+): CompiledExternalRoute & { readonly processors: readonly ExternalProcessorDefinition[] } {
   return {
-    processorConfigFilePath: 'C:\\test-workspace\\processor.json',
-    httpEndpointConfigFilePath: 'C:\\test-workspace\\endpoint.json',
+    definitionId: 'source-definition',
+    toolName: 'source.tool',
+    endpointConfigFilePath: 'C:\\test-workspace\\endpoint.json',
     endpoint: {
       url: 'https://external.example.test/tool',
       timeoutMs: 1_000,
       headers: {},
     },
+    requestStage,
+    responseStage,
     processors,
-    requestStrategy,
-    responseStrategy,
   };
 }
 
@@ -223,13 +224,18 @@ function successfulExchange(
 }
 
 function adapter(
-  routeSpec: ExternalRoutingSpec,
+  routeSpec: CompiledExternalRoute & {
+    readonly processors: readonly ExternalProcessorDefinition[];
+  },
   runner: FakeProcessorRunner,
   transport: FakeHttpTransport,
   options: Pick<ExternalRoutingStrategyAdapterOptions, 'onProcessorDrain'> = {},
 ): ExternalRoutingStrategyAdapter {
   return new ExternalRoutingStrategyAdapter({
-    spec: routeSpec,
+    route: routeSpec,
+    processorsByName: new Map(
+      routeSpec.processors.map((definition) => [definition.name, definition]),
+    ),
     processorRunner: runner,
     httpTransport: transport,
     ...options,
@@ -287,8 +293,8 @@ async function testDirectRequestAndResponse(): Promise<void> {
     () => successfulExchange(canonicalSuccess()),
   ]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'direct' },
+    { mode: 'direct' },
   ), runner, transport);
 
   const outcome = requireCanonical(await route.execute({ request: canonicalRequest() }), 'external_tool_completed');
@@ -296,6 +302,11 @@ async function testDirectRequestAndResponse(): Promise<void> {
   assertEqual(runner.invocations.length, 0, 'direct/direct must not start a Processor.');
   assertEqual(transport.requests.length, 1, 'direct request should start one HTTP exchange.');
   const request = transport.requests[0];
+  assertEqual(
+    request?.endpoint?.url,
+    'https://external.example.test/tool',
+    'The strategy adapter must dispatch through its compiled route endpoint.',
+  );
   assertEqual(request?.contentType, 'application/json; charset=utf-8', 'direct request must own canonical JSON media type.');
   assertEqual(request?.responseMode, 'direct', 'Response strategy must select transport representation validation.');
   const serialized = JSON.parse(decoder.decode(request?.body)) as { calls: Array<{ name: string }> };
@@ -316,8 +327,8 @@ async function testCanonicalRequestFilter(): Promise<void> {
     () => successfulExchange(canonicalSuccess()),
   ]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'canonical-filter', processor: 'request-filter' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'canonical-filter', processor: 'request-filter' },
+    { mode: 'direct' },
     [processor('request-filter')],
   ), runner, transport);
 
@@ -343,12 +354,11 @@ async function testBodyEncoderRequest(): Promise<void> {
   ]);
   const route = adapter(spec(
     {
-      strategy: 'request-to-external',
       mode: 'body-encoder',
       processor: 'body-encoder',
       contentType: 'application/vnd.example+json; charset=utf-8',
     },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'direct' },
     [processor('body-encoder')],
   ), runner, transport);
 
@@ -378,8 +388,8 @@ async function testCanonicalResponseFilter(): Promise<void> {
     }),
   ]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'canonical-filter', processor: 'response-filter' },
+    { mode: 'direct' },
+    { mode: 'canonical-filter', processor: 'response-filter' },
     [processor('response-filter')],
   ), runner, transport);
 
@@ -416,8 +426,8 @@ async function testBodyDecoderResponse(): Promise<void> {
     }),
   ]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'body-decoder', processor: 'response-decoder' },
+    { mode: 'direct' },
+    { mode: 'body-decoder', processor: 'response-decoder' },
     [processor('response-decoder')],
   ), runner, transport);
 
@@ -450,8 +460,8 @@ async function testStatusContract(): Promise<void> {
     () => successfulExchange(canonicalSuccess(), 422),
   ]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'direct' },
+    { mode: 'direct' },
   ), runner, transport);
 
   requireCanonical(await route.execute({ request: canonicalRequest() }), 'external_rejected');
@@ -464,8 +474,8 @@ async function testBoundaryFailureClassification(): Promise<void> {
     () => successfulExchange(encoder.encode('not canonical JSON'), 200),
   ]);
   const directRoute = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'direct' },
+    { mode: 'direct' },
   ), directRunner, directTransport);
   requireFailure(await directRoute.execute({ request: canonicalRequest() }), 'external_protocol_failed');
 
@@ -474,8 +484,8 @@ async function testBoundaryFailureClassification(): Promise<void> {
   ]);
   const filterTransport = new FakeHttpTransport([]);
   const filterRoute = adapter(spec(
-    { strategy: 'request-to-external', mode: 'canonical-filter', processor: 'request-filter' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'canonical-filter', processor: 'request-filter' },
+    { mode: 'direct' },
     [processor('request-filter')],
   ), filterRunner, filterTransport);
   requireFailure(await filterRoute.execute({ request: canonicalRequest() }), 'processor_failed');
@@ -488,8 +498,8 @@ async function testBoundaryFailureClassification(): Promise<void> {
     () => successfulExchange(canonicalSuccess()),
   ]);
   const responseFilterRoute = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'canonical-filter', processor: 'response-filter' },
+    { mode: 'direct' },
+    { mode: 'canonical-filter', processor: 'response-filter' },
     [processor('response-filter')],
   ), responseFilterRunner, responseFilterTransport);
   requireFailure(await responseFilterRoute.execute({ request: canonicalRequest() }), 'processor_failed');
@@ -501,8 +511,8 @@ async function testBoundaryFailureClassification(): Promise<void> {
     () => successfulExchange(new Uint8Array([0, 1, 2]), 422),
   ]);
   const decoderRoute = adapter(spec(
-    { strategy: 'request-to-external', mode: 'direct' },
-    { strategy: 'response-from-external', mode: 'body-decoder', processor: 'response-decoder' },
+    { mode: 'direct' },
+    { mode: 'body-decoder', processor: 'response-decoder' },
     [processor('response-decoder')],
   ), decoderRunner, decoderTransport);
   requireFailure(
@@ -516,8 +526,8 @@ async function testBoundaryFailureClassification(): Promise<void> {
   ]);
   const timeoutTransport = new FakeHttpTransport([]);
   const timeoutRoute = adapter(spec(
-    { strategy: 'request-to-external', mode: 'body-encoder', processor: 'body-encoder', contentType: 'application/octet-stream' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'body-encoder', processor: 'body-encoder', contentType: 'application/octet-stream' },
+    { mode: 'direct' },
     [processor('body-encoder')],
   ), timeoutRunner, timeoutTransport);
   const timeoutExchange = timeoutRoute.exchange({ request: canonicalRequest() });
@@ -541,8 +551,8 @@ async function testCancellationStopsLaterStages(): Promise<void> {
   ]);
   const transport = new FakeHttpTransport([]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'canonical-filter', processor: 'request-filter' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'canonical-filter', processor: 'request-filter' },
+    { mode: 'direct' },
     [processor('request-filter')],
   ), runner, transport);
   const controller = new AbortController();
@@ -585,8 +595,8 @@ async function testSeparatesSettlementFromAllStageDrains(): Promise<void> {
   ]);
   const diagnostics: ExternalRoutingProcessorDrainDiagnostic[] = [];
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'canonical-filter', processor: 'request-filter' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'canonical-filter', processor: 'request-filter' },
+    { mode: 'direct' },
     [processor('request-filter')],
   ), runner, transport, {
     onProcessorDrain: (diagnostic) => {
@@ -634,12 +644,11 @@ async function testProcessorDrainSinkFailuresAreIsolated(): Promise<void> {
   ]);
   const route = adapter(spec(
     {
-      strategy: 'request-to-external',
       mode: 'body-encoder',
       processor: 'body-encoder',
       contentType: 'application/octet-stream',
     },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'direct' },
     [processor('body-encoder')],
   ), runner, transport, {
     onProcessorDrain: () => {
@@ -662,8 +671,8 @@ async function testExceptionsDoNotEscapeOrLeak(): Promise<void> {
   ]);
   const transport = new FakeHttpTransport([]);
   const route = adapter(spec(
-    { strategy: 'request-to-external', mode: 'body-encoder', processor: 'body-encoder', contentType: 'application/octet-stream' },
-    { strategy: 'response-from-external', mode: 'direct' },
+    { mode: 'body-encoder', processor: 'body-encoder', contentType: 'application/octet-stream' },
+    { mode: 'direct' },
     [processor('body-encoder')],
   ), runner, transport);
 
@@ -677,10 +686,11 @@ async function testExceptionsDoNotEscapeOrLeak(): Promise<void> {
     },
   };
   const transportFailureRoute = new ExternalRoutingStrategyAdapter({
-    spec: spec(
-      { strategy: 'request-to-external', mode: 'direct' },
-      { strategy: 'response-from-external', mode: 'direct' },
+    route: spec(
+      { mode: 'direct' },
+      { mode: 'direct' },
     ),
+    processorsByName: new Map(),
     processorRunner: new FakeProcessorRunner([]),
     httpTransport: throwingTransport,
   });

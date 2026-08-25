@@ -40,7 +40,7 @@ const LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const ROOT_DIR = path.join(FIXTURES_DIR, 'workspace');
 const TOOL_CONFIG_FILE = path.join(FIXTURES_DIR, 'tool-config.json');
 const TOOL_DEFINITION_FILE = path.join(FIXTURES_DIR, 'external-custom-tool.json');
-const PROCESSOR_CONFIG_FILE = path.join(FIXTURES_DIR, 'processor-config.json');
+const EXTERNAL_ROUTING_CONFIG_FILE = path.join(FIXTURES_DIR, 'external-routing-config.json');
 const ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'endpoint-config.json');
 const EXTERNAL_TOOL_NAME = 'external_custom_tool';
 const COMPLETED_MESSAGE = 'Loopback endpoint completed the custom tool.';
@@ -111,22 +111,24 @@ async function writeExternalRoutingFixture(endpointUrl: string): Promise<void> {
     timeoutMs: 1_000,
     headers: {},
   }, null, 2), 'utf-8');
-  await fs.writeFile(PROCESSOR_CONFIG_FILE, JSON.stringify({
+  await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
     version: 1,
-    httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
-    processors: [],
-    routingStrategy: [
-      { strategy: 'request-to-external', mode: 'direct' },
-      { strategy: 'response-from-external', mode: 'direct' },
-    ],
+    routes: [{
+      definitionId: 'external-custom-tool',
+      httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
+      routingStrategy: {
+        'request-to-external': [{ mode: 'direct' }],
+        'response-from-external': [{ mode: 'direct' }],
+      },
+    }],
   }, null, 2), 'utf-8');
   await fs.writeFile(TOOL_CONFIG_FILE, JSON.stringify({
-    version: 1,
+    version: 2,
     definitions: [{
       id: 'external-custom-tool',
       toolDefinitionFile: TOOL_DEFINITION_FILE,
     }],
-    processorConfigFile: PROCESSOR_CONFIG_FILE,
+    externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
   }, null, 2), 'utf-8');
   await writeSplitConfigFixture(CONFIG_FILE, {
     workspaces: [{

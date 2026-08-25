@@ -11,8 +11,8 @@
 | 配置概览 | 本文 | 两层模型、启动方式、加载边界与错误来源。 |
 | 全局索引 | [全局 workspace 索引](config/global-index.md) | `~/.custom-mcp/config.json`、`version: 2` reference schema、workspace 选择。 |
 | Workspace 配置 | [workspace 配置](config/workspace-config.md) | `version: 1` schema、文件访问策略、env override、runtime snapshot。 |
-| 自定义 Tool 配置 | [自定义 Tool 配置](config/tool-config.md) | `tools.toolConfigFile`、Tool definition、`processorConfigFile` 入口、schema 编译与 catalog 合并。 |
-| External routing | [external routing](EXTERNAL-ROUTING.md) | Processor / endpoint config schema、custom-only binding、canonical route、限制与安全边界。 |
+| 自定义 Tool 配置 | [自定义 Tool 配置](config/tool-config.md) | `tools.toolConfigFile`、Tool config v2、Tool definition、`externalRoutingConfigFile` 入口、definitionId binding、schema 编译与 catalog 合并。 |
+| External routing | [external routing](EXTERNAL-ROUTING.md) | External routing config v1、Processor registry v2、route-specific endpoint / stage、共享容量、canonical route、限制与安全边界。 |
 
 ---
 
@@ -85,7 +85,7 @@ CompiledWorkspaceToolCatalog
 
 `RuntimeConfigIdentity` 固定记录全局索引路径、workspace 配置路径、workspace id、rootDir、host 与 port。环境变量覆盖在 identity 创建后应用，不能改变 workspace 选择或 identity。
 
-workspace `tools` 先解析 tool config path 与未决 exposure selector。selected workspace 引用的 tool config 和全部 definitions 随后读取并编译；Tool config 含 `processorConfigFile` 时，还会读取并校验 Processor 与 endpoint config，并为 custom-only definitions 创建共享 external executor。catalog compiler 合并内置 registry 与 custom definitions，再校验 selector 成员。definitions、validators、executor bindings 和 exposure 归独立的 compiled catalog 所有，不进入 runtime snapshot。
+workspace `tools` 先解析 tool config path 与未决 exposure selector。selected workspace 引用的 Tool config v2 和全部 definitions 随后读取并编译；`externalRoutingConfigFile` 存在时，还会读取并校验 External routing config、显式 Processor registry 与每条 route endpoint，按 definition reference `id` 编译 route binding。catalog compiler 合并内置 registry 与 custom definitions，再校验 selector 成员；至少有一条 route 时才创建共享 external runtime。definitions、validators、executor bindings 和 exposure 归独立的 compiled catalog 所有，不进入 runtime snapshot。
 
 配置文件和策略文件在启动期读取。`ConfigStore` 只暴露只读 snapshot 与 identity，不提供 watcher、reload apply 或 snapshot mutation API；修改配置或策略后需要重启服务。工具层只消费由 snapshot 派生的 `ToolRuntimeContext`，不直接读取配置文件。
 
@@ -98,7 +98,7 @@ workspace `tools` 先解析 tool config path 与未决 exposure selector。selec
 | CLI 参数形式或 workspace id lexical grammar 无效 | `CliError`；发生在配置读取之前。 |
 | 全局文件不存在、全局版本、reference schema、重复 id、非法 `configFile`、已解析 id 的选择失败 | 全局 `config.json`。 |
 | selected workspace 文件读取、JSON、schema、path、env override、file access policy | selected workspace 配置文件。 |
-| tool config / definition / external routing 文件读取、JSON、严格外壳或 schema 编译 | 实际出错的 referenced 文件；definition 诊断关联 reference id，Processor / endpoint config 的字段错误归属各自文件。 |
+| Tool config / definition / External routing / Processor / endpoint 文件读取、JSON、严格外壳或 schema 编译 | 实际出错的 referenced 文件；definition 诊断关联 reference id，route binding 与 Processor reference 错误归属 External routing config，Processor / endpoint 字段错误归属各自文件。 |
 | exposure selector 不存在于 effective catalog | selected workspace 配置的 `tools.enabled[i]` / `tools.disabled[i]`。 |
 
 `ConfigError` 携带配置文件路径；字段级校验同时携带 field path。专题文档说明各自的字段与边界。

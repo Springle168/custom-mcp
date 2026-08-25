@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "definitionId": "external-echo",
+      "httpEndpointConfigFile": "C:/Users/username/.custom-mcp/processors/http-endpoint-config.json",
+      "routingStrategy": {
+        "request-to-external": [
+          {
+            "mode": "direct"
+          }
+        ],
+        "response-from-external": [
+          {
+            "mode": "direct"
+          }
+        ]
+      }
+    }
+  ]
+}

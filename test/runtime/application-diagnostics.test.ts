@@ -18,6 +18,8 @@ async function testFormatsOnlySafeStructuredMetadata(): Promise<void> {
 
   diagnostics.onToolCallDiagnostic({ kind: 'router_exception', callId: 'call_test' });
   diagnostics.onExternalProcessorDrain({
+    definitionId: 'external-route',
+    toolName: 'external_tool',
     role: 'response.body-decoder',
     processorName: 'decoder',
     cleanupFailed: true,
@@ -47,6 +49,8 @@ async function testLoggerFailureNeverEscapesDiagnosticCallbacks(): Promise<void>
 
   diagnostics.onToolCallDiagnostic({ kind: 'result_log_failed', callId: 'call_test' });
   diagnostics.onExternalProcessorDrain({
+    definitionId: 'external-route',
+    toolName: 'external_tool',
     role: 'request.canonical-filter',
     processorName: 'filter',
     cleanupFailed: false,
@@ -84,6 +88,8 @@ async function testAsyncLoggerFailureUsesFallbackOnceWithoutUnhandledRejection()
 
     diagnostics.onToolCallDiagnostic({ kind: 'call_log_failed', callId: 'call_test' });
     diagnostics.onExternalProcessorDrain({
+      definitionId: 'external-route',
+      toolName: 'external_tool',
       role: 'request.canonical-filter',
       processorName: 'filter',
       cleanupFailed: false,
@@ -127,6 +133,8 @@ async function testExternalProcessorDrainDoesNotWaitForAsyncLogger(): Promise<vo
   });
 
   const callbackResult = diagnostics.onExternalProcessorDrain({
+    definitionId: 'external-route',
+    toolName: 'external_tool',
     role: 'response.body-decoder',
     processorName: 'decoder',
     cleanupFailed: false,

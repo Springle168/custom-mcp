@@ -1,5 +1,12 @@
+import type { ExternalToolExecutor } from '../catalog.js';
+import { textErrorResult, textResult } from '../results.js';
+import type { ToolCallResult } from '../types.js';
+import { immutableMap } from '../../utils/immutable-map.js';
 import { createCanonicalRequest, type JsonObject } from './canonical-protocol.js';
-import type { ExternalRoutingSpec } from './config.js';
+import type {
+  CompiledExternalRoute,
+  CompiledExternalRoutingConfig,
+} from './config.js';
 import {
   createExternalHttpTransport,
   type ExternalHttpTransport,
@@ -15,8 +22,6 @@ import {
   type ExternalRoutingStrategyOutcome,
   type ExternalRoutingStrategyExchange,
 } from './strategy-adapter.js';
-import { textErrorResult, textResult } from '../results.js';
-import type { ToolCallResult } from '../types.js';
 
 export interface ExternalToolInvocation {
   readonly callId: string;
@@ -25,8 +30,14 @@ export interface ExternalToolInvocation {
   readonly signal?: AbortSignal;
 }
 
+interface RoutedCanonicalRequest {
+  readonly definitionId: string;
+  readonly request: ReturnType<typeof createCanonicalRequest>;
+}
+
 export interface ExternalRoutingStrategyOperation {
   exchange(options: {
+    readonly definitionId: string;
     readonly request: ReturnType<typeof createCanonicalRequest>;
     readonly signal?: AbortSignal;
   }): ExternalRoutingStrategyExchange;
@@ -38,20 +49,24 @@ export interface ExternalRoutingExecutorOptions {
 }
 
 /**
- * Application-owned external executor facade. Catalog entries share one
- * instance; per-call workspace capability stays outside this boundary.
+ * Workspace-owned admission and resource facade. Route-bound catalog executors
+ * delegate here so all routes share one active/pending capacity pool.
  */
 export class ExternalRoutingExecutor {
   readonly #runtime: ExternalRoutingRuntime<
-    ReturnType<typeof createCanonicalRequest>,
+    RoutedCanonicalRequest,
     ExternalRoutingStrategyOutcome
   >;
   readonly #closeResources: () => Promise<void>;
   #closePromise: Promise<void> | undefined;
 
   constructor(options: ExternalRoutingExecutorOptions) {
-    this.#runtime = new ExternalRoutingRuntime((request, signal) =>
-      options.strategy.exchange({ request, signal }));
+    this.#runtime = new ExternalRoutingRuntime((input, signal) =>
+      options.strategy.exchange({
+        definitionId: input.definitionId,
+        request: input.request,
+        signal,
+      }));
     this.#closeResources = options.closeResources ?? (async () => undefined);
   }
 
@@ -63,7 +78,10 @@ export class ExternalRoutingExecutor {
     return this.#runtime.pendingExchangeCount;
   }
 
-  async execute(invocation: ExternalToolInvocation): Promise<ToolCallResult> {
+  async execute(
+    definitionId: string,
+    invocation: ExternalToolInvocation,
+  ): Promise<ToolCallResult> {
     let request: ReturnType<typeof createCanonicalRequest>;
     try {
       request = createCanonicalRequest({
@@ -78,7 +96,7 @@ export class ExternalRoutingExecutor {
     let outcome: ExternalRoutingRuntimeOutcome<ExternalRoutingStrategyOutcome>;
     try {
       outcome = await this.#runtime.exchange({
-        input: request,
+        input: Object.freeze({ definitionId, request }),
         ...(invocation.signal === undefined ? {} : { signal: invocation.signal }),
       });
     } catch {
@@ -101,7 +119,8 @@ export class ExternalRoutingExecutor {
 
 export interface CreatedExternalRoutingExecutor {
   readonly executor: ExternalRoutingExecutor;
-  readonly processorRunner: ProcessorRunner;
+  readonly bindingsByDefinitionId: ReadonlyMap<string, ExternalToolExecutor>;
+  readonly processorRunner?: ProcessorRunner;
   readonly httpTransport: ExternalHttpTransport;
 }
 
@@ -112,30 +131,82 @@ export interface CreateExternalRoutingExecutorOptions {
   ) => void | Promise<void>;
 }
 
-/** Creates the one shared external-routing resource graph for a workspace. */
+/** Creates one shared external-routing resource graph and route-bound facades. */
 export function createExternalRoutingExecutor(
-  spec: ExternalRoutingSpec,
+  config: CompiledExternalRoutingConfig,
   options: CreateExternalRoutingExecutorOptions = {},
 ): CreatedExternalRoutingExecutor {
-  const processorRunner = new ProcessorRunner();
-  const httpTransport = createExternalHttpTransport(spec.endpoint);
-  const strategy = new ExternalRoutingStrategyAdapter({
-    spec,
-    processorRunner,
-    httpTransport,
-    ...(options.onProcessorDrain === undefined
-      ? {}
-      : { onProcessorDrain: options.onProcessorDrain }),
-  });
+  const routes = [...config.routesByDefinitionId.values()];
+  if (routes.length === 0) {
+    throw new Error('External routing resources require at least one compiled route.');
+  }
+
+  const needsProcessorRunner = routes.some(routeUsesProcessor);
+  const processorRunner = needsProcessorRunner ? new ProcessorRunner() : undefined;
+  const httpTransport = createExternalHttpTransport();
+  const strategiesByDefinitionId = new Map(routes.map((route) => [
+    route.definitionId,
+    new ExternalRoutingStrategyAdapter({
+      route,
+      processorsByName: config.processorsByName,
+      ...(processorRunner === undefined ? {} : { processorRunner }),
+      httpTransport,
+      ...(options.onProcessorDrain === undefined
+        ? {}
+        : { onProcessorDrain: options.onProcessorDrain }),
+    }),
+  ]));
+  const strategy: ExternalRoutingStrategyOperation = {
+    exchange: ({ definitionId, request, signal }) => {
+      const adapter = strategiesByDefinitionId.get(definitionId);
+      if (adapter === undefined) {
+        return completedStrategyFailure('external_internal_failed');
+      }
+      return adapter.exchange({ request, signal });
+    },
+  };
   const executor = new ExternalRoutingExecutor({
     strategy,
     closeResources: async () => {
-      await processorRunner.close();
-      await httpTransport.close();
+      const results = await Promise.allSettled([
+        ...(processorRunner === undefined ? [] : [processorRunner.close()]),
+        httpTransport.close(),
+      ]);
+      const failures = results
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason);
+      if (failures.length > 0) {
+        throw new AggregateError(failures, 'External routing resource shutdown failed.');
+      }
     },
   });
+  const bindingsByDefinitionId = new Map<string, ExternalToolExecutor>();
+  for (const route of routes) {
+    bindingsByDefinitionId.set(route.definitionId, Object.freeze({
+      execute: (invocation: ExternalToolInvocation) =>
+        executor.execute(route.definitionId, invocation),
+    }));
+  }
 
-  return Object.freeze({ executor, processorRunner, httpTransport });
+  return Object.freeze({
+    executor,
+    bindingsByDefinitionId: immutableMap(bindingsByDefinitionId),
+    ...(processorRunner === undefined ? {} : { processorRunner }),
+    httpTransport,
+  });
+}
+
+function routeUsesProcessor(route: CompiledExternalRoute): boolean {
+  return 'processor' in route.requestStage || 'processor' in route.responseStage;
+}
+
+function completedStrategyFailure(
+  code: 'external_internal_failed',
+): ExternalRoutingStrategyExchange {
+  return Object.freeze({
+    settled: Promise.resolve(Object.freeze({ kind: 'failure' as const, code })),
+    drained: Promise.resolve(),
+  });
 }
 
 function mapRuntimeOutcome(
@@ -149,9 +220,6 @@ function mapRuntimeOutcome(
   }
   if (outcome.kind === 'cancelled') {
     return localFailureResult('cancelled');
-  }
-  if (outcome.kind === 'internal') {
-    return localFailureResult('external_internal_failed');
   }
   return localFailureResult('external_internal_failed');
 }

@@ -17,6 +17,7 @@ import {
   readTypedString,
   type ValuePolicyResult,
 } from '../../config/value-policy.js';
+import { immutableMap } from '../../utils/immutable-map.js';
 
 export type ExternalProcessorExecutable =
   | { readonly resolution: 'absolute-path'; readonly path: string }
@@ -30,32 +31,19 @@ export interface ExternalProcessorDefinition {
   readonly timeoutMs: number;
 }
 
-export type ExternalRequestRoutingStrategy =
-  | { readonly strategy: 'request-to-external'; readonly mode: 'direct' }
+export type ExternalRequestRoutingStage =
+  | { readonly mode: 'direct' }
+  | { readonly mode: 'canonical-filter'; readonly processor: string }
   | {
-      readonly strategy: 'request-to-external';
-      readonly mode: 'canonical-filter';
-      readonly processor: string;
-    }
-  | {
-      readonly strategy: 'request-to-external';
       readonly mode: 'body-encoder';
       readonly processor: string;
       readonly contentType: string;
     };
 
-export type ExternalResponseRoutingStrategy =
-  | { readonly strategy: 'response-from-external'; readonly mode: 'direct' }
-  | {
-      readonly strategy: 'response-from-external';
-      readonly mode: 'canonical-filter';
-      readonly processor: string;
-    }
-  | {
-      readonly strategy: 'response-from-external';
-      readonly mode: 'body-decoder';
-      readonly processor: string;
-    };
+export type ExternalResponseRoutingStage =
+  | { readonly mode: 'direct' }
+  | { readonly mode: 'canonical-filter'; readonly processor: string }
+  | { readonly mode: 'body-decoder'; readonly processor: string };
 
 export interface ExternalHttpEndpointConfig {
   readonly url: string;
@@ -63,38 +51,53 @@ export interface ExternalHttpEndpointConfig {
   readonly headers: Readonly<Record<string, string>>;
 }
 
-/**
- * Fully validated, startup-stable routing input shared by custom-only Tools.
- * Paths retain their configured spelling; runtime code must use this snapshot
- * rather than rereading any of the referenced configuration files.
- */
-export interface ExternalRoutingSpec {
-  readonly processorConfigFilePath: string;
-  readonly httpEndpointConfigFilePath: string;
+export interface ExternalToolDefinitionBinding {
+  readonly definitionId: string;
+  readonly toolName: string;
+  readonly builtIn: boolean;
+}
+
+export interface CompiledExternalRoute {
+  readonly definitionId: string;
+  readonly toolName: string;
+  readonly endpointConfigFilePath: string;
   readonly endpoint: ExternalHttpEndpointConfig;
-  readonly processors: readonly ExternalProcessorDefinition[];
-  readonly requestStrategy: ExternalRequestRoutingStrategy;
-  readonly responseStrategy: ExternalResponseRoutingStrategy;
+  readonly requestStage: ExternalRequestRoutingStage;
+  readonly responseStage: ExternalResponseRoutingStage;
 }
 
-interface ParsedStrategy {
+/** Fully validated, startup-stable routing configuration for one workspace. */
+export interface CompiledExternalRoutingConfig {
+  readonly configFilePath: string;
+  readonly processorConfigFilePath?: string;
+  readonly processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>;
+  readonly routesByDefinitionId: ReadonlyMap<string, CompiledExternalRoute>;
+}
+
+interface ParsedExternalRoute {
   readonly index: number;
-  readonly value: ExternalRequestRoutingStrategy | ExternalResponseRoutingStrategy;
+  readonly definitionId: string;
+  readonly endpointConfigFilePath: string;
+  readonly requestStage: ExternalRequestRoutingStage;
+  readonly responseStage: ExternalResponseRoutingStage;
 }
 
-interface ParsedProcessorConfig {
-  readonly httpEndpointConfigFilePath: string;
-  readonly processors: readonly ExternalProcessorDefinition[];
-  readonly requestStrategy: ExternalRequestRoutingStrategy;
-  readonly responseStrategy: ExternalResponseRoutingStrategy;
+interface ParsedExternalRoutingConfig {
+  readonly processorConfigFilePath?: string;
+  readonly routes: readonly ParsedExternalRoute[];
 }
 
-const PROCESSOR_CONFIG_FIELDS = new Set([
-  'version',
+const EXTERNAL_ROUTING_CONFIG_FIELDS = new Set(['version', 'processorConfigFile', 'routes']);
+const ROUTE_FIELDS = new Set([
+  'definitionId',
   'httpEndpointConfigFile',
-  'processors',
   'routingStrategy',
 ]);
+const ROUTING_STRATEGY_FIELDS = new Set([
+  'request-to-external',
+  'response-from-external',
+]);
+const PROCESSOR_CONFIG_FIELDS = new Set(['version', 'processors']);
 const ENDPOINT_CONFIG_FIELDS = new Set(['version', 'url', 'timeoutMs', 'headers']);
 const PROCESSOR_FIELDS = new Set([
   'name',
@@ -105,15 +108,10 @@ const PROCESSOR_FIELDS = new Set([
 ]);
 const ABSOLUTE_EXECUTABLE_FIELDS = new Set(['resolution', 'path']);
 const PATH_SEARCH_EXECUTABLE_FIELDS = new Set(['resolution', 'command']);
-const DIRECT_STRATEGY_FIELDS = new Set(['strategy', 'mode']);
-const PROCESSOR_STRATEGY_FIELDS = new Set(['strategy', 'mode', 'processor']);
-const BODY_ENCODER_STRATEGY_FIELDS = new Set([
-  'strategy',
-  'mode',
-  'processor',
-  'contentType',
-]);
-const PROCESSOR_NAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
+const DIRECT_STAGE_FIELDS = new Set(['mode']);
+const PROCESSOR_STAGE_FIELDS = new Set(['mode', 'processor']);
+const BODY_ENCODER_STAGE_FIELDS = new Set(['mode', 'processor', 'contentType']);
+const CONFIG_IDENTITY_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const PATH_SEARCH_COMMAND_RE = /^[^/\\]+$/;
 const WINDOWS_DRIVE_PREFIX_RE = /^[A-Za-z]:/;
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -134,94 +132,374 @@ const FORBIDDEN_ENDPOINT_HEADERS = new Set([
   'proxy-connection',
 ]);
 
-/** Loads and validates the Processor and endpoint config artifacts at startup. */
-export function loadExternalRoutingSpec(
-  processorConfigFilePath: string,
-): ExternalRoutingSpec {
-  const validatedProcessorConfigFilePath = unwrapValuePolicy(
-    processorConfigFilePath,
-    readLocalAbsolutePath(processorConfigFilePath, { fieldPath: 'processorConfigFile' }),
+/**
+ * Loads every referenced routing artifact and validates cross-file bindings.
+ * No application-owned runner or HTTP resource is created by this function.
+ */
+export function loadExternalRoutingConfig(
+  externalRoutingConfigFilePath: string,
+  definitions: readonly ExternalToolDefinitionBinding[],
+): CompiledExternalRoutingConfig {
+  const validatedConfigFilePath = unwrapValuePolicy(
+    externalRoutingConfigFilePath,
+    readLocalAbsolutePath(externalRoutingConfigFilePath, {
+      fieldPath: 'externalRoutingConfigFile',
+    }),
   );
-  const rawProcessorConfig = readJsonFile(validatedProcessorConfigFilePath, {
-    label: 'External routing Processor config file',
+  const rawConfig = readJsonFile(validatedConfigFilePath, {
+    label: 'External routing config file',
   });
-  const processorConfig = parseProcessorConfig(
-    rawProcessorConfig,
-    validatedProcessorConfigFilePath,
-  );
-  const endpointConfigFilePath = processorConfig.httpEndpointConfigFilePath;
-  const rawEndpointConfig = readJsonFile(endpointConfigFilePath, {
-    label: 'External routing HTTP endpoint config file',
-  });
-  const endpoint = parseEndpointConfig(rawEndpointConfig, endpointConfigFilePath);
+  const parsedConfig = parseExternalRoutingConfig(rawConfig, validatedConfigFilePath);
+  const processors = parsedConfig.processorConfigFilePath === undefined
+    ? []
+    : loadProcessorConfig(parsedConfig.processorConfigFilePath);
+  const processorsByName = new Map(processors.map((processor) => [processor.name, processor]));
+  const definitionsById = new Map(definitions.map((definition) => [
+    definition.definitionId,
+    definition,
+  ]));
+  const endpointsByPath = new Map<string, ExternalHttpEndpointConfig>();
+  const routesByDefinitionId = new Map<string, CompiledExternalRoute>();
 
-  return deepFreeze({
-    processorConfigFilePath: validatedProcessorConfigFilePath,
-    httpEndpointConfigFilePath: endpointConfigFilePath,
-    endpoint,
-    processors: processorConfig.processors,
-    requestStrategy: processorConfig.requestStrategy,
-    responseStrategy: processorConfig.responseStrategy,
+  for (const route of parsedConfig.routes) {
+    const definitionPath = `routes[${route.index}].definitionId`;
+    const definition = definitionsById.get(route.definitionId);
+    if (definition === undefined) {
+      failConfig(
+        validatedConfigFilePath,
+        definitionPath,
+        `${definitionPath} references undefined Tool definition id "${route.definitionId}".`,
+      );
+    }
+    if (definition.builtIn) {
+      failConfig(
+        validatedConfigFilePath,
+        definitionPath,
+        `${definitionPath} must reference a custom-only Tool definition; built-in overrides retain their built-in executor.`,
+      );
+    }
+
+    assertStageProcessorReference(
+      route.requestStage,
+      `routes[${route.index}].routingStrategy.request-to-external[0]`,
+      parsedConfig.processorConfigFilePath,
+      processorsByName,
+      validatedConfigFilePath,
+    );
+    assertStageProcessorReference(
+      route.responseStage,
+      `routes[${route.index}].routingStrategy.response-from-external[0]`,
+      parsedConfig.processorConfigFilePath,
+      processorsByName,
+      validatedConfigFilePath,
+    );
+
+    let endpoint = endpointsByPath.get(route.endpointConfigFilePath);
+    if (endpoint === undefined) {
+      const rawEndpoint = readJsonFile(route.endpointConfigFilePath, {
+        label: 'External routing HTTP endpoint config file',
+      });
+      endpoint = parseEndpointConfig(rawEndpoint, route.endpointConfigFilePath);
+      endpointsByPath.set(route.endpointConfigFilePath, endpoint);
+    }
+
+    routesByDefinitionId.set(route.definitionId, deepFreeze({
+      definitionId: route.definitionId,
+      toolName: definition.toolName,
+      endpointConfigFilePath: route.endpointConfigFilePath,
+      endpoint,
+      requestStage: route.requestStage,
+      responseStage: route.responseStage,
+    }));
+  }
+
+  return Object.freeze({
+    configFilePath: validatedConfigFilePath,
+    ...(parsedConfig.processorConfigFilePath === undefined
+      ? {}
+      : { processorConfigFilePath: parsedConfig.processorConfigFilePath }),
+    processorsByName: immutableMap(processorsByName),
+    routesByDefinitionId: immutableMap(routesByDefinitionId),
   });
 }
 
-function parseProcessorConfig(
+function parseExternalRoutingConfig(
   value: JsonValue,
-  processorConfigFilePath: string,
-): ParsedProcessorConfig {
+  configFilePath: string,
+): ParsedExternalRoutingConfig {
   const rawConfig = readObject(value, () => failConfig(
+    configFilePath,
+    undefined,
+    'External routing config file must contain a JSON object.',
+  ));
+  assertKnownFields(rawConfig, EXTERNAL_ROUTING_CONFIG_FIELDS, (fieldPath) => failConfig(
+    configFilePath,
+    fieldPath,
+    `Unknown external routing config field ${fieldPath}. Remove it.`,
+  ));
+  assertRequiredFields(rawConfig, new Set(['version', 'routes']), (fieldPath) => failConfig(
+    configFilePath,
+    fieldPath,
+    `${fieldPath} is required.`,
+  ));
+  if (rawConfig.version !== 1) {
+    failConfig(
+      configFilePath,
+      'version',
+      'version must be the number 1. The server only supports external routing config schema version 1.',
+    );
+  }
+  if (!Array.isArray(rawConfig.routes)) {
+    failConfig(configFilePath, 'routes', 'routes must be an array.');
+  }
+
+  const processorConfigFilePath = Object.prototype.hasOwnProperty.call(
+    rawConfig,
+    'processorConfigFile',
+  )
+    ? unwrapValuePolicy(
+      configFilePath,
+      readLocalAbsolutePath(rawConfig.processorConfigFile, {
+        fieldPath: 'processorConfigFile',
+      }),
+    )
+    : undefined;
+  const seenDefinitionIds = new Set<string>();
+  const routes = rawConfig.routes.map((route, index) => {
+    const parsedRoute = parseExternalRoute(route, index, configFilePath);
+    if (seenDefinitionIds.has(parsedRoute.definitionId)) {
+      failConfig(
+        configFilePath,
+        `routes[${index}].definitionId`,
+        `Tool definition id "${parsedRoute.definitionId}" is already bound by an earlier route.`,
+      );
+    }
+    seenDefinitionIds.add(parsedRoute.definitionId);
+    return parsedRoute;
+  });
+
+  return deepFreeze({
+    ...(processorConfigFilePath === undefined ? {} : { processorConfigFilePath }),
+    routes,
+  });
+}
+
+function parseExternalRoute(
+  value: JsonValue,
+  index: number,
+  configFilePath: string,
+): ParsedExternalRoute {
+  const fieldPath = `routes[${index}]`;
+  const rawRoute = readObject(value, () => failConfig(
+    configFilePath,
+    fieldPath,
+    `${fieldPath} must be a JSON object.`,
+  ));
+  assertKnownFields(rawRoute, ROUTE_FIELDS, (field) => failConfig(
+    configFilePath,
+    `${fieldPath}.${field}`,
+    `Unknown route field ${fieldPath}.${field}. Remove it.`,
+  ));
+  assertRequiredFields(rawRoute, ROUTE_FIELDS, (field) => failConfig(
+    configFilePath,
+    `${fieldPath}.${field}`,
+    `${fieldPath}.${field} is required.`,
+  ));
+  const definitionId = readConfigIdentity(
+    rawRoute.definitionId,
+    `${fieldPath}.definitionId`,
+    configFilePath,
+  );
+  const endpointConfigFilePath = unwrapValuePolicy(
+    configFilePath,
+    readLocalAbsolutePath(rawRoute.httpEndpointConfigFile, {
+      fieldPath: `${fieldPath}.httpEndpointConfigFile`,
+    }),
+  );
+  const routing = parseRouteRoutingStrategy(
+    rawRoute.routingStrategy,
+    `${fieldPath}.routingStrategy`,
+    configFilePath,
+  );
+  return deepFreeze({
+    index,
+    definitionId,
+    endpointConfigFilePath,
+    requestStage: routing.request,
+    responseStage: routing.response,
+  });
+}
+
+function parseRouteRoutingStrategy(
+  value: JsonValue | undefined,
+  fieldPath: string,
+  configFilePath: string,
+): {
+  readonly request: ExternalRequestRoutingStage;
+  readonly response: ExternalResponseRoutingStage;
+} {
+  const rawRouting = readObject(value, () => failConfig(
+    configFilePath,
+    fieldPath,
+    `${fieldPath} must be a JSON object.`,
+  ));
+  assertKnownFields(rawRouting, ROUTING_STRATEGY_FIELDS, (field) => failConfig(
+    configFilePath,
+    `${fieldPath}.${field}`,
+    `Unknown routing strategy field ${fieldPath}.${field}. Remove it.`,
+  ));
+  assertRequiredFields(rawRouting, ROUTING_STRATEGY_FIELDS, (field) => failConfig(
+    configFilePath,
+    `${fieldPath}.${field}`,
+    `${fieldPath}.${field} is required.`,
+  ));
+
+  const requestPath = `${fieldPath}.request-to-external`;
+  const responsePath = `${fieldPath}.response-from-external`;
+  const requestStages = readSingleStageArray(rawRouting['request-to-external'], requestPath, configFilePath);
+  const responseStages = readSingleStageArray(rawRouting['response-from-external'], responsePath, configFilePath);
+  return deepFreeze({
+    request: parseRequestStage(requestStages[0], `${requestPath}[0]`, configFilePath),
+    response: parseResponseStage(responseStages[0], `${responsePath}[0]`, configFilePath),
+  });
+}
+
+function readSingleStageArray(
+  value: JsonValue | undefined,
+  fieldPath: string,
+  configFilePath: string,
+): readonly [JsonValue] {
+  if (!Array.isArray(value)) {
+    failConfig(configFilePath, fieldPath, `${fieldPath} must be an array.`);
+  }
+  if (value.length !== 1) {
+    failConfig(
+      configFilePath,
+      fieldPath,
+      `${fieldPath} must contain exactly one stage in external routing config schema version 1.`,
+    );
+  }
+  return value as unknown as readonly [JsonValue];
+}
+
+function parseRequestStage(
+  value: JsonValue,
+  fieldPath: string,
+  configFilePath: string,
+): ExternalRequestRoutingStage {
+  const rawStage = readObject(value, () => failConfig(
+    configFilePath,
+    fieldPath,
+    `${fieldPath} must be a JSON object.`,
+  ));
+  if (rawStage.mode === 'direct') {
+    assertExactStageFields(rawStage, DIRECT_STAGE_FIELDS, fieldPath, configFilePath);
+    return Object.freeze({ mode: 'direct' as const });
+  }
+  if (rawStage.mode === 'canonical-filter') {
+    assertExactStageFields(rawStage, PROCESSOR_STAGE_FIELDS, fieldPath, configFilePath);
+    return Object.freeze({
+      mode: 'canonical-filter' as const,
+      processor: readConfigIdentity(rawStage.processor, `${fieldPath}.processor`, configFilePath),
+    });
+  }
+  if (rawStage.mode === 'body-encoder') {
+    assertExactStageFields(rawStage, BODY_ENCODER_STAGE_FIELDS, fieldPath, configFilePath);
+    return Object.freeze({
+      mode: 'body-encoder' as const,
+      processor: readConfigIdentity(rawStage.processor, `${fieldPath}.processor`, configFilePath),
+      contentType: readMediaType(rawStage.contentType, `${fieldPath}.contentType`, configFilePath),
+    });
+  }
+  failConfig(
+    configFilePath,
+    `${fieldPath}.mode`,
+    `${fieldPath}.mode must be exactly "direct", "canonical-filter", or "body-encoder".`,
+  );
+}
+
+function parseResponseStage(
+  value: JsonValue,
+  fieldPath: string,
+  configFilePath: string,
+): ExternalResponseRoutingStage {
+  const rawStage = readObject(value, () => failConfig(
+    configFilePath,
+    fieldPath,
+    `${fieldPath} must be a JSON object.`,
+  ));
+  if (rawStage.mode === 'direct') {
+    assertExactStageFields(rawStage, DIRECT_STAGE_FIELDS, fieldPath, configFilePath);
+    return Object.freeze({ mode: 'direct' as const });
+  }
+  if (rawStage.mode === 'canonical-filter' || rawStage.mode === 'body-decoder') {
+    assertExactStageFields(rawStage, PROCESSOR_STAGE_FIELDS, fieldPath, configFilePath);
+    return Object.freeze({
+      mode: rawStage.mode,
+      processor: readConfigIdentity(rawStage.processor, `${fieldPath}.processor`, configFilePath),
+    });
+  }
+  failConfig(
+    configFilePath,
+    `${fieldPath}.mode`,
+    `${fieldPath}.mode must be exactly "direct", "canonical-filter", or "body-decoder".`,
+  );
+}
+
+function assertExactStageFields(
+  value: JsonObject,
+  fields: ReadonlySet<string>,
+  fieldPath: string,
+  configFilePath: string,
+): void {
+  assertKnownFields(value, fields, (field) => failConfig(
+    configFilePath,
+    `${fieldPath}.${field}`,
+    `Unknown routing stage field ${fieldPath}.${field}. Remove it.`,
+  ));
+  assertRequiredFields(value, fields, (field) => failConfig(
+    configFilePath,
+    `${fieldPath}.${field}`,
+    `${fieldPath}.${field} is required.`,
+  ));
+}
+
+function loadProcessorConfig(
+  processorConfigFilePath: string,
+): readonly ExternalProcessorDefinition[] {
+  const rawConfig = readJsonFile(processorConfigFilePath, {
+    label: 'External routing Processor config file',
+  });
+  const rawObject = readObject(rawConfig, () => failConfig(
     processorConfigFilePath,
     undefined,
     'External routing Processor config file must contain a JSON object.',
   ));
-  assertKnownFields(rawConfig, PROCESSOR_CONFIG_FIELDS, (fieldPath) => failConfig(
+  assertKnownFields(rawObject, PROCESSOR_CONFIG_FIELDS, (fieldPath) => failConfig(
     processorConfigFilePath,
     fieldPath,
     `Unknown Processor config field ${fieldPath}. Remove it.`,
   ));
-  assertRequiredFields(rawConfig, PROCESSOR_CONFIG_FIELDS, (fieldPath) => failConfig(
+  assertRequiredFields(rawObject, PROCESSOR_CONFIG_FIELDS, (fieldPath) => failConfig(
     processorConfigFilePath,
     fieldPath,
     `${fieldPath} is required.`,
   ));
-
-  if (rawConfig.version !== 1) {
+  if (rawObject.version !== 2) {
     failConfig(
       processorConfigFilePath,
       'version',
-      'version must be the number 1. The current server only supports external routing schema version 1.',
+      'version must be the number 2. The server only supports Processor config schema version 2.',
     );
   }
-  const httpEndpointConfigFilePath = unwrapValuePolicy(
-    processorConfigFilePath,
-    readLocalAbsolutePath(rawConfig.httpEndpointConfigFile, {
-      fieldPath: 'httpEndpointConfigFile',
-    }),
-  );
-  if (!Array.isArray(rawConfig.processors)) {
+  if (!Array.isArray(rawObject.processors)) {
     failConfig(processorConfigFilePath, 'processors', 'processors must be an array.');
   }
-  if (!Array.isArray(rawConfig.routingStrategy)) {
-    failConfig(processorConfigFilePath, 'routingStrategy', 'routingStrategy must be an array.');
-  }
-
-  const processors = rawConfig.processors.map((processor, index) =>
+  const processors = rawObject.processors.map((processor, index) =>
     parseProcessorDefinition(processor, index, processorConfigFilePath)
   );
   assertUniqueProcessorNames(processors, processorConfigFilePath);
-  const strategies = rawConfig.routingStrategy.map((strategy, index) => Object.freeze({
-    index,
-    value: parseRoutingStrategy(strategy, index, processorConfigFilePath),
-  }));
-  const routing = selectRoutingStrategies(strategies, processorConfigFilePath);
-  assertProcessorReferences(processors, routing, processorConfigFilePath);
-
-  return deepFreeze({
-    httpEndpointConfigFilePath,
-    processors,
-    requestStrategy: routing.request.value,
-    responseStrategy: routing.response.value,
-  });
+  return Object.freeze(processors);
 }
 
 function parseProcessorDefinition(
@@ -246,7 +524,7 @@ function parseProcessorDefinition(
     `${fieldPath}.${field} is required.`,
   ));
 
-  const name = readProcessorName(rawProcessor.name, `${fieldPath}.name`, processorConfigFilePath);
+  const name = readConfigIdentity(rawProcessor.name, `${fieldPath}.name`, processorConfigFilePath);
   const executable = parseExecutable(
     rawProcessor.executable,
     `${fieldPath}.executable`,
@@ -348,10 +626,7 @@ function parseExecutable(
       processorConfigFilePath,
       readTypedString(rawExecutable.command, { fieldPath: `${fieldPath}.command` }),
     );
-    if (
-      !PATH_SEARCH_COMMAND_RE.test(command) ||
-      WINDOWS_DRIVE_PREFIX_RE.test(command)
-    ) {
+    if (!PATH_SEARCH_COMMAND_RE.test(command) || WINDOWS_DRIVE_PREFIX_RE.test(command)) {
       failConfig(
         processorConfigFilePath,
         `${fieldPath}.command`,
@@ -366,205 +641,6 @@ function parseExecutable(
     `${fieldPath}.resolution`,
     `${fieldPath}.resolution must be exactly "absolute-path" or "path-search".`,
   );
-}
-
-function parseRoutingStrategy(
-  value: JsonValue,
-  index: number,
-  processorConfigFilePath: string,
-): ExternalRequestRoutingStrategy | ExternalResponseRoutingStrategy {
-  const fieldPath = `routingStrategy[${index}]`;
-  const rawStrategy = readObject(value, () => failConfig(
-    processorConfigFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
-  assertRequiredFields(rawStrategy, DIRECT_STRATEGY_FIELDS, (field) => failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.${field}`,
-    `${fieldPath}.${field} is required.`,
-  ));
-
-  if (rawStrategy.strategy === 'request-to-external') {
-    return parseRequestStrategy(rawStrategy, fieldPath, processorConfigFilePath);
-  }
-  if (rawStrategy.strategy === 'response-from-external') {
-    return parseResponseStrategy(rawStrategy, fieldPath, processorConfigFilePath);
-  }
-  failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.strategy`,
-    `${fieldPath}.strategy must be exactly "request-to-external" or "response-from-external".`,
-  );
-}
-
-function parseRequestStrategy(
-  rawStrategy: JsonObject,
-  fieldPath: string,
-  processorConfigFilePath: string,
-): ExternalRequestRoutingStrategy {
-  if (rawStrategy.mode === 'direct') {
-    assertExactStrategyFields(
-      rawStrategy,
-      DIRECT_STRATEGY_FIELDS,
-      fieldPath,
-      processorConfigFilePath,
-    );
-    return deepFreeze({ strategy: 'request-to-external' as const, mode: 'direct' as const });
-  }
-  if (rawStrategy.mode === 'canonical-filter') {
-    assertExactStrategyFields(
-      rawStrategy,
-      PROCESSOR_STRATEGY_FIELDS,
-      fieldPath,
-      processorConfigFilePath,
-    );
-    return deepFreeze({
-      strategy: 'request-to-external' as const,
-      mode: 'canonical-filter' as const,
-      processor: readProcessorName(
-        rawStrategy.processor,
-        `${fieldPath}.processor`,
-        processorConfigFilePath,
-      ),
-    });
-  }
-  if (rawStrategy.mode === 'body-encoder') {
-    assertExactStrategyFields(
-      rawStrategy,
-      BODY_ENCODER_STRATEGY_FIELDS,
-      fieldPath,
-      processorConfigFilePath,
-    );
-    return deepFreeze({
-      strategy: 'request-to-external' as const,
-      mode: 'body-encoder' as const,
-      processor: readProcessorName(
-        rawStrategy.processor,
-        `${fieldPath}.processor`,
-        processorConfigFilePath,
-      ),
-      contentType: readMediaType(
-        rawStrategy.contentType,
-        `${fieldPath}.contentType`,
-        processorConfigFilePath,
-      ),
-    });
-  }
-  failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.mode`,
-    `${fieldPath}.mode must be exactly "direct", "canonical-filter", or "body-encoder" for request-to-external.`,
-  );
-}
-
-function parseResponseStrategy(
-  rawStrategy: JsonObject,
-  fieldPath: string,
-  processorConfigFilePath: string,
-): ExternalResponseRoutingStrategy {
-  if (rawStrategy.mode === 'direct') {
-    assertExactStrategyFields(
-      rawStrategy,
-      DIRECT_STRATEGY_FIELDS,
-      fieldPath,
-      processorConfigFilePath,
-    );
-    return deepFreeze({ strategy: 'response-from-external' as const, mode: 'direct' as const });
-  }
-  if (rawStrategy.mode === 'canonical-filter' || rawStrategy.mode === 'body-decoder') {
-    assertExactStrategyFields(
-      rawStrategy,
-      PROCESSOR_STRATEGY_FIELDS,
-      fieldPath,
-      processorConfigFilePath,
-    );
-    return deepFreeze({
-      strategy: 'response-from-external' as const,
-      mode: rawStrategy.mode,
-      processor: readProcessorName(
-        rawStrategy.processor,
-        `${fieldPath}.processor`,
-        processorConfigFilePath,
-      ),
-    });
-  }
-  failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.mode`,
-    `${fieldPath}.mode must be exactly "direct", "canonical-filter", or "body-decoder" for response-from-external.`,
-  );
-}
-
-function assertExactStrategyFields(
-  value: JsonObject,
-  fields: ReadonlySet<string>,
-  fieldPath: string,
-  processorConfigFilePath: string,
-): void {
-  assertKnownFields(value, fields, (field) => failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.${field}`,
-    `Unknown routing strategy field ${fieldPath}.${field}. Remove it.`,
-  ));
-  assertRequiredFields(value, fields, (field) => failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.${field}`,
-    `${fieldPath}.${field} is required.`,
-  ));
-}
-
-function selectRoutingStrategies(
-  strategies: readonly ParsedStrategy[],
-  processorConfigFilePath: string,
-): {
-  readonly request: Readonly<{
-    readonly index: number;
-    readonly value: ExternalRequestRoutingStrategy;
-  }>;
-  readonly response: Readonly<{
-    readonly index: number;
-    readonly value: ExternalResponseRoutingStrategy;
-  }>;
-} {
-  let request: { readonly index: number; readonly value: ExternalRequestRoutingStrategy } | undefined;
-  let response: { readonly index: number; readonly value: ExternalResponseRoutingStrategy } | undefined;
-  for (const strategy of strategies) {
-    if (strategy.value.strategy === 'request-to-external') {
-      if (request !== undefined) {
-        failConfig(
-          processorConfigFilePath,
-          `routingStrategy[${strategy.index}].strategy`,
-          'routingStrategy must contain exactly one request-to-external strategy.',
-        );
-      }
-      request = Object.freeze({ index: strategy.index, value: strategy.value });
-      continue;
-    }
-    if (response !== undefined) {
-      failConfig(
-        processorConfigFilePath,
-        `routingStrategy[${strategy.index}].strategy`,
-        'routingStrategy must contain exactly one response-from-external strategy.',
-      );
-    }
-    response = Object.freeze({ index: strategy.index, value: strategy.value });
-  }
-  if (request === undefined) {
-    failConfig(
-      processorConfigFilePath,
-      'routingStrategy',
-      'routingStrategy must contain exactly one request-to-external strategy.',
-    );
-  }
-  if (response === undefined) {
-    failConfig(
-      processorConfigFilePath,
-      'routingStrategy',
-      'routingStrategy must contain exactly one response-from-external strategy.',
-    );
-  }
-  return Object.freeze({ request, response });
 }
 
 function assertUniqueProcessorNames(
@@ -587,33 +663,29 @@ function assertUniqueProcessorNames(
   }
 }
 
-function assertProcessorReferences(
-  processors: readonly ExternalProcessorDefinition[],
-  routing: ReturnType<typeof selectRoutingStrategies>,
-  processorConfigFilePath: string,
+function assertStageProcessorReference(
+  stage: ExternalRequestRoutingStage | ExternalResponseRoutingStage,
+  fieldPath: string,
+  processorConfigFilePath: string | undefined,
+  processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>,
+  externalRoutingConfigFilePath: string,
 ): void {
-  const indexByName = new Map(processors.map((processor, index) => [processor.name, index]));
-  const referencedNames = new Set<string>();
-  for (const strategy of [routing.request, routing.response]) {
-    if (!('processor' in strategy.value)) continue;
-    if (!indexByName.has(strategy.value.processor)) {
-      failConfig(
-        processorConfigFilePath,
-        `routingStrategy[${strategy.index}].processor`,
-        `routingStrategy[${strategy.index}].processor references undefined Processor "${strategy.value.processor}".`,
-      );
-    }
-    referencedNames.add(strategy.value.processor);
+  if (!('processor' in stage)) return;
+  const processorPath = `${fieldPath}.processor`;
+  if (processorConfigFilePath === undefined) {
+    failConfig(
+      externalRoutingConfigFilePath,
+      processorPath,
+      `${processorPath} references Processor "${stage.processor}", but processorConfigFile is not configured.`,
+      `Add processorConfigFile to ${externalRoutingConfigFilePath}, or use a direct stage, then restart the server.`,
+    );
   }
-  for (let index = 0; index < processors.length; index++) {
-    const processor = processors[index];
-    if (processor !== undefined && !referencedNames.has(processor.name)) {
-      failConfig(
-        processorConfigFilePath,
-        `processors[${index}].name`,
-        `Processor "${processor.name}" is not referenced by routingStrategy.`,
-      );
-    }
+  if (!processorsByName.has(stage.processor)) {
+    failConfig(
+      externalRoutingConfigFilePath,
+      processorPath,
+      `${processorPath} references undefined Processor "${stage.processor}".`,
+    );
   }
 }
 
@@ -637,7 +709,7 @@ function parseEndpointConfig(
     failConfig(
       endpointConfigFilePath,
       'version',
-      'version must be the number 1. The current server only supports external HTTP endpoint schema version 1.',
+      'version must be the number 1. The server only supports external HTTP endpoint schema version 1.',
     );
   }
   const url = readEndpointUrl(rawConfig.url, endpointConfigFilePath);
@@ -756,10 +828,10 @@ function readEndpointUrl(value: JsonValue | undefined, endpointConfigFilePath: s
 function readMediaType(
   value: JsonValue | undefined,
   fieldPath: string,
-  processorConfigFilePath: string,
+  configFilePath: string,
 ): string {
   const contentType = unwrapValuePolicy(
-    processorConfigFilePath,
+    configFilePath,
     readTypedString(value, { fieldPath }),
   );
   try {
@@ -767,7 +839,7 @@ function readMediaType(
     new MIMEType(contentType);
   } catch {
     failConfig(
-      processorConfigFilePath,
+      configFilePath,
       fieldPath,
       `${fieldPath} must be a syntactically valid media type that is safe to write as an HTTP Content-Type header.`,
     );
@@ -775,14 +847,14 @@ function readMediaType(
   return contentType;
 }
 
-function readProcessorName(
+function readConfigIdentity(
   value: JsonValue | undefined,
   fieldPath: string,
-  processorConfigFilePath: string,
+  configFilePath: string,
 ): string {
-  if (typeof value !== 'string' || !PROCESSOR_NAME_RE.test(value)) {
+  if (typeof value !== 'string' || !CONFIG_IDENTITY_RE.test(value)) {
     failConfig(
-      processorConfigFilePath,
+      configFilePath,
       fieldPath,
       `${fieldPath} must match ^[A-Za-z0-9._-]{1,128}$.`,
     );
@@ -861,13 +933,15 @@ function failConfig(
   configFilePath: string,
   fieldPath: string | undefined,
   message: string,
+  suggestion?: string,
 ): never {
   throw new ConfigError({
     code: 'config_validation_failed',
     configFilePath,
     ...(fieldPath === undefined ? {} : { fieldPath }),
     message,
-    suggestion: `Fix ${fieldPath ?? 'the external routing configuration'} in ${configFilePath} and restart the server.`,
+    suggestion: suggestion ??
+      `Fix ${fieldPath ?? 'the external routing configuration'} in ${configFilePath} and restart the server.`,
   });
 }
 

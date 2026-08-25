@@ -79,7 +79,7 @@ function customDefinition(
 function createCatalog(options: {
   builtInTools?: readonly CompiledBuiltInTool[];
   customDefinitions?: readonly CompiledCustomToolDefinition[];
-  externalExecutor?: ExternalToolExecutor;
+  externalBindingsByDefinitionId?: ReadonlyMap<string, ExternalToolExecutor>;
   exposure?:
     | { readonly mode: 'all' }
     | { readonly mode: 'enable' | 'disable'; readonly names: readonly string[] };
@@ -89,9 +89,9 @@ function createCatalog(options: {
     customDefinitions: options.customDefinitions ?? [],
     exposure: options.exposure ?? { mode: 'all' },
     workspaceConfigFilePath: 'E:/config/workspace.json',
-    ...(options.externalExecutor === undefined
+    ...(options.externalBindingsByDefinitionId === undefined
       ? {}
-      : { externalExecutor: options.externalExecutor }),
+      : { externalBindingsByDefinitionId: options.externalBindingsByDefinitionId }),
   });
 }
 
@@ -226,27 +226,58 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
   );
 }
 
-async function testCustomOnlyExternalRouteUsesSharedBinding(): Promise<void> {
-  const custom = customDefinition('custom_tool', {
+async function testCustomOnlyExternalRoutesUseDefinitionBindings(): Promise<void> {
+  const inputSchema = {
     type: 'object',
     properties: { value: { type: 'string' } },
     required: ['value'],
     additionalProperties: false,
-  });
-  const invocations: ExternalToolInvocation[] = [];
-  const externalExecutor: ExternalToolExecutor = {
+  };
+  const firstCustom = customDefinition('custom.first', inputSchema, undefined, 3);
+  const secondCustom = customDefinition('custom.second', inputSchema, undefined, 7);
+  const firstInvocations: ExternalToolInvocation[] = [];
+  const secondInvocations: ExternalToolInvocation[] = [];
+  const firstExecutor: ExternalToolExecutor = {
     async execute(invocation) {
-      invocations.push(invocation);
-      return textResult('External custom tool completed.');
+      firstInvocations.push(invocation);
+      return textResult('First external custom tool completed.');
+    },
+  };
+  const secondExecutor: ExternalToolExecutor = {
+    async execute(invocation) {
+      secondInvocations.push(invocation);
+      return textResult('Second external custom tool completed.');
     },
   };
   const catalog = createCatalog({
-    customDefinitions: [custom],
-    externalExecutor,
+    customDefinitions: [firstCustom, secondCustom],
+    externalBindingsByDefinitionId: new Map([
+      [secondCustom.source.referenceId, secondExecutor],
+      [firstCustom.source.referenceId, firstExecutor],
+    ]),
   });
   const service = createWorkspaceToolService(catalog);
-  const entry = catalog.effectiveEntries.find((candidate) => candidate.definition.name === 'custom_tool');
-  assertEqual(entry?.binding, 'external', 'Custom-only definitions should bind the shared external executor');
+  const firstEntry = catalog.effectiveEntries.find(
+    (candidate) => candidate.definition.name === 'custom.first',
+  );
+  const secondEntry = catalog.effectiveEntries.find(
+    (candidate) => candidate.definition.name === 'custom.second',
+  );
+  assertEqual(firstEntry?.binding, 'external', 'The first custom-only definition should bind its route');
+  assertEqual(secondEntry?.binding, 'external', 'The second custom-only definition should bind its route');
+  if (firstEntry?.binding !== 'external' || secondEntry?.binding !== 'external') {
+    throw new Error('Expected both custom-only definitions to bind external executors.');
+  }
+  assertEqual(
+    firstEntry.externalExecutor,
+    firstExecutor,
+    'The first custom-only definition must resolve its binding by definition reference id',
+  );
+  assertEqual(
+    secondEntry.externalExecutor,
+    secondExecutor,
+    'The second custom-only definition must resolve its binding by definition reference id',
+  );
   assertEqual(
     service.routeToolCall,
     catalog.routeToolCall,
@@ -254,7 +285,7 @@ async function testCustomOnlyExternalRouteUsesSharedBinding(): Promise<void> {
   );
 
   const invalid = await service.routeToolCall(
-    'custom_tool',
+    'custom.first',
     {},
     createContext(),
     createInvocationContext(),
@@ -264,23 +295,44 @@ async function testCustomOnlyExternalRouteUsesSharedBinding(): Promise<void> {
     'configured input schema',
     'External routes should validate custom-only input before execution',
   );
-  assertEqual(invocations.length, 0, 'Invalid external input must not reach the executor');
+  assertEqual(firstInvocations.length, 0, 'Invalid external input must not reach the first executor');
+  assertEqual(secondInvocations.length, 0, 'Invalid external input must not reach the second executor');
 
-  const args = { value: 'ok' };
+  const firstArgs = { value: 'first' };
   const invocationContext = createInvocationContext('call_external_custom');
-  const result = await service.routeToolCall(
-    'custom_tool',
-    args,
+  const firstResult = await service.routeToolCall(
+    'custom.first',
+    firstArgs,
     createContext(),
     invocationContext,
   );
-  assertEqual(getResultText(result), 'External custom tool completed.', 'External executor result should be returned');
-  assertEqual(invocations.length, 1, 'Valid custom-only input should invoke the external executor once');
-  const externalInvocation = invocations[0];
-  assertEqual(externalInvocation?.callId, 'call_external_custom', 'External executor should receive the call ID');
-  assertEqual(externalInvocation?.name, 'custom_tool', 'External executor should receive the tool name');
-  assertEqual(externalInvocation?.arguments, args, 'External executor should receive the validated arguments');
-  assertEqual(externalInvocation?.signal, invocationContext.signal, 'External executor should receive the call signal');
+  assertEqual(
+    getResultText(firstResult),
+    'First external custom tool completed.',
+    'The first route-bound external executor result should be returned',
+  );
+  assertEqual(firstInvocations.length, 1, 'Valid first custom-only input should invoke its executor once');
+  assertEqual(secondInvocations.length, 0, 'The second executor must not receive a call for the first definition');
+  const firstInvocation = firstInvocations[0];
+  assertEqual(firstInvocation?.callId, 'call_external_custom', 'External executor should receive the call ID');
+  assertEqual(firstInvocation?.name, 'custom.first', 'External executor should receive the tool name');
+  assertEqual(firstInvocation?.arguments, firstArgs, 'External executor should receive validated arguments');
+  assertEqual(firstInvocation?.signal, invocationContext.signal, 'External executor should receive the call signal');
+
+  const secondArgs = { value: 'second' };
+  const secondResult = await service.routeToolCall(
+    'custom.second',
+    secondArgs,
+    createContext(),
+    createInvocationContext('call_second_external_custom'),
+  );
+  assertEqual(
+    getResultText(secondResult),
+    'Second external custom tool completed.',
+    'The second route-bound external executor result should be returned',
+  );
+  assertEqual(secondInvocations.length, 1, 'Valid second custom-only input should invoke its executor once');
+  assertEqual(firstInvocations.length, 1, 'The first executor must not receive a call for the second definition');
 }
 
 async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
@@ -315,10 +367,13 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
       return textResult('External tool completed.');
     },
   };
+  const override = customDefinition('bound_tool', inputSchema);
   const catalog = createCatalog({
     builtInTools: [builtIn],
-    customDefinitions: [customDefinition('bound_tool', inputSchema)],
-    externalExecutor,
+    customDefinitions: [override],
+    externalBindingsByDefinitionId: new Map([
+      [override.source.referenceId, externalExecutor],
+    ]),
   });
   const service = createWorkspaceToolService(catalog);
   const entry = catalog.effectiveEntries[0];
@@ -360,7 +415,9 @@ async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
   };
   const service = createWorkspaceToolService(createCatalog({
     customDefinitions: [custom],
-    externalExecutor,
+    externalBindingsByDefinitionId: new Map([
+      [custom.source.referenceId, externalExecutor],
+    ]),
     exposure: { mode: 'enable', names: ['read_file'] },
   }));
 
@@ -419,7 +476,7 @@ async function main(): Promise<void> {
       { name: 'exposure filters without reordering', run: testExposureFiltersWithoutReordering },
       { name: 'override uses effective and implementation contracts', run: testOverrideUsesBothContracts },
       { name: 'custom-only validation precedes unavailable executor', run: testCustomOnlyValidationAndUnavailableExecutor },
-      { name: 'custom-only external route uses shared binding', run: testCustomOnlyExternalRouteUsesSharedBinding },
+      { name: 'custom-only external routes use definition bindings', run: testCustomOnlyExternalRoutesUseDefinitionBindings },
       { name: 'override remains bound to its built-in executor', run: testOverrideRemainsBoundToBuiltInExecutor },
       { name: 'hidden and unknown tools do not validate or execute', run: testHiddenAndUnknownDoNotValidateOrExecute },
       { name: 'disabled ask_user does not reach executor', run: testDisabledAskUserDoesNotReachExecutor },

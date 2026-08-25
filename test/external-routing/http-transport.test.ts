@@ -612,11 +612,53 @@ async function testIdempotentCloseAndSafeFailureDiagnostics(): Promise<void> {
   }
 }
 
+async function testSelectsEndpointPerExchangeWithSharedAgents(): Promise<void> {
+  const received: string[] = [];
+  const first = await startLoopbackServer((request, response) => {
+    received.push(`first:${request.headers['x-route'] ?? ''}`);
+    responseJson(response);
+  });
+  const second = await startLoopbackServer((request, response) => {
+    received.push(`second:${request.headers['x-route'] ?? ''}`);
+    responseJson(response);
+  });
+  const transport = createExternalHttpTransport();
+
+  try {
+    const request = {
+      body: encoder.encode('{}'),
+      contentType: 'application/json; charset=utf-8',
+      responseMode: 'direct' as const,
+    };
+    const firstOutcome = await transport.exchange({
+      ...request,
+      endpoint: endpoint(first, { headers: { 'X-Route': 'alpha' } }),
+    }).settled;
+    const secondOutcome = await transport.exchange({
+      ...request,
+      endpoint: endpoint(second, { headers: { 'X-Route': 'beta' } }),
+    }).settled;
+
+    assert(firstOutcome.ok, 'The first route endpoint should complete successfully.');
+    assert(secondOutcome.ok, 'The second route endpoint should complete successfully.');
+    assertEqual(
+      received.join(','),
+      'first:alpha,second:beta',
+      'One transport owner should apply each exchange endpoint and its static headers.',
+    );
+  } finally {
+    await transport.close();
+    await first.close();
+    await second.close();
+  }
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing HTTP transport',
     tests: [
       { name: 'sends POST with owned headers, exact length, and raw body', run: testPostHeadersLengthAndRawBody },
+      { name: 'selects a route endpoint per exchange while sharing transport resources', run: testSelectsEndpointPerExchangeWithSharedAgents },
       { name: 'preserves encoded response entities for body decoders', run: testRawEncodedEntityAndBodyDecoderHeaders },
       { name: 'rejects early final responses when pending request writes fail', run: testEarlyFinalResponseCannotWinOverPendingRequestFailure },
       { name: 'enforces representation metadata and duplicate field rules', run: testRepresentationRulesAndDuplicateHeaders },
