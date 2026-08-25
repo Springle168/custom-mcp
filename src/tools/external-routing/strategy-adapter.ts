@@ -10,8 +10,8 @@ import {
   type CanonicalResponse,
 } from './canonical-protocol.js';
 import type {
+  CompiledExternalRoute,
   ExternalProcessorDefinition,
-  ExternalRoutingSpec,
 } from './config.js';
 import type {
   ExternalHttpTransportExchange,
@@ -49,6 +49,8 @@ export interface ExternalRoutingHttpTransport {
  * and every other subprocess-owned value.
  */
 export interface ExternalRoutingProcessorDrainDiagnostic {
+  readonly definitionId: string;
+  readonly toolName: string;
   readonly role: ProcessorInvocation['environment']['role'];
   readonly processorName: string;
   readonly cleanupFailed: boolean;
@@ -63,8 +65,9 @@ export interface ExternalRoutingProcessorDrainDiagnostic {
 
 export interface ExternalRoutingStrategyAdapterOptions {
   /** Startup-validated configuration snapshot for this external route. */
-  readonly spec: ExternalRoutingSpec;
-  readonly processorRunner: ExternalRoutingProcessorRunner;
+  readonly route: CompiledExternalRoute;
+  readonly processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>;
+  readonly processorRunner?: ExternalRoutingProcessorRunner;
   readonly httpTransport: ExternalRoutingHttpTransport;
   /**
    * Optional owner-supplied diagnostic sink. It is invoked after Processor
@@ -144,13 +147,15 @@ type ResponseAdaptation =
  * may settle before cleanup; only the returned `drained` waits for all of it.
  */
 export class ExternalRoutingStrategyAdapter {
-  readonly #spec: ExternalRoutingSpec;
-  readonly #processorRunner: ExternalRoutingProcessorRunner;
+  readonly #route: CompiledExternalRoute;
+  readonly #processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>;
+  readonly #processorRunner: ExternalRoutingProcessorRunner | undefined;
   readonly #httpTransport: ExternalRoutingHttpTransport;
   readonly #onProcessorDrain: ExternalRoutingStrategyAdapterOptions['onProcessorDrain'];
 
   constructor(options: ExternalRoutingStrategyAdapterOptions) {
-    this.#spec = options.spec;
+    this.#route = options.route;
+    this.#processorsByName = options.processorsByName;
     this.#processorRunner = options.processorRunner;
     this.#httpTransport = options.httpTransport;
     this.#onProcessorDrain = options.onProcessorDrain;
@@ -253,9 +258,10 @@ export class ExternalRoutingStrategyAdapter {
     }
 
     const transportOutcome = await this.#runTransport({
+      endpoint: this.#route.endpoint,
       body: requestAdaptation.body,
       contentType: requestAdaptation.contentType,
-      responseMode: this.#spec.responseStrategy.mode,
+      responseMode: this.#route.responseStage.mode,
       signal: options.signal,
     }, drains);
     if (isSettled()) {
@@ -308,7 +314,7 @@ export class ExternalRoutingStrategyAdapter {
       return failure('external_internal_failed');
     }
 
-    const strategy = this.#spec.requestStrategy;
+    const strategy = this.#route.requestStage;
     if (strategy.mode === 'direct') {
       return {
         kind: 'success',
@@ -377,7 +383,7 @@ export class ExternalRoutingStrategyAdapter {
       return failure('cancelled');
     }
 
-    const strategy = this.#spec.responseStrategy;
+    const strategy = this.#route.responseStage;
     if (strategy.mode === 'direct') {
       const response = parseExternalCanonicalResponse(body, callId);
       if (isFailure(response)) {
@@ -485,9 +491,14 @@ export class ExternalRoutingStrategyAdapter {
     signal: AbortSignal | undefined,
     drains: DrainTracker,
   ): Promise<Uint8Array | ExternalRoutingStrategyFailure> {
+    const processorRunner = this.#processorRunner;
+    if (processorRunner === undefined) {
+      return failure('processor_failed');
+    }
+
     let exchange: ProcessorRunExchange;
     try {
-      exchange = this.#processorRunner.run({
+      exchange = processorRunner.run({
         command: commandFor(processor),
         arguments: processor.arguments,
         workingDirectory: processor.workingDirectory,
@@ -540,6 +551,8 @@ export class ExternalRoutingStrategyAdapter {
     }
 
     this.#emitProcessorDrainDiagnostic({
+      definitionId: this.#route.definitionId,
+      toolName: this.#route.toolName,
       role,
       processorName,
       cleanupFailed: drainMetadata.cleanupFailed,
@@ -592,7 +605,7 @@ export class ExternalRoutingStrategyAdapter {
   }
 
   #processorFor(name: string): ExternalProcessorDefinition | undefined {
-    return this.#spec.processors.find((processor) => processor.name === name);
+    return this.#processorsByName.get(name);
   }
 }
 

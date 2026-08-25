@@ -77,7 +77,7 @@ async function testMapsCanonicalBusinessOutcomes(): Promise<void> {
   const completedExecutor = new ExternalRoutingExecutor({
     strategy: fixedStrategy(canonical(successResponse('completed', 'done'))),
   });
-  const completed = await completedExecutor.execute(invocation());
+  const completed = await completedExecutor.execute('test-route', invocation());
   assertEqual(completed.isError, false, 'Completed external result should be a successful ToolCallResult');
   assertEqual(getResultText(completed), 'done', 'Completed message should be returned unchanged');
   await completedExecutor.close();
@@ -89,7 +89,7 @@ async function testMapsCanonicalBusinessOutcomes(): Promise<void> {
     const executor = new ExternalRoutingExecutor({
       strategy: fixedStrategy(canonical(successResponse(status, 'business message'))),
     });
-    const result = await executor.execute(invocation());
+    const result = await executor.execute('test-route', invocation());
     assertEqual(result.isError, true, `${status} should be an MCP tool error`);
     assertIncludes(getResultText(result), prefix, `${status} should use its controlled domain prefix`);
     assertIncludes(getResultText(result), 'business message', 'Validated canonical business output may reach the caller');
@@ -101,7 +101,7 @@ async function testMapsCanonicalBusinessOutcomes(): Promise<void> {
       error: { code: 'invalid_request', message: 'configured rejection' },
     })),
   });
-  const rejected = await rejectedExecutor.execute(invocation());
+  const rejected = await rejectedExecutor.execute('test-route', invocation());
   assertEqual(rejected.isError, true, 'Canonical errors should be MCP tool errors');
   assertIncludes(getResultText(rejected), 'invalid_request', 'Validated rejection code should reach the caller');
   assertIncludes(getResultText(rejected), 'configured rejection', 'Validated rejection message should reach the caller');
@@ -125,7 +125,7 @@ async function testMapsControlledLocalFailuresWithoutRawData(): Promise<void> {
     const executor = new ExternalRoutingExecutor({
       strategy: fixedStrategy({ kind: 'failure', code }),
     });
-    const result = await executor.execute(invocation());
+    const result = await executor.execute('test-route', invocation());
     const text = getResultText(result);
     assertEqual(result.isError, true, `${code} should map to a ToolCallResult error`);
     assert(text.length > 0, `${code} should use a controlled actionable message`);
@@ -142,6 +142,7 @@ async function testRejectsInvalidLocalCanonicalInputWithoutCallingStrategy(): Pr
       exchange() {
         calls++;
         return fixedStrategy({ kind: 'failure', code: 'external_internal_failed' }).exchange({
+          definitionId: 'test-route',
           request: undefined as never,
         });
       },
@@ -150,7 +151,7 @@ async function testRejectsInvalidLocalCanonicalInputWithoutCallingStrategy(): Pr
 
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
-  const result = await executor.execute(invocation({ arguments: cyclic }));
+  const result = await executor.execute('test-route', invocation({ arguments: cyclic }));
   assertEqual(result.isError, true, 'Non-JSON-compatible arguments should fail locally');
   assertIncludes(getResultText(result), 'internal failure', 'Invalid local input should use a stable internal template');
   assertEqual(calls, 0, 'Invalid local canonical input must not reach strategy execution');
@@ -171,7 +172,7 @@ async function testCancellationSettlesBeforeStrategyDrain(): Promise<void> {
     },
   });
 
-  const resultPromise = executor.execute(invocation({ signal: controller.signal }));
+  const resultPromise = executor.execute('test-route', invocation({ signal: controller.signal }));
   controller.abort();
   const result = await resultPromise;
   assertEqual(result.isError, true, 'Caller cancellation should settle as a ToolCallResult error');
@@ -183,6 +184,50 @@ async function testCancellationSettlesBeforeStrategyDrain(): Promise<void> {
   drained.resolve();
   await executor.close();
   assertEqual(executor.activeExchangeCount, 0, 'Drain should release the active runtime slot');
+}
+
+async function testRouteBoundCallsShareOneAdmissionPool(): Promise<void> {
+  const drains = Array.from({ length: 9 }, () => deferred<void>());
+  const startedDefinitionIds: string[] = [];
+  const executor = new ExternalRoutingExecutor({
+    strategy: {
+      exchange(options) {
+        const index = startedDefinitionIds.length;
+        startedDefinitionIds.push(options.definitionId ?? 'missing');
+        return {
+          settled: Promise.resolve(canonical(successResponse('completed', 'done'))),
+          drained: drains[index]?.promise ?? Promise.resolve(),
+        };
+      },
+    },
+  });
+
+  const activeCalls = Array.from({ length: 8 }, (_, index) =>
+    executor.execute(index % 2 === 0 ? 'route-a' : 'route-b', invocation())
+  );
+  await Promise.all(activeCalls);
+  const pendingCall = executor.execute('route-b', invocation());
+  await Promise.resolve();
+
+  assertEqual(executor.activeExchangeCount, 8, 'Both routes should consume the same eight active slots.');
+  assertEqual(executor.pendingExchangeCount, 1, 'A call from either route should enter the shared pending FIFO.');
+  assertEqual(startedDefinitionIds.length, 8, 'Pending route work must not start before a shared slot drains.');
+
+  drains[0]?.resolve();
+  while (startedDefinitionIds.length < 9) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  await pendingCall;
+  assertEqual(
+    startedDefinitionIds[8],
+    'route-b',
+    'The pending call should retain its route identity when promoted.',
+  );
+
+  for (const drain of drains.slice(1)) {
+    drain.resolve();
+  }
+  await executor.close();
 }
 
 async function testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent(): Promise<void> {
@@ -200,7 +245,7 @@ async function testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent(): Pr
     },
   });
 
-  void executor.execute(invocation());
+  void executor.execute('test-route', invocation());
   const firstClose = executor.close();
   const secondClose = executor.close();
   assert(Object.is(firstClose, secondClose), 'Executor close should reuse one idempotent promise');
@@ -221,6 +266,7 @@ async function main(): Promise<void> {
       { name: 'maps controlled local failures without raw data', run: testMapsControlledLocalFailuresWithoutRawData },
       { name: 'rejects invalid local canonical input before strategy', run: testRejectsInvalidLocalCanonicalInputWithoutCallingStrategy },
       { name: 'settles cancellation before strategy drain', run: testCancellationSettlesBeforeStrategyDrain },
+      { name: 'shares one admission pool across route-bound calls', run: testRouteBoundCallsShareOneAdmissionPool },
       { name: 'closes resources only after runtime drain', run: testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent },
     ],
   });

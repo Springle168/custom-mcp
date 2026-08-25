@@ -52,16 +52,26 @@ HTTP server 开始监听后，`src/index.ts` 输出 selected workspace 的启动
 
 策略文件路径保持配置顺序和重复引用，不排序或去重。日志不输出策略文件内容、matcher 内容或 symbolic link 的 real target。所有 allowed root 均未配置 ignore / deny 文件时，摘要输出 `File access policies: none`。启动时只读取和编译 selected workspace 的策略，启动摘要也只包含该 workspace。
 
-external routing 摘要由 `formatExternalRoutingStartupLines()` 生成。未配置 `processorConfigFile` 时只输出 `External routing: disabled`；启用时只输出 enabled 状态、request / response mode 和经过脱敏的 endpoint identity：
+external routing 摘要由 `formatExternalRoutingStartupLines()` 生成。Tool config 未配置 `externalRoutingConfigFile` 时输出 `External routing: disabled`。External routing config 存在但 `routes` 为空时输出 configured 状态与 route 数量：
+
+```text
+  External routing: configured
+    Routes: 0
+```
+
+有 route 时，摘要输出 enabled 状态、总数，以及按声明顺序排列的 route definition id、Tool name、request / response stage mode 和经过脱敏的 endpoint identity：
 
 ```text
   External routing: enabled
-    Request mode: direct
-    Response mode: canonical-filter
-    Endpoint: https://external.example.invalid/tool
+    Routes: 1
+    Route: external-echo
+      Tool: external_echo
+      Request stages: direct
+      Response stages: canonical-filter
+      Endpoint: https://external.example.invalid/tool
 ```
 
-endpoint identity 会剥离 URL query、credentials 与 fragment。该摘要不输出 endpoint headers、Processor config / endpoint config 文件路径、Processor executable path 或 argv。external routing 失败与 Processor post-drain diagnostics 的安全字段、以及 canonical business message 的边界见 [external routing](EXTERNAL-ROUTING.md)。
+endpoint identity 会剥离 URL query、credentials 与 fragment。该摘要不输出 endpoint headers、Processor config / endpoint config 文件路径、Processor executable path 或 argv。Processor post-drain diagnostics 会输出安全的 route definition id 与 Tool name，以及既有 role、Processor name、duration、byte-count、stderr truncation 和 cleanup state；不输出 endpoint、payload 或 subprocess 内容。external routing 失败与 canonical business message 的边界见 [external routing](EXTERNAL-ROUTING.md)。
 
 ### Session 与 Call ID
 
@@ -133,6 +143,6 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 
 `test/logger/request-header-rules-logging.test.ts` 覆盖 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界。
 
-`test/runtime/startup-logging.test.ts` 覆盖文件访问策略摘要，以及 external routing enabled / disabled 状态、mode 和 endpoint identity 的安全格式。
+`test/runtime/startup-logging.test.ts` 覆盖文件访问策略摘要，以及 external routing disabled / configured / enabled 状态、route summary 和 endpoint identity 的安全格式。`test/runtime/application-diagnostics.test.ts` 覆盖 Processor drain 的 route / Tool 安全诊断格式。
 
 日志演示生成的文件显式写入 `test/logs/` 目录。通用测试与手工脚本执行约定见 [docs/TESTING.md](TESTING.md)。

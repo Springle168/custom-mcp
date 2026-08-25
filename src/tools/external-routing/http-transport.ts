@@ -68,6 +68,8 @@ export type ExternalHttpTransportOutcome =
   | ExternalHttpTransportFailure;
 
 export interface ExternalHttpTransportRequest {
+  /** Startup-validated endpoint snapshot selected by the compiled route. */
+  readonly endpoint?: ExternalHttpEndpointConfig;
   /** The final already-encoded entity body. */
   readonly body: Uint8Array;
   /** The request routing strategy's transport-owned media type. */
@@ -153,25 +155,28 @@ interface StagedResponse {
  * defensive boundary still turns malformed runtime input into a safe outcome.
  */
 export function createExternalHttpTransport(
-  endpoint: ExternalHttpEndpointConfig,
+  defaultEndpoint?: ExternalHttpEndpointConfig,
 ): ExternalHttpTransport {
-  return new NodeExternalHttpTransport(endpoint);
+  return new NodeExternalHttpTransport(defaultEndpoint);
 }
 
 class NodeExternalHttpTransport implements ExternalHttpTransport {
   readonly #httpAgent = new HttpAgent({ keepAlive: true });
   readonly #httpsAgent = new HttpsAgent({ keepAlive: true });
   readonly #activeExchanges = new Set<ActiveHttpExchange>();
-  readonly #endpoint: PreparedEndpoint | undefined;
+  readonly #defaultEndpoint: ExternalHttpEndpointConfig | undefined;
   #closed = false;
   #closePromise: Promise<void> | undefined;
 
-  constructor(endpoint: ExternalHttpEndpointConfig) {
-    this.#endpoint = prepareEndpoint(endpoint);
+  constructor(defaultEndpoint?: ExternalHttpEndpointConfig) {
+    this.#defaultEndpoint = defaultEndpoint;
   }
 
   exchange(request: ExternalHttpTransportRequest): ExternalHttpTransportExchange {
-    const endpoint = this.#endpoint;
+    const configuredEndpoint = request.endpoint ?? this.#defaultEndpoint;
+    const endpoint = configuredEndpoint === undefined
+      ? undefined
+      : prepareEndpoint(configuredEndpoint);
     const requestBodyBytes = request.body instanceof Uint8Array ? request.body.byteLength : 0;
 
     if (this.#closed || request.signal?.aborted) {

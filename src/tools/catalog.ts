@@ -79,12 +79,8 @@ export interface CompileWorkspaceToolCatalogOptions {
   readonly customDefinitions: readonly CompiledCustomToolDefinition[];
   readonly exposure: ParsedToolExposure;
   readonly workspaceConfigFilePath: string;
-  /**
-   * Shared application-owned executor used only for custom-only definitions.
-   * When absent, those definitions compile for validation/exposure but retain
-   * the deterministic unavailable route.
-   */
-  readonly externalExecutor?: ExternalToolExecutor;
+  /** Route-bound executors keyed by Tool config definition reference id. */
+  readonly externalBindingsByDefinitionId?: ReadonlyMap<string, ExternalToolExecutor>;
 }
 
 export function compileWorkspaceToolCatalog(
@@ -131,7 +127,10 @@ export function compileWorkspaceToolCatalog(
       referenceId: custom.source.referenceId,
       definitionFilePath: custom.source.toolDefinitionFilePath,
     });
-    if (options.externalExecutor === undefined) {
+    const externalExecutor = options.externalBindingsByDefinitionId?.get(
+      custom.source.referenceId,
+    );
+    if (externalExecutor === undefined) {
       effectiveEntries.push(freezeEntry({
         binding: 'unavailable',
         definition: custom.definition,
@@ -145,7 +144,7 @@ export function compileWorkspaceToolCatalog(
       binding: 'external',
       definition: custom.definition,
       effectiveValidator: custom.validator,
-      externalExecutor: options.externalExecutor,
+      externalExecutor,
       source,
     }));
   }

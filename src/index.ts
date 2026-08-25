@@ -193,7 +193,7 @@ async function main() {
       logger.info(line);
     }
     for (const line of formatExternalRoutingStartupLines(
-      initialRuntime.externalRoutingSpec,
+      initialRuntime.externalRoutingConfig,
     )) {
       logger.info(line);
     }

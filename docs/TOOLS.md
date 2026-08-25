@@ -29,7 +29,7 @@ docs/tools/
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
 | `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
 | `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
-| configured custom-only Tool | 通过 Tool config 的 `processorConfigFile` 调用受控 Processor / HTTP route | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) |
+| configured custom-only Tool | 通过 Tool config v2 的 definitionId binding 调用 route-specific Processor / HTTP route | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) |
 
 ---
 
@@ -72,7 +72,7 @@ src/tools/
 | `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
-| `src/tools/external-routing/` | custom-only route 的 Processor / endpoint schema、canonical protocol、HTTP / subprocess lifecycle，见 [external routing](EXTERNAL-ROUTING.md) |
+| `src/tools/external-routing/` | custom-only definitionId binding、External routing config、Processor registry、route-specific endpoint / stage、canonical protocol、共享 HTTP / subprocess lifecycle，见 [external routing](EXTERNAL-ROUTING.md) |
 
 通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看完整 canonical registry 的 definition 结构；selected workspace 的实际 `tools/list` 还会应用 exposure 过滤：
 
@@ -90,13 +90,13 @@ selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启�
 
 - 未覆盖的内置工具使用内置 definition、executor 与 implementation contract；
 - 同名 custom definition 完整替换对外 description/input schema，保留内置 executor 和 implementation contract；
-- custom-only definition 按 tool config reference 顺序追加；配置 `processorConfigFile` 时绑定共享 external executor，否则绑定 unavailable executor；
+- custom-only definition 按 Tool config reference 顺序追加；External routing config 为其 reference `id` 声明 route 时绑定对应的 route-bound external executor，否则绑定 unavailable executor；
 - built-in 工具保持 canonical 顺序，override 保持原位置；
 - selector 在 effective names 构建后执行成员校验和过滤，过滤不重排。
 
 exposed catalog 同时派生 definitions view 与 route lookup。`createWorkspaceToolService()` 只包装调用方传入的 compiled catalog；`tools/list` 与 `tools/call` 因此共享完全相同的 exposure 边界。隐藏和未知名称统一返回 `Unknown tool`，不会运行 schema validator 或 executor。
 
-调用路由按以下顺序执行：effective input validation → built-in implementation validation（适用时）→ executor。未覆盖的内置工具复用同一 validator；override 必须同时满足 workspace 对外 contract 与内置实现 contract；custom-only 工具通过 effective validation 后，按 catalog binding 调用共享 external executor 或返回未配置 execution route 的标准工具错误。所有这些结果继续通过 runtime result adapter 与 logger。
+调用路由按以下顺序执行：effective input validation → built-in implementation validation（适用时）→ executor。未覆盖的内置工具复用同一 validator；override 必须同时满足 workspace 对外 contract 与内置实现 contract；custom-only 工具通过 effective validation 后，按 catalog binding 调用 route-bound external executor 或返回未配置 execution route 的标准工具错误。route-bound executor 共享 workspace external runtime 的 admission、Processor runner（需要时）和 HTTP Agents。所有这些结果继续通过 runtime result adapter 与 logger。
 
 catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保持固定，但职责独立。snapshot 只为 handler 提供 workspace runtime 能力；definitions、validators、executor bindings、source metadata 与 exposure 由 catalog 持有。修改 Tool config、definition 或 external routing 配置文件后需要重启服务。
 
@@ -189,7 +189,7 @@ npm run start
 
 - `test/config/tool-exposure.test.ts`：workspace `tools` 外壳、tool config path 与 selector grammar。
 - `test/tools/custom-tool-config.test.ts`：referenced files、strict definition 外壳与 Draft 2020-12 validator。
-- `test/tools/tool-exposure.test.ts`：effective/exposed catalog、override、双重 contract 与 unavailable executor。
+- `test/tools/tool-exposure.test.ts`：effective/exposed catalog、override、双重 contract、definitionId external binding 与 unavailable executor。
 - `test/runtime/startup-runtime.test.ts`：selected-only 加载、启动期组合与运行期固定 catalog。
 - `test/runtime/mcp-server-tool-exposure.test.ts`：真实 `tools/list` / `tools/call` 接线、custom-only 路由和 service 复用。
 - `test/runtime/external-routing-integration.test.ts`：selected workspace、custom-only definition、MCP 调用和 loopback endpoint 的完整 route。

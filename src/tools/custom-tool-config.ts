@@ -12,8 +12,8 @@ import {
   type InputSchemaValidator,
 } from './input-schema-validator.js';
 import {
-  loadExternalRoutingSpec,
-  type ExternalRoutingSpec,
+  loadExternalRoutingConfig,
+  type CompiledExternalRoutingConfig,
 } from './external-routing/config.js';
 
 export interface CustomToolDefinition {
@@ -38,7 +38,7 @@ export interface CompiledCustomToolDefinition {
 export interface LoadedCustomToolConfig {
   readonly toolConfigFilePath: string;
   readonly definitions: readonly CompiledCustomToolDefinition[];
-  readonly externalRouting?: ExternalRoutingSpec;
+  readonly externalRouting?: CompiledExternalRoutingConfig;
 }
 
 interface DefinitionReference {
@@ -49,17 +49,20 @@ interface DefinitionReference {
 
 interface ParsedToolConfig {
   readonly references: readonly DefinitionReference[];
-  readonly processorConfigFilePath?: string;
+  readonly externalRoutingConfigFilePath?: string;
 }
 
-const TOOL_CONFIG_FIELDS = new Set(['version', 'definitions', 'processorConfigFile']);
+const TOOL_CONFIG_FIELDS = new Set(['version', 'definitions', 'externalRoutingConfigFile']);
 const DEFINITION_REFERENCE_FIELDS = new Set(['id', 'toolDefinitionFile']);
 const TOOL_DEFINITION_FIELDS = new Set(['name', 'description', 'inputSchema']);
 const TOOL_IDENTITY_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const DRAFT_2020_12_URI = 'https://json-schema.org/draft/2020-12/schema';
 
 /** Loads, validates, and compiles all custom definitions before runtime use. */
-export function loadCustomToolConfig(toolConfigFilePath: string): LoadedCustomToolConfig {
+export function loadCustomToolConfig(
+  toolConfigFilePath: string,
+  builtInToolNames: ReadonlySet<string>,
+): LoadedCustomToolConfig {
   const validatedConfigPath = unwrapPathPolicy(
     toolConfigFilePath,
     readLocalAbsolutePath(toolConfigFilePath, { fieldPath: 'toolConfigFile' }),
@@ -71,9 +74,16 @@ export function loadCustomToolConfig(toolConfigFilePath: string): LoadedCustomTo
   );
 
   assertUniqueDefinitionNames(validatedConfigPath, definitions);
-  const externalRouting = parsedConfig.processorConfigFilePath === undefined
+  const externalRouting = parsedConfig.externalRoutingConfigFilePath === undefined
     ? undefined
-    : loadExternalRoutingSpec(parsedConfig.processorConfigFilePath);
+    : loadExternalRoutingConfig(
+      parsedConfig.externalRoutingConfigFilePath,
+      definitions.map((definition) => Object.freeze({
+        definitionId: definition.source.referenceId,
+        toolName: definition.definition.name,
+        builtIn: builtInToolNames.has(definition.definition.name),
+      })),
+    );
 
   return Object.freeze({
     toolConfigFilePath: validatedConfigPath,
@@ -104,11 +114,11 @@ function parseToolConfig(
     ),
   );
 
-  if (rawConfig.version !== 1) {
+  if (rawConfig.version !== 2) {
     failConfig(
       toolConfigFilePath,
       'version',
-      'version must be the number 1. The current server only supports tool config schema version 1.',
+      'version must be the number 2. The server only supports Tool config schema version 2.',
     );
   }
   if (!Array.isArray(rawConfig.definitions)) {
@@ -129,21 +139,23 @@ function parseToolConfig(
     return Object.freeze(reference);
   });
 
-  const processorConfigFilePath = Object.prototype.hasOwnProperty.call(
+  const externalRoutingConfigFilePath = Object.prototype.hasOwnProperty.call(
     rawConfig,
-    'processorConfigFile',
+    'externalRoutingConfigFile',
   )
     ? unwrapConfigPathPolicy(
       toolConfigFilePath,
-      readLocalAbsolutePath(rawConfig.processorConfigFile, {
-        fieldPath: 'processorConfigFile',
+      readLocalAbsolutePath(rawConfig.externalRoutingConfigFile, {
+        fieldPath: 'externalRoutingConfigFile',
       }),
     )
     : undefined;
 
   return Object.freeze({
     references: Object.freeze(references),
-    ...(processorConfigFilePath === undefined ? {} : { processorConfigFilePath }),
+    ...(externalRoutingConfigFilePath === undefined
+      ? {}
+      : { externalRoutingConfigFilePath }),
   });
 }
 
