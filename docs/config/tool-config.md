@@ -33,7 +33,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 `id` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`。`toolDefinitionFile` 与可选 `processorConfigFile` 都遵循与 `toolConfigFile` 相同的本地绝对路径边界。
 
-完整 JSON 模板见 [Tool config 示例](../../examples/tool-config.example.json)。其中的路径需要替换为本机有效位置。
+完整 JSON 模板见 [Tool config 示例](../../examples/tool-config.example.json)。该模板同时展示 built-in override、custom-only definition 和 `processorConfigFile`；其中的路径需要替换为本机有效位置。配套 Processor config、endpoint config 与 external executor 行为见 [external routing](../EXTERNAL-ROUTING.md)。
 
 ---
 
@@ -65,7 +65,7 @@ custom definition 与内置工具同名时，完整替换 `tools/list` 暴露的
 
 effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](../TOOLS.md)。
 
-`processorConfigFile` 的 Processor / endpoint schema、canonical protocol、容量、失败、取消、shutdown 和日志脱敏边界见 [external routing](../tools/external-routing.md)。
+`processorConfigFile` 的 Processor / endpoint schema、canonical protocol、容量、失败、取消、shutdown 和日志脱敏边界见 [external routing](../EXTERNAL-ROUTING.md)。
 
 ---
 

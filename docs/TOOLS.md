@@ -13,8 +13,7 @@ docs/tools/
 ├── write-file.md        # write_file 工具文档
 ├── read-many-files.md   # read_many_files 工具文档
 ├── ask-user.md          # ask_user 工具文档
-├── android-build.md     # Android 构建工具文档
-└── external-routing.md  # custom-only 外部路由文档
+└── android-build.md     # Android 构建工具文档
 ```
 
 ---
@@ -30,7 +29,7 @@ docs/tools/
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
 | `android.assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
 | `android.testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
-| configured custom-only Tool | 通过 Tool config 的 `processorConfigFile` 调用受控 Processor / HTTP route | [docs/tools/external-routing.md](tools/external-routing.md) |
+| configured custom-only Tool | 通过 Tool config 的 `processorConfigFile` 调用受控 Processor / HTTP route | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) |
 
 ---
 
@@ -73,7 +72,7 @@ src/tools/
 | `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
-| `src/tools/external-routing/` | custom-only route 的 Processor / endpoint schema、canonical protocol、HTTP / subprocess lifecycle，见 [external routing](tools/external-routing.md) |
+| `src/tools/external-routing/` | custom-only route 的 Processor / endpoint schema、canonical protocol、HTTP / subprocess lifecycle，见 [external routing](EXTERNAL-ROUTING.md) |
 
 通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看完整 canonical registry 的 definition 结构；selected workspace 的实际 `tools/list` 还会应用 exposure 过滤：
 
