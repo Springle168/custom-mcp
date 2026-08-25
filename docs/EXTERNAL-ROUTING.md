@@ -25,7 +25,7 @@ workspace tools.toolConfigFile
 
 custom definition 覆盖 built-in 名称时，仍绑定 built-in executor，并继续满足 configured schema 与 built-in implementation schema；它不会进入 external route。没有 `processorConfigFile` 的 custom-only definition 保持可列出、可校验但不可执行的 deterministic unavailable route。
 
-Tool config 的基础结构、definition schema 和 exposure selector 见 [自定义 Tool 配置](../config/tool-config.md)。
+Tool config 的基础结构、definition schema 和 exposure selector 见 [自定义 Tool 配置](config/tool-config.md)。
 
 ---
 
@@ -84,6 +84,21 @@ endpoint config 顶层只允许下列字段：
 
 `headers` 的名称按大小写不重复，且不能配置 transport-owned 或 hop-by-hop 字段：`Host`、`Content-Length`、`Content-Type`、`Content-Encoding`、`Accept-Encoding`、`Transfer-Encoding`、`Connection`、`Keep-Alive`、`TE`、`Trailer`、`Upgrade`、`Proxy-Authenticate`、`Proxy-Authorization`、`Proxy-Connection`。transport 为每次请求生成 `Content-Type` 与 `Content-Length`。
 
+HTTPS 使用 Node.js 默认 TLS 行为，只信任运行环境认可的服务端证书。配置不支持自定义 CA、客户端证书、mTLS、TLS cipher/version 或关闭证书校验，也不会把 `https://` endpoint 降级为 HTTP。
+
+### 配置示例
+
+`examples/` 提供一组不依赖 Processor executable 的 `direct` / `direct` 模板：
+
+- [Tool config](../examples/tool-config.example.json)
+- [custom-only Tool definition](../examples/tool-definition.example.json)
+- [Processor config](../examples/processor-config.example.json)
+- [HTTP endpoint config](../examples/http-endpoint-config.example.json)
+
+Tool config 示例同时包含一个 `read_file` override 和一个 `external_echo` custom-only definition，用于展示同一 catalog 中的不同 executor binding：override 继续使用 built-in executor，custom-only definition 使用共享 external executor。
+
+使用时将模板复制到本机配置目录，移除文件名中的 `.example`，并替换其中的本地绝对路径和 endpoint URL。该 route 直接向 endpoint 发送 canonical request，并要求 endpoint 直接返回 canonical response；如果私有协议需要转换，再把相应 direction 改为 Processor mode 并增加 Processor definition。
+
 ---
 
 ## Routing strategy 与 canonical protocol
@@ -105,6 +120,47 @@ canonical request 是只含一个 call 的 JSON object：`calls` 是长度为一
 
 - `results`：长度为一的数组，result 的 `id` 必须与原 call id 相同，`status` 为 `completed`、`failed` 或 `cancelled`，并有 string `message`；
 - `error`：有 non-empty string `code` 和 string `message`。
+
+Canonical request 示例：
+
+```json
+{
+  "calls": [
+    {
+      "id": "call_opaque-id",
+      "name": "external_echo",
+      "arguments": {
+        "message": "Hello from custom-mcp."
+      }
+    }
+  ]
+}
+```
+
+Canonical completed response 使用相同的 call id：
+
+```json
+{
+  "results": [
+    {
+      "id": "call_opaque-id",
+      "status": "completed",
+      "message": "Hello from the external endpoint."
+    }
+  ]
+}
+```
+
+Endpoint 拒绝请求时可以返回 canonical error：
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "The request could not be processed."
+  }
+}
+```
 
 canonical JSON 使用严格 UTF-8，Processor canonical output 不允许 BOM。所有 canonical message 拒绝未知字段、非 JSON 值、循环结构、accessor、symbol 与非标准 prototype。filter 输出不会补回它省略的 extensions。
 
@@ -137,13 +193,31 @@ HTTP body 在 request strategy 完成编码后检查；body-encoder 的结果也
 
 配置、canonical protocol、Processor、transport、timeout、容量与本地内部失败都映射为标准 `ToolCallResult` 错误，包含稳定的可操作文本。endpoint 的已校验 business result 也映射为标准结果：`completed` 为成功，`failed` / `cancelled` / canonical `error` 为 `isError: true`。
 
+内部 failure classification 用于稳定诊断和受控错误构造：
+
+| Classification | 语义 |
+|-|-|
+| `external_capacity_exceeded` | 8 个 active 和 64 个 pending exchange 都已占满；调用未启动外部工作。 |
+| `external_request_too_large` | 最终 request body 超过 50 MiB；HTTP request 未发送。 |
+| `external_transport_failed` | DNS、连接、TLS 或 HTTP stream 失败。 |
+| `external_timeout` | endpoint HTTP exchange 超过 `timeoutMs`。 |
+| `external_response_too_large` | response body 超过 50 MiB。 |
+| `external_protocol_failed` | HTTP metadata、UTF-8、JSON、canonical shape、call id 或 status contract 无效。 |
+| `external_rejected` | endpoint 返回合法 canonical error。 |
+| `external_tool_failed` | endpoint 返回合法 canonical result `failed`。 |
+| `external_tool_cancelled` | endpoint 返回合法 canonical result `cancelled`；这是远端领域结果。 |
+| `processor_failed` | Processor spawn、stdio、exit、signal、大小限制或输出 contract 失败。 |
+| `processor_timeout` | Processor invocation 超过 `timeoutMs`。 |
+| `external_internal_failed` | 统一调用管线捕获未建模的内部异常。 |
+| `cancelled` | MCP caller cancellation 或 application shutdown 中止本地 exchange。 |
+
 服务不会自动重试外部调用，也不会接受晚到结果。transport、timeout、Processor response-side timeout 和 caller cancellation 后，外部服务可能已经执行操作；调用方只能在该操作可安全重复时自行重试。
 
 caller `AbortSignal` 会传递到 queued / active admission、Processor 和 HTTP transport。取消 queued 调用会移出 FIFO；取消 active 调用先结算为 `cancelled`，然后继续等待其本地 drain。Processor 在 timeout 或取消时关闭 stdio、先向 direct child 发送 `SIGTERM`，再在有界等待后发送 `SIGKILL`；若 child 仍未确认关闭，runner 进入降级 cleanup 并拒绝未来 Processor admission。
 
 ### Shutdown
 
-首次 `SIGINT` 或 `SIGTERM` 启动幂等 application shutdown：先停止 HTTP listener 与新 MCP session admission，再关闭已有 MCP session 以传播调用取消，然后调用 `LoadedApplicationRuntime.close()`。External runtime 停止新 admission、取消 pending work、abort active work并等待 active exchange drain，随后关闭 Processor runner 和专用 HTTP/HTTPS Agents；最后关闭 logger。单个 MCP session 的 DELETE 或 transport close 只关闭该 session，不关闭共享 external runtime。
+首次 `SIGINT` 或 `SIGTERM` 启动幂等 application shutdown：先停止 HTTP listener 与新 MCP session admission，再关闭已有 MCP session 以传播调用取消，然后调用 `LoadedApplicationRuntime.close()`。External runtime 停止新 admission、取消 pending work、abort active work 并等待 active exchange drain，随后关闭 Processor runner 和专用 HTTP/HTTPS Agents；最后关闭 logger。单个 MCP session 的 DELETE 或 transport close 只关闭该 session，不关闭共享 external runtime。
 
 所有 application shutdown 调用复用同一个 completion promise。某个关闭阶段失败时仍继续执行后续阶段，最终以聚合错误报告；transport 在每个 active exchange 脱离本地 listener 后才销毁其 dedicated Agents，且不影响 process-global Agent。
 
@@ -155,7 +229,17 @@ caller `AbortSignal` 会传递到 queued / active admission、Processor 和 HTTP
 
 transport / runner 的本地失败只以受控 failure code 和 caller 文本离开模块，不携带 endpoint URL、header value、entity bytes 或 Node.js exception。Processor post-drain diagnostics 只含 role、Processor name、duration、byte counts、stderr truncation 和 cleanup state；不含 executable path、argv、stdout、stderr text 或 stdin bytes。诊断 sink 的异常或耗时不会改变调用结果或延迟资源 cleanup。
 
-Processor 默认继承 process environment，但会先按大小写删除 `CUSTOM_MCP_PROCESSOR_ROLE` 和全部 `CUSTOM_MCP_EXTERNAL_*`，再仅注入 role、call id，以及 response Processor 所需的 HTTP status、content type、content encoding。request Processor 不接收 response-only metadata。
+Processor 默认继承 process environment，但会先按 Windows 大小写不敏感规则删除 `CUSTOM_MCP_PROCESSOR_ROLE` 和全部 `CUSTOM_MCP_EXTERNAL_*` 名称变体，再注入本次 invocation 的保留变量：
+
+| Variable | 注入范围与值 |
+|-|-|
+| `CUSTOM_MCP_PROCESSOR_ROLE` | 所有 Processor；值为 `request.canonical-filter`、`request.body-encoder`、`response.canonical-filter` 或 `response.body-decoder`。 |
+| `CUSTOM_MCP_EXTERNAL_CALL_ID` | 所有 Processor；原 canonical request 的不透明 call id。 |
+| `CUSTOM_MCP_EXTERNAL_HTTP_STATUS` | response Processor；最终 HTTP status 的十进制字符串。 |
+| `CUSTOM_MCP_EXTERNAL_CONTENT_TYPE` | response Processor；存在时为校验后的 Content-Type，缺失时不设置。 |
+| `CUSTOM_MCP_EXTERNAL_CONTENT_ENCODING` | response Processor；存在时为规范化后的 Content-Encoding，缺失时不设置。 |
+
+Request Processor 不接收 response-only metadata。Response `body-decoder` 应使用 `CUSTOM_MCP_EXTERNAL_CALL_ID` 构造 canonical result id，即使目标私有协议不回显该 id。保留变量不包含 endpoint URL、认证 header、MCP session 或其它 response headers。
 
 已通过 canonical protocol 校验的 endpoint `message` / `error.message` 是业务结果，会进入 MCP text result；它们不经过通用内容脱敏。配置 endpoint 和 Processor 的维护者应避免在这些业务文本中返回敏感信息。
 

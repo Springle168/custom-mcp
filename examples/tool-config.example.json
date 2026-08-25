@@ -4,6 +4,11 @@
     {
       "id": "read-file-override",
       "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/read-file.override.json"
+    },
+    {
+      "id": "external-echo",
+      "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/tool-definition.json"
     }
-  ]
+  ],
+  "processorConfigFile": "C:/Users/username/.custom-mcp/processors/processor-config.json"
 }

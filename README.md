@@ -1,6 +1,6 @@
 # custom-mcp
 
-一个使用 TypeScript 和 Node.js 构建的 MCP 工具集，通过 Streamable HTTP 提供文件读写、文本替换、批量读取和用户交互等能力。
+一个使用 TypeScript 和 Node.js 构建的 MCP 工具集，通过 Streamable HTTP 提供文件读写、文本替换、批量读取和用户交互等能力，并支持把 configured custom-only Tool 路由到受控 Processor 与外部 HTTP endpoint。
 
 ## 工具
 
@@ -36,7 +36,7 @@ npm run start -- --workspace my-workspace
 http://127.0.0.1:3100/mcp
 ```
 
-全局与 workspace 配置模板见 [examples/](examples/)，配置字段与 workspace 选择规则见 [docs/CONFIG.md](docs/CONFIG.md)。
+全局、workspace 与 external routing 配置模板见 [examples/](examples/)，配置字段与 workspace 选择规则见 [docs/CONFIG.md](docs/CONFIG.md)。
 
 ## 文档
 
@@ -46,6 +46,7 @@ http://127.0.0.1:3100/mcp
 - [路径安全](docs/PATH-SAFETY.md)
 - [测试](docs/TESTING.md)
 - [日志](docs/LOGGING.md)
+- [External routing](docs/EXTERNAL-ROUTING.md)
 
 ## License
 

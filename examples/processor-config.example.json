@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "httpEndpointConfigFile": "C:/Users/username/.custom-mcp/processors/http-endpoint-config.json",
+  "processors": [],
+  "routingStrategy": [
+    {
+      "strategy": "request-to-external",
+      "mode": "direct"
+    },
+    {
+      "strategy": "response-from-external",
+      "mode": "direct"
+    }
+  ]
+}

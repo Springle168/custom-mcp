@@ -61,7 +61,7 @@ external routing 摘要由 `formatExternalRoutingStartupLines()` 生成。未配
     Endpoint: https://external.example.invalid/tool
 ```
 
-endpoint identity 会剥离 URL query、credentials 与 fragment。该摘要不输出 endpoint headers、Processor config / endpoint config 文件路径、Processor executable path 或 argv。external routing 失败与 Processor post-drain diagnostics 的安全字段、以及 canonical business message 的边界见 [external routing](tools/external-routing.md)。
+endpoint identity 会剥离 URL query、credentials 与 fragment。该摘要不输出 endpoint headers、Processor config / endpoint config 文件路径、Processor executable path 或 argv。external routing 失败与 Processor post-drain diagnostics 的安全字段、以及 canonical business message 的边界见 [external routing](EXTERNAL-ROUTING.md)。
 
 ### Session 与 Call ID
 

@@ -12,7 +12,7 @@
 | 全局索引 | [全局 workspace 索引](config/global-index.md) | `~/.custom-mcp/config.json`、`version: 2` reference schema、workspace 选择。 |
 | Workspace 配置 | [workspace 配置](config/workspace-config.md) | `version: 1` schema、文件访问策略、env override、runtime snapshot。 |
 | 自定义 Tool 配置 | [自定义 Tool 配置](config/tool-config.md) | `tools.toolConfigFile`、Tool definition、`processorConfigFile` 入口、schema 编译与 catalog 合并。 |
-| External routing | [external routing](tools/external-routing.md) | Processor / endpoint config schema、custom-only binding、canonical route、限制与安全边界。 |
+| External routing | [external routing](EXTERNAL-ROUTING.md) | Processor / endpoint config schema、custom-only binding、canonical route、限制与安全边界。 |
 
 ---
 

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "url": "http://127.0.0.1:43120/external/v1/tool-calls",
+  "timeoutMs": 30000,
+  "headers": {}
+}

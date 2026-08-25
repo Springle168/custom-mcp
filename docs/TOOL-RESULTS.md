@@ -98,7 +98,7 @@ workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `
 
 容量、取消、HTTP / Processor timeout、大小限制、transport、canonical protocol 与内部失败也都映射为 `textErrorResult()`。本地失败文本只说明稳定的失败类别和安全的下一步：不包含 endpoint URL 或 query、header、request / response entity、Processor stdout / stderr、executable path、argv 或底层异常。外部服务器可能已执行而未获得确认结果时，文本明确说明服务不会自动重试；调用方只应在操作可安全重复时自行重试。
 
-外部 route 的完整映射、限制与协议边界见 [external routing](tools/external-routing.md)。
+外部 route 的完整映射、限制与协议边界见 [external routing](EXTERNAL-ROUTING.md)。
 
 ---
 
