@@ -38,10 +38,12 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 完整模板见下列示例：
 
 - [Tool config](../../examples/tool-config.example.json)
-- [custom-only Tool definition](../../examples/tool-definition.example.json)
+- [direct custom-only Tool definition](../../examples/tool-definition.example.json)
+- [Processor custom-only Tool definition](../../examples/processed-tool-definition.example.json)
 - [External routing config](../../examples/external-routing-config.example.json)
 - [Processor registry](../../examples/processor-config.example.json)
-- [HTTP endpoint config](../../examples/http-endpoint-config.example.json)
+- [direct HTTP endpoint config](../../examples/http-endpoint-config.example.json)
+- [Processor HTTP endpoint config](../../examples/processed-http-endpoint-config.example.json)
 
 使用模板前应替换其中的本地绝对路径和值。External routing config、Processor registry、endpoint config 与外部调用行为见 [External routing](../EXTERNAL-ROUTING.md)。
 

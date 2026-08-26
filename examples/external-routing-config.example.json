@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "processorConfigFile": "C:/Users/username/.custom-mcp/processors/processor-config.json",
   "routes": [
     {
       "definitionId": "external-echo",
@@ -13,6 +14,25 @@
         "response-from-external": [
           {
             "mode": "direct"
+          }
+        ]
+      }
+    },
+    {
+      "definitionId": "external-echo-processed",
+      "httpEndpointConfigFile": "C:/Users/username/.custom-mcp/processors/processed-http-endpoint-config.json",
+      "routingStrategy": {
+        "request-to-external": [
+          {
+            "mode": "body-encoder",
+            "processor": "encode-request",
+            "contentType": "application/json"
+          }
+        ],
+        "response-from-external": [
+          {
+            "mode": "body-decoder",
+            "processor": "decode-response"
           }
         ]
       }
