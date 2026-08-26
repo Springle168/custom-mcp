@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { readFile } from 'node:fs/promises';
 import { createMCPServer } from '../../src/runtime/mcp-server.js';
 import type { JsonObject } from '../../src/config/json-file.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
@@ -55,6 +56,23 @@ function createLogger() {
     logToolCall() {},
     logToolResult() {},
   };
+}
+
+async function readPackageVersion(): Promise<string> {
+  const manifest: unknown = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf-8'),
+  );
+
+  if (
+    typeof manifest !== 'object'
+    || manifest === null
+    || !('version' in manifest)
+    || typeof manifest.version !== 'string'
+  ) {
+    throw new Error('package.json must define a string version.');
+  }
+
+  return manifest.version;
 }
 
 function createSpyService(): {
@@ -172,6 +190,23 @@ async function testListAndCallUsePassedService(): Promise<void> {
   }
 }
 
+async function testServerReportsPackageVersion(): Promise<void> {
+  const pair = await connectServer(createSpyService().service);
+
+  try {
+    const serverInfo = pair.client.getServerVersion();
+    assert(serverInfo !== undefined, 'MCP initialization should report server information');
+    assertEqual(serverInfo.name, 'custom-mcp', 'MCP initialization should report the server name');
+    assertEqual(
+      serverInfo.version,
+      await readPackageVersion(),
+      'MCP initialization should report the package version',
+    );
+  } finally {
+    await closePair(pair);
+  }
+}
+
 async function testTwoServersShareCallerOwnedService(): Promise<void> {
   const spy = createSpyService();
   const first = await connectServer(spy.service);
@@ -216,7 +251,7 @@ async function testCustomOnlyToolListsValidatesAndReturnsUnavailable(): Promise<
 }
 
 async function testIndexDoesNotUseUnfilteredRegistryEntrypoints(): Promise<void> {
-  const source = await import('node:fs/promises').then((fs) => fs.readFile(new URL('../../src/index.ts', import.meta.url), 'utf-8'));
+  const source = await readFile(new URL('../../src/index.ts', import.meta.url), 'utf-8');
 
   assert(!source.includes('getAllToolDefinitions'), 'src/index.ts should not import the full definitions registry');
   assert(!source.includes('routeToolCall'), 'src/index.ts should not import an unfiltered global router');
@@ -228,6 +263,7 @@ async function main(): Promise<void> {
     title: 'Testing MCP server workspace tool exposure wiring',
     tests: [
       { name: 'list and call use passed service', run: testListAndCallUsePassedService },
+      { name: 'server reports the package version', run: testServerReportsPackageVersion },
       { name: 'two servers share caller-owned service', run: testTwoServersShareCallerOwnedService },
       { name: 'custom-only tool lists, validates, and returns unavailable', run: testCustomOnlyToolListsValidatesAndReturnsUnavailable },
       { name: 'index avoids unfiltered registry entrypoints', run: testIndexDoesNotUseUnfilteredRegistryEntrypoints },
