@@ -39,11 +39,15 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const LOGS_DIR = path.join(CONFIG_DIR, 'logs');
 const ROOT_DIR = path.join(FIXTURES_DIR, 'workspace');
 const TOOL_CONFIG_FILE = path.join(FIXTURES_DIR, 'tool-config.json');
-const TOOL_DEFINITION_FILE = path.join(FIXTURES_DIR, 'external-custom-tool.json');
+const FIRST_TOOL_DEFINITION_FILE = path.join(FIXTURES_DIR, 'external-custom-tool.json');
+const SECOND_TOOL_DEFINITION_FILE = path.join(FIXTURES_DIR, 'second-external-custom-tool.json');
 const EXTERNAL_ROUTING_CONFIG_FILE = path.join(FIXTURES_DIR, 'external-routing-config.json');
-const ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'endpoint-config.json');
-const EXTERNAL_TOOL_NAME = 'external_custom_tool';
-const COMPLETED_MESSAGE = 'Loopback endpoint completed the custom tool.';
+const FIRST_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'endpoint-config.json');
+const SECOND_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'second-endpoint-config.json');
+const FIRST_TOOL_NAME = 'external_custom_tool';
+const SECOND_TOOL_NAME = 'second_external_custom_tool';
+const FIRST_COMPLETED_MESSAGE = 'First loopback endpoint completed the custom tool.';
+const SECOND_COMPLETED_MESSAGE = 'Second loopback endpoint completed the custom tool.';
 
 interface CapturedEndpointCall {
   readonly method: string;
@@ -92,42 +96,75 @@ async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
 }
 
-async function writeExternalRoutingFixture(endpointUrl: string): Promise<void> {
-  await fs.writeFile(TOOL_DEFINITION_FILE, JSON.stringify({
-    name: EXTERNAL_TOOL_NAME,
-    description: 'Routes this custom-only test tool to the loopback endpoint.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        value: { type: 'string' },
-      },
-      required: ['value'],
-      additionalProperties: false,
+async function writeExternalRoutingFixture(
+  firstEndpointUrl: string,
+  secondEndpointUrl: string,
+): Promise<void> {
+  const inputSchema = {
+    type: 'object',
+    properties: {
+      value: { type: 'string' },
     },
-  }, null, 2), 'utf-8');
-  await fs.writeFile(ENDPOINT_CONFIG_FILE, JSON.stringify({
-    version: 1,
-    url: endpointUrl,
-    timeoutMs: 1_000,
-    headers: {},
-  }, null, 2), 'utf-8');
+    required: ['value'],
+    additionalProperties: false,
+  };
+  await Promise.all([
+    fs.writeFile(FIRST_TOOL_DEFINITION_FILE, JSON.stringify({
+      name: FIRST_TOOL_NAME,
+      description: 'Routes the first custom-only test tool.',
+      inputSchema,
+    }, null, 2), 'utf-8'),
+    fs.writeFile(SECOND_TOOL_DEFINITION_FILE, JSON.stringify({
+      name: SECOND_TOOL_NAME,
+      description: 'Routes the second custom-only test tool.',
+      inputSchema,
+    }, null, 2), 'utf-8'),
+    fs.writeFile(FIRST_ENDPOINT_CONFIG_FILE, JSON.stringify({
+      version: 1,
+      url: firstEndpointUrl,
+      timeoutMs: 1_000,
+      headers: {},
+    }, null, 2), 'utf-8'),
+    fs.writeFile(SECOND_ENDPOINT_CONFIG_FILE, JSON.stringify({
+      version: 1,
+      url: secondEndpointUrl,
+      timeoutMs: 1_000,
+      headers: {},
+    }, null, 2), 'utf-8'),
+  ]);
   await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
     version: 1,
-    routes: [{
-      definitionId: 'external-custom-tool',
-      httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
-      routingStrategy: {
-        'request-to-external': [{ mode: 'direct' }],
-        'response-from-external': [{ mode: 'direct' }],
+    routes: [
+      {
+        definitionId: 'external-custom-tool',
+        httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE,
+        routingStrategy: {
+          'request-to-external': [{ mode: 'direct' }],
+          'response-from-external': [{ mode: 'direct' }],
+        },
       },
-    }],
+      {
+        definitionId: 'second-external-custom-tool',
+        httpEndpointConfigFile: SECOND_ENDPOINT_CONFIG_FILE,
+        routingStrategy: {
+          'request-to-external': [{ mode: 'direct' }],
+          'response-from-external': [{ mode: 'direct' }],
+        },
+      },
+    ],
   }, null, 2), 'utf-8');
   await fs.writeFile(TOOL_CONFIG_FILE, JSON.stringify({
     version: 2,
-    definitions: [{
-      id: 'external-custom-tool',
-      toolDefinitionFile: TOOL_DEFINITION_FILE,
-    }],
+    definitions: [
+      {
+        id: 'external-custom-tool',
+        toolDefinitionFile: FIRST_TOOL_DEFINITION_FILE,
+      },
+      {
+        id: 'second-external-custom-tool',
+        toolDefinitionFile: SECOND_TOOL_DEFINITION_FILE,
+      },
+    ],
     externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
   }, null, 2), 'utf-8');
   await writeSplitConfigFixture(CONFIG_FILE, {
@@ -140,13 +177,13 @@ async function writeExternalRoutingFixture(endpointUrl: string): Promise<void> {
       logsDir: LOGS_DIR,
       tools: {
         toolConfigFile: TOOL_CONFIG_FILE,
-        enabled: [EXTERNAL_TOOL_NAME],
+        enabled: [FIRST_TOOL_NAME, SECOND_TOOL_NAME],
       },
     }],
   });
 }
 
-async function startLoopbackEndpoint(): Promise<LoopbackEndpoint> {
+async function startLoopbackEndpoint(completedMessage: string): Promise<LoopbackEndpoint> {
   const calls: CapturedEndpointCall[] = [];
   const failures: unknown[] = [];
   const sockets = new Set<Socket>();
@@ -154,7 +191,7 @@ async function startLoopbackEndpoint(): Promise<LoopbackEndpoint> {
 
   const server = createServer((request, response) => {
     requestCount++;
-    handleEndpointRequest(request, response, calls, failures);
+    handleEndpointRequest(request, response, calls, failures, completedMessage);
   });
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -185,6 +222,7 @@ function handleEndpointRequest(
   response: ServerResponse,
   calls: CapturedEndpointCall[],
   failures: unknown[],
+  completedMessage: string,
 ): void {
   const chunks: Buffer[] = [];
   request.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -201,7 +239,7 @@ function handleEndpointRequest(
         results: [{
           id: call.id,
           status: 'completed',
-          message: COMPLETED_MESSAGE,
+          message: completedMessage,
         }],
       });
       response.writeHead(200, {
@@ -251,7 +289,7 @@ async function connectMcpServer(runtime: LoadedApplicationRuntime): Promise<Conn
 async function cleanupRuntimeResources(options: {
   readonly pair: ConnectedMcpPair | undefined;
   readonly runtime: LoadedApplicationRuntime | undefined;
-  readonly endpoint: LoopbackEndpoint;
+  readonly endpoints: readonly LoopbackEndpoint[];
 }): Promise<void> {
   const errors: unknown[] = [];
   if (options.pair !== undefined) {
@@ -273,10 +311,12 @@ async function cleanupRuntimeResources(options: {
       errors.push(error);
     }
   }
-  try {
-    await options.endpoint.close();
-  } catch (error: unknown) {
-    errors.push(error);
+  for (const endpoint of options.endpoints) {
+    try {
+      await endpoint.close();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
   }
 
   if (errors.length > 0) {
@@ -285,12 +325,18 @@ async function cleanupRuntimeResources(options: {
 }
 
 async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
-  const endpoint = await startLoopbackEndpoint();
+  const [firstEndpoint, secondEndpoint] = await Promise.all([
+    startLoopbackEndpoint(FIRST_COMPLETED_MESSAGE),
+    startLoopbackEndpoint(SECOND_COMPLETED_MESSAGE),
+  ]);
   let runtime: LoadedApplicationRuntime | undefined;
   let pair: ConnectedMcpPair | undefined;
 
   try {
-    await writeExternalRoutingFixture(`${endpoint.baseUrl}/canonical-tool`);
+    await writeExternalRoutingFixture(
+      `${firstEndpoint.baseUrl}/canonical-tool`,
+      `${secondEndpoint.baseUrl}/canonical-tool`,
+    );
     runtime = loadApplicationRuntime({
       homeDir: HOME_DIR,
       workspaceId: 'selected',
@@ -299,15 +345,12 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
     pair = await connectMcpServer(runtime);
 
     const listed = await pair.client.listTools();
-    assertEqual(listed.tools.length, 1, 'tools/list should expose only the selected custom-only tool.');
-    assertEqual(
-      listed.tools[0]?.name,
-      EXTERNAL_TOOL_NAME,
-      'tools/list should expose the configured custom-only tool identity.',
-    );
+    assertEqual(listed.tools.length, 2, 'tools/list should expose both routed custom-only tools.');
+    assertEqual(listed.tools[0]?.name, FIRST_TOOL_NAME, 'The first Tool should retain definition order.');
+    assertEqual(listed.tools[1]?.name, SECOND_TOOL_NAME, 'The second Tool should retain definition order.');
 
     const invalid = await pair.client.callTool({
-      name: EXTERNAL_TOOL_NAME,
+      name: FIRST_TOOL_NAME,
       arguments: {},
     });
     assertEqual(invalid.isError, true, 'Invalid custom arguments should return an MCP tool error.');
@@ -316,39 +359,56 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
       'configured input schema',
       'Invalid custom arguments should fail before external execution.',
     );
-    assertEqual(endpoint.requestCount(), 0, 'Invalid arguments must not request the external endpoint.');
+    assertEqual(firstEndpoint.requestCount(), 0, 'Invalid arguments must not request the first endpoint.');
+    assertEqual(secondEndpoint.requestCount(), 0, 'Invalid arguments must not request the second endpoint.');
 
-    const validArguments = { value: 'from MCP client' };
-    const completed = await pair.client.callTool({
-      name: EXTERNAL_TOOL_NAME,
-      arguments: validArguments,
+    const firstArguments = { value: 'first MCP call' };
+    const firstCompleted = await pair.client.callTool({
+      name: FIRST_TOOL_NAME,
+      arguments: firstArguments,
     });
-    assertEqual(completed.isError, false, 'Canonical completed responses should become successful MCP results.');
-    assertEqual(
-      getTextContent(completed),
-      COMPLETED_MESSAGE,
-      'The canonical completed message should reach the MCP client unchanged.',
-    );
-    assertEqual(endpoint.requestCount(), 1, 'Exactly one valid tool call should request the endpoint once.');
-    assertEqual(endpoint.failures.length, 0, 'The endpoint should receive one valid canonical request.');
-    assertEqual(endpoint.calls.length, 1, 'The endpoint should parse exactly one canonical request.');
+    assertEqual(firstCompleted.isError, false, 'The first route should return a successful MCP result.');
+    assertEqual(getTextContent(firstCompleted), FIRST_COMPLETED_MESSAGE, 'The first route should use the first endpoint.');
+    assertEqual(firstEndpoint.requestCount(), 1, 'The first route should request its endpoint exactly once.');
+    assertEqual(secondEndpoint.requestCount(), 0, 'The first route must not request the second endpoint.');
 
-    const captured = endpoint.calls[0];
-    assert(captured !== undefined, 'The valid call should be captured by the loopback endpoint.');
-    assertEqual(captured.method, 'POST', 'External routing should send canonical calls with HTTP POST.');
-    const canonicalCall = captured.request.calls[0];
-    assertEqual(canonicalCall.name, EXTERNAL_TOOL_NAME, 'Canonical request should preserve the custom tool name.');
-    assertEqual(
-      JSON.stringify(canonicalCall.arguments),
-      JSON.stringify(validArguments),
-      'Canonical request should preserve the MCP tool arguments.',
-    );
-    assert(
-      /^call_[0-9a-f-]{36}$/i.test(canonicalCall.id),
-      'Canonical request should use the MCP runtime generated call ID.',
-    );
+    const secondArguments = { value: 'second MCP call' };
+    const secondCompleted = await pair.client.callTool({
+      name: SECOND_TOOL_NAME,
+      arguments: secondArguments,
+    });
+    assertEqual(secondCompleted.isError, false, 'The second route should return a successful MCP result.');
+    assertEqual(getTextContent(secondCompleted), SECOND_COMPLETED_MESSAGE, 'The second route should use the second endpoint.');
+    assertEqual(firstEndpoint.requestCount(), 1, 'The second route must not request the first endpoint.');
+    assertEqual(secondEndpoint.requestCount(), 1, 'The second route should request its endpoint exactly once.');
+
+    for (const [endpoint, toolName, expectedArguments] of [
+      [firstEndpoint, FIRST_TOOL_NAME, firstArguments],
+      [secondEndpoint, SECOND_TOOL_NAME, secondArguments],
+    ] as const) {
+      assertEqual(endpoint.failures.length, 0, `${toolName} endpoint should receive valid canonical input.`);
+      assertEqual(endpoint.calls.length, 1, `${toolName} endpoint should receive exactly one request.`);
+      const captured = endpoint.calls[0];
+      assert(captured !== undefined, `${toolName} call should be captured by its endpoint.`);
+      assertEqual(captured.method, 'POST', 'External routing should use HTTP POST.');
+      const canonicalCall = captured.request.calls[0];
+      assertEqual(canonicalCall.name, toolName, 'Canonical request should use the Tool definition MCP name.');
+      assertEqual(
+        JSON.stringify(canonicalCall.arguments),
+        JSON.stringify(expectedArguments),
+        'Canonical request should preserve the matching MCP arguments.',
+      );
+      assert(
+        /^call_[0-9a-f-]{36}$/i.test(canonicalCall.id),
+        'Canonical request should use the MCP runtime generated call ID.',
+      );
+    }
   } finally {
-    await cleanupRuntimeResources({ pair, runtime, endpoint });
+    await cleanupRuntimeResources({
+      pair,
+      runtime,
+      endpoints: [firstEndpoint, secondEndpoint],
+    });
   }
 }
 
@@ -358,7 +418,7 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'routes a custom-only tool through the loopback endpoint', run: testExternalRoutingThroughRuntimeAndMcp },
+      { name: 'routes two custom-only tools through independent loopback endpoints', run: testExternalRoutingThroughRuntimeAndMcp },
     ],
   });
 }
