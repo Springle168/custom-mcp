@@ -105,15 +105,15 @@ Processor stage 要求配置 `processorConfigFile`，并且名称必须存在于
 
 ### 配置示例
 
-`examples/` 提供 direct / direct route 模板：
+`examples/` 提供一组完整配置示例，包含 direct route 和经 Processor 编解码的 route：
 
 - [Tool config](../examples/tool-config.example.json)
-- [custom-only Tool definition](../examples/tool-definition.example.json)
+- [direct custom-only Tool definition](../examples/tool-definition.example.json)
+- [Processor custom-only Tool definition](../examples/processed-tool-definition.example.json)
 - [External routing config](../examples/external-routing-config.example.json)
 - [Processor registry](../examples/processor-config.example.json)
-- [HTTP endpoint config](../examples/http-endpoint-config.example.json)
-
-模板中的 `external_echo` 是 custom-only definition，`read_file` 是 built-in override。route 绑定 `external-echo` definition reference id，而 canonical request 使用 `external_echo` Tool name。使用模板前应替换本地绝对路径和 endpoint URL。
+- [direct HTTP endpoint config](../examples/http-endpoint-config.example.json)
+- [Processor HTTP endpoint config](../examples/processed-http-endpoint-config.example.json)
 
 ---
 

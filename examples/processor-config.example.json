@@ -1,4 +1,31 @@
 {
   "version": 2,
-  "processors": []
+  "processors": [
+    {
+      "name": "encode-request",
+      "executable": {
+        "resolution": "path-search",
+        "command": "python"
+      },
+      "arguments": [
+        "C:/Users/username/.custom-mcp/processors/upstream-codec.py",
+        "encode-request"
+      ],
+      "workingDirectory": "C:/Users/username/.custom-mcp/processors",
+      "timeoutMs": 30000
+    },
+    {
+      "name": "decode-response",
+      "executable": {
+        "resolution": "absolute-path",
+        "path": "C:/Program Files/nodejs/node.exe"
+      },
+      "arguments": [
+        "C:/Users/username/.custom-mcp/processors/upstream-codec.mjs",
+        "decode-response"
+      ],
+      "workingDirectory": "C:/Users/username/.custom-mcp/processors",
+      "timeoutMs": 30000
+    }
+  ]
 }
