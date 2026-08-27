@@ -1,4 +1,5 @@
 import { ChildProcess } from 'node:child_process';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -7,6 +8,7 @@ import {
   ProcessorRunner,
   type ProcessorInvocation,
   type ProcessorInvocationEnvironment,
+  type ProcessorRunExchange,
   type ProcessorRunFailure,
   type ProcessorRunOutcome,
   type ProcessorRunSuccess,
@@ -22,6 +24,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'processor-runner');
+const CONTROLLED_TIMEOUT_MS = 60_000;
+const READINESS_WATCHDOG_MS = 15_000;
+const READINESS_PAYLOAD = 'ready\n';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -41,10 +46,16 @@ function fixtureInvocation(
   fixtureName: string,
   environment: ProcessorInvocationEnvironment,
   options: Partial<Pick<ProcessorInvocation, 'stdin' | 'timeoutMs' | 'signal'>> = {},
+  fixtureArguments: readonly string[] = [],
 ): ProcessorInvocation {
   return {
     command: process.execPath,
-    arguments: ['--import', 'tsx', path.join(FIXTURES_DIR, fixtureName)],
+    arguments: [
+      '--import',
+      'tsx',
+      path.join(FIXTURES_DIR, fixtureName),
+      ...fixtureArguments,
+    ],
     workingDirectory: PROJECT_ROOT,
     timeoutMs: 3_000,
     stdin: encoder.encode('processor input'),
@@ -74,6 +85,196 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+interface ReadinessServer {
+  readonly port: number;
+  readonly ready: Promise<void>;
+  dispose(): Promise<void>;
+}
+
+async function createReadinessServer(): Promise<ReadinessServer> {
+  const sockets = new Set<net.Socket>();
+  let connectionAccepted = false;
+  let readySettled = false;
+  let resolveReady: (() => void) | undefined;
+  let rejectReady: ((error: Error) => void) | undefined;
+  let watchdog: NodeJS.Timeout | undefined;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  // A setup failure can dispose the helper before the test reaches `await ready`.
+  void ready.catch(() => {});
+
+  const settleReady = (error?: Error): void => {
+    if (readySettled) {
+      return;
+    }
+
+    readySettled = true;
+    clearTimeout(watchdog);
+    watchdog = undefined;
+    if (error) {
+      rejectReady?.(error);
+    } else {
+      resolveReady?.();
+    }
+    resolveReady = undefined;
+    rejectReady = undefined;
+  };
+
+  const server = net.createServer((socket) => {
+    if (connectionAccepted) {
+      socket.destroy();
+      settleReady(new Error('Readiness server received more than one connection.'));
+      return;
+    }
+
+    connectionAccepted = true;
+    sockets.add(socket);
+    socket.setEncoding('utf8');
+    let payload = '';
+
+    socket.on('data', (chunk: string) => {
+      payload += chunk;
+      if (!READINESS_PAYLOAD.startsWith(payload)) {
+        settleReady(new Error(`Readiness server received invalid payload: ${JSON.stringify(payload)}`));
+        socket.destroy();
+        return;
+      }
+
+      if (payload === READINESS_PAYLOAD) {
+        settleReady();
+        socket.end();
+      }
+    });
+    socket.once('end', () => {
+      if (!readySettled) {
+        settleReady(new Error('Readiness connection ended before sending the complete payload.'));
+      }
+    });
+    socket.once('error', (error) => {
+      settleReady(new Error(`Readiness connection failed: ${error.message}`));
+    });
+    socket.once('close', () => {
+      sockets.delete(socket);
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const onListenError = (error: Error): void => {
+      reject(error);
+    };
+    server.once('error', onListenError);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', onListenError);
+      resolve();
+    });
+  });
+  server.on('error', (error) => {
+    settleReady(new Error(`Readiness server failed: ${error.message}`));
+  });
+
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    server.close();
+    throw new Error('Readiness server did not expose a loopback TCP port.');
+  }
+
+  watchdog = setTimeout(() => {
+    settleReady(new Error(
+      `Timed out after ${READINESS_WATCHDOG_MS}ms waiting for descendant readiness.`,
+    ));
+  }, READINESS_WATCHDOG_MS);
+
+  let disposed = false;
+  return {
+    port: address.port,
+    ready,
+    async dispose(): Promise<void> {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      settleReady(new Error('Readiness server was disposed before readiness completed.'));
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      sockets.clear();
+
+      if (!server.listening) {
+        return;
+      }
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      });
+    },
+  };
+}
+
+interface ControlledTimeoutCapture {
+  assertCaptured(): void;
+  restore(): void;
+  trigger(): void;
+}
+
+function installControlledTimeoutCapture(delayMs: number): ControlledTimeoutCapture {
+  const originalSetTimeout = globalThis.setTimeout;
+  let capturedCallback: (() => void) | undefined;
+  let restored = false;
+  let triggered = false;
+
+  const wrappedSetTimeout = ((
+    callback: (...args: unknown[]) => void,
+    delay?: number,
+    ...args: unknown[]
+  ): NodeJS.Timeout => {
+    if (delay === delayMs) {
+      if (capturedCallback) {
+        throw new Error(`More than one controlled ${delayMs}ms timeout was registered.`);
+      }
+      capturedCallback = () => {
+        callback(...args);
+      };
+    }
+
+    return Reflect.apply(originalSetTimeout, globalThis, [callback, delay, ...args]) as NodeJS.Timeout;
+  }) as typeof globalThis.setTimeout;
+
+  globalThis.setTimeout = wrappedSetTimeout;
+
+  return {
+    assertCaptured(): void {
+      assert(capturedCallback !== undefined, `Expected one controlled ${delayMs}ms timeout registration.`);
+    },
+    restore(): void {
+      if (restored) {
+        return;
+      }
+      restored = true;
+      if (globalThis.setTimeout !== wrappedSetTimeout) {
+        throw new Error('Controlled timeout wrapper was unexpectedly replaced.');
+      }
+      globalThis.setTimeout = originalSetTimeout;
+    },
+    trigger(): void {
+      if (!capturedCallback) {
+        throw new Error(`Controlled ${delayMs}ms timeout was not registered.`);
+      }
+      if (triggered) {
+        throw new Error(`Controlled ${delayMs}ms timeout was already triggered.`);
+      }
+      triggered = true;
+      capturedCallback();
+    },
+  };
 }
 
 function requireSuccess(outcome: ProcessorRunOutcome): ProcessorRunSuccess {
@@ -270,24 +471,40 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   await stdioRunner.close();
 }
 
-async function testDrainsDescendantHeldStdioWithBoundedDegradedCleanup(): Promise<void> {
+async function testTriggersTimeoutAfterDescendantReportsHeldStdio(): Promise<void> {
+  const readiness = await createReadinessServer();
   const originalUnref = ChildProcess.prototype.unref;
   let unrefCalls = 0;
   ChildProcess.prototype.unref = function recordUnref(): void {
     unrefCalls++;
     originalUnref.call(this);
   };
+  const runner = new ProcessorRunner({
+    terminationGracePeriodMs: 50,
+    forceTerminationGracePeriodMs: 50,
+  });
 
   try {
-    const runner = new ProcessorRunner({
-      terminationGracePeriodMs: 50,
-      forceTerminationGracePeriodMs: 50,
-    });
-    const exchange = runner.run(
-      fixtureInvocation('spawn-descendant-holding-stdio.ts', requestEnvironment(), {
-        timeoutMs: 350,
-      }),
-    );
+    // Capture only the synchronous wall-clock registration; every later timer remains native.
+    const timeoutCapture = installControlledTimeoutCapture(CONTROLLED_TIMEOUT_MS);
+    let exchange: ProcessorRunExchange;
+    try {
+      exchange = runner.run(
+        fixtureInvocation(
+          'spawn-descendant-holding-stdio.ts',
+          requestEnvironment(),
+          { timeoutMs: CONTROLLED_TIMEOUT_MS },
+          [`--ready-port=${readiness.port}`],
+        ),
+      );
+      timeoutCapture.assertCaptured();
+    } finally {
+      timeoutCapture.restore();
+    }
+
+    // The fixture reports only after its detached descendant has inherited the output pipes.
+    await readiness.ready;
+    timeoutCapture.trigger();
 
     requireFailure(
       await exchange.settled,
@@ -324,8 +541,16 @@ async function testDrainsDescendantHeldStdioWithBoundedDegradedCleanup(): Promis
     ).settled, 'runner_closed');
   } finally {
     ChildProcess.prototype.unref = originalUnref;
-    // The descendant self-terminates after 600ms even when its inherited pipes are detached.
-    await delay(750);
+    try {
+      await readiness.dispose();
+    } finally {
+      try {
+        await runner.close();
+      } finally {
+        // The descendant self-terminates after 600ms even when its inherited pipes are detached.
+        await delay(750);
+      }
+    }
   }
 }
 
@@ -461,7 +686,7 @@ async function main(): Promise<void> {
       { name: 'rejects oversize stdin before admission', run: testRejectsOversizeStdinWithoutStartingAProcess },
       { name: 'terminates Processors that exceed stdout limit', run: testTerminatesOnOversizeStdout },
       { name: 'classifies spawn, exit, signal, and stdio failures', run: testClassifiesSpawnExitSignalAndStdioFailures },
-      { name: 'bounds descendant-held stdio cleanup without leaving an orphan', run: testDrainsDescendantHeldStdioWithBoundedDegradedCleanup },
+      { name: 'triggers timeout after descendant reports held stdio', run: testTriggersTimeoutAfterDescendantReportsHeldStdio },
       { name: 'handles timeout, cancellation, and bounded degraded cleanup', run: testHandlesTimeoutCancellationAndBoundedDegradedCleanup },
       { name: 'waits for complete output and closes idempotently', run: testWaitsForCompleteOutputAndClosesIdempotently },
     ],

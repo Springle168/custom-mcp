@@ -92,7 +92,7 @@ Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny
 
 | 字段 | 类型 | 说明 |
 |-|-|-|
-| `toolConfigFile` | string | 可选；指向 version 1 tool config 的本地绝对路径，格式、加载规则与示例见 [自定义 Tool 配置](tool-config.md)。 |
+| `toolConfigFile` | string | 可选；指向 Tool config v2 的本地绝对路径，格式、加载规则与示例见 [自定义 Tool 配置](tool-config.md)。 |
 | `enabled` | string[] | 可选；只暴露列出的 effective tool names。 |
 | `disabled` | string[] | 可选；暴露未列出的 effective tool names。 |
 
