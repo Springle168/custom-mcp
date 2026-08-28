@@ -334,6 +334,62 @@ async function testCompileFailureDoesNotUseOldTestReport() {
   }
 }
 
+async function testConcurrentUnitTestCallsAreSerializedPerWorkspace() {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
+  );
+  await writeFile(
+    path.join(workspaceRoot, 'gradlew.bat'),
+    [
+      '@echo off',
+      'if exist active-build.txt (',
+      '  1>&2 echo error: overlapping test build',
+      '  exit /b 1',
+      ')',
+      '> active-build.txt echo active',
+      'powershell.exe -NoProfile -Command "Start-Sleep -Milliseconds 250"',
+      'del active-build.txt',
+      '1>&2 echo FAILURE: Build failed with an exception.',
+      '1>&2 echo * What went wrong:',
+      "1>&2 echo Execution failed for task ':app:testDebugUnitTest'.",
+      'exit /b 1',
+    ].join('\r\n'),
+    'utf8',
+  );
+
+  try {
+    const context = createTestToolRuntimeContext({
+      rootDir: PROJECT_ROOT,
+      android: {
+        workspaceRoot,
+        javaHome: process.env.JAVA_HOME || 'C:/AndroidStudio/jbr',
+        buildTimeoutMs: 5000,
+        maxErrorBlockChars: 2500,
+        maxLogTailChars: 4000,
+      },
+    });
+    const [first, second] = await Promise.all([
+      androidTestDebugUnitTestTool.handler({}, context),
+      androidTestDebugUnitTestTool.handler({}, context),
+    ]);
+
+    assertEqual(first.isError, true, 'First simulated build should fail');
+    assertEqual(second.isError, true, 'Second simulated build should fail');
+    assertEqual(
+      getResultText(first).includes('overlapping test build'),
+      false,
+      'First build should not observe another report-attribution window',
+    );
+    assertEqual(
+      getResultText(second).includes('overlapping test build'),
+      false,
+      'Second build should start only after the first attribution window closes',
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing Android build tools',
@@ -347,6 +403,7 @@ async function main(): Promise<void> {
       { name: 'unit test failure uses generated XML report', run: testUnitTestFailureUsesGeneratedXmlReport },
       { name: 'failed test task without report', run: testFailedTestTaskWithoutReportIsExplicit },
       { name: 'compile failure ignores old test report', run: testCompileFailureDoesNotUseOldTestReport },
+      { name: 'concurrent test calls are serialized', run: testConcurrentUnitTestCallsAreSerializedPerWorkspace },
     ],
   });
 }

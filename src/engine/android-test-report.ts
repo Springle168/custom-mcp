@@ -80,7 +80,13 @@ export function parseAndroidTestReports(
 
   for (const file of orderedFiles) {
     try {
-      SyntaxValidator.validate(file.xml);
+      SyntaxValidator.validate(file.xml, {
+        multipleRoots: false,
+        docType: {
+          maxEntityCount: 50,
+          maxEntitySize: 1000,
+        },
+      });
       const parsed = parser.parse(file.xml) as unknown;
       const suites = extractSuites(parsed);
       if (suites.length === 0) {

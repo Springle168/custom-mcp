@@ -103,12 +103,54 @@ async function testIgnoresUnchangedAndExcludedReports() {
   }
 }
 
+async function testRejectsExcessiveReportCandidates() {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), 'custom-mcp-test-reports-'),
+  );
+  const reportDir = path.join(
+    workspaceRoot,
+    'app',
+    'build',
+    'test-results',
+    'testDebugUnitTest',
+  );
+
+  try {
+    await mkdir(reportDir, { recursive: true });
+    await Promise.all(
+      Array.from({ length: 1001 }, (_, index) =>
+        writeFile(
+          path.join(reportDir, `TEST-${String(index).padStart(4, '0')}.xml`),
+          '<testsuite/>',
+          'utf8',
+        ),
+      ),
+    );
+
+    let rejected = false;
+    try {
+      await snapshotAndroidTestReportFiles(workspaceRoot);
+    } catch {
+      rejected = true;
+    }
+
+    assertEqual(
+      rejected,
+      true,
+      'Should stop report attribution when the candidate budget is exceeded',
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing Android test report file discovery',
     tests: [
       { name: 'new and changed reports', run: testDetectsNewAndChangedReports },
       { name: 'unchanged and excluded reports', run: testIgnoresUnchangedAndExcludedReports },
+      { name: 'report candidate budget', run: testRejectsExcessiveReportCandidates },
     ],
   });
 }
