@@ -4,8 +4,8 @@ export const TOOL_NAMES = Object.freeze([
   'read_many_files',
   'read_file',
   'ask_user',
-  'android.assembleDebug',
-  'android.testDebugUnitTest',
+  'android_assembleDebug',
+  'android_testDebugUnitTest',
 ] as const);
 
 export type ToolName = (typeof TOOL_NAMES)[number];

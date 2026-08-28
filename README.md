@@ -9,7 +9,7 @@
 - `write_file`：写入完整文本文件。
 - `replace_text`：通过精确文本或正则表达式执行局部替换。
 - `ask_user`：在工具调用过程中向用户提问并收集回答。
-- `android.assembleDebug` / `android.testDebugUnitTest`：执行 Android 项目的 Debug 构建和单元测试。
+- `android_assembleDebug` / `android_testDebugUnitTest`：执行 Android 项目的 Debug 构建和单元测试。
 
 完整工具列表和参数说明见 [docs/TOOLS.md](docs/TOOLS.md) 与 [docs/tools/](docs/tools/)。
 

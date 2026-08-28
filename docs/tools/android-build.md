@@ -4,8 +4,8 @@
 
 本项目提供两个固定边界的 Android 构建工具：
 
-- `android.assembleDebug`
-- `android.testDebugUnitTest`
+- `android_assembleDebug`
+- `android_testDebugUnitTest`
 
 它们都在固定的 Android 工作目录中执行 `gradlew.bat`，只开放极少量参数，目标是让 AI 能稳定调用，而不是把它扩展成通用命令执行器。
 
