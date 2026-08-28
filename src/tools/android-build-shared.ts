@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import {
   parseAndroidTestReports,
@@ -24,6 +25,7 @@ const ALLOWED_KEYS = new Set([
   'offline',
   'includeLogTail',
 ]);
+const androidTestReportLocks = new Map<string, Promise<void>>();
 
 export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
   type: 'object' as const,
@@ -164,26 +166,64 @@ export async function executeAndroidGradleTask(
     return textErrorResult(runtimeConfig.error);
   }
 
+  if (task === 'testDebugUnitTest') {
+    return withAndroidTestReportLock(
+      runtimeConfig.value.workspaceRoot,
+      () => executeAndroidGradleTaskWithConfig(task, args, runtimeConfig.value),
+    );
+  }
+
+  return executeAndroidGradleTaskWithConfig(task, args, runtimeConfig.value);
+}
+
+async function executeAndroidGradleTaskWithConfig(
+  task: AndroidGradleTask,
+  args: Record<string, unknown>,
+  runtimeConfig: AndroidGradleRuntimeConfig,
+): Promise<ToolCallResult> {
   const reportSnapshot =
     task === 'testDebugUnitTest'
-      ? await trySnapshotAndroidTestReports(runtimeConfig.value.workspaceRoot)
+      ? await trySnapshotAndroidTestReports(runtimeConfig.workspaceRoot)
       : null;
   const result = await runAndroidGradle(
     task,
-    runtimeConfig.value,
+    runtimeConfig,
     toRunAndroidGradleOptions(args),
   );
   const enhancement =
     task === 'testDebugUnitTest' && !result.success
       ? await buildTestFailureEnhancement(
-          runtimeConfig.value.workspaceRoot,
+          runtimeConfig.workspaceRoot,
           reportSnapshot,
           result.failedTask,
-          runtimeConfig.value.maxErrorBlockChars,
+          runtimeConfig.maxErrorBlockChars,
         )
       : undefined;
 
   return formatAndroidGradleToolResult(result, enhancement);
+}
+
+async function withAndroidTestReportLock<T>(
+  workspaceRoot: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = path.resolve(workspaceRoot).toLowerCase();
+  const previousLock = androidTestReportLocks.get(key) ?? Promise.resolve();
+  let releaseLock: () => void;
+  const currentLock = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  androidTestReportLocks.set(key, currentLock);
+
+  await previousLock;
+  try {
+    return await fn();
+  } finally {
+    releaseLock!();
+    if (androidTestReportLocks.get(key) === currentLock) {
+      androidTestReportLocks.delete(key);
+    }
+  }
 }
 
 export function formatAndroidGradleToolResult(

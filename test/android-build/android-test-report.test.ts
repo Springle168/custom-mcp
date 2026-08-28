@@ -100,6 +100,22 @@ function testMalformedReportFailsSafely() {
   assertEqual(result.firstErrorBlock, null, 'Should not invent a test diagnosis');
 }
 
+function testMultipleRootReportFailsSafely() {
+  const result = parseAndroidTestReports([
+    {
+      relativePath: 'app/build/test-results/testDebugUnitTest/TEST-broken.xml',
+      xml: '<testsuite tests="1"/><testsuite tests="1"/>',
+    },
+  ]);
+
+  assertEqual(
+    result.summary.status,
+    'parse_failed',
+    'Should reject XML documents with multiple root elements',
+  );
+  assertEqual(result.firstErrorBlock, null, 'Should not aggregate malformed XML');
+}
+
 function testFailureDetailsAndFirstBlockAreBounded() {
   const longMessage = 'x'.repeat(2000);
   const result = parseAndroidTestReports(
@@ -132,6 +148,7 @@ async function main(): Promise<void> {
       { name: 'single failure report', run: testSingleFailureReport },
       { name: 'multiple reports and detail limit', run: testMultipleReportsAndDetailLimit },
       { name: 'malformed report fails safely', run: testMalformedReportFailsSafely },
+      { name: 'multiple XML roots fail safely', run: testMultipleRootReportFailsSafely },
       { name: 'failure detail bounds', run: testFailureDetailsAndFirstBlockAreBounded },
     ],
   });

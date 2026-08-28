@@ -1,10 +1,11 @@
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat, open } from 'node:fs/promises';
 import path from 'node:path';
-import { glob } from 'glob';
+import { globIterate } from 'glob';
 import type { AndroidTestReportFile } from '../engine/android-test-report.js';
 
 const TEST_REPORT_PATTERN =
   '**/test-results/testDebugUnitTest/TEST-*.xml';
+const MAX_REPORT_FILES = 1000;
 const MAX_REPORT_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_REPORT_BYTES = 10 * 1024 * 1024;
 
@@ -65,20 +66,23 @@ export async function readChangedAndroidTestReportFiles(
     }
 
     try {
-      const xml = await readFile(absolutePath, 'utf8');
-      const actualBytes = Buffer.byteLength(xml, 'utf8');
-      if (
-        actualBytes > MAX_REPORT_FILE_BYTES ||
-        totalBytes + actualBytes > MAX_TOTAL_REPORT_BYTES
-      ) {
+      const remainingBytes = Math.min(
+        MAX_REPORT_FILE_BYTES,
+        MAX_TOTAL_REPORT_BYTES - totalBytes,
+      );
+      const content = await readBoundedReportFile(
+        absolutePath,
+        remainingBytes,
+      );
+      if (!content) {
         unreadableFileCount += 1;
         continue;
       }
 
-      totalBytes += actualBytes;
+      totalBytes += content.bytes;
       files.push({
         relativePath: toPortableRelativePath(workspaceRoot, absolutePath),
-        xml,
+        xml: content.xml,
       });
     } catch {
       unreadableFileCount += 1;
@@ -98,7 +102,7 @@ export async function readChangedAndroidTestReportFiles(
 
 async function discoverReportPaths(workspaceRoot: string): Promise<string[]> {
   const resolvedRoot = path.resolve(workspaceRoot);
-  const matches = await glob(TEST_REPORT_PATTERN, {
+  const matches = globIterate(TEST_REPORT_PATTERN, {
     cwd: resolvedRoot,
     absolute: true,
     nodir: true,
@@ -108,7 +112,7 @@ async function discoverReportPaths(workspaceRoot: string): Promise<string[]> {
   });
   const safePaths: string[] = [];
 
-  for (const match of matches) {
+  for await (const match of matches) {
     const absolutePath = path.resolve(match);
     if (!isWithinRoot(resolvedRoot, absolutePath)) {
       continue;
@@ -122,11 +126,61 @@ async function discoverReportPaths(workspaceRoot: string): Promise<string[]> {
     } catch {
       // Build outputs may disappear while Gradle replaces a report set.
     }
+
+    if (safePaths.length > MAX_REPORT_FILES) {
+      throw new Error(
+        `Android test report candidate limit exceeded (${MAX_REPORT_FILES}).`,
+      );
+    }
   }
 
   return [...new Set(safePaths)].sort((left, right) =>
     left.localeCompare(right, 'en'),
   );
+}
+
+async function readBoundedReportFile(
+  absolutePath: string,
+  maxBytes: number,
+): Promise<{ xml: string; bytes: number } | null> {
+  if (maxBytes <= 0) {
+    return null;
+  }
+
+  const file = await open(absolutePath, 'r');
+  try {
+    const fileStats = await file.stat();
+    if (!fileStats.isFile() || fileStats.size > maxBytes) {
+      return null;
+    }
+
+    const buffer = Buffer.allocUnsafe(maxBytes + 1);
+    let bytesRead = 0;
+
+    while (bytesRead < buffer.length) {
+      const result = await file.read(
+        buffer,
+        bytesRead,
+        buffer.length - bytesRead,
+        bytesRead,
+      );
+      if (result.bytesRead === 0) {
+        break;
+      }
+      bytesRead += result.bytesRead;
+    }
+
+    if (bytesRead > maxBytes) {
+      return null;
+    }
+
+    return {
+      xml: buffer.subarray(0, bytesRead).toString('utf8'),
+      bytes: bytesRead,
+    };
+  } finally {
+    await file.close();
+  }
 }
 
 async function readFingerprint(
