@@ -25,7 +25,10 @@ const ALLOWED_KEYS = new Set([
   'offline',
   'includeLogTail',
 ]);
-const androidTestReportLocks = new Map<string, Promise<void>>();
+const androidTestReportAttributions = new Map<
+  string,
+  AndroidTestReportAttributionState
+>();
 
 export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
   type: 'object' as const,
@@ -78,6 +81,17 @@ export type AndroidGradleToolFailure = {
 interface AndroidGradleFailureEnhancement {
   firstErrorBlock?: string;
   testReport?: TestReportSummary;
+}
+
+interface AndroidTestReportAttributionState {
+  activeCalls: number;
+  overlapped: boolean;
+}
+
+interface AndroidTestReportAttributionTicket {
+  key: string;
+  state: AndroidTestReportAttributionState;
+  startedExclusive: boolean;
 }
 
 export function validateAndroidGradleToolArgs(
@@ -167,10 +181,19 @@ export async function executeAndroidGradleTask(
   }
 
   if (task === 'testDebugUnitTest') {
-    return withAndroidTestReportLock(
+    const attribution = beginAndroidTestReportAttribution(
       runtimeConfig.value.workspaceRoot,
-      () => executeAndroidGradleTaskWithConfig(task, args, runtimeConfig.value),
     );
+    try {
+      return await executeAndroidGradleTaskWithConfig(
+        task,
+        args,
+        runtimeConfig.value,
+        attribution,
+      );
+    } finally {
+      finishAndroidTestReportAttribution(attribution);
+    }
   }
 
   return executeAndroidGradleTaskWithConfig(task, args, runtimeConfig.value);
@@ -180,9 +203,10 @@ async function executeAndroidGradleTaskWithConfig(
   task: AndroidGradleTask,
   args: Record<string, unknown>,
   runtimeConfig: AndroidGradleRuntimeConfig,
+  attribution?: AndroidTestReportAttributionTicket,
 ): Promise<ToolCallResult> {
   const reportSnapshot =
-    task === 'testDebugUnitTest'
+    task === 'testDebugUnitTest' && attribution?.startedExclusive === true
       ? await trySnapshotAndroidTestReports(runtimeConfig.workspaceRoot)
       : null;
   const result = await runAndroidGradle(
@@ -190,8 +214,10 @@ async function executeAndroidGradleTaskWithConfig(
     runtimeConfig,
     toRunAndroidGradleOptions(args),
   );
-  const enhancement =
-    task === 'testDebugUnitTest' && !result.success
+  const candidateEnhancement =
+    task === 'testDebugUnitTest' &&
+    !result.success &&
+    (!attribution || canUseAndroidTestReportAttribution(attribution))
       ? await buildTestFailureEnhancement(
           runtimeConfig.workspaceRoot,
           reportSnapshot,
@@ -199,30 +225,56 @@ async function executeAndroidGradleTaskWithConfig(
           runtimeConfig.maxErrorBlockChars,
         )
       : undefined;
+  const enhancement =
+    attribution && canUseAndroidTestReportAttribution(attribution)
+      ? candidateEnhancement
+      : undefined;
 
   return formatAndroidGradleToolResult(result, enhancement);
 }
 
-async function withAndroidTestReportLock<T>(
+function beginAndroidTestReportAttribution(
   workspaceRoot: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+): AndroidTestReportAttributionTicket {
   const key = path.resolve(workspaceRoot).toLowerCase();
-  const previousLock = androidTestReportLocks.get(key) ?? Promise.resolve();
-  let releaseLock: () => void;
-  const currentLock = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
-  androidTestReportLocks.set(key, currentLock);
+  const existing = androidTestReportAttributions.get(key);
+  if (existing) {
+    existing.activeCalls += 1;
+    existing.overlapped = true;
+    return {
+      key,
+      state: existing,
+      startedExclusive: false,
+    };
+  }
 
-  await previousLock;
-  try {
-    return await fn();
-  } finally {
-    releaseLock!();
-    if (androidTestReportLocks.get(key) === currentLock) {
-      androidTestReportLocks.delete(key);
-    }
+  const state: AndroidTestReportAttributionState = {
+    activeCalls: 1,
+    overlapped: false,
+  };
+  androidTestReportAttributions.set(key, state);
+  return {
+    key,
+    state,
+    startedExclusive: true,
+  };
+}
+
+function canUseAndroidTestReportAttribution(
+  ticket: AndroidTestReportAttributionTicket,
+): boolean {
+  return ticket.startedExclusive && !ticket.state.overlapped;
+}
+
+function finishAndroidTestReportAttribution(
+  ticket: AndroidTestReportAttributionTicket,
+): void {
+  ticket.state.activeCalls -= 1;
+  if (
+    ticket.state.activeCalls === 0 &&
+    androidTestReportAttributions.get(ticket.key) === ticket.state
+  ) {
+    androidTestReportAttributions.delete(ticket.key);
   }
 }
 
