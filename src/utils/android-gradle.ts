@@ -21,6 +21,7 @@ export interface RunAndroidGradleOptions {
   quiet?: boolean;
   stacktrace?: boolean;
   offline?: boolean;
+  includeLogTail?: boolean;
 }
 
 export interface RunAndroidGradleResult extends ParsedAndroidGradleOutput {
@@ -61,6 +62,7 @@ export async function runAndroidGradle(
           'error: This MCP server currently supports Windows only because it runs gradlew.bat.',
       },
       runtimeConfig,
+      options.includeLogTail === true,
     );
   }
 
@@ -81,6 +83,7 @@ export async function runAndroidGradle(
         combinedOutput: message,
       },
       runtimeConfig,
+      options.includeLogTail === true,
     );
   }
 
@@ -135,6 +138,7 @@ export async function runAndroidGradle(
             combinedOutput,
           },
           runtimeConfig,
+          options.includeLogTail === true,
         ),
       );
     };
@@ -194,7 +198,7 @@ function buildGradleArgs(
 ): string[] {
   const args: string[] = [task];
 
-  if (options.quiet === true) {
+  if (options.quiet !== false) {
     args.push('-q');
   }
 
@@ -206,7 +210,7 @@ function buildGradleArgs(
     args.push('--offline');
   }
 
-  args.push('--no-daemon');
+  args.push('--no-daemon', '--console=plain');
 
   return args;
 }
@@ -284,6 +288,7 @@ function buildResult(
     combinedOutput: string;
   },
   runtimeConfig: AndroidGradleRuntimeConfig,
+  includeLogTail: boolean,
 ): RunAndroidGradleResult {
   const parsed = parseAndroidGradleOutput({
     exitCode: input.exitCode,
@@ -292,6 +297,7 @@ function buildResult(
     combinedOutput: input.combinedOutput,
     maxErrorBlockChars: runtimeConfig.maxErrorBlockChars,
     maxLogTailChars: runtimeConfig.maxLogTailChars,
+    includeLogTail,
   });
 
   return {

@@ -1,6 +1,15 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import {
+  parseAndroidTestReports,
+  type TestReportSummary,
+} from '../engine/android-test-report.js';
 import type { ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
+import {
+  readChangedAndroidTestReportFiles,
+  snapshotAndroidTestReportFiles,
+  type AndroidTestReportSnapshot,
+} from '../utils/android-test-report-files.js';
 import {
   runAndroidGradle,
   type AndroidGradleRuntimeConfig,
@@ -9,14 +18,19 @@ import {
   type RunAndroidGradleResult,
 } from '../utils/android-gradle.js';
 
-const ALLOWED_KEYS = new Set(['quiet', 'stacktrace', 'offline']);
+const ALLOWED_KEYS = new Set([
+  'quiet',
+  'stacktrace',
+  'offline',
+  'includeLogTail',
+]);
 
 export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
   type: 'object' as const,
   properties: {
     quiet: {
       type: 'boolean',
-      description: 'Reduces Gradle output when true. Defaults to false.',
+      description: 'Reduces Gradle output when true. Defaults to true.',
     },
     stacktrace: {
       type: 'boolean',
@@ -27,6 +41,11 @@ export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
       description:
         "Uses Gradle's offline dependency resolution when true; required dependencies must already be cached. Defaults to false.",
     },
+    includeLogTail: {
+      type: 'boolean',
+      description:
+        'Includes a bounded tail of the normalized raw Gradle output on failure. Defaults to false.',
+    },
   },
   additionalProperties: false,
 };
@@ -35,6 +54,7 @@ export interface AndroidGradleToolArgs {
   quiet?: boolean;
   stacktrace?: boolean;
   offline?: boolean;
+  includeLogTail?: boolean;
 }
 
 type ToolAndroidConfig = NonNullable<ToolRuntimeContext['android']>;
@@ -47,16 +67,23 @@ export type AndroidGradleToolFailure = {
   durationMs: number;
   timedOut: boolean;
   summary: 'BUILD FAILED';
+  failedTask: string | null;
   firstErrorBlock: string | null;
-  logTail: string | null;
+  logTail?: string;
+  testReport?: TestReportSummary;
 };
+
+interface AndroidGradleFailureEnhancement {
+  firstErrorBlock?: string;
+  testReport?: TestReportSummary;
+}
 
 export function validateAndroidGradleToolArgs(
   args: Record<string, unknown>,
 ): string | null {
   for (const key of Object.keys(args)) {
     if (!ALLOWED_KEYS.has(key)) {
-      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace, offline.`;
+      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace, offline, includeLogTail.`;
     }
   }
 
@@ -70,6 +97,13 @@ export function validateAndroidGradleToolArgs(
 
   if (args.offline !== undefined && typeof args.offline !== 'boolean') {
     return "The 'offline' parameter must be a boolean.";
+  }
+
+  if (
+    args.includeLogTail !== undefined &&
+    typeof args.includeLogTail !== 'boolean'
+  ) {
+    return "The 'includeLogTail' parameter must be a boolean.";
   }
 
   return null;
@@ -90,6 +124,10 @@ export function toRunAndroidGradleOptions(
 
   if (typeof args.offline === 'boolean') {
     options.offline = args.offline;
+  }
+
+  if (typeof args.includeLogTail === 'boolean') {
+    options.includeLogTail = args.includeLogTail;
   }
 
   return options;
@@ -126,17 +164,31 @@ export async function executeAndroidGradleTask(
     return textErrorResult(runtimeConfig.error);
   }
 
+  const reportSnapshot =
+    task === 'testDebugUnitTest'
+      ? await trySnapshotAndroidTestReports(runtimeConfig.value.workspaceRoot)
+      : null;
   const result = await runAndroidGradle(
     task,
     runtimeConfig.value,
     toRunAndroidGradleOptions(args),
   );
+  const enhancement =
+    task === 'testDebugUnitTest' && !result.success
+      ? await buildTestFailureEnhancement(
+          runtimeConfig.value.workspaceRoot,
+          reportSnapshot,
+          result.failedTask,
+          runtimeConfig.value.maxErrorBlockChars,
+        )
+      : undefined;
 
-  return formatAndroidGradleToolResult(result);
+  return formatAndroidGradleToolResult(result, enhancement);
 }
 
 export function formatAndroidGradleToolResult(
   result: RunAndroidGradleResult,
+  enhancement?: AndroidGradleFailureEnhancement,
 ): ToolCallResult {
   if (result.success) {
     return textResult(result.summary);
@@ -150,11 +202,84 @@ export function formatAndroidGradleToolResult(
     durationMs: result.durationMs,
     timedOut: result.timedOut,
     summary: 'BUILD FAILED',
-    firstErrorBlock: result.firstErrorBlock,
-    logTail: result.logTail,
+    failedTask: result.failedTask,
+    firstErrorBlock: enhancement?.firstErrorBlock ?? result.firstErrorBlock,
+    ...(result.logTail === undefined ? {} : { logTail: result.logTail }),
+    ...(enhancement?.testReport === undefined
+      ? {}
+      : { testReport: enhancement.testReport }),
   };
 
   return textErrorResult(JSON.stringify(failure));
+}
+
+async function trySnapshotAndroidTestReports(
+  workspaceRoot: string,
+): Promise<AndroidTestReportSnapshot | null> {
+  try {
+    return await snapshotAndroidTestReportFiles(workspaceRoot);
+  } catch {
+    return null;
+  }
+}
+
+async function buildTestFailureEnhancement(
+  workspaceRoot: string,
+  before: AndroidTestReportSnapshot | null,
+  failedTask: string | null,
+  maxErrorBlockChars: number,
+): Promise<AndroidGradleFailureEnhancement | undefined> {
+  if (!before) {
+    return undefined;
+  }
+
+  try {
+    const changed = await readChangedAndroidTestReportFiles(
+      workspaceRoot,
+      before,
+    );
+
+    if (changed.changedFileCount > 0) {
+      if (changed.files.length === 0) {
+        return {
+          testReport: { status: 'parse_failed' },
+        };
+      }
+
+      const parsed = parseAndroidTestReports(
+        changed.files,
+        undefined,
+        maxErrorBlockChars,
+      );
+      return {
+        ...(parsed.firstErrorBlock
+          ? { firstErrorBlock: parsed.firstErrorBlock }
+          : {}),
+        testReport: parsed.summary,
+      };
+    }
+
+    if (isRequestedTestTask(failedTask)) {
+      return {
+        testReport: { status: 'not_generated' },
+      };
+    }
+  } catch {
+    if (isRequestedTestTask(failedTask)) {
+      return {
+        testReport: { status: 'parse_failed' },
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function isRequestedTestTask(failedTask: string | null): boolean {
+  return (
+    failedTask === 'testDebugUnitTest' ||
+    failedTask?.endsWith(':testDebugUnitTest') === true
+  );
 }
 
 function toRuntimeConfig(androidConfig: ToolAndroidConfig): AndroidGradleRuntimeConfig {

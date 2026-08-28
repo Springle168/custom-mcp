@@ -27,8 +27,8 @@ docs/tools/
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
-| `android_assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
-| `android_testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，仅支持 `quiet` / `stacktrace` / `offline` | [docs/tools/android-build.md](tools/android-build.md) |
+| `android_assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，支持 quiet/plain 控制和按需失败日志 | [docs/tools/android-build.md](tools/android-build.md) |
+| `android_testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，失败时可聚合本次生成的 JUnit XML | [docs/tools/android-build.md](tools/android-build.md) |
 | configured custom-only Tool | 通过 Tool config v2 的 definitionId binding 调用 route-specific Processor / HTTP route | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) |
 
 ---

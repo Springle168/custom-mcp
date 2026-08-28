@@ -8,7 +8,7 @@ import {
 const ANDROID_ASSEMBLE_DEBUG_TOOL_DEFINITION = {
   name: 'android_assembleDebug' as const,
   description:
-    'Builds the Android project debug variant. All optional parameters default to false. Success returns BUILD SUCCESSFUL. Failure returns a compact JSON summary with firstErrorBlock and logTail, which may be truncated. If these details are insufficient to diagnose the failure, explain that limitation to the user instead of guessing.',
+    'Builds the Android project debug variant with quiet Gradle output by default. Success returns BUILD SUCCESSFUL. Failure returns compact JSON with the failed task and a cleaned first error block. Set includeLogTail=true only when the default diagnosis is insufficient.',
   inputSchema: ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
 };
 
