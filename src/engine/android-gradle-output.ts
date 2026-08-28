@@ -1,10 +1,12 @@
 const ANSI_ESCAPE_PATTERN = /\u001B\[[0-9;]*m/g;
+const FAILED_TASK_PATTERN = /Execution failed for task ['"]([^'"]+)['"]\.?/i;
 
 export interface ParsedAndroidGradleOutput {
   success: boolean;
   summary: 'BUILD SUCCESSFUL' | 'BUILD FAILED';
+  failedTask: string | null;
   firstErrorBlock: string | null;
-  logTail: string | null;
+  logTail?: string;
 }
 
 export interface ParseAndroidGradleOutputOptions {
@@ -14,6 +16,7 @@ export interface ParseAndroidGradleOutputOptions {
   combinedOutput?: string;
   maxErrorBlockChars: number;
   maxLogTailChars: number;
+  includeLogTail?: boolean;
 }
 
 export function parseAndroidGradleOutput(
@@ -27,19 +30,22 @@ export function parseAndroidGradleOutput(
     return {
       success: true,
       summary: 'BUILD SUCCESSFUL',
+      failedTask: null,
       firstErrorBlock: null,
-      logTail: null,
     };
   }
 
   return {
     success: false,
     summary: 'BUILD FAILED',
+    failedTask: extractFailedTask(merged),
     firstErrorBlock: extractFirstErrorBlock(
       merged,
       options.maxErrorBlockChars,
     ),
-    logTail: merged ? takeTail(merged, options.maxLogTailChars) : null,
+    ...(options.includeLogTail === true && merged
+      ? { logTail: takeTail(merged, options.maxLogTailChars) }
+      : {}),
   };
 }
 
@@ -49,6 +55,10 @@ function normalizeOutput(text: string): string {
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .trim();
+}
+
+function extractFailedTask(text: string): string | null {
+  return FAILED_TASK_PATTERN.exec(text)?.[1] ?? null;
 }
 
 function extractFirstErrorBlock(
@@ -80,18 +90,10 @@ function extractFirstErrorBlock(
   );
 
   if (whatWentWrongIndex >= 0) {
-    return truncate(
-      captureWhatWentWrongBlock(lines, whatWentWrongIndex),
-      maxChars,
-    );
-  }
-
-  const taskFailureIndex = lines.findIndex((line) =>
-    /Execution failed for task/i.test(line),
-  );
-
-  if (taskFailureIndex >= 0) {
-    return truncate(captureFromLine(lines, taskFailureIndex, 12), maxChars);
+    const rootCause = captureWhatWentWrongRootCause(lines, whatWentWrongIndex);
+    if (rootCause) {
+      return truncate(rootCause, maxChars);
+    }
   }
 
   const causeIndex = lines.findIndex((line) => line.trimStart().startsWith('> '));
@@ -100,13 +102,17 @@ function extractFirstErrorBlock(
     return truncate(captureFromLine(lines, causeIndex, 12), maxChars);
   }
 
-  return null;
+  const fallback = cleanFailureTemplate(lines);
+  return fallback ? truncate(fallback, maxChars) : null;
 }
 
-function captureWhatWentWrongBlock(lines: string[], startIndex: number): string {
+function captureWhatWentWrongRootCause(
+  lines: string[],
+  startIndex: number,
+): string {
   const collected: string[] = [];
 
-  for (let i = startIndex; i < lines.length; i += 1) {
+  for (let i = startIndex + 1; i < lines.length; i += 1) {
     const line = lines[i];
 
     if (line === undefined) {
@@ -116,18 +122,59 @@ function captureWhatWentWrongBlock(lines: string[], startIndex: number): string 
     const trimmed = line.trim();
 
     if (
-      i > startIndex &&
-      (trimmed === '* Try:' ||
-        trimmed === '* Exception is:' ||
-        trimmed.startsWith('BUILD FAILED'))
+      trimmed === '* Try:' ||
+      trimmed === '* Exception is:' ||
+      trimmed.startsWith('BUILD FAILED')
     ) {
       break;
+    }
+
+    if (FAILED_TASK_PATTERN.test(trimmed)) {
+      continue;
     }
 
     collected.push(line);
   }
 
-  return collected.join('\n').trim();
+  return trimBlankLines(collected).join('\n');
+}
+
+function cleanFailureTemplate(lines: string[]): string {
+  const collected: string[] = [];
+  let skippingSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed === '* Try:' || trimmed === '* Exception is:') {
+      skippingSection = true;
+      continue;
+    }
+
+    if (skippingSection) {
+      if (trimmed.startsWith('* ') && trimmed.endsWith(':')) {
+        skippingSection = false;
+      } else if (trimmed.startsWith('BUILD FAILED')) {
+        skippingSection = false;
+      } else {
+        continue;
+      }
+    }
+
+    if (
+      trimmed === 'FAILURE: Build failed with an exception.' ||
+      trimmed === '* What went wrong:' ||
+      FAILED_TASK_PATTERN.test(trimmed) ||
+      trimmed.startsWith('BUILD FAILED') ||
+      /^\d+ actionable tasks?:/i.test(trimmed)
+    ) {
+      continue;
+    }
+
+    collected.push(line);
+  }
+
+  return trimBlankLines(collected).join('\n');
 }
 
 function captureFromLine(
@@ -153,6 +200,8 @@ function captureFromLine(
     if (
       i > startIndex &&
       (trimmed === '' ||
+        trimmed === 'FAILURE: Build failed with an exception.' ||
+        trimmed === '* What went wrong:' ||
         trimmed === '* Try:' ||
         trimmed === '* Exception is:' ||
         trimmed.startsWith('BUILD FAILED'))
@@ -164,6 +213,21 @@ function captureFromLine(
   }
 
   return collected.join('\n').trim();
+}
+
+function trimBlankLines(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+
+  while (start < end && lines[start]?.trim() === '') {
+    start += 1;
+  }
+
+  while (end > start && lines[end - 1]?.trim() === '') {
+    end -= 1;
+  }
+
+  return lines.slice(start, end);
 }
 
 function takeTail(text: string, maxChars: number): string {

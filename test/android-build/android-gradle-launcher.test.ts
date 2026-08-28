@@ -37,6 +37,10 @@ async function testWorkspacePathWithAmpersand() {
 
     assert(result.success === true, 'Should successfully start gradlew.bat');
     assert(result.summary === 'BUILD SUCCESSFUL', 'Should report build success');
+    assert(
+      result.command.includes('-q') && result.command.includes('--console=plain'),
+      'Should use quiet plain console defaults',
+    );
   } finally {
     await rm(path.dirname(workspaceRoot), { recursive: true, force: true });
   }
@@ -55,11 +59,15 @@ async function testWorkspacePathWithPercentExpansionSyntax() {
         maxErrorBlockChars: 2500,
         maxLogTailChars: 4000,
       },
-      {},
+      { quiet: false },
     );
 
     assert(result.success === true, 'Should successfully start gradlew.bat');
     assert(result.summary === 'BUILD SUCCESSFUL', 'Should report build success');
+    assert(
+      !result.command.includes(' -q') && result.command.includes('--console=plain'),
+      'Should allow quiet mode to be disabled while keeping plain console output',
+    );
   } finally {
     await rm(path.dirname(workspaceRoot), { recursive: true, force: true });
   }
