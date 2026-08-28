@@ -334,7 +334,7 @@ async function testCompileFailureDoesNotUseOldTestReport() {
   }
 }
 
-async function testConcurrentUnitTestCallsAreSerializedPerWorkspace() {
+async function testOverlappingUnitTestCallsSkipReportAttribution() {
   const workspaceRoot = await mkdtemp(
     path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
   );
@@ -343,11 +343,17 @@ async function testConcurrentUnitTestCallsAreSerializedPerWorkspace() {
     [
       '@echo off',
       'if exist active-build.txt (',
-      '  1>&2 echo error: overlapping test build',
+      '  powershell.exe -NoProfile -Command "Start-Sleep -Milliseconds 500"',
+      '  1>&2 echo FAILURE: Build failed with an exception.',
+      '  1>&2 echo * What went wrong:',
+      "  1>&2 echo Execution failed for task ':app:testDebugUnitTest'.",
       '  exit /b 1',
       ')',
       '> active-build.txt echo active',
       'powershell.exe -NoProfile -Command "Start-Sleep -Milliseconds 250"',
+      'set "REPORT_DIR=app\\build\\test-results\\testDebugUnitTest"',
+      'if not exist "%REPORT_DIR%" mkdir "%REPORT_DIR%"',
+      '> "%REPORT_DIR%\\TEST-Concurrent.xml" echo ^<testsuite tests="1" failures="1" errors="0" skipped="0"/^>',
       'del active-build.txt',
       '1>&2 echo FAILURE: Build failed with an exception.',
       '1>&2 echo * What went wrong:',
@@ -376,14 +382,14 @@ async function testConcurrentUnitTestCallsAreSerializedPerWorkspace() {
     assertEqual(first.isError, true, 'First simulated build should fail');
     assertEqual(second.isError, true, 'Second simulated build should fail');
     assertEqual(
-      getResultText(first).includes('overlapping test build'),
+      Object.hasOwn(parseCompactJsonText(getResultText(first)), 'testReport'),
       false,
-      'First build should not observe another report-attribution window',
+      'First overlapping build should discard its report attribution',
     );
     assertEqual(
-      getResultText(second).includes('overlapping test build'),
+      Object.hasOwn(parseCompactJsonText(getResultText(second)), 'testReport'),
       false,
-      'Second build should start only after the first attribution window closes',
+      'Second overlapping build should not claim the first build report',
     );
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
@@ -403,7 +409,7 @@ async function main(): Promise<void> {
       { name: 'unit test failure uses generated XML report', run: testUnitTestFailureUsesGeneratedXmlReport },
       { name: 'failed test task without report', run: testFailedTestTaskWithoutReportIsExplicit },
       { name: 'compile failure ignores old test report', run: testCompileFailureDoesNotUseOldTestReport },
-      { name: 'concurrent test calls are serialized', run: testConcurrentUnitTestCallsAreSerializedPerWorkspace },
+      { name: 'overlapping test calls skip report attribution', run: testOverlappingUnitTestCallsSkipReportAttribution },
     ],
   });
 }
