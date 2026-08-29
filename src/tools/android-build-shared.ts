@@ -201,6 +201,7 @@ function createAndroidGradleGateExecution(
   options: RunAndroidGradleOptions,
   operationSignal: AbortSignal,
 ): AndroidGradleGateExecution<ToolCallResult> {
+  const activeStartedAt = Date.now();
   let execution:
     | ReturnType<typeof startAndroidGradleExecution>
     | undefined;
@@ -214,6 +215,7 @@ function createAndroidGradleGateExecution(
       runtimeConfig,
       options,
       operationSignal,
+      activeStartedAt,
     );
     if (shutdownDetachRequested) {
       execution.requestShutdownDetach();
