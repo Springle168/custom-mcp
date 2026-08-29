@@ -72,6 +72,7 @@ src/tools/
 | `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
+| `src/utils/android-gradle-gate.ts` | Android workspace-scoped FIFO、调用取消、active ownership 与 shutdown drain，细节见 [docs/tools/android-build.md](tools/android-build.md) |
 | `src/tools/external-routing/` | custom-only definitionId binding、External routing config、Processor registry、route-specific endpoint / stage、canonical protocol、共享 HTTP / subprocess lifecycle，见 [external routing](EXTERNAL-ROUTING.md) |
 
 通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看完整 canonical registry 的 definition 结构；selected workspace 的实际 `tools/list` 还会应用 exposure 过滤：
@@ -253,12 +254,14 @@ return textErrorResult('错误描述 + 引导 AI 下一步怎么做');
 
 ## 并发模型
 
-MCP 客户端可能并发发送多个 `tools/call` 请求。当前的并发策略：
+MCP 客户端可能并发发送多个 `tools/call` 请求。并发策略按资源类型划分：
 
 - **不同文件**：完全并行，互不阻塞。
 - **同一文件**：通过 `withFileLock()` 串行化，FIFO 顺序。
+- **不同 Android workspace**：Gradle execution 可以并行。
+- **同一 Android workspace**：`android_assembleDebug` 与 `android_testDebugUnitTest` 共享可取消的 FIFO gate；gate 持有到进程 confirmed/optimistic drain 和报告后处理都完成。
 
-锁的实现基于 Promise 链（`src/utils/file-lock.ts`），不依赖外部库。文件操作完成后自动释放，Map 中不会积累已完成的锁。
+文件锁基于 Promise 链（`src/utils/file-lock.ts`）；Android gate 使用显式 waiter queue，以便 queued cancellation 原子移除。两类 registry 都会清理 idle entry。
 
 **重要：** 只有涉及文件写入的工具需要使用 `withFileLock()`。只读工具（如 `read_many_files`）不需要加锁。
 

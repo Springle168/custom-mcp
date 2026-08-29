@@ -3,7 +3,8 @@ const FAILED_TASK_PATTERN = /Execution failed for task ['"]([^'"]+)['"]\.?/i;
 
 export interface ParsedAndroidGradleOutput {
   success: boolean;
-  summary: 'BUILD SUCCESSFUL' | 'BUILD FAILED';
+  summary: 'BUILD SUCCESSFUL' | 'BUILD FAILED' | 'BUILD CANCELLED';
+  cancelled: boolean;
   failedTask: string | null;
   firstErrorBlock: string | null;
   logTail?: string;
@@ -17,6 +18,7 @@ export interface ParseAndroidGradleOutputOptions {
   maxErrorBlockChars: number;
   maxLogTailChars: number;
   includeLogTail?: boolean;
+  cancelled?: boolean;
 }
 
 export function parseAndroidGradleOutput(
@@ -26,10 +28,24 @@ export function parseAndroidGradleOutput(
     options.combinedOutput ?? [options.stdout, options.stderr].join('\n'),
   );
 
+  if (options.cancelled === true) {
+    return {
+      success: false,
+      summary: 'BUILD CANCELLED',
+      cancelled: true,
+      failedTask: extractFailedTask(merged),
+      firstErrorBlock: extractFirstErrorBlock(merged, options.maxErrorBlockChars),
+      ...(options.includeLogTail === true && merged
+        ? { logTail: takeTail(merged, options.maxLogTailChars) }
+        : {}),
+    };
+  }
+
   if (options.exitCode === 0) {
     return {
       success: true,
       summary: 'BUILD SUCCESSFUL',
+      cancelled: false,
       failedTask: null,
       firstErrorBlock: null,
     };
@@ -38,6 +54,7 @@ export function parseAndroidGradleOutput(
   return {
     success: false,
     summary: 'BUILD FAILED',
+    cancelled: false,
     failedTask: extractFailedTask(merged),
     firstErrorBlock: extractFirstErrorBlock(
       merged,

@@ -69,6 +69,7 @@ BUILD SUCCESSFUL
 - `exitCode`
 - `durationMs`
 - `timedOut`
+- `cancelled`
 - `summary`
 - `failedTask`
 - `firstErrorBlock`
@@ -85,6 +86,27 @@ BUILD SUCCESSFUL
 - 使用 `android.maxLogTailChars` 限制长度并标记截断
 
 默认结果直接省略 `logTail` 属性，不返回 `null`。
+
+---
+
+## Workspace gate 与取消
+
+同一 `custom-mcp` 进程内，两个 Android 工具按 `path.resolve(workspaceRoot).toLowerCase()` 共享 workspace-scoped FIFO gate。同一 workspace 同时最多运行一个受管理的 Gradle execution；不同 workspace 可以并行。参数和 Android runtime config 在排队前校验，Gradle wrapper readiness、JUnit 前置快照、进程执行和失败报告后处理都位于 gate ownership 内。
+
+FIFO 等待时间不计入 `android.buildTimeoutMs` 或 Android failure JSON 的 `durationMs`。`durationMs` 从 active ownership 后开始，包含 wrapper readiness、进程执行和最多 5 秒的 termination grace；runtime tool-call 日志记录的总耗时包含排队和 handler 后处理。
+
+取消结果使用 `isError: true`、`summary: "BUILD CANCELLED"`、`timedOut: false` 和 `cancelled: true`：
+
+- queued cancellation 会从 FIFO 中移除，固定返回 `durationMs: 0`、`exitCode: null`、`failedTask: null` 和 `firstErrorBlock: null`，且不会检查 wrapper、执行报告快照或启动进程；
+- active caller cancellation 与 application shutdown cancellation 通过 gate-owned `AbortController` 传播到 Gradle lifecycle，并请求终止完整进程树；
+- caller cancellation 跳过 JUnit failure enhancement；timeout 保留受预算约束的报告增强；
+- timeout 与 cancellation 竞态由第一个 termination reason 固定分类，迟到的零退出码不会把结果改写为成功。
+
+Gradle execution 分为 `settled` 与 `drained`。结果可在 termination request 后的 5 秒 grace 到达时 settled；workspace gate 仍持有 ownership，直到 child `close` 得到确认，或额外 30 秒 recovery deadline 到达并乐观 drain。Recovery 使用有界 termination retry，每个 `taskkill` helper 也有独立 timeout 和 reap 边界。乐观释放不会 poison workspace、清空队列或退化后续报告归因；残留进程可能干扰下一次构建，这是明确接受的风险。
+
+Application shutdown 在关闭 MCP sessions 前启动 Android registry close，停止新 admission、取消 queued 调用并主动取消 active lease。logger 关闭前会等待 gate 的完整 execution/report barrier。Shutdown optimistic drain 会 detach 残留 child 并释放 stdio handles，避免它们阻止 Node 进程退出。
+
+Gate 只协调本进程通过这两个 built-in 工具启动的 Gradle 调用，不协调 Android Studio、终端、其它 `custom-mcp` 进程或外部 Gradle invocation。
 
 ---
 
@@ -108,7 +130,7 @@ context.android.workspaceRoot
 
 调用前快照记录报告路径、大小和修改时间；调用后未变化的旧报告不会进入本次失败结果。多个模块在同一次调用中生成报告时，工具按确定路径顺序聚合全部变化 XML。
 
-同一 Android workspace 的多个 `android_testDebugUnitTest` 调用如果执行窗口发生重叠，会继续并发运行 Gradle，但所有重叠调用都放弃 XML 报告归因，避免把另一轮生成的报告误归因到自身；各调用仍保留自己的 Gradle 文本诊断。报告发现最多接受 1000 个候选文件，单文件与总读取量均在打开文件后通过有界读取再次强制检查，超过任一预算时安全退化。
+同一 Android workspace 的调用通过 FIFO gate 串行执行。JUnit 前置快照在获得 active ownership 后创建，变化报告读取和解析在 release 前完成，因此前一项完成后的报告状态会成为后一项的 baseline。报告发现最多接受 1000 个候选文件，单文件与总读取量均在打开文件后通过有界读取再次强制检查，超过任一预算时安全退化。
 
 测试失败可额外返回：
 
@@ -157,6 +179,8 @@ JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工�
 - Android 配置错误会指向当前全局配置文件中的 selected workspace
 - 测试报告发现只支持 Android workspace 内匹配既定模式的 JUnit XML
 - 单个和全部报告读取均有大小上限；过大或不可读报告不会覆盖真实 Gradle 失败
+- recovery deadline 后乐观释放时，残留 Gradle/Java 进程、文件锁或迟到报告可能干扰后续调用
+- workspace gate 不提供跨进程互斥
 
 ---
 
@@ -183,11 +207,20 @@ JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工�
    - Windows 路径可能包含 `&`、`%...%` 等 `cmd` 敏感字符。
    - 实现通过 `cwd` 切到工作目录，再执行相对路径 `".\\gradlew.bat"`。
 
+7. **Gate 只能在 execution 与报告 barrier 后转交**
+   - 普通 close 使用 confirmed drain；未确认 cleanup 在固定 recovery deadline 后乐观转交。
+   - 迟到事件只属于创建它的 lease，不能释放或修改新的 active owner。
+
+8. **Settled 后停止累积输出**
+   - recovery 期间继续消费 pipe data，但不追加到 retained result strings。
+   - Shutdown optimistic drain 必须解除残留 child 和 stdio handles 对 Node event loop 的保活。
+
 ---
 
 ## 实现入口
 
 - `src/tools/android-build-shared.ts`：共享 input schema、调用编排和失败 JSON
+- `src/utils/android-gradle-gate.ts`：workspace-scoped FIFO、queued cancellation、active ownership 与 application close
 - `src/utils/android-gradle.ts`：Gradle 进程、命令参数、超时与原始输出
 - `src/engine/android-gradle-output.ts`：纯文本失败解析
 - `src/utils/android-test-report-files.ts`：测试报告发现、快照与变化文件读取
@@ -200,10 +233,11 @@ JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工�
 Android 构建相关测试集中在 `test/android-build/`：
 
 - `test/android-build/android-build-tools.test.ts`：工具参数、返回契约和测试报告编排
+- `test/android-build/android-gradle-gate.test.ts`：FIFO、queued cancellation、双阶段 handoff、lease 隔离和 close
 - `test/android-build/android-gradle-output.test.ts`：输出清洗、failed task、首个错误块、log tail 和到达顺序
 - `test/android-build/android-test-report.test.ts`：JUnit XML 聚合、失败详情和解析退化
 - `test/android-build/android-test-report-files.test.ts`：报告发现、调用前后变化与旧报告过滤
-- `test/android-build/android-gradle-timeout.privileged.ts`：超时后终止整棵进程树
+- `test/android-build/android-gradle-timeout.privileged.ts`：超时和 active cancellation 后终止整棵进程树
 - `test/android-build/android-gradle-launcher.test.ts`：特殊 Windows 路径下的启动行为
 
 进程树终止测试需要允许 `taskkill /t /f` 终止测试创建的完整 Windows 进程树，不由 `npm test` 执行。在满足权限前提的环境中显式运行：

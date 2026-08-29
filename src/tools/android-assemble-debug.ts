@@ -1,4 +1,5 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import {
   ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
@@ -15,8 +16,9 @@ const ANDROID_ASSEMBLE_DEBUG_TOOL_DEFINITION = {
 async function handleAndroidAssembleDebug(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
+  invocation: ToolInvocationContext,
 ): Promise<ToolCallResult> {
-  return executeAndroidGradleTask('assembleDebug', args, context);
+  return executeAndroidGradleTask('assembleDebug', args, context, invocation.signal);
 }
 
 const androidAssembleDebugTool: MCPTool = {

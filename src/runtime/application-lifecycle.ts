@@ -12,6 +12,7 @@ export interface ApplicationLifecycleOptions {
    */
   readonly listener: HttpServer;
   readonly sessions: Map<string, McpPostSession>;
+  readonly androidRuntime: ApplicationLifecycleClosable;
   readonly externalRuntime: ApplicationLifecycleClosable;
   readonly logger: ApplicationLifecycleClosable;
 }
@@ -19,6 +20,7 @@ export interface ApplicationLifecycleOptions {
 export type ApplicationShutdownPhase =
   | 'http-listener'
   | 'mcp-session'
+  | 'android-runtime'
   | 'external-runtime'
   | 'logger';
 
@@ -58,6 +60,7 @@ const CLOSED_SESSION = Promise.resolve();
 export class ApplicationLifecycle {
   readonly #listener: HttpServer;
   readonly #sessions: Map<string, McpPostSession>;
+  readonly #androidRuntime: ApplicationLifecycleClosable;
   readonly #externalRuntime: ApplicationLifecycleClosable;
   readonly #logger: ApplicationLifecycleClosable;
   readonly #sessionClosePromises = new Map<string, Promise<void>>();
@@ -66,6 +69,7 @@ export class ApplicationLifecycle {
   constructor(options: ApplicationLifecycleOptions) {
     this.#listener = options.listener;
     this.#sessions = options.sessions;
+    this.#androidRuntime = options.androidRuntime;
     this.#externalRuntime = options.externalRuntime;
     this.#logger = options.logger;
   }
@@ -98,8 +102,9 @@ export class ApplicationLifecycle {
   }
 
   /**
-   * Stops listener admission, cancels active MCP work, drains the external
-   * runtime, then closes logging. Every caller receives the same promise.
+   * Stops listener admission, starts Android cancellation before MCP session
+   * drain, then closes the external runtime and logging. Every caller receives
+   * the same promise.
    */
   close(): Promise<void> {
     if (this.#applicationClosePromise === undefined) {
@@ -135,12 +140,20 @@ export class ApplicationLifecycle {
     // HTTP streams.
     const listenerClose = this.#closeListener();
     void listenerClose.catch(() => {});
+    const androidRuntimeClose = Promise.resolve()
+      .then(() => this.#androidRuntime.close());
+    void androidRuntimeClose.catch(() => {});
 
     await this.#closeAllSessions(failures);
     await this.#attempt(
       failures,
       { phase: 'http-listener' },
       () => listenerClose,
+    );
+    await this.#attempt(
+      failures,
+      { phase: 'android-runtime' },
+      () => androidRuntimeClose,
     );
     await this.#attempt(
       failures,

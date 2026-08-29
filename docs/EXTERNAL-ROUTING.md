@@ -340,7 +340,7 @@ Request Processor 不接收 response-only metadata。Response `body-decoder` 应
 |-|-|-|
 | `src/tools/custom-tool-config.ts` | Tool config v2、definition 加载与 External routing config 入口 | `test/tools/custom-tool-config.test.ts` |
 | `src/runtime/startup-runtime.ts` | 纯配置 / catalog 校验、空 route 无资源运行时、共享 executor 创建和 shutdown | `test/runtime/startup-runtime.test.ts` |
-| `src/runtime/application-lifecycle.ts` | listener、MCP session、external runtime 与 logger 的关闭顺序 | `test/runtime/application-lifecycle.test.ts` |
+| `src/runtime/application-lifecycle.ts` | listener、Android runtime、MCP session、external runtime 与 logger 的关闭顺序；Android close 在 session drain 前启动，External runtime 在 Android barrier 后关闭 | `test/runtime/application-lifecycle.test.ts` |
 | `src/tools/catalog.ts` | definition-id external binding、unavailable binding、override 保持 built-in binding | `test/tools/tool-exposure.test.ts` |
 | `src/tools/external-routing/config.ts` | External routing config、Processor registry、endpoint config、route / Processor binding | `test/external-routing/config.test.ts` |
 | `src/tools/external-routing/canonical-protocol.ts` | canonical JSON contract 与 filter invariant | `test/external-routing/canonical-protocol.test.ts` |

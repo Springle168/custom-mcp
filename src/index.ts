@@ -22,6 +22,8 @@ import { createWorkspaceToolService } from './tools/index.js';
 import { registerAskUserRoutes } from './tools/ask-user-routes.js';
 import { Logger } from './utils/logger.js';
 import { buildHttpUrl, formatHostPort } from './utils/http-url.js';
+import { androidGradleGateRegistry } from './utils/android-gradle-gate.js';
+import { detachLingeringAndroidGradleExecutionsForShutdown } from './utils/android-gradle.js';
 
 function logWorkspaceRoots(configStore: ConfigStore, logger: Logger): void {
   const { pathSafetyContext } = configStore.getSnapshot();
@@ -203,6 +205,15 @@ async function main() {
   lifecycle = new ApplicationLifecycle({
     listener,
     sessions,
+    androidRuntime: {
+      async close() {
+        try {
+          await androidGradleGateRegistry.close();
+        } finally {
+          detachLingeringAndroidGradleExecutionsForShutdown();
+        }
+      },
+    },
     externalRuntime: initialRuntime,
     logger,
   });

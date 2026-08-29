@@ -137,6 +137,40 @@ async function testMissingGradleWrapper() {
   );
 }
 
+async function testPreAbortedAndroidCallUsesCancellationContract() {
+  const context = createTestToolRuntimeContext({
+    rootDir: PROJECT_ROOT,
+    android: {
+      workspaceRoot: PROJECT_ROOT,
+      javaHome: 'C:/AndroidStudio/jbr',
+      buildTimeoutMs: 1000,
+      maxErrorBlockChars: 2500,
+      maxLogTailChars: 4000,
+    },
+  });
+  const controller = new AbortController();
+  controller.abort();
+  const result = await androidAssembleDebugTool.handler(
+    { offline: true },
+    context,
+    createTestToolInvocationContext({ signal: controller.signal }),
+  );
+  const failure = parseCompactJsonText(getResultText(result));
+
+  assertEqual(result.isError, true, 'Cancelled Android calls should use the error result shell');
+  assertEqual(failure.summary, 'BUILD CANCELLED', 'Cancellation should use the stable summary');
+  assertEqual(failure.cancelled, true, 'Cancellation should set cancelled=true');
+  assertEqual(failure.timedOut, false, 'Cancellation must not be classified as timeout');
+  assertEqual(failure.exitCode, null, 'Queued cancellation should not invent an exit code');
+  assertEqual(failure.durationMs, 0, 'Queued cancellation should not include queue wait');
+  assertEqual(failure.failedTask, null, 'Queued cancellation should not invent Gradle output');
+  assertEqual(failure.firstErrorBlock, null, 'Queued cancellation should not invent diagnostics');
+  assert(
+    String(failure.command).includes('--offline'),
+    'Queued cancellation should retain the normal safe display command',
+  );
+}
+
 function testFailureFormatterUsesCompactJson() {
   const runResult: RunAndroidGradleResult = {
     success: false,
@@ -145,6 +179,7 @@ function testFailureFormatterUsesCompactJson() {
     exitCode: 1,
     durationMs: 1234,
     timedOut: false,
+    cancelled: false,
     summary: 'BUILD FAILED',
     failedTask: ':app:compileDebugKotlin',
     firstErrorBlock: 'Execution failed for task :app:compileDebugKotlin.',
@@ -335,7 +370,7 @@ async function testCompileFailureDoesNotUseOldTestReport() {
   }
 }
 
-async function testOverlappingUnitTestCallsSkipReportAttribution() {
+async function testConcurrentUnitTestCallsRunSeriallyAndKeepAttribution() {
   const workspaceRoot = await mkdtemp(
     path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
   );
@@ -383,14 +418,14 @@ async function testOverlappingUnitTestCallsSkipReportAttribution() {
     assertEqual(first.isError, true, 'First simulated build should fail');
     assertEqual(second.isError, true, 'Second simulated build should fail');
     assertEqual(
-      Object.hasOwn(parseCompactJsonText(getResultText(first)), 'testReport'),
-      false,
-      'First overlapping build should discard its report attribution',
+      (parseCompactJsonText(getResultText(first)).testReport as Record<string, unknown>).status,
+      'generated',
+      'First queued build should retain its own report attribution',
     );
     assertEqual(
-      Object.hasOwn(parseCompactJsonText(getResultText(second)), 'testReport'),
-      false,
-      'Second overlapping build should not claim the first build report',
+      (parseCompactJsonText(getResultText(second)).testReport as Record<string, unknown>).status,
+      'generated',
+      'Second queued build should snapshot after the first build and retain its own attribution',
     );
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
@@ -406,11 +441,12 @@ async function main(): Promise<void> {
       { name: 'non-boolean log tail validation', run: testValidationErrorForNonBooleanLogTail },
       { name: 'missing Android config', run: testMissingAndroidConfig },
       { name: 'missing gradle wrapper', run: testMissingGradleWrapper },
+      { name: 'pre-aborted call uses cancellation contract', run: testPreAbortedAndroidCallUsesCancellationContract },
       { name: 'failure formatter uses compact JSON', run: testFailureFormatterUsesCompactJson },
       { name: 'unit test failure uses generated XML report', run: testUnitTestFailureUsesGeneratedXmlReport },
       { name: 'failed test task without report', run: testFailedTestTaskWithoutReportIsExplicit },
       { name: 'compile failure ignores old test report', run: testCompileFailureDoesNotUseOldTestReport },
-      { name: 'overlapping test calls skip report attribution', run: testOverlappingUnitTestCallsSkipReportAttribution },
+      { name: 'concurrent test calls run serially with report attribution', run: testConcurrentUnitTestCallsRunSeriallyAndKeepAttribution },
     ],
   });
 }

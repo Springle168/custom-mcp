@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import {
   parseAndroidTestReports,
@@ -12,12 +11,17 @@ import {
   type AndroidTestReportSnapshot,
 } from '../utils/android-test-report-files.js';
 import {
-  runAndroidGradle,
+  getAndroidGradleDisplayCommand,
+  startAndroidGradleExecution,
   type AndroidGradleRuntimeConfig,
   type AndroidGradleTask,
   type RunAndroidGradleOptions,
   type RunAndroidGradleResult,
 } from '../utils/android-gradle.js';
+import {
+  androidGradleGateRegistry,
+  type AndroidGradleGateExecution,
+} from '../utils/android-gradle-gate.js';
 
 const ALLOWED_KEYS = new Set([
   'quiet',
@@ -25,10 +29,6 @@ const ALLOWED_KEYS = new Set([
   'offline',
   'includeLogTail',
 ]);
-const androidTestReportAttributions = new Map<
-  string,
-  AndroidTestReportAttributionState
->();
 
 export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
   type: 'object' as const,
@@ -71,7 +71,8 @@ export type AndroidGradleToolFailure = {
   exitCode: number | null;
   durationMs: number;
   timedOut: boolean;
-  summary: 'BUILD FAILED';
+  cancelled: boolean;
+  summary: 'BUILD FAILED' | 'BUILD CANCELLED';
   failedTask: string | null;
   firstErrorBlock: string | null;
   logTail?: string;
@@ -81,17 +82,6 @@ export type AndroidGradleToolFailure = {
 interface AndroidGradleFailureEnhancement {
   firstErrorBlock?: string;
   testReport?: TestReportSummary;
-}
-
-interface AndroidTestReportAttributionState {
-  activeCalls: number;
-  overlapped: boolean;
-}
-
-interface AndroidTestReportAttributionTicket {
-  key: string;
-  state: AndroidTestReportAttributionState;
-  startedExclusive: boolean;
 }
 
 export function validateAndroidGradleToolArgs(
@@ -169,6 +159,7 @@ export async function executeAndroidGradleTask(
   task: AndroidGradleTask,
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
+  callerSignal: AbortSignal,
 ): Promise<ToolCallResult> {
   const validationError = validateAndroidGradleToolArgs(args);
   if (validationError) {
@@ -180,102 +171,81 @@ export async function executeAndroidGradleTask(
     return textErrorResult(runtimeConfig.error);
   }
 
-  if (task === 'testDebugUnitTest') {
-    const attribution = beginAndroidTestReportAttribution(
-      runtimeConfig.value.workspaceRoot,
-    );
-    try {
-      return await executeAndroidGradleTaskWithConfig(
-        task,
-        args,
-        runtimeConfig.value,
-        attribution,
-      );
-    } finally {
-      finishAndroidTestReportAttribution(attribution);
-    }
-  }
+  const options = toRunAndroidGradleOptions(args);
+  const gated = await androidGradleGateRegistry.run(
+    runtimeConfig.value.workspaceRoot,
+    callerSignal,
+    (lease) => createAndroidGradleGateExecution(
+      task,
+      runtimeConfig.value,
+      options,
+      lease.signal,
+    ),
+  );
 
-  return executeAndroidGradleTaskWithConfig(task, args, runtimeConfig.value);
+  if (gated.status === 'completed') {
+    return gated.value;
+  }
+  if (gated.status === 'cancelled') {
+    return formatAndroidGradleToolResult(createQueuedCancellationResult(
+      task,
+      options,
+    ));
+  }
+  return textErrorResult('The Android Gradle operation failed unexpectedly.');
 }
 
-async function executeAndroidGradleTaskWithConfig(
+function createAndroidGradleGateExecution(
   task: AndroidGradleTask,
-  args: Record<string, unknown>,
   runtimeConfig: AndroidGradleRuntimeConfig,
-  attribution?: AndroidTestReportAttributionTicket,
-): Promise<ToolCallResult> {
-  const reportSnapshot =
-    task === 'testDebugUnitTest' && attribution?.startedExclusive === true
+  options: RunAndroidGradleOptions,
+  operationSignal: AbortSignal,
+): AndroidGradleGateExecution<ToolCallResult> {
+  let execution:
+    | ReturnType<typeof startAndroidGradleExecution>
+    | undefined;
+  let shutdownDetachRequested = false;
+  const started = (async () => {
+    const reportSnapshot = task === 'testDebugUnitTest'
       ? await trySnapshotAndroidTestReports(runtimeConfig.workspaceRoot)
       : null;
-  const result = await runAndroidGradle(
-    task,
-    runtimeConfig,
-    toRunAndroidGradleOptions(args),
+    execution = startAndroidGradleExecution(
+      task,
+      runtimeConfig,
+      options,
+      operationSignal,
+    );
+    if (shutdownDetachRequested) {
+      execution.requestShutdownDetach();
+    }
+    return { execution, reportSnapshot };
+  })();
+
+  const settled = started.then(async ({ execution: activeExecution, reportSnapshot }) => {
+    const result = await activeExecution.settled;
+    const enhancement =
+      task === 'testDebugUnitTest' && !result.success && !result.cancelled
+        ? await buildTestFailureEnhancement(
+            runtimeConfig.workspaceRoot,
+            reportSnapshot,
+            result.failedTask,
+            runtimeConfig.maxErrorBlockChars,
+          )
+        : undefined;
+    return formatAndroidGradleToolResult(result, enhancement);
+  });
+  const drained = started.then(
+    ({ execution: activeExecution }) => activeExecution.drained,
   );
-  const candidateEnhancement =
-    task === 'testDebugUnitTest' &&
-    !result.success &&
-    (!attribution || canUseAndroidTestReportAttribution(attribution))
-      ? await buildTestFailureEnhancement(
-          runtimeConfig.workspaceRoot,
-          reportSnapshot,
-          result.failedTask,
-          runtimeConfig.maxErrorBlockChars,
-        )
-      : undefined;
-  const enhancement =
-    attribution && canUseAndroidTestReportAttribution(attribution)
-      ? candidateEnhancement
-      : undefined;
 
-  return formatAndroidGradleToolResult(result, enhancement);
-}
-
-function beginAndroidTestReportAttribution(
-  workspaceRoot: string,
-): AndroidTestReportAttributionTicket {
-  const key = path.resolve(workspaceRoot).toLowerCase();
-  const existing = androidTestReportAttributions.get(key);
-  if (existing) {
-    existing.activeCalls += 1;
-    existing.overlapped = true;
-    return {
-      key,
-      state: existing,
-      startedExclusive: false,
-    };
-  }
-
-  const state: AndroidTestReportAttributionState = {
-    activeCalls: 1,
-    overlapped: false,
-  };
-  androidTestReportAttributions.set(key, state);
   return {
-    key,
-    state,
-    startedExclusive: true,
+    settled,
+    drained,
+    requestShutdownDetach() {
+      shutdownDetachRequested = true;
+      execution?.requestShutdownDetach();
+    },
   };
-}
-
-function canUseAndroidTestReportAttribution(
-  ticket: AndroidTestReportAttributionTicket,
-): boolean {
-  return ticket.startedExclusive && !ticket.state.overlapped;
-}
-
-function finishAndroidTestReportAttribution(
-  ticket: AndroidTestReportAttributionTicket,
-): void {
-  ticket.state.activeCalls -= 1;
-  if (
-    ticket.state.activeCalls === 0 &&
-    androidTestReportAttributions.get(ticket.key) === ticket.state
-  ) {
-    androidTestReportAttributions.delete(ticket.key);
-  }
 }
 
 export function formatAndroidGradleToolResult(
@@ -293,7 +263,8 @@ export function formatAndroidGradleToolResult(
     exitCode: result.exitCode,
     durationMs: result.durationMs,
     timedOut: result.timedOut,
-    summary: 'BUILD FAILED',
+    cancelled: result.cancelled,
+    summary: result.cancelled ? 'BUILD CANCELLED' : 'BUILD FAILED',
     failedTask: result.failedTask,
     firstErrorBlock: enhancement?.firstErrorBlock ?? result.firstErrorBlock,
     ...(result.logTail === undefined ? {} : { logTail: result.logTail }),
@@ -303,6 +274,24 @@ export function formatAndroidGradleToolResult(
   };
 
   return textErrorResult(JSON.stringify(failure));
+}
+
+function createQueuedCancellationResult(
+  task: AndroidGradleTask,
+  options: RunAndroidGradleOptions,
+): RunAndroidGradleResult {
+  return {
+    success: false,
+    task,
+    command: getAndroidGradleDisplayCommand(task, options),
+    exitCode: null,
+    durationMs: 0,
+    timedOut: false,
+    cancelled: true,
+    summary: 'BUILD CANCELLED',
+    failedTask: null,
+    firstErrorBlock: null,
+  };
 }
 
 async function trySnapshotAndroidTestReports(
