@@ -39,6 +39,20 @@ export interface AndroidGradleExecution {
 }
 
 type TerminationReason = 'timeout' | 'cancelled' | 'failure';
+type TerminationHelperSpawner = (
+  command: string,
+  args: readonly string[],
+  options: {
+    readonly windowsHide: boolean;
+    readonly stdio: 'ignore';
+  },
+) => ChildProcess;
+
+interface TerminationAttemptOptions {
+  readonly spawnHelper?: TerminationHelperSpawner;
+  readonly attemptTimeoutMs?: number;
+  readonly reapGraceMs?: number;
+}
 
 const TERMINATION_GRACE_PERIOD_MS = 5_000;
 export const ANDROID_GRADLE_RECOVERY_GRACE_PERIOD_MS = 30_000;
@@ -353,6 +367,7 @@ function createChildEnv(javaHome: string): NodeJS.ProcessEnv {
 async function terminateProcessTreeAttempt(
   child: ChildProcess,
   cleanupSignal: AbortSignal,
+  options: TerminationAttemptOptions = {},
 ): Promise<void> {
   if (cleanupSignal.aborted) return;
   if (child.pid === undefined) {
@@ -365,6 +380,12 @@ async function terminateProcessTreeAttempt(
   }
 
   await new Promise<void>((resolve) => {
+    const spawnHelper: TerminationHelperSpawner = options.spawnHelper
+      ?? ((command, args, spawnOptions) => spawn(command, args, spawnOptions));
+    const attemptTimeoutMs =
+      options.attemptTimeoutMs ?? TERMINATION_ATTEMPT_TIMEOUT_MS;
+    const reapGraceMs =
+      options.reapGraceMs ?? TERMINATION_HELPER_REAP_GRACE_MS;
     let completed = false;
     let stopRequested = false;
     let helper: ChildProcess;
@@ -391,7 +412,7 @@ async function terminateProcessTreeAttempt(
         // alive beyond this attempt's own bounded cleanup window.
         helper.unref();
         finish();
-      }, TERMINATION_HELPER_REAP_GRACE_MS);
+      }, reapGraceMs);
     };
     const onCleanupAbort = (): void => {
       if (completed) return;
@@ -402,7 +423,7 @@ async function terminateProcessTreeAttempt(
     };
 
     try {
-      helper = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+      helper = spawnHelper('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
         windowsHide: true,
         stdio: 'ignore',
       });
@@ -423,11 +444,21 @@ async function terminateProcessTreeAttempt(
     const timeoutHandle = setTimeout(() => {
       requestHelperStop();
       tryKillChild(child);
-    }, TERMINATION_ATTEMPT_TIMEOUT_MS);
+    }, attemptTimeoutMs);
     cleanupSignal.addEventListener('abort', onCleanupAbort, { once: true });
     if (cleanupSignal.aborted) onCleanupAbort();
   });
 }
+
+export const androidGradleInternalForTests = Object.freeze({
+  terminateProcessTreeAttempt(
+    child: ChildProcess,
+    cleanupSignal: AbortSignal,
+    options: TerminationAttemptOptions,
+  ): Promise<void> {
+    return terminateProcessTreeAttempt(child, cleanupSignal, options);
+  },
+});
 
 function tryKillChild(child: ChildProcess, signal?: NodeJS.Signals): boolean {
   try {
