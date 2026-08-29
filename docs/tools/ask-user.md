@@ -33,7 +33,7 @@
 | `header` | `string` | 是 | - | 短标签（用于显示），使用缩写，如 "Auth method"、"Library" |
 | `type` | `'choice' \| 'text' \| 'yesno'` | 是 | - | 问题类型 |
 | `options` | `Option[]` | 条件必填 | 2-4 个 | `type='choice'` 时必需，其他类型不需要 |
-| `multiSelect` | `boolean` | 否 | `false` | 仅 `type='choice'` 时有效，是否允许多选 |
+| `multi_select` | `boolean` | 否 | `false` | 仅 `type='choice'` 时有效，是否允许多选 |
 | `placeholder` | `string` | 否 | - | 输入提示文本，用于 `type='text'` |
 
 #### Option 对象

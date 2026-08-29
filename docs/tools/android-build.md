@@ -18,7 +18,7 @@
 - `quiet?: boolean` → `true` 时追加 `-q`，默认 `true`
 - `stacktrace?: boolean` → `true` 时追加 `--stacktrace`，默认 `false`
 - `offline?: boolean` → `true` 时追加 `--offline`，要求 Gradle 使用已缓存的依赖，默认 `false`
-- `includeLogTail?: boolean` → 失败时附加有长度上限的原始诊断尾部，默认 `false`
+- `include_log_tail?: boolean` → 失败时附加有长度上限的原始诊断尾部，默认 `false`
 
 默认命令：
 
@@ -35,7 +35,7 @@
 - 固定追加：`--no-daemon`、`--console=plain`
 - 不开放任意 task、任意命令、任意环境变量透传
 
-`quiet=false` 只提高 Gradle 产生的日志详细度，不改变返回字段语义。`includeLogTail` 只控制失败 JSON 是否携带日志尾部，进程输出始终会被捕获并用于默认错误解析。
+`quiet=false` 只提高 Gradle 产生的日志详细度，不改变返回字段语义。`include_log_tail` 只控制失败 JSON 是否携带日志尾部，进程输出始终会被捕获并用于默认错误解析。
 
 `offline: true` 控制 Gradle 的离线依赖解析；Gradle Wrapper 在本地缺少指定 distribution 时仍可能先执行下载，因此该参数不构成进程级网络隔离。
 
@@ -66,26 +66,26 @@ BUILD SUCCESSFUL
 - `success`
 - `task`
 - `command`
-- `exitCode`
-- `durationMs`
-- `timedOut`
+- `exit_code`
+- `duration_ms`
+- `timed_out`
 - `cancelled`
 - `summary`
-- `failedTask`
-- `firstErrorBlock`
+- `failed_task`
+- `first_error_block`
 
-`failedTask` 是 best-effort 提取的 Gradle task path，例如 `:app:compileDebugKotlin`；无法识别时为 `null`。它不附加启发式任务分类。
+`failed_task` 是 best-effort 提取的 Gradle task path，例如 `:app:compileDebugKotlin`；无法识别时为 `null`。它不附加启发式任务分类。
 
-`firstErrorBlock` 优先保留具体编译器、Android 构建或测试诊断。默认诊断会去除 Gradle 的 `FAILURE: Build failed with an exception.`、`* What went wrong:` 标题、结构化后的 failed task 外壳、`* Try:` section 和固定构建尾部。输出格式无法识别时安全退化，不影响退出码所表达的失败语义。
+`first_error_block` 优先保留具体编译器、Android 构建或测试诊断。默认诊断会去除 Gradle 的 `FAILURE: Build failed with an exception.`、`* What went wrong:` 标题、结构化后的 failed task 外壳、`* Try:` section 和固定构建尾部。输出格式无法识别时安全退化，不影响退出码所表达的失败语义。
 
-`includeLogTail=true` 时额外返回 `logTail`：
+`include_log_tail=true` 时额外返回 `log_tail`：
 
 - 保留 stdout/stderr 的真实到达顺序
 - 清除 ANSI escape sequence 并统一换行
 - 保留 Gradle 原始 failure template
 - 使用 `android.maxLogTailChars` 限制长度并标记截断
 
-默认结果直接省略 `logTail` 属性，不返回 `null`。
+默认结果直接省略 `log_tail` 属性，不返回 `null`。
 
 ---
 
@@ -93,11 +93,11 @@ BUILD SUCCESSFUL
 
 同一 `custom-mcp` 进程内，两个 Android 工具按 `path.resolve(workspaceRoot).toLowerCase()` 共享 workspace-scoped FIFO gate。同一 workspace 同时最多运行一个受管理的 Gradle execution；不同 workspace 可以并行。参数和 Android runtime config 在排队前校验，Gradle wrapper readiness、JUnit 前置快照、进程执行和失败报告后处理都位于 gate ownership 内。
 
-FIFO 等待时间不计入 `android.buildTimeoutMs` 或 Android failure JSON 的 `durationMs`。`durationMs` 从 active ownership 后开始，包含 wrapper readiness、进程执行和最多 5 秒的 termination grace；runtime tool-call 日志记录的总耗时包含排队和 handler 后处理。
+FIFO 等待时间不计入 `android.buildTimeoutMs` 或 Android failure JSON 的 `duration_ms`。`duration_ms` 从 active ownership 后开始，包含 wrapper readiness、进程执行和最多 5 秒的 termination grace；runtime tool-call 日志记录的总耗时包含排队和 handler 后处理。
 
-取消结果使用 `isError: true`、`summary: "BUILD CANCELLED"`、`timedOut: false` 和 `cancelled: true`：
+取消结果使用 `isError: true`、`summary: "BUILD CANCELLED"`、`timed_out: false` 和 `cancelled: true`：
 
-- queued cancellation 会从 FIFO 中移除，固定返回 `durationMs: 0`、`exitCode: null`、`failedTask: null` 和 `firstErrorBlock: null`，且不会检查 wrapper、执行报告快照或启动进程；
+- queued cancellation 会从 FIFO 中移除，固定返回 `duration_ms: 0`、`exit_code: null`、`failed_task: null` 和 `first_error_block: null`，且不会检查 wrapper、执行报告快照或启动进程；
 - active caller cancellation 与 application shutdown cancellation 通过 gate-owned `AbortController` 传播到 Gradle lifecycle，并请求终止完整进程树；
 - caller cancellation 跳过 JUnit failure enhancement；timeout 保留受预算约束的报告增强；
 - timeout 与 cancellation 竞态由第一个 termination reason 固定分类，迟到的零退出码不会把结果改写为成功。
@@ -136,23 +136,23 @@ context.android.workspaceRoot
 
 ```json
 {
-  "testReport": {
+  "test_report": {
     "status": "generated",
-    "reportFiles": 2,
+    "report_files": 2,
     "tests": 42,
     "failures": 3,
     "errors": 1,
     "skipped": 2,
-    "failedTests": [
+    "failed_tests": [
       {
-        "className": "example.ExampleTest",
+        "class_name": "example.ExampleTest",
         "name": "computed value matches expectation",
         "type": "java.lang.AssertionError",
         "message": "Expected <2>, actual <1>.",
         "location": "ExampleTest.kt:24"
       }
     ],
-    "omittedFailedTests": 0
+    "omitted_failed_tests": 0
   }
 }
 ```
@@ -163,11 +163,11 @@ context.android.workspaceRoot
 - `not_generated`：失败 task 是固定的 `testDebugUnitTest`，但没有发现本次变化的受支持 XML
 - `parse_failed`：发现本次变化报告，但没有报告能够形成可信汇总，或报告读取失败
 
-`<failure>` 与 `<error>` 都进入 `failedTests`，但 `failures` 和 `errors` 分别统计。失败详情默认最多返回前 10 项，超出的数量记录在 `omittedFailedTests`。默认详情不返回完整 stack、`system-out` 或 `system-err`。
+`<failure>` 与 `<error>` 都进入 `failed_tests`，但 `failures` 和 `errors` 分别统计。失败详情默认最多返回前 10 项，超出的数量记录在 `omitted_failed_tests`。默认详情不返回完整 stack、`system-out` 或 `system-err`。
 
-测试 XML 中的首个失败优先成为 `firstErrorBlock`。前置编译 task 失败且报告未变化时，结果省略 `testReport`，不会把旧测试失败归因于本次调用。
+测试 XML 中的首个失败优先成为 `first_error_block`。前置编译 task 失败且报告未变化时，结果省略 `test_report`，不会把旧测试失败归因于本次调用。
 
-JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工具不会解析 Gradle DSL、注入 init script 或扫描工作区外路径；失败结果通过 `firstErrorBlock` 和可选 `logTail` 安全退化。
+JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工具不会解析 Gradle DSL、注入 init script 或扫描工作区外路径；失败结果通过 `first_error_block` 和可选 `log_tail` 安全退化。
 
 ---
 
@@ -192,7 +192,7 @@ JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工�
    - 不能只结束最外层壳进程，否则 Gradle / Java 子进程可能继续在后台运行并持有锁。
 
 2. **失败日志必须保留真实到达顺序**
-   - 不能简单用 `stdout + stderr` 重建输出，否则 `firstErrorBlock` 和 `logTail` 可能失真。
+   - 不能简单用 `stdout + stderr` 重建输出，否则 `first_error_block` 和 `log_tail` 可能失真。
 
 3. **退出码是成功失败的权威依据**
    - 文本和 XML 解析只增强诊断；解析失败不得覆盖 Gradle 退出码、启动错误或超时。

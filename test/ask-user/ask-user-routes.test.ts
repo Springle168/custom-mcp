@@ -21,7 +21,7 @@ const QUESTIONS: AskUserQuestion[] = [
     question: 'Which libraries are acceptable?',
     header: 'Libraries',
     type: 'choice',
-    multiSelect: true,
+    multi_select: true,
     options: [
       { label: 'React', description: 'UI library' },
       { label: 'Vue', description: 'UI framework' },

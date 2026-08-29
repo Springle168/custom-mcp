@@ -27,7 +27,7 @@ const ALLOWED_KEYS = new Set([
   'quiet',
   'stacktrace',
   'offline',
-  'includeLogTail',
+  'include_log_tail',
 ]);
 
 export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
@@ -46,7 +46,7 @@ export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
       description:
         "Uses Gradle's offline dependency resolution when true; required dependencies must already be cached. Defaults to false.",
     },
-    includeLogTail: {
+    include_log_tail: {
       type: 'boolean',
       description:
         'Includes a bounded tail of the normalized raw Gradle output on failure. Defaults to false.',
@@ -64,21 +64,6 @@ export interface AndroidGradleToolArgs {
 
 type ToolAndroidConfig = NonNullable<ToolRuntimeContext['android']>;
 
-export type AndroidGradleToolFailure = {
-  success: false;
-  task: RunAndroidGradleResult['task'];
-  command: string;
-  exitCode: number | null;
-  durationMs: number;
-  timedOut: boolean;
-  cancelled: boolean;
-  summary: 'BUILD FAILED' | 'BUILD CANCELLED';
-  failedTask: string | null;
-  firstErrorBlock: string | null;
-  logTail?: string;
-  testReport?: TestReportSummary;
-};
-
 interface AndroidGradleFailureEnhancement {
   firstErrorBlock?: string;
   testReport?: TestReportSummary;
@@ -89,7 +74,7 @@ export function validateAndroidGradleToolArgs(
 ): string | null {
   for (const key of Object.keys(args)) {
     if (!ALLOWED_KEYS.has(key)) {
-      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace, offline, includeLogTail.`;
+      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace, offline, include_log_tail.`;
     }
   }
 
@@ -106,10 +91,10 @@ export function validateAndroidGradleToolArgs(
   }
 
   if (
-    args.includeLogTail !== undefined &&
-    typeof args.includeLogTail !== 'boolean'
+    args.include_log_tail !== undefined &&
+    typeof args.include_log_tail !== 'boolean'
   ) {
-    return "The 'includeLogTail' parameter must be a boolean.";
+    return "The 'include_log_tail' parameter must be a boolean.";
   }
 
   return null;
@@ -132,8 +117,8 @@ export function toRunAndroidGradleOptions(
     options.offline = args.offline;
   }
 
-  if (typeof args.includeLogTail === 'boolean') {
-    options.includeLogTail = args.includeLogTail;
+  if (typeof args.include_log_tail === 'boolean') {
+    options.includeLogTail = args.include_log_tail;
   }
 
   return options;
@@ -258,24 +243,45 @@ export function formatAndroidGradleToolResult(
     return textResult(result.summary);
   }
 
-  const failure: AndroidGradleToolFailure = {
+  const failure = {
     success: false,
     task: result.task,
     command: result.command,
-    exitCode: result.exitCode,
-    durationMs: result.durationMs,
-    timedOut: result.timedOut,
+    exit_code: result.exitCode,
+    duration_ms: result.durationMs,
+    timed_out: result.timedOut,
     cancelled: result.cancelled,
     summary: result.cancelled ? 'BUILD CANCELLED' : 'BUILD FAILED',
-    failedTask: result.failedTask,
-    firstErrorBlock: enhancement?.firstErrorBlock ?? result.firstErrorBlock,
-    ...(result.logTail === undefined ? {} : { logTail: result.logTail }),
-    ...(enhancement?.testReport === undefined
-      ? {}
-      : { testReport: enhancement.testReport }),
+    failed_task: result.failedTask,
+    first_error_block: enhancement?.firstErrorBlock ?? result.firstErrorBlock,
+    log_tail: result.logTail,
+    test_report: enhancement?.testReport
+      ? toAndroidTestReportPayload(enhancement.testReport)
+      : undefined,
   };
 
   return textErrorResult(JSON.stringify(failure));
+}
+
+function toAndroidTestReportPayload(
+  report: TestReportSummary,
+) {
+  return {
+    status: report.status,
+    report_files: report.reportFiles,
+    tests: report.tests,
+    failures: report.failures,
+    errors: report.errors,
+    skipped: report.skipped,
+    failed_tests: report.failedTests?.map((failedTest) => ({
+      class_name: failedTest.className,
+      name: failedTest.name,
+      type: failedTest.type,
+      message: failedTest.message,
+      location: failedTest.location,
+    })),
+    omitted_failed_tests: report.omittedFailedTests,
+  };
 }
 
 function createQueuedCancellationResult(
