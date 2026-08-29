@@ -1,6 +1,7 @@
 // test/read-file/read-file.test.ts
 
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import readFileTool from '../../src/tools/read-file.js';
 import {
   cleanupFixtures,
@@ -43,7 +44,7 @@ async function testReadFullFile() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -62,7 +63,7 @@ async function testReadLineRange() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8 },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -81,7 +82,7 @@ async function testEndLineBeyondEofClipsToEof() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 13, end_line: 999 },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -98,7 +99,7 @@ async function testShowLineNumbers() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8, show_line_numbers: true },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -116,7 +117,7 @@ async function testLargeFileReadsAllLines() {
   await withTempTextFile('large-read-file-v2.tmp.txt', content, async (fileName) => {
     const result = await readFileTool.handler(
       { file_path: fileName },
-      testContext,
+      testContext, createTestToolInvocationContext(),
     );
 
     assert(result.isError !== true, 'Should succeed');
@@ -137,7 +138,7 @@ async function testLongLineIsNotShortened() {
   await withTempTextFile('long-line-read-file-v2.tmp.txt', longLine, async (fileName) => {
     const result = await readFileTool.handler(
       { file_path: fileName },
-      testContext,
+      testContext, createTestToolInvocationContext(),
     );
 
     assert(result.isError !== true, 'Should succeed');
@@ -162,7 +163,7 @@ async function testRegexRange() {
       end_line: '^\\)',
       show_line_numbers: true,
     },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -181,7 +182,7 @@ async function testRegexStartOnlyReadsToEof() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'fun isValid' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -198,7 +199,7 @@ async function testRegexInvalidPattern() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: '[' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -213,7 +214,7 @@ async function testRegexStartNoMatch() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'NoSuchSymbol' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -233,7 +234,7 @@ async function testRegexEndNoMatch() {
       start_line: 'data class Foo',
       end_line: 'NoSuchSymbol',
     },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -248,7 +249,7 @@ async function testModeSpecificRangeTypes() {
 
   const lineModeResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'line', start_line: '6' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(lineModeResult.isError === true, 'Line mode should reject string start_line');
@@ -260,7 +261,7 @@ async function testModeSpecificRangeTypes() {
 
   const lineModeEndResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'line', end_line: '8' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(lineModeEndResult.isError === true, 'Line mode should reject string end_line');
@@ -272,7 +273,7 @@ async function testModeSpecificRangeTypes() {
 
   const regexModeResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 6 },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(regexModeResult.isError === true, 'Regex mode should reject numeric start_line');
@@ -288,7 +289,7 @@ async function testInvalidReadMode() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'keyword' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -300,7 +301,7 @@ async function testInvalidRange() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 10, end_line: 5 },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -316,7 +317,7 @@ async function testStartLineBeyondEof() {
 
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 999 },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -328,7 +329,7 @@ async function testBinaryFileRejected() {
 
   const result = await readFileTool.handler(
     { file_path: 'binary/fake.png' },
-    testContext,
+    testContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');

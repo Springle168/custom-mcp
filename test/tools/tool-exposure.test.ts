@@ -347,6 +347,7 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
   let externalCalls = 0;
   let receivedBuiltInArgs: Record<string, unknown> | undefined;
   let receivedBuiltInContext: ToolRuntimeContext | undefined;
+  let receivedBuiltInInvocation: ToolInvocationContext | undefined;
   const builtIn: CompiledBuiltInTool = Object.freeze({
     definition: Object.freeze({
       name: 'bound_tool',
@@ -354,10 +355,15 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
       inputSchema,
     }),
     implementationValidator,
-    executor: async (args: Record<string, unknown>, context: ToolRuntimeContext) => {
+    executor: async (
+      args: Record<string, unknown>,
+      context: ToolRuntimeContext,
+      invocation: ToolInvocationContext,
+    ) => {
       builtInCalls++;
       receivedBuiltInArgs = args;
       receivedBuiltInContext = context;
+      receivedBuiltInInvocation = invocation;
       return textResult('Built-in tool completed.');
     },
   });
@@ -381,17 +387,107 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
 
   const context = createContext();
   const args = { value: 'ok' };
+  const invocation = createInvocationContext('call_override');
   const result = await service.routeToolCall(
     'bound_tool',
     args,
     context,
-    createInvocationContext('call_override'),
+    invocation,
   );
   assertEqual(getResultText(result), 'Built-in tool completed.', 'Override should return the built-in executor result');
   assertEqual(builtInCalls, 1, 'Override should invoke its built-in executor');
   assertEqual(externalCalls, 0, 'Override must not invoke the external executor');
   assertEqual(receivedBuiltInArgs, args, 'Built-in executor should receive its tool arguments');
   assertEqual(receivedBuiltInContext, context, 'Built-in executor should receive workspace runtime context');
+  assertEqual(
+    receivedBuiltInInvocation,
+    invocation,
+    'Built-in override executor should receive the original invocation context',
+  );
+  assertEqual(
+    receivedBuiltInInvocation?.signal,
+    invocation.signal,
+    'Built-in override executor should receive the original invocation signal',
+  );
+}
+
+async function testPreAbortedBuiltInCallsRespectValidationOrdering(): Promise<void> {
+  const implementationSchema = Object.freeze({
+    type: 'object',
+    properties: Object.freeze({ value: Object.freeze({ type: 'string' }) }),
+    required: Object.freeze(['value']),
+    additionalProperties: false,
+  });
+  let executionCalls = 0;
+  const builtIn: CompiledBuiltInTool = Object.freeze({
+    definition: Object.freeze({
+      name: 'cancelled_tool',
+      description: 'Pre-admission cancellation test tool',
+      inputSchema: implementationSchema,
+    }),
+    implementationValidator: compileInputSchemaValidator(implementationSchema),
+    executor: async () => {
+      executionCalls++;
+      return textResult('Unexpected built-in execution.');
+    },
+  });
+  const override = customDefinition('cancelled_tool', {
+    type: 'object',
+    properties: { alias: { type: 'string' } },
+    required: ['alias'],
+    additionalProperties: false,
+  });
+  const service = createWorkspaceToolService(createCatalog({
+    builtInTools: [builtIn],
+    customDefinitions: [override],
+  }));
+  const controller = new AbortController();
+  controller.abort();
+  const invocation = Object.freeze({
+    ...createInvocationContext('call_cancelled_before_execution'),
+    signal: controller.signal,
+  });
+
+  const effectiveFailure = await service.routeToolCall(
+    'cancelled_tool',
+    {},
+    createContext(),
+    invocation,
+  );
+  assertIncludes(
+    getResultText(effectiveFailure),
+    'configured input schema',
+    'Effective validation should run before the pre-admission cancellation check',
+  );
+
+  const implementationFailure = await service.routeToolCall(
+    'cancelled_tool',
+    { alias: 'ok' },
+    createContext(),
+    invocation,
+  );
+  assertIncludes(
+    getResultText(implementationFailure),
+    'not supported by its current executor',
+    'Implementation validation should run before the pre-admission cancellation check',
+  );
+
+  const validService = createWorkspaceToolService(createCatalog({
+    builtInTools: [builtIn],
+  }));
+  const cancelled = await validService.routeToolCall(
+    'cancelled_tool',
+    { value: 'ok' },
+    createContext(),
+    invocation,
+  );
+  assertEqual(cancelled.isError, true, 'Pre-admission cancellation should return a tool error');
+  assertEqual(
+    getResultText(cancelled),
+    'The tool call was cancelled before execution started.',
+    'Pre-admission cancellation should use the stable catalog error text',
+  );
+  assertEqual(executionCalls, 0, 'Pre-aborted valid calls must not reach the built-in executor');
 }
 
 async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
@@ -478,6 +574,7 @@ async function main(): Promise<void> {
       { name: 'custom-only validation precedes unavailable executor', run: testCustomOnlyValidationAndUnavailableExecutor },
       { name: 'custom-only external routes use definition bindings', run: testCustomOnlyExternalRoutesUseDefinitionBindings },
       { name: 'override remains bound to its built-in executor', run: testOverrideRemainsBoundToBuiltInExecutor },
+      { name: 'pre-aborted built-in calls preserve validation ordering', run: testPreAbortedBuiltInCallsRespectValidationOrdering },
       { name: 'hidden and unknown tools do not validate or execute', run: testHiddenAndUnknownDoNotValidateOrExecute },
       { name: 'disabled ask_user does not reach executor', run: testDisabledAskUserDoesNotReachExecutor },
       { name: 'catalog and service facades are frozen', run: testCatalogAndServiceFacadesAreFrozen },

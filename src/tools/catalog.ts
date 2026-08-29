@@ -203,7 +203,15 @@ export function compileWorkspaceToolCatalog(
       }
 
       if (entry.binding === 'built-in') {
-        return entry.executor(args as Record<string, unknown>, context);
+        if (invocationContext.signal.aborted) {
+          return textErrorResult('The tool call was cancelled before execution started.');
+        }
+
+        return entry.executor(
+          args as Record<string, unknown>,
+          context,
+          invocationContext,
+        );
       }
 
       if (entry.binding === 'external') {

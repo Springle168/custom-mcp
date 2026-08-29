@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import readManyFilesTool from '../../src/tools/read-many-files.js';
 import {
   cleanupFixtures,
@@ -27,7 +28,7 @@ async function testSingleFileAbsolutePath() {
   const fooPath = path.join(FIXTURES_DIR, 'src', 'Foo.kt');
   const result = await readManyFilesTool.handler(
     { include: [fooPath] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(!result.isError, 'Should succeed');
@@ -44,7 +45,7 @@ async function testGlobPattern() {
   
   const result = await readManyFilesTool.handler(
     { include: ['src/**/*.kt'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(!result.isError, 'Should succeed');
@@ -65,7 +66,7 @@ async function testMixedPathsAndGlobs() {
   const readmePath = path.join(FIXTURES_DIR, 'docs', 'README.md');
   const result = await readManyFilesTool.handler(
     { include: [readmePath, 'src/*.kt'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(!result.isError, 'Should succeed');
@@ -84,7 +85,7 @@ async function testGlobStartingWithSlash() {
   
   const result = await readManyFilesTool.handler(
     { include: ['/**/Foo.kt'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError !== true, 'Should succeed');
@@ -98,7 +99,7 @@ async function testNoBuiltInDefaultExcludes() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt', '**/*.kt', '**/*.md'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(!result.isError, 'Should succeed');
@@ -116,7 +117,7 @@ async function testRejectUseDefaultExcludesAlias() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useDefaultExcludes: false },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Removed aliases should be rejected');
@@ -133,7 +134,7 @@ async function testAbsoluteLiteralBypassesExcludes() {
       include: [excludedPath],
       exclude: ['node_modules/**'],
     },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(!result.isError, 'Should succeed');
@@ -150,7 +151,7 @@ async function testFileNotFound() {
   const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
   const result = await readManyFilesTool.handler(
     { include: [nonexistentPath] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -167,7 +168,7 @@ async function testNoMatches() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.xyz'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error');
@@ -183,7 +184,7 @@ async function testPathOutsideRoot() {
   const outsidePath = path.join(FIXTURES_DIR, '..', '..', '..', 'etc', 'passwd');
   const result = await readManyFilesTool.handler(
     { include: [outsidePath] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -198,7 +199,7 @@ async function testEmptyInclude() {
   
   const result = await readManyFilesTool.handler(
     { include: [] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error');
@@ -212,7 +213,7 @@ async function testInvalidIncludeType() {
   
   const result = await readManyFilesTool.handler(
     { include: 'not-an-array' },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error');
@@ -229,7 +230,7 @@ async function testCustomExclude() {
       include: ['src/**/*.kt'],
       exclude: ['**/nested/**']
     },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(!result.isError, 'Should succeed');
@@ -248,7 +249,7 @@ async function testPartialSuccess() {
   const nonexistentPath = path.join(FIXTURES_DIR, 'nonexistent.kt');
   const result = await readManyFilesTool.handler(
     { include: [fooPath, nonexistentPath] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError !== true, 'Should succeed when at least one file is read');
@@ -264,7 +265,7 @@ async function testRelativePathWithGlobChars() {
   
   const result = await readManyFilesTool.handler(
     { include: ['special-names/file[test].kt'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError !== true, 'Should succeed');
@@ -280,7 +281,7 @@ async function testRelativePathWithBraces() {
   
   const result = await readManyFilesTool.handler(
     { include: ['special-names/file{brace}.kt'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError !== true, 'Should succeed');
@@ -297,7 +298,7 @@ async function testPathIsDirectory() {
   const dirPath = path.join(FIXTURES_DIR, 'src');
   const result = await readManyFilesTool.handler(
     { include: [dirPath] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -313,7 +314,7 @@ async function testBinaryFileSkipped() {
   const pngPath = path.join(FIXTURES_DIR, 'binary', 'fake.png');
   const result = await readManyFilesTool.handler(
     { include: [pngPath] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError === true, 'Should be an error when all files fail');
@@ -329,7 +330,7 @@ async function testBinaryFileInGlob() {
   
   const result = await readManyFilesTool.handler(
     { include: ['**/*.{kt,png}'] },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   
   assert(result.isError !== true, 'Should succeed (kt files found)');
@@ -352,7 +353,7 @@ async function testShallowRead() {
   ]);
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt', 'docs/README.md'], shallow_read: true },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -386,7 +387,7 @@ async function testShallowReadContentAtConfiguredLimit() {
       shallow_read_content_limit_bytes: totalSizeBytes,
       show_line_numbers: true,
     },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
 
   assert(result.isError !== true, 'Should succeed at the configured limit');
@@ -419,7 +420,7 @@ async function testShallowReadContentAboveConfiguredLimit() {
       shallow_read: true,
       shallow_read_content_limit_bytes: totalSizeBytes - 1,
     },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
 
   assert(result.isError !== true, 'Should succeed above the configured limit');
@@ -446,7 +447,7 @@ async function testShallowReadContentLimitValidation() {
         shallow_read: true,
         shallow_read_content_limit_bytes: value,
       },
-      testContext
+      testContext, createTestToolInvocationContext()
     );
     assert(result.isError === true, `Should reject invalid limit: ${String(value)}`);
     assertIncludes(
@@ -461,7 +462,7 @@ async function testShallowReadContentLimitValidation() {
       include: ['src/Foo.kt'],
       shallow_read_content_limit_bytes: 1024,
     },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
   assert(withoutShallowRead.isError === true, 'Should require shallow_read=true');
   assertIncludes(
@@ -488,7 +489,7 @@ async function testShallowReadRecommendedBatchWarning() {
         shallow_read: true,
         shallow_read_content_limit_bytes: 51200,
       },
-      testContext
+      testContext, createTestToolInvocationContext()
     );
     assert(atThresholdResult.isError !== true, 'Recommended-threshold read should succeed');
     const atThresholdText = getResultText(atThresholdResult);
@@ -508,7 +509,7 @@ async function testShallowReadRecommendedBatchWarning() {
         shallow_read: true,
         shallow_read_content_limit_bytes: 51201,
       },
-      testContext
+      testContext, createTestToolInvocationContext()
     );
     assert(overThresholdResult.isError !== true, 'Over-threshold read should succeed');
     const overThresholdText = getResultText(overThresholdResult);
@@ -533,7 +534,7 @@ async function testShowLineNumbers() {
 
   const result = await readManyFilesTool.handler(
     { include: ['src/Foo.kt'], show_line_numbers: true },
-    testContext
+    testContext, createTestToolInvocationContext()
   );
 
   assert(result.isError !== true, 'Should succeed');

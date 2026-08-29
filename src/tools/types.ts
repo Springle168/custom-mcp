@@ -1,4 +1,5 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import type { ToolName } from './names.js';
 
 export interface ToolCallResult {
@@ -16,6 +17,7 @@ export interface ToolDefinition {
 export type ToolExecutor = (
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
+  invocation: ToolInvocationContext,
 ) => Promise<ToolCallResult>;
 
 export interface MCPTool {
