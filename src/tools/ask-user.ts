@@ -9,7 +9,7 @@ export interface AskUserQuestion {
   header: string;
   type: 'choice' | 'text' | 'yesno';
   options?: AskUserOption[];
-  multiSelect?: boolean;
+  multi_select?: boolean;
   placeholder?: string;
 }
 
@@ -51,7 +51,7 @@ Each item in the questions array must be an object with these fields:
 - options (array, required when type="choice"): 2-4 selectable choices, each with:
     - label (string): Display text for this option, 1-5 words. e.g. "OAuth 2.0"
     - description (string): Brief explanation. e.g. "Industry standard, supports SSO"
-- multiSelect (boolean, optional): Only for type="choice". Set true to allow selecting multiple options.
+- multi_select (boolean, optional): Only for type="choice". Set true to allow selecting multiple options.
 - placeholder (string, optional): Only for type="text". Hint text shown in the input field.`,
   inputSchema: {
     type: 'object' as const,
@@ -101,9 +101,10 @@ Each item in the questions array must be an object with these fields:
                   },
                 },
                 required: ['label', 'description'],
+                additionalProperties: false,
               },
             },
-            multiSelect: {
+            multi_select: {
               type: 'boolean',
               description:
                 "Only applies when type='choice'. Set to true to allow selecting multiple options.",
@@ -114,10 +115,12 @@ Each item in the questions array must be an object with these fields:
             },
           },
           required: ['question', 'header', 'type'],
+          additionalProperties: false,
         },
       },
     },
     required: ['questions'],
+    additionalProperties: false,
   },
 };
 
@@ -142,6 +145,13 @@ function validateParams(params: AskUserParams): string | null {
 
     if (!q.type || !['choice', 'text', 'yesno'].includes(q.type)) {
       return `Question ${i + 1}: 'type' must be 'choice', 'text', or 'yesno'.`;
+    }
+
+    if (
+      q.multi_select !== undefined &&
+      typeof q.multi_select !== 'boolean'
+    ) {
+      return `Question ${i + 1}: 'multi_select' must be a boolean.`;
     }
 
     // Validate choice type
@@ -228,7 +238,7 @@ export function normalizeAskUserAnswerPayload(
     const answerKey = `question_${i}`;
     const noteKey = `note_${i}`;
     const answerValue =
-      question.type === 'choice' && question.multiSelect
+      question.type === 'choice' && question.multi_select
         ? normalizeMultiSelectFormValue(body[answerKey])
         : normalizeSingleFormValue(body[answerKey]);
     const noteValue = normalizeSingleFormValue(body[noteKey]).trim();
@@ -289,7 +299,7 @@ export function generateQuestionForm(
       let inputHtml = '';
 
       if (q.type === 'choice') {
-        const inputType = q.multiSelect ? 'checkbox' : 'radio';
+        const inputType = q.multi_select ? 'checkbox' : 'radio';
         const inputName = `question_${index}`;
 
         inputHtml = q
@@ -297,7 +307,7 @@ export function generateQuestionForm(
             (opt, optIndex) => `
         <div>
           <label>
-            <input type="${inputType}" name="${inputName}" value="${escapeHtml(opt.label)}" ${!q.multiSelect ? 'required' : ''}>
+            <input type="${inputType}" name="${inputName}" value="${escapeHtml(opt.label)}" ${!q.multi_select ? 'required' : ''}>
             <strong>${escapeHtml(opt.label)}</strong> - ${escapeHtml(opt.description)}
           </label>
         </div>

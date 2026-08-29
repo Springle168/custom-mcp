@@ -77,7 +77,7 @@ function createQuestions(): AskUserQuestion[] {
       question: 'Which libraries are acceptable?',
       header: 'Libs',
       type: 'choice',
-      multiSelect: true,
+      multi_select: true,
       options: [
         { label: 'React', description: 'UI library' },
         { label: 'Vue', description: 'UI framework' },
@@ -118,7 +118,7 @@ function testNormalizeMultiSelectSingleValue(): void {
         question: 'Which auth method should we use?',
         header: 'Auth',
         type: 'choice',
-        multiSelect: true,
+        multi_select: true,
         options: [
           { label: 'OAuth 2.0', description: 'Industry standard' },
           { label: 'JWT', description: 'Compact token' },
@@ -151,7 +151,7 @@ function testNormalizeNonStringValues(): void {
         question: 'Which flags?',
         header: 'Flags',
         type: 'choice',
-        multiSelect: true,
+        multi_select: true,
         options: [
           { label: 'true', description: 'Enable' },
           { label: '3', description: 'Three' },
@@ -231,6 +231,7 @@ async function testHandlerAnswerResult(): Promise<void> {
             question: 'Which auth method should we use?',
             header: 'Auth',
             type: 'choice',
+            multi_select: true,
             options: [
               { label: 'OAuth 2.0', description: 'Industry standard' },
               { label: 'JWT', description: 'Compact token' },

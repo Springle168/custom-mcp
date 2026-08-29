@@ -129,9 +129,9 @@ glob static base 通过后，glob segment 中仍不能包含会在展开后形�
 |-|-|
 | relative literal | ignore：否；exclude：否 |
 | drive-absolute literal | ignore：否；exclude：否 |
-| relative glob | ignore：由 `useIgnoreFiles` 控制；exclude：是 |
-| slash-leading glob | ignore：由 `useIgnoreFiles` 控制；exclude：是 |
-| drive-absolute glob | ignore：由 `useIgnoreFiles` 控制；exclude：是 |
+| relative glob | ignore：由 `use_ignore_files` 控制；exclude：是 |
+| slash-leading glob | ignore：由 `use_ignore_files` 控制；exclude：是 |
+| drive-absolute glob | ignore：由 `use_ignore_files` 控制；exclude：是 |
 
 `ignoreFiles` 使用 Gitignore 语义并与 matched root 关联；`exclude` 使用 `glob` 包的 glob pattern 语义。两者都在 deny 后、去重和排序前执行。没有硬编码默认 ignore。
 

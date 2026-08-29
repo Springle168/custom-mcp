@@ -9,7 +9,7 @@ import {
 const ANDROID_TEST_DEBUG_UNIT_TEST_TOOL_DEFINITION = {
   name: 'android_testDebugUnitTest' as const,
   description:
-    'Runs the Android project debug unit tests with quiet Gradle output by default. Success returns BUILD SUCCESSFUL. Failure returns compact JSON with the failed task and a cleaned first error block. Set includeLogTail=true only when the default diagnosis is insufficient.',
+    'Runs the Android project debug unit tests with quiet Gradle output by default. Success returns BUILD SUCCESSFUL. Failure returns compact JSON with the failed task and a cleaned first error block. Set include_log_tail=true only when the default diagnosis is insufficient.',
   inputSchema: ANDROID_GRADLE_TOOL_INPUT_SCHEMA,
 };
 

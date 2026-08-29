@@ -40,7 +40,7 @@ test/fixtures/read-many-files/
 |-|-|-|-|-|
 | `include` | `string[]` | ✅ | — | 相对路径、drive-absolute 路径或 glob 模式数组；相对输入基于 primary `rootDir`，drive-absolute 输入可位于任一 allowed root 内 |
 | `exclude` | `string[]` | ❌ | `[]` | 仅过滤 glob 自动发现结果的本次调用 glob pattern；literal 绕过 |
-| `useIgnoreFiles` | `boolean` | ❌ | `true` | 是否使用 matched root 配置的 `ignoreFiles` 过滤 glob 自动发现结果；不影响 literal、`exclude` 或 deny。宽泛发现应保持默认开启；如需检查被 ignore 的候选，推荐先收窄 include pattern，再以 `useIgnoreFiles=false` 和 `shallow_read=true` 预检，最后通过 literal 路径读取选中的文件 |
+| `use_ignore_files` | `boolean` | ❌ | `true` | 是否使用 matched root 配置的 `ignoreFiles` 过滤 glob 自动发现结果；不影响 literal、`exclude` 或 deny。宽泛发现应保持默认开启；如需检查被 ignore 的候选，推荐先收窄 include pattern，再以 `use_ignore_files=false` 和 `shallow_read=true` 预检，最后通过 literal 路径读取选中的文件 |
 | `shallow_read` | `boolean` | ❌ | `false` | 返回文件列表、各自行数与大小、总行数与总大小和是否会截断；可通过 `shallow_read_content_limit_bytes` 为小规模结果同时返回文件内容；内容返回阈值建议不超过 `SHALLOW_READ_BATCH_SIZE_BYTES` |
 | `shallow_read_content_limit_bytes` | `integer` | ❌ | — | 仅与 `shallow_read=true` 配合使用的正整数；成功处理文件的原始磁盘总大小不大于该字节数时，同时返回浅读统计和文件内容 |
 | `show_line_numbers` | `boolean` | ❌ | `false` | 给返回内容每行添加原始行号前缀，仅在确实需要行号时开启 |
@@ -52,7 +52,7 @@ test/fixtures/read-many-files/
 - **主 description**：说明多文件和 glob 读取场景、文本文件限定、截断边界，以及与单文件 `read_file` 的分工
 - **批量预检**：建议宽泛文件集合先使用 `shallow_read` 评估大小和截断风险，再决定后续读取范围
 - **输入路径**：由 `include` 参数说明 relative / drive-absolute 路径和 glob 的 root 语义，并提供输入示例
-- **过滤规则**：由 `exclude` 和 `useIgnoreFiles` 参数区分本次调用过滤与 root-specific 持久 ignore；所有 literal 都绕过两者
+- **过滤规则**：由 `exclude` 和 `use_ignore_files` 参数区分本次调用过滤与 root-specific 持久 ignore；所有 literal 都绕过两者
 - **ignore 渐进式探查**：保持宽泛发现的默认 ignore；如需检查被过滤候选，先收窄 pattern 并以关闭 ignore 的浅读取预检，再通过 literal 路径精读
 - **浅读取结果**：由 `shallow_read` 参数说明行数、大小、截断状态、可选内容返回和建议批次大小
 - **小规模结果合并返回**：由 `shallow_read_content_limit_bytes` 说明按成功处理文件的原始磁盘总大小决定是否同时返回内容
@@ -78,7 +78,7 @@ test/fixtures/read-many-files/
     → 分类并计算 static base，执行 lexical/预计 real deny
     → 受控 glob adapter 在 readdir 前执行目录 lexical/real deny，拒绝目录会被剪枝
     → 每个展开结果再次执行 lexical/realpath deny
-    → useIgnoreFiles 启用时应用 lexical ignore，再应用本次 exclude
+    → `use_ignore_files` 启用时应用 lexical ignore，再应用本次 exclude
 ```
 
 支持的 glob 来源包括 relative glob（如 `src/**/*.ts`）、drive-absolute glob（如 `E:/Repo/src/**/*.ts`）和窄兼容的 slash-leading glob（如 `/**/Foo.kt`）。relative glob 和 slash-leading glob 只基于 primary `rootDir`；drive-absolute glob 可命中 primary 或 additional root。普通 `/foo/bar.ts` 不含 glob 元字符，会按 rooted without drive 拒绝。
@@ -202,7 +202,7 @@ No truncation: all returned file contents are complete.
 ### Ignore、deny 与 mixed result
 
 - 没有硬编码默认 ignore 列表，也不从二进制扩展名生成 glob 排除项。
-- `ignoreFiles` 只过滤自动发现的 lexical 可见路径；`useIgnoreFiles=false` 可以关闭该软过滤。
+- `ignoreFiles` 只过滤自动发现的 lexical 可见路径；`use_ignore_files=false` 可以关闭该软过滤。
 - `denyFiles` 始终应用，并同时检查 lexical path 与 realpath。
 - glob 同时得到返回文件和被 `ignoreFiles` 过滤的自动发现项时，追加固定说明：`NOTE: Some glob-discovered paths were filtered by configured ignoreFiles rules.`。该说明不列出被过滤路径；只在至少一个文件成功返回时出现。
 - glob 同时得到 allowed 文件和 denied 自动发现项时，只返回 allowed 文件并追加固定说明：`NOTE: Some paths were blocked by the file access deny policy.`。

@@ -52,10 +52,10 @@ For broad file sets, use shallow_read first to inspect their size and truncation
         description:
           'Optional glob patterns applied to automatically discovered glob results. Literal include paths bypass excludes. Examples: ["**/*.test.kt", "generated/**"]',
       },
-      useIgnoreFiles: {
+      use_ignore_files: {
         type: 'boolean',
         description:
-          'Whether configured ignoreFiles rules filter automatically discovered glob results. Defaults to true. Literal include paths bypass ignore rules. The file access deny policy always applies. Keep enabled for broad discovery. If inspection of ignored matches is needed, use the recommended workflow: first use a narrow include pattern with useIgnoreFiles=false and shallow_read=true, then read selected files by literal path.',
+          'Whether configured ignoreFiles rules filter automatically discovered glob results. Defaults to true. Literal include paths bypass ignore rules. The file access deny policy always applies. Keep enabled for broad discovery. If inspection of ignored matches is needed, use the recommended workflow: first use a narrow include pattern with use_ignore_files=false and shallow_read=true, then read selected files by literal path.',
       },
       shallow_read: {
         type: 'boolean',
@@ -83,7 +83,7 @@ function validateParams(args: Record<string, unknown>): string | null {
   const allowedKeys = new Set([
     'include',
     'exclude',
-    'useIgnoreFiles',
+    'use_ignore_files',
     'shallow_read',
     'shallow_read_content_limit_bytes',
     'show_line_numbers',
@@ -111,10 +111,10 @@ function validateParams(args: Record<string, unknown>): string | null {
     }
   }
   if (
-    args.useIgnoreFiles !== undefined &&
-    typeof args.useIgnoreFiles !== 'boolean'
+    args.use_ignore_files !== undefined &&
+    typeof args.use_ignore_files !== 'boolean'
   ) {
-    return "The 'useIgnoreFiles' parameter must be a boolean.";
+    return "The 'use_ignore_files' parameter must be a boolean.";
   }
   if (args.shallow_read !== undefined && typeof args.shallow_read !== 'boolean') {
     return "The 'shallow_read' parameter must be a boolean.";
@@ -272,7 +272,7 @@ async function handleReadManyFiles(
   const include = args.include as string[];
   const exclude = (args.exclude as string[] | undefined) ?? [];
   const useIgnoreFiles =
-    (args.useIgnoreFiles as boolean | undefined) ?? true;
+    (args.use_ignore_files as boolean | undefined) ?? true;
   const shallowRead = (args.shallow_read as boolean | undefined) ?? false;
   const shallowReadContentLimitBytes =
     args.shallow_read_content_limit_bytes as number | undefined;

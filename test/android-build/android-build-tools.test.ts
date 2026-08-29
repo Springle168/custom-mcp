@@ -63,15 +63,15 @@ async function testValidationErrorForNonBoolean() {
 
 async function testValidationErrorForNonBooleanLogTail() {
   const result = await androidTestDebugUnitTestTool.handler(
-    { includeLogTail: 'yes' },
+    { include_log_tail: 'yes' },
     baseContext, createTestToolInvocationContext(),
   );
 
-  assert(result.isError === true, 'Should fail on non-boolean includeLogTail');
+  assert(result.isError === true, 'Should fail on non-boolean include_log_tail');
   assertIncludes(
     getResultText(result),
-    "The 'includeLogTail' parameter must be a boolean.",
-    'Should explain the invalid includeLogTail type',
+    "The 'include_log_tail' parameter must be a boolean.",
+    'Should explain the invalid include_log_tail type',
   );
 }
 
@@ -160,11 +160,11 @@ async function testPreAbortedAndroidCallUsesCancellationContract() {
   assertEqual(result.isError, true, 'Cancelled Android calls should use the error result shell');
   assertEqual(failure.summary, 'BUILD CANCELLED', 'Cancellation should use the stable summary');
   assertEqual(failure.cancelled, true, 'Cancellation should set cancelled=true');
-  assertEqual(failure.timedOut, false, 'Cancellation must not be classified as timeout');
-  assertEqual(failure.exitCode, null, 'Queued cancellation should not invent an exit code');
-  assertEqual(failure.durationMs, 0, 'Queued cancellation should not include queue wait');
-  assertEqual(failure.failedTask, null, 'Queued cancellation should not invent Gradle output');
-  assertEqual(failure.firstErrorBlock, null, 'Queued cancellation should not invent diagnostics');
+  assertEqual(failure.timed_out, false, 'Cancellation must not be classified as timeout');
+  assertEqual(failure.exit_code, null, 'Queued cancellation should not invent an exit code');
+  assertEqual(failure.duration_ms, 0, 'Queued cancellation should not include queue wait');
+  assertEqual(failure.failed_task, null, 'Queued cancellation should not invent Gradle output');
+  assertEqual(failure.first_error_block, null, 'Queued cancellation should not invent diagnostics');
   assert(
     String(failure.command).includes('--offline'),
     'Queued cancellation should retain the normal safe display command',
@@ -193,14 +193,19 @@ function testFailureFormatterUsesCompactJson() {
   assertEqual(failure.success, false, 'Failure JSON should keep success=false');
   assertEqual(failure.task, 'assembleDebug', 'Failure JSON should keep task');
   assertEqual(
-    failure.firstErrorBlock,
+    failure.first_error_block,
     'Execution failed for task :app:compileDebugKotlin.',
-    'Failure JSON should keep firstErrorBlock',
+    'Failure JSON should keep first_error_block',
   );
   assertEqual(
-    failure.failedTask,
+    failure.failed_task,
     ':app:compileDebugKotlin',
-    'Failure JSON should keep failedTask',
+    'Failure JSON should keep failed_task',
+  );
+  assertEqual(
+    failure.log_tail,
+    'BUILD FAILED in 1s',
+    'Failure JSON should include the requested log tail',
   );
 }
 
@@ -240,11 +245,11 @@ async function testUnitTestFailureUsesGeneratedXmlReport() {
     });
     const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
     const failure = parseCompactJsonText(getResultText(result));
-    const testReport = failure.testReport as Record<string, unknown>;
+    const testReport = failure.test_report as Record<string, unknown>;
 
     assertEqual(result.isError, true, 'Should return the Gradle failure');
     assertEqual(
-      failure.failedTask,
+      failure.failed_task,
       ':app:testDebugUnitTest',
       'Should extract the failed test task',
     );
@@ -255,14 +260,20 @@ async function testUnitTestFailureUsesGeneratedXmlReport() {
     );
     assertEqual(testReport.tests, 1, 'Should aggregate test count');
     assertIncludes(
-      String(failure.firstErrorBlock),
+      String(failure.first_error_block),
       'DemoTest.kt:12',
       'Should prefer the XML test diagnosis',
     );
     assertEqual(
-      Object.hasOwn(failure, 'logTail'),
+      Object.hasOwn(failure, 'log_tail'),
       false,
-      'Should omit logTail by default',
+      'Should omit log_tail by default',
+    );
+    const failedTests = testReport.failed_tests as Array<Record<string, unknown>>;
+    assertEqual(
+      failedTests[0]?.class_name,
+      'demo.DemoTest',
+      'Failure JSON should preserve the failed test class name',
     );
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
@@ -299,7 +310,7 @@ async function testFailedTestTaskWithoutReportIsExplicit() {
     });
     const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
     const failure = parseCompactJsonText(getResultText(result));
-    const testReport = failure.testReport as Record<string, unknown>;
+    const testReport = failure.test_report as Record<string, unknown>;
 
     assertEqual(
       testReport.status,
@@ -356,12 +367,12 @@ async function testCompileFailureDoesNotUseOldTestReport() {
     const failure = parseCompactJsonText(getResultText(result));
 
     assertEqual(
-      Object.hasOwn(failure, 'testReport'),
+      Object.hasOwn(failure, 'test_report'),
       false,
       'Should not attribute an unchanged old report to a compile failure',
     );
     assertIncludes(
-      String(failure.firstErrorBlock),
+      String(failure.first_error_block),
       'Unresolved reference oldFailure',
       'Should keep the current compile diagnosis',
     );
@@ -418,12 +429,12 @@ async function testConcurrentUnitTestCallsRunSeriallyAndKeepAttribution() {
     assertEqual(first.isError, true, 'First simulated build should fail');
     assertEqual(second.isError, true, 'Second simulated build should fail');
     assertEqual(
-      (parseCompactJsonText(getResultText(first)).testReport as Record<string, unknown>).status,
+      (parseCompactJsonText(getResultText(first)).test_report as Record<string, unknown>).status,
       'generated',
       'First queued build should retain its own report attribution',
     );
     assertEqual(
-      (parseCompactJsonText(getResultText(second)).testReport as Record<string, unknown>).status,
+      (parseCompactJsonText(getResultText(second)).test_report as Record<string, unknown>).status,
       'generated',
       'Second queued build should snapshot after the first build and retain its own attribution',
     );

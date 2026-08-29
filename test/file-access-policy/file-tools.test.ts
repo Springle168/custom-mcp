@@ -144,7 +144,7 @@ async function testLiteralReadDenyAndIgnoreBypass(): Promise<void> {
     {
       include: ['ignored/soft.txt'],
       exclude: ['ignored/**'],
-      useIgnoreFiles: true,
+      use_ignore_files: true,
     },
     createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
@@ -173,7 +173,7 @@ async function testRealpathDenyCannotBeBypassedBySymlink(): Promise<void> {
 
 async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   const filtered = await readManyFilesTool.handler(
-    { include: ['**/*.txt'], useIgnoreFiles: true },
+    { include: ['**/*.txt'], use_ignore_files: true },
     createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   const filteredText = getResultText(filtered);
@@ -186,14 +186,14 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   );
 
   const unfiltered = await readManyFilesTool.handler(
-    { include: ['**/*.txt'], useIgnoreFiles: false },
+    { include: ['**/*.txt'], use_ignore_files: false },
     createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   const unfilteredText = getResultText(unfiltered);
   assertIncludes(
     unfilteredText,
     'ignored\\soft.txt',
-    'useIgnoreFiles=false should disable only the ignore matcher',
+    'use_ignore_files=false should disable only the ignore matcher',
   );
   assertNotIncludes(
     unfilteredText,
@@ -205,7 +205,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
     {
       include: ['**/*.txt'],
       exclude: ['ignored/**'],
-      useIgnoreFiles: false,
+      use_ignore_files: false,
     },
     createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
@@ -216,7 +216,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   );
 
   const onlyIgnored = await readManyFilesTool.handler(
-    { include: ['ignored/**/*.txt'], useIgnoreFiles: true },
+    { include: ['ignored/**/*.txt'], use_ignore_files: true },
     createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   assert(onlyIgnored.isError === true, 'An all-ignored glob should use the normal error');
@@ -231,7 +231,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
 
 async function testGlobDenyMixedResultPrivacy(): Promise<void> {
   const result = await readManyFilesTool.handler(
-    { include: ['**/*.txt'], useIgnoreFiles: false },
+    { include: ['**/*.txt'], use_ignore_files: false },
     createContext({ deny: ['denied/'] }), createTestToolInvocationContext(),
   );
   assert(result.isError !== true, 'Allowed glob results should still be returned');

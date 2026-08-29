@@ -206,6 +206,8 @@ npm run start
 
 Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 prompt**。
 
+项目定义的 MCP 工具名称、`inputSchema` 属性名和工具返回 JSON 字段名默认使用 `snake_case`，嵌套属性遵循同一规则。外部协议、领域固有标识或其他明确约束可以使用符合其语义的命名。该约定不适用于 MCP、JSON Schema 等标准规定的字段，也不约束内部 TypeScript 标识符。
+
 **应该包含的内容：**
 
 - 工具的功能边界（能做什么、不能做什么）。
