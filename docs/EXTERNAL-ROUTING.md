@@ -283,7 +283,7 @@ HTTP body 在 request stage 完成编码后检查；`body-encoder` 的结果也�
 
 caller `AbortSignal` 会传递到 pending / active admission、Processor 和 HTTP transport。取消 queued 调用会移出 FIFO；取消 active 调用先结算为 `cancelled`，然后继续等待本地 drain。Processor 在 timeout 或取消时关闭 stdio、先向 direct child 发送 `SIGTERM`，再在有界等待后发送 `SIGKILL`；若 child 未确认关闭，runner 进入 degraded cleanup 并拒绝未来 Processor admission。
 
-首次 `SIGINT` 或 `SIGTERM` 启动幂等 application shutdown：先停止 HTTP listener 与新 MCP session admission，再关闭已有 MCP session 以传播调用取消，然后调用 `LoadedApplicationRuntime.close()`。external runtime 停止新 admission、取消 pending work、abort active work 并等待 active exchange drain，随后关闭共享 Processor runner（存在时）和专用 HTTP/HTTPS Agents；最后关闭 logger。单个 MCP session 的 DELETE 或 transport close 只关闭该 session，不关闭 workspace external runtime。所有 application shutdown 调用复用同一个 completion promise。某个关闭阶段失败时仍继续执行后续阶段，最终以聚合错误报告；transport 在每个 active exchange 脱离本地 listener 后才销毁其 dedicated Agents，且不影响 process-global Agent。
+首次 `SIGINT` 或 `SIGTERM` 启动幂等 application shutdown：先停止 HTTP listener 与新 MCP session admission，并立即启动 Android runtime close，使 Android gate 停止 admission、取消 queued / active Gradle work；随后关闭已有 MCP session 以传播其它调用取消。HTTP listener 与 session drain 完成后等待 Android 完整 barrier，再调用 `LoadedApplicationRuntime.close()`。external runtime 停止新 admission、取消 pending work、abort active work 并等待 active exchange drain，随后关闭共享 Processor runner（存在时）和专用 HTTP/HTTPS Agents；最后关闭 logger。单个 MCP session 的 DELETE 或 transport close 只关闭该 session，不关闭 Android 或 workspace external runtime。所有 application shutdown 调用复用同一个 completion promise。某个关闭阶段失败时仍继续执行后续阶段，最终以聚合错误报告；transport 在每个 active exchange 脱离本地 listener 后才销毁其 dedicated Agents，且不影响 process-global Agent。
 
 ---
 

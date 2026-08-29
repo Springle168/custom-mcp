@@ -19,6 +19,7 @@ export interface ParseAndroidGradleOutputOptions {
   maxLogTailChars: number;
   includeLogTail?: boolean;
   cancelled?: boolean;
+  timedOut?: boolean;
 }
 
 export function parseAndroidGradleOutput(
@@ -33,6 +34,19 @@ export function parseAndroidGradleOutput(
       success: false,
       summary: 'BUILD CANCELLED',
       cancelled: true,
+      failedTask: extractFailedTask(merged),
+      firstErrorBlock: extractFirstErrorBlock(merged, options.maxErrorBlockChars),
+      ...(options.includeLogTail === true && merged
+        ? { logTail: takeTail(merged, options.maxLogTailChars) }
+        : {}),
+    };
+  }
+
+  if (options.timedOut === true) {
+    return {
+      success: false,
+      summary: 'BUILD FAILED',
+      cancelled: false,
       failedTask: extractFailedTask(merged),
       firstErrorBlock: extractFirstErrorBlock(merged, options.maxErrorBlockChars),
       ...(options.includeLogTail === true && merged

@@ -38,6 +38,21 @@ function testCancelledResult() {
   assertEqual(result.cancelled, true, 'Cancellation should set the cancelled flag');
 }
 
+function testTimedOutResultIgnoresLateZeroExitCode() {
+  const result = parseAndroidGradleOutput({
+    exitCode: 0,
+    stdout: 'BUILD SUCCESSFUL',
+    stderr: 'error: Gradle process timed out after 500ms.',
+    maxErrorBlockChars: 2500,
+    maxLogTailChars: 4000,
+    timedOut: true,
+  });
+
+  assert(!result.success, 'Timeout should override a late zero exit code');
+  assertEqual(result.summary, 'BUILD FAILED', 'Timeout should retain the failure summary');
+  assertEqual(result.cancelled, false, 'Timeout should remain distinct from cancellation');
+}
+
 function testCompilerErrorExtraction() {
   const result = parseAndroidGradleOutput({
     exitCode: 1,
@@ -155,6 +170,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'success result', run: testSuccessResult },
       { name: 'cancelled result', run: testCancelledResult },
+      { name: 'timeout ignores late zero exit code', run: testTimedOutResultIgnoresLateZeroExitCode },
       { name: 'compiler error extraction', run: testCompilerErrorExtraction },
       { name: 'what went wrong extraction', run: testWhatWentWrongExtraction },
       { name: 'ANSI removal and tail truncation', run: testAnsiRemovalAndTailTruncation },

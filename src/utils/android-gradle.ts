@@ -44,6 +44,7 @@ const TERMINATION_GRACE_PERIOD_MS = 5_000;
 export const ANDROID_GRADLE_RECOVERY_GRACE_PERIOD_MS = 30_000;
 const TERMINATION_RETRY_INTERVAL_MS = 2_000;
 const TERMINATION_ATTEMPT_TIMEOUT_MS = 3_000;
+const TERMINATION_HELPER_REAP_GRACE_MS = 1_000;
 const GRADLE_WRAPPER_COMMAND = '.\\gradlew.bat';
 const lingeringShutdownDetachers = new Set<() => void>();
 
@@ -52,11 +53,11 @@ export function startAndroidGradleExecution(
   runtimeConfig: AndroidGradleRuntimeConfig,
   options: RunAndroidGradleOptions = {},
   signal: AbortSignal = new AbortController().signal,
+  startedAt = Date.now(),
 ): AndroidGradleExecution {
   const args = buildGradleArgs(task, options);
   const command = formatDisplayCommand(args);
   const commandLine = buildWindowsCommandLine(args);
-  const startedAt = Date.now();
   let settleExecution!: (result: RunAndroidGradleResult) => void;
   let drainExecution!: () => void;
   let settledDone = false;
@@ -365,16 +366,38 @@ async function terminateProcessTreeAttempt(
 
   await new Promise<void>((resolve) => {
     let completed = false;
+    let stopRequested = false;
     let helper: ChildProcess;
+    let reapHandle: NodeJS.Timeout | undefined;
     const finish = (): void => {
       if (completed) return;
       completed = true;
       clearTimeout(timeoutHandle);
+      clearTimeout(reapHandle);
       cleanupSignal.removeEventListener('abort', onCleanupAbort);
       resolve();
     };
+    const requestHelperStop = (): void => {
+      if (stopRequested) return;
+      stopRequested = true;
+      const terminationRequested = tryKillChild(helper);
+      if (!terminationRequested) {
+        helper.unref();
+        finish();
+        return;
+      }
+      reapHandle = setTimeout(() => {
+        // A failed TerminateProcess request must not let the helper keep Node
+        // alive beyond this attempt's own bounded cleanup window.
+        helper.unref();
+        finish();
+      }, TERMINATION_HELPER_REAP_GRACE_MS);
+    };
     const onCleanupAbort = (): void => {
+      if (completed) return;
+      stopRequested = true;
       tryKillChild(helper);
+      helper.unref();
       finish();
     };
 
@@ -398,20 +421,20 @@ async function terminateProcessTreeAttempt(
       finish();
     });
     const timeoutHandle = setTimeout(() => {
-      tryKillChild(helper);
+      requestHelperStop();
       tryKillChild(child);
-      finish();
     }, TERMINATION_ATTEMPT_TIMEOUT_MS);
     cleanupSignal.addEventListener('abort', onCleanupAbort, { once: true });
     if (cleanupSignal.aborted) onCleanupAbort();
   });
 }
 
-function tryKillChild(child: ChildProcess, signal?: NodeJS.Signals): void {
+function tryKillChild(child: ChildProcess, signal?: NodeJS.Signals): boolean {
   try {
-    child.kill(signal);
+    return child.kill(signal);
   } catch {
     // Termination is best effort; child close or the recovery deadline owns drain.
+    return false;
   }
 }
 
@@ -439,6 +462,7 @@ function buildResult(
     maxLogTailChars: runtimeConfig.maxLogTailChars,
     includeLogTail,
     cancelled: input.cancelled,
+    timedOut: input.timedOut,
   });
   return {
     task: input.task,
