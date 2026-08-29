@@ -17,9 +17,25 @@ function testSuccessResult() {
 
   assert(result.success, 'Should mark success');
   assertEqual(result.summary, 'BUILD SUCCESSFUL', 'Should keep success summary');
+  assertEqual(result.cancelled, false, 'Successful output should not be cancelled');
   assertEqual(result.failedTask, null, 'Should not return failedTask');
   assertEqual(result.firstErrorBlock, null, 'Should not return firstErrorBlock');
   assertEqual(result.logTail, undefined, 'Should omit logTail');
+}
+
+function testCancelledResult() {
+  const result = parseAndroidGradleOutput({
+    exitCode: 0,
+    stdout: 'BUILD SUCCESSFUL',
+    stderr: '',
+    maxErrorBlockChars: 2500,
+    maxLogTailChars: 4000,
+    cancelled: true,
+  });
+
+  assert(!result.success, 'Cancellation should override a late zero exit code');
+  assertEqual(result.summary, 'BUILD CANCELLED', 'Cancellation should use its stable summary');
+  assertEqual(result.cancelled, true, 'Cancellation should set the cancelled flag');
 }
 
 function testCompilerErrorExtraction() {
@@ -138,6 +154,7 @@ async function main(): Promise<void> {
     title: 'Testing android gradle output parser',
     tests: [
       { name: 'success result', run: testSuccessResult },
+      { name: 'cancelled result', run: testCancelledResult },
       { name: 'compiler error extraction', run: testCompilerErrorExtraction },
       { name: 'what went wrong extraction', run: testWhatWentWrongExtraction },
       { name: 'ANSI removal and tail truncation', run: testAnsiRemovalAndTailTruncation },

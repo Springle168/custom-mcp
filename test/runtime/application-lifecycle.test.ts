@@ -108,6 +108,7 @@ async function testClosesResourcesInApplicationShutdownOrder(): Promise<void> {
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events)),
     sessions,
+    androidRuntime: createClosable(events, 'android.close'),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
   });
@@ -116,8 +117,8 @@ async function testClosesResourcesInApplicationShutdownOrder(): Promise<void> {
 
   assertEqual(
     events.join(','),
-    'listener.close,session.first.close,session.second.close,external.close,logger.close',
-    'Application shutdown should stop admission, close every MCP session, drain runtime, then close logging.',
+    'listener.close,android.close,session.first.close,session.second.close,external.close,logger.close',
+    'Application shutdown should stop admission, start Android drain, close every MCP session, drain external runtime, then close logging.',
   );
   assertEqual(sessions.size, 0, 'Application shutdown should remove every closed session.');
 }
@@ -132,6 +133,7 @@ async function testCloseIsIdempotentAndStopsSessionAdmissionImmediately(): Promi
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(listener),
     sessions,
+    androidRuntime: createClosable(events, 'android.close'),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
   });
@@ -163,6 +165,39 @@ async function testCloseIsIdempotentAndStopsSessionAdmissionImmediately(): Promi
   );
 }
 
+async function testStartsAndroidCloseBeforeBlockedSessionDrain(): Promise<void> {
+  const events: string[] = [];
+  const sessionDrain = deferred<void>();
+  const androidDrain = deferred<void>();
+  const sessions = new Map<string, McpPostSession>([
+    ['blocked', createSession(events, 'blocked', () => sessionDrain.promise)],
+  ]);
+  const lifecycle = new ApplicationLifecycle({
+    listener: asHttpServer(createListener(events)),
+    sessions,
+    androidRuntime: createClosable(events, 'android.close', () => androidDrain.promise),
+    externalRuntime: createClosable(events, 'external.close'),
+    logger: createClosable(events, 'logger.close'),
+  });
+
+  const close = lifecycle.close();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert(
+    events.includes('android.close'),
+    'Android runtime close should start without waiting for MCP session cancellation.',
+  );
+  assert(
+    !events.includes('external.close'),
+    'External runtime should wait for the Android and session barriers.',
+  );
+
+  sessionDrain.resolve();
+  androidDrain.resolve();
+  await close;
+}
+
 async function testSingleSessionCloseIsSeparateAndCleansTheSessionMap(): Promise<void> {
   const events: string[] = [];
   const sessionDrain = deferred<void>();
@@ -172,6 +207,7 @@ async function testSingleSessionCloseIsSeparateAndCleansTheSessionMap(): Promise
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events)),
     sessions,
+    androidRuntime: createClosable(events, 'android.close'),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
   });
@@ -200,6 +236,7 @@ async function testContinuesClosingAfterFailuresAndReportsThemTogether(): Promis
   const events: string[] = [];
   const listenerFailure = new Error('listener failed');
   const sessionFailure = new Error('session failed');
+  const androidFailure = new Error('android runtime failed');
   const runtimeFailure = new Error('runtime failed');
   const sessions = new Map<string, McpPostSession>([
     ['failed', createSession(events, 'failed', () => {
@@ -210,6 +247,9 @@ async function testContinuesClosingAfterFailuresAndReportsThemTogether(): Promis
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events, { error: listenerFailure })),
     sessions,
+    androidRuntime: createClosable(events, 'android.close', () => {
+      throw androidFailure;
+    }),
     externalRuntime: createClosable(events, 'external.close', () => {
       throw runtimeFailure;
     }),
@@ -223,15 +263,16 @@ async function testContinuesClosingAfterFailuresAndReportsThemTogether(): Promis
       error instanceof ApplicationLifecycleCloseError,
       'Application close should aggregate failures after every shutdown phase runs.',
     );
-    assertEqual(error.failures.length, 3, 'Listener, failed session, and runtime failures should be retained.');
+    assertEqual(error.failures.length, 4, 'Listener, session, Android, and external runtime failures should be retained.');
     assertEqual(error.failures[0]?.phase, 'mcp-session', 'Session failures should be reported first after listener admission stops.');
     assertEqual(error.failures[1]?.phase, 'http-listener', 'Listener drain failure should be reported after session closure.');
-    assertEqual(error.failures[2]?.phase, 'external-runtime', 'Runtime drain failure should be reported before logger closure.');
-    assertEqual(error.errors.length, 3, 'AggregateError should retain the underlying failures.');
+    assertEqual(error.failures[2]?.phase, 'android-runtime', 'Android drain failure should have its own shutdown phase.');
+    assertEqual(error.failures[3]?.phase, 'external-runtime', 'External runtime failure should be reported before logger closure.');
+    assertEqual(error.errors.length, 4, 'AggregateError should retain the underlying failures.');
 
     assertEqual(
       events.join(','),
-      'listener.close,session.failed.close,session.succeeds.close,external.close,logger.close',
+      'listener.close,android.close,session.failed.close,session.succeeds.close,external.close,logger.close',
       'Failures must not prevent later sessions, runtime drain, or logger close from running.',
     );
     assertEqual(sessions.size, 0, 'Failed session closure should still remove every captured session from the map.');
@@ -247,6 +288,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'closes resources in application shutdown order', run: testClosesResourcesInApplicationShutdownOrder },
       { name: 'is idempotent and stops session admission immediately', run: testCloseIsIdempotentAndStopsSessionAdmissionImmediately },
+      { name: 'starts Android close before blocked session drain', run: testStartsAndroidCloseBeforeBlockedSessionDrain },
       { name: 'keeps single-session close separate and cleans session state', run: testSingleSessionCloseIsSeparateAndCleansTheSessionMap },
       { name: 'continues after failures and reports them together', run: testContinuesClosingAfterFailuresAndReportsThemTogether },
     ],

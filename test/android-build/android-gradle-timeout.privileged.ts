@@ -78,11 +78,59 @@ async function testTimeoutKillsProcessTree() {
   }
 }
 
+async function testCancellationKillsProcessTree() {
+  if (process.platform !== 'win32') {
+    console.log('  - Skipped on non-Windows platform\n');
+    return;
+  }
+
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-cancel-'));
+  const gradlewPath = path.join(tempDir, 'gradlew.bat');
+  const markerPath = path.join(tempDir, 'child-survived.txt');
+  const escapedMarkerPath = markerPath.replace(/'/g, "''");
+  await writeFile(gradlewPath, [
+    '@echo off',
+    `start "" /b powershell.exe -NoProfile -Command "Start-Sleep -Seconds 2; Set-Content -Path '${escapedMarkerPath}' -Value 'child survived'"`,
+    'powershell.exe -NoProfile -Command "Start-Sleep -Seconds 30"',
+  ].join('\r\n'), 'utf8');
+
+  try {
+    const controller = new AbortController();
+    const resultPromise = runAndroidGradle(
+      'assembleDebug',
+      {
+        workspaceRoot: tempDir,
+        javaHome: process.env.JAVA_HOME || 'C:/AndroidStudio/jbr',
+        buildTimeoutMs: 10_000,
+        maxErrorBlockChars: 2500,
+        maxLogTailChars: 4000,
+      },
+      {},
+      controller.signal,
+    );
+    setTimeout(() => controller.abort(), 500);
+    const result = await resultPromise;
+
+    assert(result.cancelled === true, 'Should mark the build as cancelled');
+    assert(result.timedOut === false, 'Cancellation should not be classified as timeout');
+    assert(result.summary === 'BUILD CANCELLED', 'Cancellation should use its stable summary');
+
+    await sleep(3000);
+    assert(
+      await fileExists(markerPath) === false,
+      'Cancelled child process should not survive long enough to create the marker file',
+    );
+  } finally {
+    await removeTempDirWithRetry(tempDir);
+  }
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing Android Gradle timeout handling',
     tests: [
       { name: 'timeout kills the full Gradle process tree', run: testTimeoutKillsProcessTree },
+      { name: 'cancellation kills the full Gradle process tree', run: testCancellationKillsProcessTree },
     ],
   });
 }
