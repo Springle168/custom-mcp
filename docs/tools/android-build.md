@@ -59,7 +59,7 @@ Android 配置边界：
 BUILD SUCCESSFUL
 ```
 
-成功只由 Gradle 进程退出码 `0` 判定。工具不建立 `EXECUTED`、`UP-TO-DATE`、`NO-SOURCE` 或 `FROM-CACHE` 等稳定返回契约。
+未发生 timeout 或 cancellation 时，成功由 Gradle 进程退出码 `0` 判定。timeout 或 cancellation 一旦先被选定，迟到的零退出码不会覆盖失败或取消分类。工具不建立 `EXECUTED`、`UP-TO-DATE`、`NO-SOURCE` 或 `FROM-CACHE` 等稳定返回契约。
 
 失败时返回紧凑 JSON 文本（`JSON.stringify(failure)`，不缩进），并带 `isError: true`。共享字段包括：
 
@@ -235,6 +235,7 @@ Android 构建相关测试集中在 `test/android-build/`：
 - `test/android-build/android-build-tools.test.ts`：工具参数、返回契约和测试报告编排
 - `test/android-build/android-gradle-gate.test.ts`：FIFO、queued cancellation、双阶段 handoff、lease 隔离和 close
 - `test/android-build/android-gradle-output.test.ts`：输出清洗、failed task、首个错误块、log tail 和到达顺序
+- `test/android-build/android-gradle-cleanup.test.ts`：termination helper timeout、kill failure 与 cleanup-abort detach
 - `test/android-build/android-test-report.test.ts`：JUnit XML 聚合、失败详情和解析退化
 - `test/android-build/android-test-report-files.test.ts`：报告发现、调用前后变化与旧报告过滤
 - `test/android-build/android-gradle-timeout.privileged.ts`：超时和 active cancellation 后终止整棵进程树
