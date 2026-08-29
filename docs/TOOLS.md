@@ -110,6 +110,7 @@ catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保
 
 ```typescript
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textResult } from './results.js';
 
@@ -134,9 +135,11 @@ const READ_FILE_TOOL_DEFINITION = {
 async function handleReadFile(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
+  invocation: ToolInvocationContext,
 ): Promise<ToolCallResult> {
   // 参数校验
   // 业务逻辑；文件类工具从 context.fileAccessPolicyContext 使用统一文件访问策略
+  // 需要响应单次调用取消时使用 invocation.signal；不需要时可以省略该形参
   // 返回结果
   return textResult('结果文本');
 }
@@ -172,7 +175,7 @@ const importedTools: readonly MCPTool[] = [
 
 名称目录与实现 registry 必须一一对应；缺失、额外或重复实现会在 registry 构建时失败。`src/index.ts`、日志系统和路由逻辑不需要为单个工具改动。
 
-工具 handler 接收 `ToolRuntimeContext`，不要在工具层读取配置文件或解析全局配置结构。配置来源、workspace 选择和运行时快照归一化由配置层/运行时层负责。
+工具 handler 接收稳定的 workspace `ToolRuntimeContext` 与单次调用的 `ToolInvocationContext`。调用级 identity 和 `AbortSignal` 属于 invocation context；不消费调用级信息的 handler 可以省略第三个形参。不要在工具层读取配置文件或解析全局配置结构。配置来源、workspace 选择和运行时快照归一化由配置层/运行时层负责。
 
 ### 步骤 4：编译测试
 

@@ -13,6 +13,7 @@ import {
   type RootFileAccessPolicy,
 } from '../../src/utils/file-access-policy.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
   assert,
   assertEqual,
@@ -113,7 +114,7 @@ async function testPolicyCandidateShape(): Promise<void> {
 async function testDotDotPrefixedDirectoryRemainsInsideRoot(): Promise<void> {
   const readResult = await readFileTool.handler(
     { file_path: '..cache/valid.txt' },
-    createContext(),
+    createContext(), createTestToolInvocationContext(),
   );
   assert(readResult.isError !== true, 'A ..-prefixed name is not parent traversal');
   assertIncludes(
@@ -124,7 +125,7 @@ async function testDotDotPrefixedDirectoryRemainsInsideRoot(): Promise<void> {
 
   const writeResult = await writeFileTool.handler(
     { file_path: '..cache/new.txt', content: 'created' },
-    createContext(),
+    createContext(), createTestToolInvocationContext(),
   );
   assert(writeResult.isError !== true, 'A future target under a ..-prefixed name should be writable');
 }
@@ -132,7 +133,7 @@ async function testDotDotPrefixedDirectoryRemainsInsideRoot(): Promise<void> {
 async function testLiteralReadDenyAndIgnoreBypass(): Promise<void> {
   const denied = await readFileTool.handler(
     { file_path: 'denied/secret.txt' },
-    createContext({ deny: ['denied/**'] }),
+    createContext({ deny: ['denied/**'] }), createTestToolInvocationContext(),
   );
   assert(denied.isError === true, 'Explicit denied reads should fail');
   const deniedText = getResultText(denied);
@@ -145,7 +146,7 @@ async function testLiteralReadDenyAndIgnoreBypass(): Promise<void> {
       exclude: ['ignored/**'],
       useIgnoreFiles: true,
     },
-    createContext({ ignore: ['ignored/**'] }),
+    createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   assert(ignoredLiteral.isError !== true, 'Literal paths should bypass soft filters');
   assertIncludes(getResultText(ignoredLiteral), 'soft', 'Literal content should be returned');
@@ -161,7 +162,7 @@ async function testRealpathDenyCannotBeBypassedBySymlink(): Promise<void> {
 
   const result = await readFileTool.handler(
     { file_path: 'alias-dir/secret.txt' },
-    createContext({ deny: ['denied/**'] }),
+    createContext({ deny: ['denied/**'] }), createTestToolInvocationContext(),
   );
   assert(result.isError === true, 'Realpath deny should reject a lexical alias');
   const text = getResultText(result);
@@ -173,7 +174,7 @@ async function testRealpathDenyCannotBeBypassedBySymlink(): Promise<void> {
 async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   const filtered = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useIgnoreFiles: true },
-    createContext({ ignore: ['ignored/**'] }),
+    createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   const filteredText = getResultText(filtered);
   assertNotIncludes(filteredText, 'ignored\\soft.txt', 'Configured ignore should filter glob results');
@@ -186,7 +187,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
 
   const unfiltered = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useIgnoreFiles: false },
-    createContext({ ignore: ['ignored/**'] }),
+    createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   const unfilteredText = getResultText(unfiltered);
   assertIncludes(
@@ -206,7 +207,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
       exclude: ['ignored/**'],
       useIgnoreFiles: false,
     },
-    createContext({ ignore: ['ignored/**'] }),
+    createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   assertNotIncludes(
     getResultText(excluded),
@@ -216,7 +217,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
 
   const onlyIgnored = await readManyFilesTool.handler(
     { include: ['ignored/**/*.txt'], useIgnoreFiles: true },
-    createContext({ ignore: ['ignored/**'] }),
+    createContext({ ignore: ['ignored/**'] }), createTestToolInvocationContext(),
   );
   assert(onlyIgnored.isError === true, 'An all-ignored glob should use the normal error');
   const onlyIgnoredText = getResultText(onlyIgnored);
@@ -231,7 +232,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
 async function testGlobDenyMixedResultPrivacy(): Promise<void> {
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt'], useIgnoreFiles: false },
-    createContext({ deny: ['denied/'] }),
+    createContext({ deny: ['denied/'] }), createTestToolInvocationContext(),
   );
   assert(result.isError !== true, 'Allowed glob results should still be returned');
   const text = getResultText(result);
@@ -248,7 +249,7 @@ async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
   const context = createContext({ deny: ['denied/'] });
   const automaticOnly = await readManyFilesTool.handler(
     { include: ['**/secret.txt'] },
-    context,
+    context, createTestToolInvocationContext(),
   );
   assert(automaticOnly.isError === true, 'A zero-result glob should use the normal error');
   assertIncludes(getResultText(automaticOnly), 'No files matched', 'Zero result should remain generic');
@@ -260,7 +261,7 @@ async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
 
   const staticBase = await readManyFilesTool.handler(
     { include: ['denied/**/*.txt'] },
-    context,
+    context, createTestToolInvocationContext(),
   );
   assert(staticBase.isError === true, 'An explicitly denied static base should fail');
   assertIncludes(
@@ -285,7 +286,7 @@ async function testGlobDoesNotFollowDiscoveredDirectoryLinks(): Promise<void> {
 
   const result = await readManyFilesTool.handler(
     { include: ['alias-*/visible.txt'] },
-    createContext(),
+    createContext(), createTestToolInvocationContext(),
   );
   assert(result.isError === true, 'A wildcard-discovered directory link should be pruned');
   assertIncludes(getResultText(result), 'No files matched', 'Pruned links should look like no match');
@@ -302,7 +303,7 @@ async function testGlobAllowsLinksInExplicitStaticBasePrefix(): Promise<void> {
 
   const result = await readManyFilesTool.handler(
     { include: ['alias-explicit/sub/**/*.txt'] },
-    createContext(),
+    createContext(), createTestToolInvocationContext(),
   );
   assert(result.isError !== true, 'A validated explicit static-base link should be traversable');
   assertIncludes(getResultText(result), 'nested-visible', 'The explicit static-base link should resolve files');
@@ -315,7 +316,7 @@ async function testDanglingWriteSymlinkIsRejected(): Promise<void> {
 
   const result = await writeFileTool.handler(
     { file_path: 'dangling.txt', content: 'must-not-follow' },
-    createContext(),
+    createContext(), createTestToolInvocationContext(),
   );
   assert(result.isError === true, 'A dangling write symlink should be rejected');
   assertIncludes(getResultText(result), 'symbolic link', 'The failure should identify the unsafe target type');
@@ -325,7 +326,7 @@ async function testWriteAndReplaceDenyFutureTargets(): Promise<void> {
   const context = createContext({ deny: ['denied/**'] });
   const writeResult = await writeFileTool.handler(
     { file_path: 'denied/new.txt', content: 'must-not-exist' },
-    context,
+    context, createTestToolInvocationContext(),
   );
   assert(writeResult.isError === true, 'Deny should cover future write targets');
   assertIncludes(getResultText(writeResult), 'file access deny policy', 'Write deny should be explicit');
@@ -336,7 +337,7 @@ async function testWriteAndReplaceDenyFutureTargets(): Promise<void> {
       target: '',
       replacement: 'must-not-exist',
     },
-    context,
+    context, createTestToolInvocationContext(),
   );
   assert(replaceResult.isError === true, 'Deny should cover replace create mode');
   assertIncludes(getResultText(replaceResult), 'file access deny policy', 'Replace deny should be explicit');
@@ -355,7 +356,7 @@ async function testWriteAndReplaceDenyFutureTargets(): Promise<void> {
 async function testDirectoryTypeDenyPrecedesDirectoryError(): Promise<void> {
   const result = await writeFileTool.handler(
     { file_path: 'denied', content: 'must-not-write' },
-    createContext({ deny: ['denied/'] }),
+    createContext({ deny: ['denied/'] }), createTestToolInvocationContext(),
   );
   assert(result.isError === true, 'Writing a denied directory should fail');
   const text = getResultText(result);

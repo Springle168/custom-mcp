@@ -6,6 +6,7 @@ import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
 import replaceTool from '../../src/tools/replace.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
   assert,
   assertEqual,
@@ -111,7 +112,7 @@ export function createReplaceTextFixtureHarness(suiteName: string) {
     args: Record<string, unknown>,
     context: ToolRuntimeContext = createTestToolContext(),
   ): Promise<ToolCallResult> {
-    return replaceTool.handler(args, context);
+    return replaceTool.handler(args, context, createTestToolInvocationContext());
   }
 
   async function assertFixtureContent(

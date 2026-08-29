@@ -85,10 +85,13 @@ workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `
 
 - effective input schema validation failure；
 - built-in implementation contract validation failure；
+- 已通过输入与 implementation contract 校验、但在进入 built-in executor 前已经取消的调用；
 - custom-only tool 的 unavailable executor；
 - hidden 或 unknown tool。
 
 这些结果通过 `textErrorResult()` 返回 `isError: true`，随后与 handler 结果经过同一个 request policy adapter 和 result logger。validation 文本区分 workspace configured contract 与 executor implementation contract，并只输出整理后的 instance location、message 和 keyword；不输出 Ajv 原始错误对象、schema path、tool config path 或 definition path。
+
+Built-in pre-admission cancellation 使用稳定文本 `The tool call was cancelled before execution started.`。该检查位于 effective input validation 和 built-in implementation validation 之后，只阻止原本会进入 built-in executor 的有效调用。External routing 继续由自身 runtime 处理 queued 和 active cancellation。
 
 ---
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import androidAssembleDebugTool from '../../src/tools/android-assemble-debug.js';
 import androidTestDebugUnitTestTool from '../../src/tools/android-test-debug-unit-test.js';
 import { formatAndroidGradleToolResult } from '../../src/tools/android-build-shared.js';
@@ -35,7 +36,7 @@ function parseCompactJsonText(text: string): Record<string, unknown> {
 async function testValidationErrorForUnknownField() {
   const result = await androidAssembleDebugTool.handler(
     { quiet: true, profile: true },
-    baseContext,
+    baseContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail on unknown field');
@@ -49,7 +50,7 @@ async function testValidationErrorForUnknownField() {
 async function testValidationErrorForNonBoolean() {
   const result = await androidTestDebugUnitTestTool.handler(
     { offline: 'yes' },
-    baseContext,
+    baseContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail on non-boolean parameter');
@@ -63,7 +64,7 @@ async function testValidationErrorForNonBoolean() {
 async function testValidationErrorForNonBooleanLogTail() {
   const result = await androidTestDebugUnitTestTool.handler(
     { includeLogTail: 'yes' },
-    baseContext,
+    baseContext, createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail on non-boolean includeLogTail');
@@ -75,7 +76,7 @@ async function testValidationErrorForNonBooleanLogTail() {
 }
 
 async function testMissingAndroidConfig() {
-  const result = await androidAssembleDebugTool.handler({}, baseContext);
+  const result = await androidAssembleDebugTool.handler({}, baseContext, createTestToolInvocationContext());
 
   assert(result.isError === true, 'Should fail when Android config is missing');
   assertIncludes(
@@ -99,7 +100,7 @@ async function testMissingGradleWrapper() {
 
   const result = await androidTestDebugUnitTestTool.handler(
     { quiet: true, offline: true },
-    context,
+    context, createTestToolInvocationContext(),
   );
   const failure = parseCompactJsonText(getResultText(result));
 
@@ -202,7 +203,7 @@ async function testUnitTestFailureUsesGeneratedXmlReport() {
         maxLogTailChars: 4000,
       },
     });
-    const result = await androidTestDebugUnitTestTool.handler({}, context);
+    const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
     const failure = parseCompactJsonText(getResultText(result));
     const testReport = failure.testReport as Record<string, unknown>;
 
@@ -261,7 +262,7 @@ async function testFailedTestTaskWithoutReportIsExplicit() {
         maxLogTailChars: 4000,
       },
     });
-    const result = await androidTestDebugUnitTestTool.handler({}, context);
+    const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
     const failure = parseCompactJsonText(getResultText(result));
     const testReport = failure.testReport as Record<string, unknown>;
 
@@ -316,7 +317,7 @@ async function testCompileFailureDoesNotUseOldTestReport() {
         maxLogTailChars: 4000,
       },
     });
-    const result = await androidTestDebugUnitTestTool.handler({}, context);
+    const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
     const failure = parseCompactJsonText(getResultText(result));
 
     assertEqual(
@@ -375,8 +376,8 @@ async function testOverlappingUnitTestCallsSkipReportAttribution() {
       },
     });
     const [first, second] = await Promise.all([
-      androidTestDebugUnitTestTool.handler({}, context),
-      androidTestDebugUnitTestTool.handler({}, context),
+      androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext()),
+      androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext()),
     ]);
 
     assertEqual(first.isError, true, 'First simulated build should fail');

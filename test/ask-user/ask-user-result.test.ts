@@ -10,6 +10,7 @@ import askUserTool, {
 } from '../../src/tools/ask-user.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
   assert,
   assertEqual,
@@ -237,7 +238,7 @@ async function testHandlerAnswerResult(): Promise<void> {
           },
         ],
       },
-      context,
+      context, createTestToolInvocationContext(),
     );
 
     assertEqual(pendingQuestions.size, 1, 'Handler should create one pending ask_user session');
