@@ -6,9 +6,9 @@ export const MAX_GUIDELINE_READ_WORKERS = 8;
 
 export const DISCOVER_GUIDELINES_TOOL_DEFINITION = {
   name: 'discover_guidelines',
-  description: `Discovers guideline metadata from YAML Front Matter without returning Markdown body content.
+  description: `Discovers available guidelines and what they are for without reading their full Markdown contents.
 
-Include selectors support literal paths and glob patterns. Only .md files are inspected, and configured ignoreFiles rules are disabled by default. Use a file-reading tool when the guideline body is needed.`,
+Use literal paths or glob patterns to find .md guideline files. Returns each guideline's name, description, and file path, but not its body. Use a file-reading tool to read the body of a relevant guideline.`,
   inputSchema: {
     type: 'object',
     properties: {
