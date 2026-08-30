@@ -8,7 +8,7 @@ export interface GuidelineMetadata {
   readonly description: string;
 }
 
-function extractFrontMatterSource(
+export function extractGuidelineFrontMatterSource(
   prefix: string,
   prefixContainsWholeFile: boolean,
 ): string | null {
@@ -80,7 +80,10 @@ export function parseGuidelineFrontMatter(
   prefix: string,
   prefixContainsWholeFile: boolean,
 ): GuidelineMetadata | null {
-  const source = extractFrontMatterSource(prefix, prefixContainsWholeFile);
+  const source = extractGuidelineFrontMatterSource(
+    prefix,
+    prefixContainsWholeFile,
+  );
   if (source === null) {
     return null;
   }

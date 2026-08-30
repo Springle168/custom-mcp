@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ignore from 'ignore';
@@ -418,6 +419,38 @@ async function testWorkerLimitAndCancellation(): Promise<void> {
   assertEqual(started, MAX_GUIDELINE_READ_WORKERS, 'Cancellation should stop scheduling new files');
 }
 
+async function testPrefixReadingStopsAfterClosingDelimiter(): Promise<void> {
+  const source = Buffer.from(
+    `${guideline('bounded')}${'BODY'.repeat(MAX_GUIDELINE_PREFIX_BYTES)}`,
+    'utf8',
+  );
+  let readCalls = 0;
+  const fakeHandle = {
+    async read(
+      target: Buffer,
+      offset: number,
+      length: number,
+      position: number,
+    ) {
+      readCalls += 1;
+      const bytesRead = Math.min(length, source.length - position);
+      source.copy(target, offset, position, position + bytesRead);
+      return { bytesRead, buffer: target };
+    },
+  } as unknown as FileHandle;
+
+  const result = await discoverGuidelinesInternalForTests.readBoundedPrefix(
+    fakeHandle,
+    source.length,
+    new AbortController().signal,
+  );
+  assertEqual(readCalls, 1, 'A closing delimiter in the first chunk should stop further reads');
+  assert(
+    Buffer.byteLength(result.text, 'utf8') < MAX_GUIDELINE_PREFIX_BYTES,
+    'The bounded reader should not fill the prefix budget after finding Front Matter',
+  );
+}
+
 async function testPreCancelledAndUnexpectedInspectorFailure(): Promise<void> {
   const controller = new AbortController();
   controller.abort();
@@ -454,6 +487,7 @@ await runTestSuite({
     { name: 'Controlled inspection failures remain partial results', run: testControlledInspectionFailuresRemainPartialResults },
     { name: 'Markdown candidate limit is deterministic', run: testFileLimit },
     { name: 'Worker limit and cancellation stop scheduling', run: testWorkerLimitAndCancellation },
+    { name: 'Prefix reading stops after the closing delimiter', run: testPrefixReadingStopsAfterClosingDelimiter },
     { name: 'Pre-cancellation and internal failures are errors', run: testPreCancelledAndUnexpectedInspectorFailure },
   ],
 });
