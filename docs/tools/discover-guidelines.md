@@ -41,8 +41,9 @@ Input Schema 和 executor 都拒绝未知字段。`include` 至少包含一个�
 
 - 最多检查排序后的前 100 个 Markdown 文件；
 - 每个文件最多读取开头 64 KiB；
+- 以 4 KiB 块读取，识别 closing delimiter 后不再继续读取后续正文；
 - 最多使用 8 个 worker 并发检查；
-- 打开文件后通过 handle 的 `stat` 确认目标仍是 regular file；
+- 打开前拒绝非 regular file；打开时在平台支持时使用 no-follow 与 non-blocking flags，随后通过 handle/path identity 和 realpath 复核目标未被替换；
 - 在正常、无效、失败和取消路径关闭 file handle。
 
 closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指南。正文不会传给 YAML parser，也不会进入工具结果。

@@ -1,8 +1,18 @@
 import { extname } from 'node:path';
-import { open, type FileHandle } from 'node:fs/promises';
+import {
+  constants as fsConstants,
+  type BigIntStats,
+} from 'node:fs';
+import {
+  lstat,
+  open,
+  realpath,
+  type FileHandle,
+} from 'node:fs/promises';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import {
+  extractGuidelineFrontMatterSource,
   parseGuidelineFrontMatter,
   type GuidelineMetadata,
 } from '../engine/guideline-front-matter.js';
@@ -22,6 +32,11 @@ import type { MCPTool, ToolCallResult } from './types.js';
 const CANCELLED_MESSAGE = 'The discover_guidelines tool call was cancelled.';
 const INTERNAL_ERROR_MESSAGE =
   'Guideline discovery failed because of an unexpected internal error. Retry with narrower selectors.';
+const PREFIX_READ_CHUNK_BYTES = 4 * 1024;
+const SAFE_READ_OPEN_FLAGS =
+  fsConstants.O_RDONLY |
+  (fsConstants.O_NOFOLLOW ?? 0) |
+  (fsConstants.O_NONBLOCK ?? 0);
 
 interface DiscoveredGuideline extends GuidelineMetadata {
   readonly file_path: string;
@@ -35,6 +50,11 @@ interface DiscoveryPayload {
 interface PrefixReadResult {
   readonly text: string;
   readonly containsWholeFile: boolean;
+}
+
+interface OpenedSelectedFile {
+  readonly handle: FileHandle;
+  readonly stats: BigIntStats;
 }
 
 type FileInspectionResult =
@@ -98,19 +118,78 @@ async function readBoundedPrefix(
     const result = await fileHandle.read(
       buffer,
       bytesRead,
-      buffer.length - bytesRead,
+      Math.min(PREFIX_READ_CHUNK_BYTES, buffer.length - bytesRead),
       bytesRead,
     );
     if (result.bytesRead === 0) {
       break;
     }
     bytesRead += result.bytesRead;
+
+    const text = buffer.subarray(0, bytesRead).toString('utf8');
+    const containsWholeFile = sizeAtOpen <= bytesRead;
+    const withoutBom = text.startsWith('\uFEFF') ? text.slice(1) : text;
+    if (
+      ((containsWholeFile || bytesRead >= 8) &&
+        !withoutBom.startsWith('---\n') &&
+        !withoutBom.startsWith('---\r\n')) ||
+      extractGuidelineFrontMatterSource(text, containsWholeFile) !== null
+    ) {
+      return { text, containsWholeFile };
+    }
   }
 
   return {
     text: buffer.subarray(0, bytesRead).toString('utf8'),
     containsWholeFile: sizeAtOpen <= bytesRead,
   };
+}
+
+function sameFileIdentity(
+  openedStats: BigIntStats,
+  pathStats: BigIntStats,
+): boolean {
+  return (
+    openedStats.dev === pathStats.dev &&
+    openedStats.ino === pathStats.ino
+  );
+}
+
+async function openSelectedRegularFile(
+  filePath: string,
+): Promise<OpenedSelectedFile | null> {
+  let fileHandle: FileHandle | undefined;
+  try {
+    const beforeOpenStats = await lstat(filePath, { bigint: true });
+    if (!beforeOpenStats.isFile()) {
+      return null;
+    }
+
+    fileHandle = await open(filePath, SAFE_READ_OPEN_FLAGS);
+    const openedStats = await fileHandle.stat({ bigint: true });
+    if (!openedStats.isFile()) {
+      await fileHandle.close();
+      return null;
+    }
+
+    const [revalidatedPath, pathStats] = await Promise.all([
+      realpath(filePath),
+      lstat(filePath, { bigint: true }),
+    ]);
+    if (
+      revalidatedPath !== filePath ||
+      !pathStats.isFile() ||
+      !sameFileIdentity(openedStats, pathStats)
+    ) {
+      await fileHandle.close();
+      return null;
+    }
+
+    return { handle: fileHandle, stats: openedStats };
+  } catch {
+    await fileHandle?.close().catch(() => undefined);
+    return null;
+  }
 }
 
 async function inspectGuidelineFile(
@@ -120,19 +199,24 @@ async function inspectGuidelineFile(
   let fileHandle: FileHandle | undefined;
   let result: FileInspectionResult = { ok: false };
   try {
-    fileHandle = await open(file.readPath, 'r');
-    const stats = await fileHandle.stat();
-    if (stats.isFile()) {
-      const prefix = await readBoundedPrefix(fileHandle, stats.size, signal);
-      if (!signal.aborted) {
-        result = {
-          ok: true,
-          metadata: parseGuidelineFrontMatter(
-            prefix.text,
-            prefix.containsWholeFile,
-          ),
-        };
-      }
+    const openedFile = await openSelectedRegularFile(file.readPath);
+    if (!openedFile) {
+      return result;
+    }
+    fileHandle = openedFile.handle;
+    const prefix = await readBoundedPrefix(
+      fileHandle,
+      Number(openedFile.stats.size),
+      signal,
+    );
+    if (!signal.aborted) {
+      result = {
+        ok: true,
+        metadata: parseGuidelineFrontMatter(
+          prefix.text,
+          prefix.containsWholeFile,
+        ),
+      };
     }
   } catch {
     result = { ok: false };
@@ -318,7 +402,9 @@ async function handleDiscoverGuidelines(
 
 export const discoverGuidelinesInternalForTests = Object.freeze({
   discoverGuidelines,
+  inspectGuidelineFile,
   inspectFilesWithWorkerLimit,
+  readBoundedPrefix,
 });
 
 const discoverGuidelinesTool: MCPTool = {
