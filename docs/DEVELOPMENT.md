@@ -66,6 +66,7 @@ custom-mcp/
 | `src/engine/replacement.ts` | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
 | `src/engine/android-gradle-output.ts` | [docs/tools/android-build.md](tools/android-build.md) |
+| `src/engine/guideline-front-matter.ts` | [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
 | `src/utils/paths.ts`, `src/utils/file-access-policy.ts`, `src/utils/file-selection.ts` | allowed-root 路径分类、统一 ignore/deny 文件访问策略与可读文件集合选择见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) 和 [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `src/utils/android-gradle-gate.ts`, `src/utils/android-gradle.ts` | Android workspace FIFO、queued/active cancellation、Gradle execution settle/drain 与 bounded recovery 见 [docs/tools/android-build.md](tools/android-build.md) |
 | `src/utils/file-read.ts` | [docs/tools/read-file.md](tools/read-file.md)、[docs/tools/read-many-files.md](tools/read-many-files.md) |
