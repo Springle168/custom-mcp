@@ -7,9 +7,13 @@ import {
 } from '../utils/file-access-policy.js';
 import {
   isBinaryFile,
-  MAX_FILE_SIZE_MB,
   readTextFile,
 } from '../utils/file-read.js';
+import {
+  READ_FILE_OUTPUT_SEPARATOR_FORMAT,
+  READ_FILE_OUTPUT_TERMINATOR,
+  READ_FILE_TOOL_DEFINITION,
+} from './definitions/read-file.definition.js';
 
 type ReadMode = 'line' | 'regex';
 
@@ -17,52 +21,6 @@ interface LineRange {
   startLine?: number;
   endLine?: number;
 }
-
-const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
-const OUTPUT_TERMINATOR = '--- End of content ---';
-
-const READ_FILE_TOOL_DEFINITION = {
-  name: 'read_file' as const,
-  description: `Reads and returns the content of a specified text file.
-
-Supports full-file reads and optional continuous ranges positioned by 1-based line numbers or line-by-line JavaScript RegExp patterns.
-For context efficiency, always retrieve only the minimum content necessary for your next step.
-Successful responses always start with two summary lines, then a blank line, then a '${OUTPUT_SEPARATOR_FORMAT}' separator before the file content, and end with '${OUTPUT_TERMINATOR}'.
-Text files only. Binary files (images, archives, compiled output, etc.) are rejected.
-Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not apply line-count or line-length truncation.`,
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      file_path: {
-        type: 'string',
-        description: 'The path to the text file to read.',
-      },
-      start_line: {
-        type: ['integer', 'string'],
-        description:
-          'Optional: In read_mode="line", the 1-based line number to start reading from. In read_mode="regex", a non-empty JavaScript RegExp pattern whose first matching line becomes the start line.',
-      },
-      end_line: {
-        type: ['integer', 'string'],
-        description:
-          'Optional: In read_mode="line", the 1-based line number to end reading at (inclusive). In read_mode="regex", a non-empty JavaScript RegExp pattern searched from the resolved start line and included as the end line.',
-      },
-      read_mode: {
-        type: 'string',
-        enum: ['line', 'regex'],
-        description:
-          'How to interpret start_line and end_line. Use "line" for positive integer line numbers, or "regex" for line-by-line JavaScript RegExp pattern positioning. Defaults to "line".',
-      },
-      show_line_numbers: {
-        type: 'boolean',
-        description:
-          'If true, prefix each returned content line with its original 1-based line number. Use only when line numbers are necessary. Defaults to false.',
-      },
-    },
-    required: ['file_path'],
-    additionalProperties: false,
-  },
-};
 
 function getReadMode(args: Record<string, unknown>): ReadMode | null {
   if (args.read_mode === undefined) return 'line';
@@ -256,7 +214,7 @@ async function handleReadFile(
   }
 
   const displayPath = safePath.displayPath;
-  const separator = OUTPUT_SEPARATOR_FORMAT.replace('{filePath}', displayPath);
+  const separator = READ_FILE_OUTPUT_SEPARATOR_FORMAT.replace('{filePath}', displayPath);
   const summaryParts = [
     `Read ${result.linesRead} of ${result.originalLineCount} line(s) from ${displayPath}.`,
   ];
@@ -270,7 +228,7 @@ async function handleReadFile(
   }
 
   return textResult(
-    `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${OUTPUT_TERMINATOR}`,
+    `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${READ_FILE_OUTPUT_TERMINATOR}`,
   );
 }
 

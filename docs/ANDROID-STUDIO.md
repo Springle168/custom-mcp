@@ -35,7 +35,7 @@ workspace `host` 缺省为 `127.0.0.1`；显式配置其他 IP 时，`httpUrl` �
 | 段 | 来源 | 文件 |
 |-|-|-|
 | 中间段 (server name) | `Server` 构造函数的 `name` | `src/index.ts` |
-| 末段 (tool name) | 工具定义的 `name` | 各工具文件 |
+| 末段 (tool name) | 工具定义的 `name` | built-in 使用 `src/tools/definitions/*.definition.ts`；configured Tool 使用 Tool config 引用的 `toolDefinitionFile` |
 
 `-` 会被 Android Studio 自动转为 `_`。
 

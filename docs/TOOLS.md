@@ -46,6 +46,7 @@ src/tools/
 ├── input-schema-validator.ts        # Draft 2020-12 validator facade
 ├── types.ts                         # definition、executor 与 ToolCallResult 类型
 ├── results.ts                       # textResult / textErrorResult 等返回值 helper
+├── definitions/                     # built-in Tool definition 模块
 ├── replace.ts                       # replace_text 工具
 ├── read-file.ts                     # read_file 工具
 ├── read-many-files.ts               # read_many_files 工具
@@ -84,6 +85,8 @@ node --import tsx test/tools/inspect-tools.ts
 
 ### Built-in registry、catalog 与 workspace tool service
 
+`src/tools/definitions/` 中的 TypeScript 模块定义 built-in Tool 的 `name`、`description` 与 Draft 2020-12 `inputSchema`。definition 模块可以复用实现常量，并通过 `satisfies MCPTool['definition']` 保留 built-in identity 与 schema 的静态类型约束；handler 模块只负责绑定 definition 与 executor。
+
 `src/tools/names.ts` 的 `TOOL_NAMES` 只定义内置工具名称和 canonical 顺序。`src/tools/index.ts` 按该目录检查缺失、额外和重复实现，深冻结内置 definitions，并把每份原始 `inputSchema` 编译为 built-in implementation validator。
 
 selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启动期加载。Tool config / definition 的文件格式、路径边界和示例见 [自定义 Tool 配置](config/tool-config.md)。每份 definition 只描述 `name`、`description` 与 Draft 2020-12 `inputSchema`；它不携带 executor。schema 使用 `src/tools/input-schema-validator.ts` 在隔离 resolver context 中同步编译，validator 不执行类型转换、default 注入或字段删除。
@@ -106,34 +109,43 @@ catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保
 
 ## 添加新工具
 
-### 步骤 1：创建工具文件
+### 步骤 1：创建 Tool definition
+
+在 `src/tools/definitions/` 下创建 definition 模块，例如 `src/tools/definitions/read-file.definition.ts`：
+
+```typescript
+import type { MCPTool } from '../types.js';
+
+export const READ_FILE_TOOL_DEFINITION = {
+  name: 'read_file',
+  description: '工具描述，这段文字会直接进入 AI 的上下文，是 prompt engineering 的一部分。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_path: {
+        type: 'string',
+        description: '参数描述，同样会被 AI 看到。',
+      },
+    },
+    required: ['file_path'],
+    additionalProperties: false,
+  },
+} as const satisfies MCPTool['definition'];
+```
+
+definition 只承载 `name`、`description` 与 `inputSchema`，不携带 executor。描述或 schema 需要与实现共享稳定常量时，由 definition 模块导出该常量供 handler 使用，或导入已有共享基础设施常量；不要在 handler 与 definition 中重复维护同一值。
+
+### 步骤 2：创建工具文件
 
 在 `src/tools/` 下新建文件，例如 `src/tools/read-file.ts`：
 
 ```typescript
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
+import { READ_FILE_TOOL_DEFINITION } from './definitions/read-file.definition.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textResult } from './results.js';
 
-// 1. 定义 Schema（MCP tools/list 返回给宿主）
-const READ_FILE_TOOL_DEFINITION = {
-  name: 'read_file',
-  description: '工具描述，这段文字会直接进入 AI 的上下文，是 prompt engineering 的一部分。',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      file_path: {
-        type: 'string',
-        description: '参数描述，同样会被 AI 看到。',
-      },
-      // ... 其他参数
-    },
-    required: ['file_path'],
-  },
-};
-
-// 2. 实现 Handler
 async function handleReadFile(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
@@ -146,7 +158,6 @@ async function handleReadFile(
   return textResult('结果文本');
 }
 
-// 3. 默认导出 MCPTool 对象
 const readFileTool: MCPTool = {
   definition: READ_FILE_TOOL_DEFINITION,
   handler: handleReadFile,
@@ -155,11 +166,11 @@ const readFileTool: MCPTool = {
 export default readFileTool;
 ```
 
-### 步骤 2：登记 canonical 工具名
+### 步骤 3：登记 canonical 工具名
 
 编辑 `src/tools/names.ts`，把工具名加入 `TOOL_NAMES`。该数组只定义 built-in identity 与 canonical registry 顺序；workspace selector 的合法成员由 effective catalog 决定。
 
-### 步骤 3：注册工具
+### 步骤 4：注册工具
 
 编辑 `src/tools/index.ts`，导入工具并把实现加入 `importedTools`：
 
@@ -179,14 +190,14 @@ const importedTools: readonly MCPTool[] = [
 
 工具 handler 接收稳定的 workspace `ToolRuntimeContext` 与单次调用的 `ToolInvocationContext`。调用级 identity 和 `AbortSignal` 属于 invocation context；不消费调用级信息的 handler 可以省略第三个形参。不要在工具层读取配置文件或解析全局配置结构。配置来源、workspace 选择和运行时快照归一化由配置层/运行时层负责。
 
-### 步骤 4：编译测试
+### 步骤 5：编译测试
 
 ```bash
 npm run build
 npm run start
 ```
 
-### 步骤 5：编写工具文档
+### 步骤 6：编写工具文档
 
 在 `docs/tools/` 下新建对应的 markdown 文件，记录 Schema 设计意图、实现细节、设计边界、涉及文件和参考来源。然后在本文的“已实现工具”表格中添加条目。
 

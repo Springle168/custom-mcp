@@ -30,31 +30,6 @@ const ALLOWED_KEYS = new Set([
   'include_log_tail',
 ]);
 
-export const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
-  type: 'object' as const,
-  properties: {
-    quiet: {
-      type: 'boolean',
-      description: 'Reduces Gradle output when true. Defaults to true.',
-    },
-    stacktrace: {
-      type: 'boolean',
-      description: 'Includes a Gradle stack trace on failure when true. Defaults to false.',
-    },
-    offline: {
-      type: 'boolean',
-      description:
-        "Uses Gradle's offline dependency resolution when true; required dependencies must already be cached. Defaults to false.",
-    },
-    include_log_tail: {
-      type: 'boolean',
-      description:
-        'Includes a bounded tail of the normalized raw Gradle output on failure. Defaults to false.',
-    },
-  },
-  additionalProperties: false,
-};
-
 export interface AndroidGradleToolArgs {
   quiet?: boolean;
   stacktrace?: boolean;

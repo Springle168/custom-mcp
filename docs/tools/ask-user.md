@@ -141,7 +141,8 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/ask-user.ts` | 工具定义、Schema、参数校验、handler 实现、待回答会话、答案规范化/格式化 helper、HTML 生成 |
+| `src/tools/definitions/ask-user.definition.ts` | Tool description 与 Draft 2020-12 input schema |
+| `src/tools/ask-user.ts` | 参数校验、handler 实现、待回答会话、答案规范化/格式化 helper、HTML 生成 |
 | `src/tools/ask-user-routes.ts` | 浏览器 HTTP 路由（`/ask`, `/answer`, `/cancel`）及 `/answer` 的表单解析中间件 |
 | `src/index.ts` | HTTP server 创建和 `ask_user` 路由注册 |
 | `src/tools/index.ts` | 工具注册 |
