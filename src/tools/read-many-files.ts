@@ -2,14 +2,10 @@ import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 import {
-  expandFileAccessGlob,
-  isIgnoredByFileAccessPolicy,
-  matchesExcludePattern,
-  resolveFileAccessPath,
-  validateFileAccessReadTarget,
-  type FileAccessPolicyContext,
-} from '../utils/file-access-policy.js';
-import { hasGlobMagic } from '../utils/paths.js';
+  selectReadableFiles,
+  type SelectedReadableFile,
+  type SkippedFileSelection,
+} from '../utils/file-selection.js';
 import {
   isBinaryFile,
   readTextFile,
@@ -139,127 +135,11 @@ function validateParams(args: Record<string, unknown>): string | null {
   return null;
 }
 
-interface FileEntry {
-  readPath: string;
-  displayPath: string;
-}
-
-interface SkippedEntry {
-  path: string;
-  reason: string;
-}
-
-type LiteralDecision = 'added' | 'handled' | 'continue_to_glob';
-
-function fileKey(filePath: string): string {
-  return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
-}
-
-function addFile(fileMap: Map<string, FileEntry>, entry: FileEntry): void {
-  const key = fileKey(entry.readPath);
-  if (!fileMap.has(key)) {
-    fileMap.set(key, entry);
-  }
-}
-
 function formatFileSize(sizeBytes: number): string {
   if (sizeBytes < 1024) {
     return `${sizeBytes} bytes`;
   }
   return `${(sizeBytes / 1024).toFixed(1)} KB (${sizeBytes} bytes)`;
-}
-
-async function tryAddLiteralFile(
-  item: string,
-  itemHasGlobMagic: boolean,
-  fileAccessPolicyContext: FileAccessPolicyContext,
-  fileMap: Map<string, FileEntry>,
-  skipped: SkippedEntry[],
-): Promise<LiteralDecision | ToolCallResult> {
-  const safePathResult = resolveFileAccessPath(item, fileAccessPolicyContext);
-  if (!safePathResult.ok) {
-    if (safePathResult.code === 'deny_policy') {
-      return textErrorResult(safePathResult.reason);
-    }
-    skipped.push({ path: item, reason: safePathResult.reason });
-    return 'handled';
-  }
-
-  const safePath = safePathResult.path;
-  const readTarget = await validateFileAccessReadTarget(
-    safePath,
-    fileAccessPolicyContext,
-  );
-  if (!readTarget.ok) {
-    if (readTarget.code === 'not_found' && itemHasGlobMagic) {
-      return 'continue_to_glob';
-    }
-    if (readTarget.code === 'deny_policy') {
-      return textErrorResult(readTarget.reason);
-    }
-    skipped.push({ path: item, reason: readTarget.reason });
-    return 'handled';
-  }
-
-  if (readTarget.target.kind !== 'file') {
-    if (itemHasGlobMagic) return 'continue_to_glob';
-    skipped.push({ path: item, reason: 'not a file' });
-    return 'handled';
-  }
-
-  addFile(fileMap, {
-    readPath: readTarget.target.realPath,
-    displayPath: safePath.displayPath,
-  });
-  return 'added';
-}
-
-async function expandGlobPattern(
-  item: string,
-  exclude: string[],
-  useIgnoreFiles: boolean,
-  fileAccessPolicyContext: FileAccessPolicyContext,
-  fileMap: Map<string, FileEntry>,
-  skipped: SkippedEntry[],
-): Promise<{
-  readonly error: string | null;
-  readonly blockedByDeny: boolean;
-  readonly ignoredByPolicy: boolean;
-}> {
-  const result = await expandFileAccessGlob(item, fileAccessPolicyContext);
-  if (!result.ok) {
-    return {
-      error: result.reason,
-      blockedByDeny: false,
-      ignoredByPolicy: false,
-    };
-  }
-
-  skipped.push(...result.expansion.skipped);
-  let ignoredByPolicy = false;
-  for (const target of result.expansion.files) {
-    if (
-      useIgnoreFiles &&
-      isIgnoredByFileAccessPolicy(target.safePath, fileAccessPolicyContext)
-    ) {
-      ignoredByPolicy = true;
-      continue;
-    }
-    if (matchesExcludePattern(target.safePath, exclude)) {
-      continue;
-    }
-
-    addFile(fileMap, {
-      readPath: target.realPath,
-      displayPath: target.safePath.displayPath,
-    });
-  }
-
-  return {
-    error: null,
-    blockedByDeny: result.expansion.blockedByDeny,
-    ignoredByPolicy,
-  };
 }
 
 async function handleReadManyFiles(
@@ -279,62 +159,32 @@ async function handleReadManyFiles(
   const showLineNumbers =
     (args.show_line_numbers as boolean | undefined) ?? false;
 
-  // Prefer an existing literal file, even when its name contains glob metacharacters.
-  const fileMap = new Map<string, FileEntry>();
-  const skipped: SkippedEntry[] = [];
   const fileAccessPolicyContext = context.fileAccessPolicyContext;
-  let blockedByDeny = false;
-  let ignoredByPolicy = false;
-
-  for (const item of include) {
-    const itemHasGlobMagic = hasGlobMagic(item);
-    const slashLeadingGlob =
-      itemHasGlobMagic &&
-      (item.startsWith('/') || item.startsWith('\\')) &&
-      !(item.startsWith('//') || item.startsWith('\\\\'));
-
-    if (!slashLeadingGlob) {
-      const literalDecision = await tryAddLiteralFile(
-        item,
-        itemHasGlobMagic,
-        fileAccessPolicyContext,
-        fileMap,
-        skipped,
-      );
-
-      if (typeof literalDecision !== 'string') {
-        return literalDecision;
-      }
-      if (literalDecision !== 'continue_to_glob') {
-        continue;
-      }
-    }
-
-    if (itemHasGlobMagic) {
-      const globExpansion = await expandGlobPattern(
-        item,
-        exclude,
-        useIgnoreFiles,
-        fileAccessPolicyContext,
-        fileMap,
-        skipped,
-      );
-      if (globExpansion.error) {
-        return textErrorResult(globExpansion.error);
-      }
-      blockedByDeny ||= globExpansion.blockedByDeny;
-      ignoredByPolicy ||= globExpansion.ignoredByPolicy;
-    }
+  const selectionResult = await selectReadableFiles({
+    pathSelectors: include,
+    discoveryExcludePatterns: exclude,
+    respectIgnoreFiles: useIgnoreFiles,
+    fileAccessPolicyContext,
+  });
+  if (!selectionResult.ok) {
+    return textErrorResult(selectionResult.reason);
   }
+  const {
+    files,
+    skipped: selectionSkipped,
+    blockedByDeny,
+    ignoredByPolicy,
+  } = selectionResult.selection;
+  const skipped: SkippedFileSelection[] = [...selectionSkipped];
 
-  if (fileMap.size === 0 && skipped.length === 0) {
+  if (files.length === 0 && skipped.length === 0) {
     return textErrorResult(
       'No files matched the given include patterns. ' +
         'Verify the paths/patterns and ensure files exist in the workspace.',
     );
   }
 
-  const sortedFiles = Array.from(fileMap.values()).sort((a, b) =>
+  const sortedFiles: SelectedReadableFile[] = [...files].sort((a, b) =>
     a.readPath.localeCompare(b.readPath),
   );
   let filesLimited = false;

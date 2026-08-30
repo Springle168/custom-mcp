@@ -68,6 +68,7 @@ src/tools/
 | `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/android-gradle-output.ts` | Android Gradle 输出解析，细节见 [docs/tools/android-build.md](tools/android-build.md) |
 | `src/utils/paths.ts` | 文件类工具共享路径安全层，细节见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) |
+| `src/utils/file-selection.ts` | literal / glob 可读文件集合选择、discovery exclude 与 ignoreFiles 开关语义，细节见 [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `src/utils/file-read.ts` | 文本读取、二进制检测和截断逻辑，细节见 read 文件类工具文档 |
 | `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |

@@ -64,7 +64,7 @@ test/fixtures/read-many-files/
 
 ### 路径分类处理
 
-`include` 数组中的每个元素进入统一文件访问策略层。该层组合 allowed-root、policy candidate、lexical/realpath deny 和受控 glob 遍历：
+`include` 数组中的每个元素由 `src/utils/file-selection.ts` 的 `selectReadableFiles()` 统一选择。该模块组合 allowed-root、policy candidate、lexical/realpath deny 和受控 glob 遍历，并将工具参数映射为内部的 `pathSelectors`、`discoveryExcludePatterns` 与 `respectIgnoreFiles`：
 
 ```text
 遍历 include 数组
@@ -215,7 +215,8 @@ No truncation: all returned file contents are complete.
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/read-many-files.ts` | Schema定义、参数校验、路径分类、glob 展开、结果拼接 |
+| `src/tools/read-many-files.ts` | Schema 定义、参数校验、默认值、文件数量限制、并行读取与结果拼接 |
+| `src/utils/file-selection.ts` | literal / glob 分类、discovery exclude、ignoreFiles 开关、去重与选择结果汇总 |
 | `src/utils/file-read.ts` | 常量、二进制检测（`isBinaryFile`）、文本读取与截断（`readTextFile`）、`BINARY_EXTENSIONS` 集合 |
 | `src/utils/paths.ts` | 路径分类、root 边界和 glob static base 的 lexical 解析 |
 | `src/utils/file-access-policy.ts` | candidate、deny/ignore、realpath 校验和受控 glob 遍历 |
