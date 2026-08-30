@@ -34,6 +34,8 @@ test/write-file/
 | `file_path` | `string` | ✅ | — | 要写入的文件路径；相对路径基于 primary `rootDir`，drive-absolute 路径可位于任一 allowed root 内 |
 | `content` | `string` | ✅ | — | 要写入的完整文本内容；疑似省略占位符会写入但触发 Warning |
 
+`inputSchema` 设置 `additionalProperties: false`，未知字段会在进入 handler 前由 built-in implementation validator 拒绝。
+
 ### description 设计意图
 
 工具与参数 description 按职责分层：
@@ -78,7 +80,8 @@ Success: wrote nested/example.txt. Total lines: 2.
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/write-file.ts` | Schema 定义、参数校验、路径安全、写入编排、成功消息 |
+| `src/tools/definitions/write-file.definition.ts` | Tool description 与 Draft 2020-12 input schema |
+| `src/tools/write-file.ts` | 参数校验、路径安全、写入编排、成功消息 |
 | `src/tools/index.ts` | 工具注册 |
 | `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
 | `src/utils/file-access-policy.ts` | policy candidate、预计 real target、deny 与写入安全复检 |

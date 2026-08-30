@@ -179,7 +179,8 @@ data class Foo(
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/read-file.ts` | Schema 定义、参数校验、`read_mode` 解析、路径安全、结果拼接 |
+| `src/tools/definitions/read-file.definition.ts` | Tool description、Draft 2020-12 input schema 与输出分隔常量 |
+| `src/tools/read-file.ts` | 参数校验、`read_mode` 解析、路径安全、结果拼接 |
 | `src/utils/file-read.ts` | 二进制检测、20MB 文件大小保护、文本读取、可配置截断、行号前缀 |
 | `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
 | `src/utils/file-access-policy.ts` | policy candidate、lexical/realpath deny 与读取目标检查 |
