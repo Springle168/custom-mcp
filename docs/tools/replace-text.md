@@ -15,7 +15,7 @@ test/replace-text/
 ├── smoke.test.ts                    # replace_text 轻量回归入口
 ├── helpers.ts                       # suite-scoped fixture harness、调用封装和结果 JSON 断言
 ├── schema.test.ts                   # Schema、description 和输出外壳
-├── runtime-validation.test.ts       # 参数校验、未知字段和失败默认值
+├── runtime-validation.test.ts       # catalog 结构校验与 handler 参数关系语义
 ├── default-mode.test.ts             # default 匹配、创建文件、行数与 no-op
 ├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
 ├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
@@ -47,7 +47,7 @@ test/fixtures/replace-text/
 | `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用精确字面匹配，`regex` 使用显式 JavaScript 正则流程 |
 | `regex_flags` | `string` | ❌ | `"ms"` | 仅 `regex` 模式可用；可控制 `m` / `s`，`g` 始终由工具强制启用 |
 
-`inputSchema` 设置 `additionalProperties=false`，handler 也会主动校验必填字段、字段类型、枚举值和未知字段。
+`inputSchema` 设置 `additionalProperties=false`，并由 built-in implementation validator 在进入 handler 前统一校验必填字段、字段类型、枚举值、非空 `file_path` 和未知字段。handler 只校验 `regex_flags` 的模式依赖与语法，以及 regex 模式下 `target` 非空等参数关系。
 
 ### description 设计意图
 

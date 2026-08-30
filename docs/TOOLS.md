@@ -155,7 +155,7 @@ async function handleReadFile(
   context: ToolRuntimeContext,
   invocation: ToolInvocationContext,
 ): Promise<ToolCallResult> {
-  // 参数校验
+  // inputSchema 之后仍需处理的参数关系与运行时语义
   // 业务逻辑；文件类工具从 context.fileAccessPolicyContext 使用统一文件访问策略
   // 需要响应单次调用取消时使用 invocation.signal；不需要时可以省略该形参
   // 返回结果
@@ -238,7 +238,7 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 
 参考已实现工具的 description，它们在简洁和完整之间做了平衡。
 
-所有内置 `inputSchema` 同时作为 executor implementation contract，并在 catalog 编译时使用 Draft 2020-12 validator 编译。schema 应准确表达 handler 的结构边界；不接受未知字段的 executor 使用 `additionalProperties: false`。handler 继续负责路径、文件状态、正则可编译性、参数关系和环境条件等业务或运行时语义。
+所有内置 `inputSchema` 同时作为 executor implementation contract，并在 catalog 编译时使用 Draft 2020-12 validator 编译。schema 是 built-in 参数结构的唯一校验边界，应完整表达 required、类型、枚举、简单值域、集合数量和未知字段策略；不接受未知字段的 executor 使用 `additionalProperties: false`。handler 在 schema 校验成功后运行，不重复检查这些结构约束，只负责路径、文件状态、正则可编译性、参数关系和环境条件等业务或运行时语义。结构负例测试应通过 workspace tool service 或 implementation validator 进入 schema 边界；直接调用 handler 的测试只传入满足 schema 的参数。
 
 ### Android Studio 嵌套 Schema 限制
 

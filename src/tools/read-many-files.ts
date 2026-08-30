@@ -24,63 +24,16 @@ const MAX_FILES = 100;
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 const OUTPUT_TERMINATOR = '--- End of content ---';
 
-function validateParams(args: Record<string, unknown>): string | null {
-  const allowedKeys = new Set([
-    'include',
-    'exclude',
-    'use_ignore_files',
-    'shallow_read',
-    'shallow_read_content_limit_bytes',
-    'show_line_numbers',
-  ]);
-  const unknownKeys = Object.keys(args).filter((key) => !allowedKeys.has(key));
-  if (unknownKeys.length > 0) {
-    return `Unknown parameter(s): ${unknownKeys.join(', ')}.`;
-  }
-  if (!Array.isArray(args.include) || args.include.length === 0) {
-    return "The 'include' parameter must be a non-empty array of strings.";
-  }
-  for (const item of args.include) {
-    if (typeof item !== 'string' || item.length === 0) {
-      return "Each item in 'include' must be a non-empty string.";
-    }
-  }
-  if (args.exclude !== undefined) {
-    if (!Array.isArray(args.exclude)) {
-      return "The 'exclude' parameter must be an array of strings.";
-    }
-    for (const item of args.exclude) {
-      if (typeof item !== 'string' || item.length === 0) {
-        return "Each item in 'exclude' must be a non-empty string.";
-      }
-    }
-  }
+function validateShallowReadContentLimitDependency(
+  args: Record<string, unknown>,
+): string | null {
   if (
-    args.use_ignore_files !== undefined &&
-    typeof args.use_ignore_files !== 'boolean'
+    args.shallow_read_content_limit_bytes !== undefined &&
+    args.shallow_read !== true
   ) {
-    return "The 'use_ignore_files' parameter must be a boolean.";
+    return "The 'shallow_read_content_limit_bytes' parameter requires 'shallow_read' to be true.";
   }
-  if (args.shallow_read !== undefined && typeof args.shallow_read !== 'boolean') {
-    return "The 'shallow_read' parameter must be a boolean.";
-  }
-  if (args.shallow_read_content_limit_bytes !== undefined) {
-    if (
-      !Number.isSafeInteger(args.shallow_read_content_limit_bytes) ||
-      (args.shallow_read_content_limit_bytes as number) < 1
-    ) {
-      return "The 'shallow_read_content_limit_bytes' parameter must be a positive integer (JSON number).";
-    }
-    if (args.shallow_read !== true) {
-      return "The 'shallow_read_content_limit_bytes' parameter requires 'shallow_read' to be true.";
-    }
-  }
-  if (
-    args.show_line_numbers !== undefined &&
-    typeof args.show_line_numbers !== 'boolean'
-  ) {
-    return "The 'show_line_numbers' parameter must be a boolean.";
-  }
+
   return null;
 }
 
@@ -95,7 +48,7 @@ async function handleReadManyFiles(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  const validationError = validateParams(args);
+  const validationError = validateShallowReadContentLimitDependency(args);
   if (validationError) return textErrorResult(validationError);
 
   const include = args.include as string[];

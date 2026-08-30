@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import androidAssembleDebugTool from '../../src/tools/android-assemble-debug.js';
@@ -34,43 +35,49 @@ function parseCompactJsonText(text: string): Record<string, unknown> {
 }
 
 async function testValidationErrorForUnknownField() {
-  const result = await androidAssembleDebugTool.handler(
+  const result = await callBuiltInTool(
+    'android_assembleDebug',
     { quiet: true, profile: true },
-    baseContext, createTestToolInvocationContext(),
+    baseContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail on unknown field');
   assertIncludes(
     getResultText(result),
-    'Unknown parameter: profile',
-    'Should explain the unknown field',
+    'unexpected property "profile"',
+    'Catalog validation should identify the unknown field',
   );
 }
 
 async function testValidationErrorForNonBoolean() {
-  const result = await androidTestDebugUnitTestTool.handler(
+  const result = await callBuiltInTool(
+    'android_testDebugUnitTest',
     { offline: 'yes' },
-    baseContext, createTestToolInvocationContext(),
+    baseContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail on non-boolean parameter');
   assertIncludes(
     getResultText(result),
-    "The 'offline' parameter must be a boolean.",
+    'must be boolean',
     'Should explain the invalid parameter type',
   );
 }
 
 async function testValidationErrorForNonBooleanLogTail() {
-  const result = await androidTestDebugUnitTestTool.handler(
+  const result = await callBuiltInTool(
+    'android_testDebugUnitTest',
     { include_log_tail: 'yes' },
-    baseContext, createTestToolInvocationContext(),
+    baseContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail on non-boolean include_log_tail');
   assertIncludes(
     getResultText(result),
-    "The 'include_log_tail' parameter must be a boolean.",
+    'must be boolean',
     'Should explain the invalid include_log_tail type',
   );
 }

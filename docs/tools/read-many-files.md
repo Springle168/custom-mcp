@@ -216,7 +216,7 @@ No truncation: all returned file contents are complete.
 | 文件 | 职责 |
 |-|-|
 | `src/tools/definitions/read-many-files.definition.ts` | Tool description、Draft 2020-12 input schema 与浅读推荐阈值 |
-| `src/tools/read-many-files.ts` | 参数校验、默认值、文件数量限制、并行读取与结果拼接 |
+| `src/tools/read-many-files.ts` | `shallow_read` 参数关系、默认值、文件数量限制、并行读取与结果拼接 |
 | `src/utils/file-selection.ts` | literal / glob 分类、discovery exclude、ignoreFiles 开关、去重与选择结果汇总 |
 | `src/utils/file-read.ts` | 常量、二进制检测（`isBinaryFile`）、文本读取与截断（`readTextFile`）、`BINARY_EXTENSIONS` 集合 |
 | `src/utils/paths.ts` | 路径分类、root 边界和 glob static base 的 lexical 解析 |

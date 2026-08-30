@@ -22,31 +22,21 @@ interface LineRange {
   endLine?: number;
 }
 
-function getReadMode(args: Record<string, unknown>): ReadMode | null {
-  if (args.read_mode === undefined) return 'line';
-  if (args.read_mode === 'line' || args.read_mode === 'regex') {
-    return args.read_mode;
-  }
-  return null;
+function getReadMode(args: Record<string, unknown>): ReadMode {
+  return (args.read_mode as ReadMode | undefined) ?? 'line';
 }
 
-function validateParams(args: Record<string, unknown>): string | null {
-  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
-    return "The 'file_path' parameter must be a non-empty string.";
-  }
-
-  const readMode = getReadMode(args);
-  if (readMode === null) {
-    return "The 'read_mode' parameter must be either 'line' or 'regex'.";
-  }
-
+function validateModeSpecificRangeTypes(
+  args: Record<string, unknown>,
+  readMode: ReadMode,
+): string | null {
   if (args.start_line !== undefined) {
     const startLine = args.start_line;
     if (readMode === 'line') {
-      if (!Number.isInteger(startLine) || (startLine as number) < 1) {
+      if (typeof startLine !== 'number') {
         return 'In read_mode="line", start_line must be a positive integer (JSON number).';
       }
-    } else if (typeof startLine !== 'string' || startLine.length === 0) {
+    } else if (typeof startLine !== 'string') {
       return 'In read_mode="regex", start_line must be a non-empty regex pattern string.';
     }
   }
@@ -54,16 +44,19 @@ function validateParams(args: Record<string, unknown>): string | null {
   if (args.end_line !== undefined) {
     const endLine = args.end_line;
     if (readMode === 'line') {
-      if (!Number.isInteger(endLine) || (endLine as number) < 1) {
+      if (typeof endLine !== 'number') {
         return 'In read_mode="line", end_line must be a positive integer (JSON number).';
       }
-    } else if (typeof endLine !== 'string' || endLine.length === 0) {
+    } else if (typeof endLine !== 'string') {
       return 'In read_mode="regex", end_line must be a non-empty regex pattern string.';
     }
   }
 
+  return null;
+}
+
+function validateLineRangeOrder(args: Record<string, unknown>): string | null {
   if (
-    readMode === 'line' &&
     args.start_line !== undefined &&
     args.end_line !== undefined &&
     (args.start_line as number) > (args.end_line as number)
@@ -71,26 +64,40 @@ function validateParams(args: Record<string, unknown>): string | null {
     return `start_line ${args.start_line as number} cannot be greater than end_line ${args.end_line as number}.`;
   }
 
-  if (readMode === 'regex') {
-    for (const paramName of ['start_line', 'end_line'] as const) {
-      const pattern = args[paramName];
-      if (pattern === undefined) continue;
-      try {
-        new RegExp(pattern as string);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return `Invalid ${paramName} regex pattern: ${message}. Check the pattern syntax and escape special characters when needed.`;
-      }
+  return null;
+}
+
+function validateRegexRangePatterns(
+  args: Record<string, unknown>,
+): string | null {
+  for (const paramName of ['start_line', 'end_line'] as const) {
+    const pattern = args[paramName];
+    if (pattern === undefined) continue;
+    try {
+      new RegExp(pattern as string);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `Invalid ${paramName} regex pattern: ${message}. Check the pattern syntax and escape special characters when needed.`;
     }
   }
 
-  if (
-    args.show_line_numbers !== undefined &&
-    typeof args.show_line_numbers !== 'boolean'
-  ) {
-    return "The 'show_line_numbers' parameter must be a boolean.";
-  }
   return null;
+}
+
+function validateReadSemantics(
+  args: Record<string, unknown>,
+  readMode: ReadMode,
+): string | null {
+  const rangeTypeError = validateModeSpecificRangeTypes(args, readMode);
+  if (rangeTypeError) {
+    return rangeTypeError;
+  }
+
+  if (readMode === 'line') {
+    return validateLineRangeOrder(args);
+  }
+
+  return validateRegexRangePatterns(args);
 }
 
 async function resolveRegexRange(
@@ -154,9 +161,9 @@ async function handleReadFile(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  const validationError = validateParams(args);
+  const readMode = getReadMode(args);
+  const validationError = validateReadSemantics(args, readMode);
   if (validationError) return textErrorResult(validationError);
-  const readMode = getReadMode(args) ?? 'line';
 
   const filePath = args.file_path as string;
   const fileAccessPolicyContext = context.fileAccessPolicyContext;

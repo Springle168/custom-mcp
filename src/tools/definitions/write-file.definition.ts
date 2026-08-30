@@ -12,6 +12,7 @@ Parallel batching best practice: When creating or overwriting multiple files wit
     properties: {
       file_path: {
         type: 'string',
+        minLength: 1,
         description:
           'Path to the file to write. Relative paths resolve from the primary workspace root; drive-absolute paths may target any configured workspace root.',
       },

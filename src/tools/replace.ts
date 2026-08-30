@@ -55,12 +55,12 @@ function errorResult(payload: ReplaceTextPayload): ToolCallResult {
   return textErrorResult(JSON.stringify(payload));
 }
 
-function normalizeMatchMode(value: unknown): MatchMode {
-  return value === 'default' || value === 'regex' ? value : 'default';
+function getMatchMode(args: Record<string, unknown>): MatchMode {
+  return (args.match_mode as MatchMode | undefined) ?? 'default';
 }
 
-function normalizeAllowMultiple(value: unknown): boolean {
-  return value === true;
+function getAllowMultiple(args: Record<string, unknown>): boolean {
+  return (args.allow_multiple as boolean | undefined) ?? false;
 }
 
 function normalizeTextLineEndings(text: string): string {
@@ -90,14 +90,13 @@ function payloadFromArgs(
   const previousLineCount = overrides.file_line_count?.previous ?? 0;
   const payload: ReplaceTextPayload = {
     success,
-    file_path: typeof args.file_path === 'string' ? args.file_path : '',
-    match_mode: normalizeMatchMode(args.match_mode),
-    allow_multiple: normalizeAllowMultiple(args.allow_multiple),
+    file_path: args.file_path as string,
+    match_mode: getMatchMode(args),
+    allow_multiple: getAllowMultiple(args),
     matched_targets: 0,
     replacement_count: 0,
     matched_span: null,
-    replacement_line_count:
-      typeof args.replacement === 'string' ? countLines(args.replacement) : 0,
+    replacement_line_count: countLines(args.replacement as string),
     file_line_count: {
       previous: previousLineCount,
       current: previousLineCount,
@@ -126,20 +125,9 @@ function formatFileReadinessError(
   return `Could not prepare ${filePath}: ${reason}. Check the path, permissions, and file type before retrying.`;
 }
 
-const ALLOWED_KEYS = new Set([
-  'file_path',
-  'target',
-  'replacement',
-  'allow_multiple',
-  'match_mode',
-  'regex_flags',
-]);
-
-function hasOwn(args: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(args, key);
-}
-
-function validateRegexFlags(value: string): ValidationResult {
+function validateRegexFlagCharactersAndRepetition(
+  value: string,
+): ValidationResult {
   const seenFlags = new Set<string>();
 
   for (const flag of value) {
@@ -163,92 +151,53 @@ function validateRegexFlags(value: string): ValidationResult {
   return { ok: true };
 }
 
-function validateParams(args: Record<string, unknown>): ValidationResult {
-  const unknownKeys = Object.keys(args).filter((key) => !ALLOWED_KEYS.has(key));
-  if (unknownKeys.length > 0) {
+function validateRegexFlagsForMode(
+  matchMode: MatchMode,
+  regexFlags: string | undefined,
+): ValidationResult {
+  if (regexFlags === undefined) {
+    return { ok: true };
+  }
+  if (matchMode !== 'regex') {
     return {
       ok: false,
       note:
-        `Unknown parameter(s): ${unknownKeys.join(', ')}. ` +
-        'Use target/replacement for replace_text; accepted parameters are file_path, target, replacement, allow_multiple, match_mode, and regex_flags.',
+        "The 'regex_flags' parameter can be used only when match_mode is 'regex'.",
     };
   }
 
-  if (!hasOwn(args, 'file_path')) {
-    return { ok: false, note: "Missing required parameter 'file_path'." };
-  }
-  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
-    return {
-      ok: false,
-      note: "The 'file_path' parameter must be a non-empty string.",
-    };
-  }
+  return validateRegexFlagCharactersAndRepetition(regexFlags);
+}
 
-  if (!hasOwn(args, 'target')) {
-    return { ok: false, note: "Missing required parameter 'target'." };
-  }
-  if (typeof args.target !== 'string') {
-    return { ok: false, note: "The 'target' parameter must be a string." };
-  }
-
-  if (!hasOwn(args, 'replacement')) {
-    return { ok: false, note: "Missing required parameter 'replacement'." };
-  }
-  if (typeof args.replacement !== 'string') {
-    return {
-      ok: false,
-      note: "The 'replacement' parameter must be a string.",
-    };
-  }
-
-  if (
-    hasOwn(args, 'allow_multiple') &&
-    typeof args.allow_multiple !== 'boolean'
-  ) {
-    return {
-      ok: false,
-      note: "The 'allow_multiple' parameter must be a boolean when provided.",
-    };
-  }
-
-  if (
-    hasOwn(args, 'match_mode') &&
-    args.match_mode !== 'default' &&
-    args.match_mode !== 'regex'
-  ) {
-    return {
-      ok: false,
-      note: "The 'match_mode' parameter must be either 'default' or 'regex'.",
-    };
-  }
-
-  if (hasOwn(args, 'regex_flags')) {
-    if (typeof args.regex_flags !== 'string') {
-      return {
-        ok: false,
-        note: "The 'regex_flags' parameter must be a string when provided.",
-      };
-    }
-
-    if (args.match_mode !== 'regex') {
-      return {
-        ok: false,
-        note: "The 'regex_flags' parameter can be used only when match_mode is 'regex'.",
-      };
-    }
-
-    const regexFlagsValidation = validateRegexFlags(args.regex_flags);
-    if (!regexFlagsValidation.ok) {
-      return regexFlagsValidation;
-    }
-  }
-
-  if (args.match_mode === 'regex' && args.target === '') {
+function validateRegexTargetIsNonEmpty(
+  matchMode: MatchMode,
+  target: string,
+): ValidationResult {
+  if (matchMode === 'regex' && target === '') {
     return {
       ok: false,
       note:
         "The 'target' parameter must be non-empty when match_mode is 'regex'. Provide a regex pattern that consumes text.",
     };
+  }
+
+  return { ok: true };
+}
+
+function validateReplaceSemantics(
+  args: Record<string, unknown>,
+): ValidationResult {
+  const matchMode = getMatchMode(args);
+  const regexFlags = args.regex_flags as string | undefined;
+  const flagsValidation = validateRegexFlagsForMode(matchMode, regexFlags);
+  if (!flagsValidation.ok) {
+    return flagsValidation;
+  }
+
+  const target = args.target as string;
+  const targetValidation = validateRegexTargetIsNonEmpty(matchMode, target);
+  if (!targetValidation.ok) {
+    return targetValidation;
   }
 
   return { ok: true };
@@ -468,7 +417,7 @@ export async function handleReplace(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  const validation = validateParams(args);
+  const validation = validateReplaceSemantics(args);
   if (!validation.ok) {
     return errorResult(payloadFromArgs(args, false, validation.note));
   }
@@ -476,9 +425,9 @@ export async function handleReplace(
   const filePath = args.file_path as string;
   const target = args.target as string;
   const replacement = args.replacement as string;
-  const matchMode = normalizeMatchMode(args.match_mode);
-  const allowMultiple = normalizeAllowMultiple(args.allow_multiple);
-  const regexFlags = typeof args.regex_flags === 'string' ? args.regex_flags : undefined;
+  const matchMode = getMatchMode(args);
+  const allowMultiple = getAllowMultiple(args);
+  const regexFlags = args.regex_flags as string | undefined;
   const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
 
   const fileAccessPolicyContext = context.fileAccessPolicyContext;

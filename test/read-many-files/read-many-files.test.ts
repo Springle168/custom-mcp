@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import readManyFilesTool from '../../src/tools/read-many-files.js';
@@ -115,14 +116,16 @@ async function testNoBuiltInDefaultExcludes() {
 
 async function testRejectUseDefaultExcludesAlias() {
   
-  const result = await readManyFilesTool.handler(
+  const result = await callBuiltInTool(
+    'read_many_files',
     { include: ['**/*.txt'], useDefaultExcludes: false },
-    testContext, createTestToolInvocationContext()
+    testContext,
+    createTestToolInvocationContext(),
   );
   
   assert(result.isError === true, 'Removed aliases should be rejected');
   const text = getResultText(result);
-  assertIncludes(text, 'Unknown parameter(s): useDefaultExcludes', 'Should identify the unsupported alias');
+  assertIncludes(text, 'unexpected property "useDefaultExcludes"', 'Should identify the unsupported alias');
   
 }
 
@@ -197,29 +200,33 @@ async function testPathOutsideRoot() {
 
 async function testEmptyInclude() {
   
-  const result = await readManyFilesTool.handler(
+  const result = await callBuiltInTool(
+    'read_many_files',
     { include: [] },
-    testContext, createTestToolInvocationContext()
+    testContext,
+    createTestToolInvocationContext(),
   );
   
   assert(result.isError === true, 'Should be an error');
   const text = getResultText(result);
   
-  assertIncludes(text, 'non-empty array', 'Should report validation error');
+  assertIncludes(text, 'must NOT have fewer than 1 items', 'Should report schema validation error');
   
 }
 
 async function testInvalidIncludeType() {
   
-  const result = await readManyFilesTool.handler(
+  const result = await callBuiltInTool(
+    'read_many_files',
     { include: 'not-an-array' },
-    testContext, createTestToolInvocationContext()
+    testContext,
+    createTestToolInvocationContext(),
   );
   
   assert(result.isError === true, 'Should be an error');
   const text = getResultText(result);
   
-  assertIncludes(text, 'non-empty array', 'Should report validation error');
+  assertIncludes(text, 'must be array', 'Should report schema validation error');
   
 }
 
@@ -439,21 +446,23 @@ async function testShallowReadContentAboveConfiguredLimit() {
 
 async function testShallowReadContentLimitValidation() {
 
-  const invalidValues = [0, -1, 1.5, '1024'];
+  const invalidValues = [0, -1, 1.5, '1024', Number.MAX_SAFE_INTEGER + 1];
   for (const value of invalidValues) {
-    const result = await readManyFilesTool.handler(
+    const result = await callBuiltInTool(
+      'read_many_files',
       {
         include: ['src/Foo.kt'],
         shallow_read: true,
         shallow_read_content_limit_bytes: value,
       },
-      testContext, createTestToolInvocationContext()
+      testContext,
+      createTestToolInvocationContext(),
     );
     assert(result.isError === true, `Should reject invalid limit: ${String(value)}`);
     assertIncludes(
       getResultText(result),
-      "The 'shallow_read_content_limit_bytes' parameter must be a positive integer (JSON number).",
-      'Should explain the positive integer requirement'
+      'configured input schema',
+      'Should report the schema validation boundary',
     );
   }
 

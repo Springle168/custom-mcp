@@ -23,13 +23,6 @@ import {
   type AndroidGradleGateExecution,
 } from '../utils/android-gradle-gate.js';
 
-const ALLOWED_KEYS = new Set([
-  'quiet',
-  'stacktrace',
-  'offline',
-  'include_log_tail',
-]);
-
 export interface AndroidGradleToolArgs {
   quiet?: boolean;
   stacktrace?: boolean;
@@ -42,37 +35,6 @@ type ToolAndroidConfig = NonNullable<ToolRuntimeContext['android']>;
 interface AndroidGradleFailureEnhancement {
   firstErrorBlock?: string;
   testReport?: TestReportSummary;
-}
-
-export function validateAndroidGradleToolArgs(
-  args: Record<string, unknown>,
-): string | null {
-  for (const key of Object.keys(args)) {
-    if (!ALLOWED_KEYS.has(key)) {
-      return `Unknown parameter: ${key}. Allowed parameters are: quiet, stacktrace, offline, include_log_tail.`;
-    }
-  }
-
-  if (args.quiet !== undefined && typeof args.quiet !== 'boolean') {
-    return "The 'quiet' parameter must be a boolean.";
-  }
-
-  if (args.stacktrace !== undefined && typeof args.stacktrace !== 'boolean') {
-    return "The 'stacktrace' parameter must be a boolean.";
-  }
-
-  if (args.offline !== undefined && typeof args.offline !== 'boolean') {
-    return "The 'offline' parameter must be a boolean.";
-  }
-
-  if (
-    args.include_log_tail !== undefined &&
-    typeof args.include_log_tail !== 'boolean'
-  ) {
-    return "The 'include_log_tail' parameter must be a boolean.";
-  }
-
-  return null;
 }
 
 export function toRunAndroidGradleOptions(
@@ -121,11 +83,6 @@ export async function executeAndroidGradleTask(
   context: ToolRuntimeContext,
   callerSignal: AbortSignal,
 ): Promise<ToolCallResult> {
-  const validationError = validateAndroidGradleToolArgs(args);
-  if (validationError) {
-    return textErrorResult(validationError);
-  }
-
   const runtimeConfig = resolveAndroidGradleRuntimeConfig(context);
   if (!runtimeConfig.ok) {
     return textErrorResult(runtimeConfig.error);

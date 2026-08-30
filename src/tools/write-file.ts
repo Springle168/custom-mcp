@@ -68,18 +68,6 @@ function getOmissionPlaceholderWarning(content: string): string | null {
   return `Warning: content contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete file content.`;
 }
 
-function validateParams(args: Record<string, unknown>): string | null {
-  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
-    return "The 'file_path' parameter must be a non-empty string.";
-  }
-
-  if (typeof args.content !== 'string') {
-    return "The 'content' parameter must be a string.";
-  }
-
-  return null;
-}
-
 function normalizeLineEndings(
   content: string,
   lineEnding: '\r\n' | '\n',
@@ -102,9 +90,6 @@ async function handleWriteFile(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
 ): Promise<ToolCallResult> {
-  const validationError = validateParams(args);
-  if (validationError) return textErrorResult(validationError);
-
   const filePath = args.file_path as string;
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);

@@ -80,7 +80,7 @@ closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指
 | 文件 | 职责 |
 |-|-|
 | `src/tools/definitions/discover-guidelines.definition.ts` | 工具 description、Input Schema 和稳定资源上限 |
-| `src/tools/discover-guidelines.ts` | 参数校验、公共文件选择接入、有界读取、worker 调度、取消和结果汇总 |
+| `src/tools/discover-guidelines.ts` | 公共文件选择接入、有界读取、worker 调度、取消和结果汇总 |
 | `src/engine/guideline-front-matter.ts` | delimiter 提取、YAML AST 校验和元数据投影 |
 | `src/utils/file-selection.ts` | literal / glob 选择、allowed roots、deny、ignore、exclude、realpath、去重和显示路径 |
 | `test/discover-guidelines/guideline-front-matter.test.ts` | 纯 Front Matter 与 YAML 边界 |
