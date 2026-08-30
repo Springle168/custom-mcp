@@ -2,6 +2,7 @@ export const TOOL_NAMES = Object.freeze([
   'replace_text',
   'write_file',
   'read_many_files',
+  'discover_guidelines',
   'read_file',
   'ask_user',
   'android_assembleDebug',

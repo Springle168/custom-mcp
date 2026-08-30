@@ -12,6 +12,7 @@ docs/tools/
 ├── read-file.md         # read_file 工具文档
 ├── write-file.md        # write_file 工具文档
 ├── read-many-files.md   # read_many_files 工具文档
+├── discover-guidelines.md # discover_guidelines 工具文档
 ├── ask-user.md          # ask_user 工具文档
 └── android-build.md     # Android 构建工具文档
 ```
@@ -24,6 +25,7 @@ docs/tools/
 |-|-|-|
 | `replace_text` | 文件局部替换，default 模式使用精确字面匹配，regex 模式使用显式 JavaScript 正则 | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持相对路径、位于 allowed roots 内的 drive-absolute 路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `discover_guidelines` | 从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文 | [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `ask_user` | 向用户提问并收集答案，支持单选、多选、是/否、文本输入，所有类型支持补充说明 | [docs/tools/ask-user.md](tools/ask-user.md) |
@@ -50,6 +52,7 @@ src/tools/
 ├── replace.ts                       # replace_text 工具
 ├── read-file.ts                     # read_file 工具
 ├── read-many-files.ts               # read_many_files 工具
+├── discover-guidelines.ts           # discover_guidelines 工具
 ├── write-file.ts                    # write_file 工具
 ├── ask-user.ts                      # ask_user 工具
 ├── ask-user-routes.ts               # ask_user 浏览器交互 HTTP 路由
@@ -68,8 +71,9 @@ src/tools/
 | `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
 | `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/android-gradle-output.ts` | Android Gradle 输出解析，细节见 [docs/tools/android-build.md](tools/android-build.md) |
+| `src/engine/guideline-front-matter.ts` | 指南 Front Matter delimiter、YAML AST 与元数据校验，见 [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
 | `src/utils/paths.ts` | 文件类工具共享路径安全层，细节见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) |
-| `src/utils/file-selection.ts` | literal / glob 可读文件集合选择、discovery exclude 与 ignoreFiles 开关语义，细节见 [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `src/utils/file-selection.ts` | literal / glob 可读文件集合选择、discovery exclude 与 ignoreFiles 开关语义，细节见 [docs/tools/read-many-files.md](tools/read-many-files.md) 和 [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
 | `src/utils/file-read.ts` | 文本读取、二进制检测和截断逻辑，细节见 read 文件类工具文档 |
 | `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
