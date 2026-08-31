@@ -1,6 +1,11 @@
+---
+name: documentation-editing
+description: "当任务需要创建或修改 docs/ 下由 Git 跟踪的生产文档时阅读。"
+---
+
 # Documentation Editing Guidelines
 
-当任务需要创建或修改 `docs/` 下由 Git 跟踪的生产文档时，阅读本指南。
+本指南用于指导需要创建或修改 `docs/` 下由 Git 跟踪的生产文档的任务。
 
 ## 表述方式
 

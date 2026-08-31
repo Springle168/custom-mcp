@@ -1,3 +1,8 @@
+---
+name: commit-guidelines
+description: "当用户明确授权创建 Git 提交、即将生成提交信息或执行 git add、git commit 前阅读。"
+---
+
 Generate a commit message following the "Conventional Commits" specification based on the diffs.
 
 ## Format

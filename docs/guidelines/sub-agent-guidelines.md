@@ -1,3 +1,8 @@
+---
+name: sub-agent-guidelines
+description: "仅供拥有创建 sub-agent 能力的主 Agent 创建 sub-agent 前阅读。"
+---
+
 # Sub-agent Guidelines
 
 本指南只面向拥有创建 sub-agent 能力的主 Agent。任务拆分、状态管理、结果核验和最终整合均由主 Agent 负责。

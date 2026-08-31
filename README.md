@@ -2,10 +2,11 @@
 
 一个使用 TypeScript 和 Node.js 构建的 MCP 工具集，通过 Streamable HTTP 提供文件读写、文本替换、批量读取和用户交互等能力，并支持把 configured custom-only Tool 路由到受控 Processor 与外部 HTTP endpoint。
 
-## 工具
+## Built-in 工具
 
 - `read_file`：读取单个文本文件，支持按行号或正则范围读取。
 - `read_many_files`：批量读取文本文件，支持 glob 与浅层扫描。
+- `discover_guidelines`：从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文。
 - `write_file`：写入完整文本文件。
 - `replace_text`：通过精确文本或正则表达式执行局部替换。
 - `ask_user`：在工具调用过程中向用户提问并收集回答。
@@ -36,7 +37,7 @@ npm run start -- --workspace my-workspace
 http://127.0.0.1:3100/mcp
 ```
 
-全局、workspace 与 external routing 配置模板见 [examples/](examples/)，配置字段与 workspace 选择规则见 [docs/CONFIG.md](docs/CONFIG.md)。
+全局、workspace 与外部路由配置模板见 [examples/](examples/)，配置字段与 workspace 选择规则见 [docs/CONFIG.md](docs/CONFIG.md)。
 
 ## 文档
 
@@ -46,7 +47,7 @@ http://127.0.0.1:3100/mcp
 - [路径安全](docs/PATH-SAFETY.md)
 - [测试](docs/TESTING.md)
 - [日志](docs/LOGGING.md)
-- [External routing](docs/EXTERNAL-ROUTING.md)
+- [外部路由](docs/EXTERNAL-ROUTING.md)
 
 ## License
 
