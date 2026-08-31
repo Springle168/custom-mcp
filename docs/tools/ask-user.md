@@ -128,9 +128,9 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 参数校验
 
-built-in implementation validator 在进入 handler 前校验 1–4 个 questions、`question` / `header` / `type` 必填与基础类型、`type` 枚举、option 结构和未知字段。`question` 与 `header` 必须是非空字符串；option `label` 必须包含至少一个非空白字符；option `description` 必须存在且为 string，但允许空字符串。
+built-in implementation validator 在进入 handler 前校验 1–4 个 questions、`question` / `header` / `type` 必填与基础类型、`type` 枚举、option 结构和未知字段。`question` 与 `header` 必须是非空字符串；choice question 的 option `label` 必须包含至少一个非空白字符；option `description` 必须存在且为 string，但允许空字符串。非 choice question 携带的未使用 options 保持原有结构边界，不额外要求 label 非空。
 
-handler 保留一项跨字段关系：`type='choice'` 必须提供 2–4 个 options。options 一旦出现，其数量和元素结构由 schema 校验。
+handler 保留一项跨字段关系：`type='choice'` 必须提供 options。options 一旦出现，其 2–4 项数量和元素结构由 schema 校验。
 
 ---
 

@@ -137,16 +137,16 @@ executor 返回的 `content[0].text` 解析后包含：
 - 计算后的最终内容与原文件完全一致时视为 no-op：返回失败、不写入、`replacement_count=0`，并提示检查 `target` 与 `replacement` 是否相同。
 - regex 模式下非法正则和零长度匹配都会失败且不写入；零长度匹配不返回部分匹配结果。
 
-前置失败无法自然获得字段值时，结果 JSON 使用以下默认值：
+executor 前置失败的参数已经通过 schema 校验，结果 JSON 按下列规则填充尚未产生的运行时信息：
 
-| 字段 | 失败默认值 |
+| 字段 | 前置失败值 |
 |-|-|
-| `file_path` | 传入值是字符串则原样返回，否则为 `""` |
-| `match_mode` | 传入值为 `"default"` 或 `"regex"` 时原样返回，否则为 `"default"` |
-| `allow_multiple` | 仅传入值严格为 `true` 时为 `true`，否则为 `false` |
+| `file_path` | 原样返回已校验的输入值 |
+| `match_mode` | 原样返回输入值；省略时为 `"default"` |
+| `allow_multiple` | 原样返回输入值；省略时为 `false` |
 | `matched_targets` / `replacement_count` | `0` |
 | `matched_span` | `null` |
-| `replacement_line_count` | `replacement` 是字符串时按行数口径计算，否则为 `0` |
+| `replacement_line_count` | 按已校验的 `replacement` 计算 |
 | `file_line_count.previous` / `current` | 默认均为 `0`；若失败发生在成功读取已有文件后，则均为修改前行数 |
 | `note` | 必填，说明失败原因和可执行的修正建议 |
 
