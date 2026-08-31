@@ -15,7 +15,7 @@ test/replace-text/
 ├── smoke.test.ts                    # replace_text 轻量回归入口
 ├── helpers.ts                       # suite-scoped fixture harness、调用封装和结果 JSON 断言
 ├── schema.test.ts                   # Schema、description 和输出外壳
-├── runtime-validation.test.ts       # 参数校验、未知字段和失败默认值
+├── runtime-validation.test.ts       # catalog 结构校验与 handler 参数关系语义
 ├── default-mode.test.ts             # default 匹配、创建文件、行数与 no-op
 ├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
 ├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
@@ -47,7 +47,7 @@ test/fixtures/replace-text/
 | `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用精确字面匹配，`regex` 使用显式 JavaScript 正则流程 |
 | `regex_flags` | `string` | ❌ | `"ms"` | 仅 `regex` 模式可用；可控制 `m` / `s`，`g` 始终由工具强制启用 |
 
-`inputSchema` 设置 `additionalProperties=false`，handler 也会主动校验必填字段、字段类型、枚举值和未知字段。
+`inputSchema` 设置 `additionalProperties=false`，并由 built-in implementation validator 在进入 handler 前统一校验必填字段、字段类型、枚举值、非空 `file_path` 和未知字段。handler 只校验 `regex_flags` 的模式依赖与语法，以及 regex 模式下 `target` 非空等参数关系。
 
 ### description 设计意图
 
@@ -97,24 +97,24 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ---
 
-## 输出 JSON
+## 输出
 
-成功和失败都返回 MCP 标准外壳：
+所有结果都返回 MCP 标准外壳：
 
 ```json
 {
-  "content": [{ "type": "text", "text": "{...json...}" }]
+  "content": [{ "type": "text", "text": "<result text>" }]
 }
 ```
 
-失败时额外设置 `isError: true`，且 `content[0].text` 中的 JSON `success=false`。不使用 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
+结构无效的参数在进入 executor 前由 catalog 拒绝：结果设置 `isError: true`，`content[0].text` 是 schema validation 文本，不是下述 JSON payload。进入 executor 后，成功结果和业务或运行时失败都在 `content[0].text` 中返回 JSON；失败时额外设置 `isError: true` 且 JSON `success=false`。所有结果都不使用 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
 
-`content[0].text` 解析后的对象包含：
+executor 返回的 `content[0].text` 解析后包含：
 
 | 字段 | 类型 | 说明 |
 |-|-|-|
 | `success` | `boolean` | 工具是否执行成功 |
-| `file_path` | `string` | 调用方传入的原始 `file_path`；缺失或非字符串时为 `""` |
+| `file_path` | `string` | 已通过 input schema 校验的原始 `file_path` |
 | `match_mode` | `"default" \| "regex"` | 本次实际使用或规范化后的模式 |
 | `allow_multiple` | `boolean` | 本次实际使用或规范化后的多匹配设置 |
 | `matched_targets` | `number` | 扫描阶段发现的目标数量 |
@@ -131,22 +131,22 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ## 失败与 no-op 行为
 
-- 参数校验、未知字段、路径越界、目录路径、二进制文件、超限文件、读写失败都会返回 `isError: true`，且不会写入文件。
+- 结构无效参数和未知字段由 catalog 返回 schema validation 错误；参数关系、正则语义、路径越界、目录路径、二进制文件、超限文件和读写失败由 executor 返回 JSON 错误。两类失败都会设置 `isError: true`，且不会写入文件。
 - 无匹配时 `matched_targets=0`、`replacement_count=0`、`matched_span=null`，并在 `note` 中提示检查 `target` 或 regex pattern。
 - 多匹配但未设置 `allow_multiple=true` 时不会写入；`matched_targets` 和 `matched_span` 仍反映扫描到的匹配结果。
 - 计算后的最终内容与原文件完全一致时视为 no-op：返回失败、不写入、`replacement_count=0`，并提示检查 `target` 与 `replacement` 是否相同。
 - regex 模式下非法正则和零长度匹配都会失败且不写入；零长度匹配不返回部分匹配结果。
 
-前置失败无法自然获得字段值时，结果 JSON 使用以下默认值：
+executor 前置失败的参数已经通过 schema 校验，结果 JSON 按下列规则填充尚未产生的运行时信息：
 
-| 字段 | 失败默认值 |
+| 字段 | 前置失败值 |
 |-|-|
-| `file_path` | 传入值是字符串则原样返回，否则为 `""` |
-| `match_mode` | 传入值为 `"default"` 或 `"regex"` 时原样返回，否则为 `"default"` |
-| `allow_multiple` | 仅传入值严格为 `true` 时为 `true`，否则为 `false` |
+| `file_path` | 原样返回已校验的输入值 |
+| `match_mode` | 原样返回输入值；省略时为 `"default"` |
+| `allow_multiple` | 原样返回输入值；省略时为 `false` |
 | `matched_targets` / `replacement_count` | `0` |
 | `matched_span` | `null` |
-| `replacement_line_count` | `replacement` 是字符串时按行数口径计算，否则为 `0` |
+| `replacement_line_count` | 按已校验的 `replacement` 计算 |
 | `file_line_count.previous` / `current` | 默认均为 `0`；若失败发生在成功读取已有文件后，则均为修改前行数 |
 | `note` | 必填，说明失败原因和可执行的修正建议 |
 

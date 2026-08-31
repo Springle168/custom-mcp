@@ -56,12 +56,11 @@ fixture 模块在 `test/fixtures/read-file/` 中创建并清理 suite 自有的�
 
 ### 参数校验
 
-- `file_path` 必须是非空字符串。
-- `read_mode` 只能是 `line` 或 `regex`，省略时默认为 `line`。
-- `show_line_numbers` 必须是 boolean。
-- `line` 模式下，`start_line` / `end_line` 如果提供，必须是正整数 JSON number，字符串数字会被拒绝。
+built-in implementation validator 在进入 handler 前校验非空 `file_path`、`read_mode` 枚举、`show_line_numbers` boolean，以及 `start_line` / `end_line` 的 integer-or-string 基础类型、正数或非空值域。handler 继续校验依赖 `read_mode` 的参数关系和正则运行时语义：
+
+- `line` 模式下，`start_line` / `end_line` 如果提供，必须使用正整数 JSON number，字符串数字会被拒绝。
 - `line` 模式下，同时提供 `start_line` 和 `end_line` 时，`start_line` 不得大于 `end_line`；错误信息会包含实际传入值，便于修正。
-- `regex` 模式下，`start_line` / `end_line` 如果提供，必须是非空字符串，且能作为 JavaScript `RegExp` pattern 编译。
+- `regex` 模式下，`start_line` / `end_line` 如果提供，必须使用非空字符串，且能作为 JavaScript `RegExp` pattern 编译。
 
 ### `read_mode="line"`
 

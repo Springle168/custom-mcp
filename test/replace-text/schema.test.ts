@@ -57,6 +57,11 @@ function testInputSchemaUsesV2FieldsOnly(): void {
 function testInputSchemaRequiredAndAdditionalProperties(): void {
   const definition = getReplaceDefinition();
   const inputSchema = asRecord(definition.inputSchema, 'inputSchema should be an object');
+  const properties = asRecord(inputSchema.properties, 'properties should be an object');
+  const filePath = asRecord(
+    properties.file_path,
+    'file_path property should be an object',
+  );
 
   assertDeepEqual(
     inputSchema.required,
@@ -67,6 +72,11 @@ function testInputSchemaRequiredAndAdditionalProperties(): void {
     inputSchema.additionalProperties,
     false,
     'inputSchema should reject additional properties',
+  );
+  assertEqual(
+    filePath.minLength,
+    1,
+    'file_path should require at least one character',
   );
 }
 
@@ -196,7 +206,7 @@ async function main(): Promise<void> {
         run: testInputSchemaUsesV2FieldsOnly,
       },
       {
-        name: 'Input schema required fields and additionalProperties',
+        name: 'Input schema requires non-empty v2 fields and rejects additional properties',
         run: testInputSchemaRequiredAndAdditionalProperties,
       },
       {

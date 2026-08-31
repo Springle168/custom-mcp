@@ -43,6 +43,7 @@ For broad file sets, use shallow_read first to inspect their size and truncation
       shallow_read_content_limit_bytes: {
         type: 'integer',
         minimum: 1,
+        maximum: Number.MAX_SAFE_INTEGER,
         description:
           'Optional positive integer used only with shallow_read=true. If the total size of successfully processed files is less than or equal to this byte limit, return both shallow-read statistics and file contents.',
       },

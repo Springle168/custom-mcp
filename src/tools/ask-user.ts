@@ -40,57 +40,11 @@ interface PendingQuestion {
 // 全局会话存储（供 index.ts 使用）
 export const pendingQuestions = new Map<string, PendingQuestion>();
 
-// 参数校验
-function validateParams(params: AskUserParams): string | null {
-  if (!params.questions || params.questions.length === 0) {
-    return 'At least one question is required.';
-  }
-
-  if (params.questions.length > 4) {
-    return 'Maximum 4 questions allowed.';
-  }
-
+// This cross-field relation deliberately remains an executor-level semantic check.
+function validateQuestionRelations(params: AskUserParams): string | null {
   for (const [i, q] of params.questions.entries()) {
-    if (!q.question || typeof q.question !== 'string') {
-      return `Question ${i + 1}: 'question' is required and must be a string.`;
-    }
-
-    if (!q.header || typeof q.header !== 'string') {
-      return `Question ${i + 1}: 'header' is required and must be a string.`;
-    }
-
-    if (!q.type || !['choice', 'text', 'yesno'].includes(q.type)) {
-      return `Question ${i + 1}: 'type' must be 'choice', 'text', or 'yesno'.`;
-    }
-
-    if (
-      q.multi_select !== undefined &&
-      typeof q.multi_select !== 'boolean'
-    ) {
-      return `Question ${i + 1}: 'multi_select' must be a boolean.`;
-    }
-
-    // Validate choice type
-    if (q.type === 'choice') {
-      if (!q.options || q.options.length < 2) {
-        return `Question ${i + 1}: type='choice' requires 'options' array with 2-4 items.`;
-      }
-      if (q.options.length > 4) {
-        return `Question ${i + 1}: 'options' array must have at most 4 items.`;
-      }
-
-      // Validate each option
-      for (const [j, opt] of q.options.entries()) {
-        if (!opt.label || typeof opt.label !== 'string' || !opt.label.trim()) {
-          return `Question ${i + 1}, option ${j + 1}: 'label' is required and must be a non-empty string.`;
-        }
-        if (
-          opt.description === undefined ||
-          typeof opt.description !== 'string'
-        ) {
-          return `Question ${i + 1}, option ${j + 1}: 'description' is required and must be a string.`;
-        }
-      }
+    if (q.type === 'choice' && q.options === undefined) {
+      return `Question ${i + 1}: type='choice' requires 'options' array with 2-4 items.`;
     }
   }
 
@@ -104,8 +58,7 @@ async function handleAskUser(
 ): Promise<ToolCallResult> {
   const params = args as unknown as AskUserParams;
 
-  // 参数校验
-  const validationError = validateParams(params);
+  const validationError = validateQuestionRelations(params);
   if (validationError) {
     return textErrorResult(validationError);
   }

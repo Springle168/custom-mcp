@@ -66,43 +66,6 @@ type GuidelineFileInspector = (
   signal: AbortSignal,
 ) => Promise<FileInspectionResult>;
 
-function validateParams(args: Record<string, unknown>): string | null {
-  const allowedKeys = new Set(['include', 'exclude', 'use_ignore_files']);
-  const unknownKeys = Object.keys(args).filter((key) => !allowedKeys.has(key));
-  if (unknownKeys.length > 0) {
-    return `Unknown parameter(s): ${unknownKeys.join(', ')}.`;
-  }
-  if (!Array.isArray(args.include) || args.include.length === 0) {
-    return "The 'include' parameter must be a non-empty array of strings.";
-  }
-  if (
-    args.include.some(
-      (item) => typeof item !== 'string' || item.length === 0,
-    )
-  ) {
-    return "Each item in 'include' must be a non-empty string.";
-  }
-  if (args.exclude !== undefined) {
-    if (!Array.isArray(args.exclude)) {
-      return "The 'exclude' parameter must be an array of strings.";
-    }
-    if (
-      args.exclude.some(
-        (item) => typeof item !== 'string' || item.length === 0,
-      )
-    ) {
-      return "Each item in 'exclude' must be a non-empty string.";
-    }
-  }
-  if (
-    args.use_ignore_files !== undefined &&
-    typeof args.use_ignore_files !== 'boolean'
-  ) {
-    return "The 'use_ignore_files' parameter must be a boolean.";
-  }
-  return null;
-}
-
 async function readBoundedPrefix(
   fileHandle: FileHandle,
   sizeAtOpen: number,
@@ -281,11 +244,6 @@ async function discoverGuidelines(
   invocation: ToolInvocationContext,
   inspector: GuidelineFileInspector,
 ): Promise<ToolCallResult> {
-  const validationError = validateParams(args);
-  if (validationError) {
-    return textErrorResult(validationError);
-  }
-
   if (invocation.signal.aborted) {
     return textErrorResult(CANCELLED_MESSAGE);
   }

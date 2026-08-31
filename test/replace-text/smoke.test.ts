@@ -5,11 +5,14 @@ import {
   getResultText,
   runTestSuite,
 } from '../test-utils.js';
+import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
+import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import { createReplaceTextFixtureHarness } from './helpers.js';
 
 const {
   callReplace,
   cleanupFixtures,
+  createTestToolContext,
   fixturesDir: FIXTURES_DIR,
   readFixture,
   resetFixtures: prepareFixtures,
@@ -83,32 +86,40 @@ async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
 }
 
 async function testRejectsNonBooleanAllowMultiple(): Promise<void> {
-  const result = await callReplace({
-    file_path: 'unused.txt',
-    target: 'old',
-    replacement: 'new',
-    allow_multiple: 'false',
-  });
+  const result = await callBuiltInTool(
+    'replace_text',
+    {
+      file_path: 'unused.txt',
+      target: 'old',
+      replacement: 'new',
+      allow_multiple: 'false',
+    },
+    createTestToolContext(),
+    createTestToolInvocationContext(),
+  );
 
   assert(result.isError === true, 'Should fail');
-  const payload = parsePayload(result);
-  assert(!payload.success, 'Payload should report failure');
-  assertEqual(payload.allow_multiple, false, 'Invalid allow_multiple should normalize to false');
+  assertIncludes(getResultText(result), 'must be boolean', 'Should report schema type validation');
 }
 
 async function testRejectsOldFieldAliases(): Promise<void> {
   await writeFixture('old-fields.txt', 'old\n');
 
-  const result = await callReplace({
-    file_path: 'old-fields.txt',
-    old_string: 'old',
-    new_string: 'new',
-  });
+  const result = await callBuiltInTool(
+    'replace_text',
+    {
+      file_path: 'old-fields.txt',
+      old_string: 'old',
+      new_string: 'new',
+    },
+    createTestToolContext(),
+    createTestToolInvocationContext(),
+  );
 
   assert(result.isError === true, 'Should fail');
   const text = getResultText(result);
-  assertIncludes(text, 'old_string', 'Should mention rejected old field');
-  assertIncludes(text, 'target/replacement', 'Should suggest v2 parameter names');
+  assertIncludes(text, 'unexpected property "old_string"', 'Should mention a rejected old field');
+  assertIncludes(text, '[required]', 'Should report the missing canonical fields');
 
   const raw = await readFixture('old-fields.txt');
   assertEqual(raw, 'old\n', 'Should not modify the file');

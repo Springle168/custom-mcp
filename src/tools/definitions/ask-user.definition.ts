@@ -26,11 +26,13 @@ Each item in the questions array must be an object with these fields:
           properties: {
             question: {
               type: 'string',
+              minLength: 1,
               description:
                 'The complete question to ask the user. Should be clear, specific, and end with a question mark.',
             },
             header: {
               type: 'string',
+              minLength: 1,
               description:
                 'Very short label displayed as a chip/tag. Use abbreviations: "Auth" not "Authentication". Examples: "Auth method", "Library", "Approach".',
             },
@@ -76,6 +78,25 @@ Each item in the questions array must be an object with these fields:
           },
           required: ['question', 'header', 'type'],
           additionalProperties: false,
+          allOf: [
+            {
+              if: {
+                properties: { type: { const: 'choice' } },
+                required: ['type'],
+              },
+              then: {
+                properties: {
+                  options: {
+                    items: {
+                      properties: {
+                        label: { minLength: 1, pattern: '\\S' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
         },
       },
     },

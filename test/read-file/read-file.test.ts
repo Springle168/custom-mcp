@@ -1,5 +1,6 @@
 // test/read-file/read-file.test.ts
 
+import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import readFileTool from '../../src/tools/read-file.js';
@@ -287,13 +288,15 @@ async function testModeSpecificRangeTypes() {
 
 async function testInvalidReadMode() {
 
-  const result = await readFileTool.handler(
+  const result = await callBuiltInTool(
+    'read_file',
     { file_path: 'src/Foo.kt', read_mode: 'keyword' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
-  assertIncludes(getResultText(result), "The 'read_mode' parameter must be either 'line' or 'regex'.", 'Should explain valid modes');
+  assertIncludes(getResultText(result), 'must be equal to one of the allowed values', 'Should report enum validation');
 
 }
 

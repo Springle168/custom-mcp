@@ -27,6 +27,7 @@ Best practices:
     properties: {
       file_path: {
         type: 'string',
+        minLength: 1,
         description: 'Path of the file to modify.',
       },
       target: {

@@ -19,6 +19,7 @@ import {
   type RootFileAccessPolicy,
 } from '../../src/utils/file-access-policy.js';
 import type { SelectedReadableFile } from '../../src/utils/file-selection.js';
+import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
@@ -170,12 +171,18 @@ async function testDefinitionAndValidation(): Promise<void> {
     { include: ['guides/a.MD'], use_ignore_files: 'false' },
     { include: ['guides/a.MD'], extra: true },
   ]) {
-    const result = await discoverGuidelinesTool.handler(
+    const result = await callBuiltInTool(
+      'discover_guidelines',
       args,
       createContext(),
       createTestToolInvocationContext(),
     );
-    assert(result.isError, `Invalid executor args should fail: ${JSON.stringify(args)}`);
+    assert(result.isError, `Invalid catalog args should fail: ${JSON.stringify(args)}`);
+    assertIncludes(
+      getResultText(result),
+      'configured input schema',
+      'Invalid arguments should fail at the schema boundary',
+    );
   }
 }
 

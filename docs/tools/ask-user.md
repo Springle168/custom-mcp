@@ -128,12 +128,9 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 
 ### 参数校验
 
-当前参数校验规则：
+built-in implementation validator 在进入 handler 前校验 1–4 个 questions、`question` / `header` / `type` 必填与基础类型、`type` 枚举、option 结构和未知字段。`question` 与 `header` 必须是非空字符串；choice question 的 option `label` 必须包含至少一个非空白字符；option `description` 必须存在且为 string，但允许空字符串。非 choice question 携带的未使用 options 保持原有结构边界，不额外要求 label 非空。
 
-- 至少 1 个问题，最多 4 个
-- `type='choice'` 必须有 2-4 个 options
-- 每个 option 必须有非空 `label` 和 `description`（可以为空字符串）
-- 必填字段检查：`question`, `header`, `type`
+handler 保留一项跨字段关系：`type='choice'` 必须提供 options。options 一旦出现，其 2–4 项数量和元素结构由 schema 校验。
 
 ---
 
@@ -142,7 +139,7 @@ description 是给 AI 看的 prompt，包含以下关键信息：
 | 文件 | 职责 |
 |-|-|
 | `src/tools/definitions/ask-user.definition.ts` | Tool description 与 Draft 2020-12 input schema |
-| `src/tools/ask-user.ts` | 参数校验、handler 实现、待回答会话、答案规范化/格式化 helper、HTML 生成 |
+| `src/tools/ask-user.ts` | choice/options 参数关系、handler 实现、待回答会话、答案规范化/格式化 helper、HTML 生成 |
 | `src/tools/ask-user-routes.ts` | 浏览器 HTTP 路由（`/ask`, `/answer`, `/cancel`）及 `/answer` 的表单解析中间件 |
 | `src/index.ts` | HTTP server 创建和 `ask_user` 路由注册 |
 | `src/tools/index.ts` | 工具注册 |

@@ -81,7 +81,7 @@ Success: wrote nested/example.txt. Total lines: 2.
 | 文件 | 职责 |
 |-|-|
 | `src/tools/definitions/write-file.definition.ts` | Tool description 与 Draft 2020-12 input schema |
-| `src/tools/write-file.ts` | 参数校验、路径安全、写入编排、成功消息 |
+| `src/tools/write-file.ts` | 路径安全、写入编排、内容警告与成功消息 |
 | `src/tools/index.ts` | 工具注册 |
 | `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
 | `src/utils/file-access-policy.ts` | policy candidate、预计 real target、deny 与写入安全复检 |

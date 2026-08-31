@@ -212,6 +212,32 @@ function testFormatCanceledResult(): void {
   assertNoProtocolStructuredContent(result, 'Cancel result');
 }
 
+async function testChoiceQuestionRequiresOptions(): Promise<void> {
+  pendingQuestions.clear();
+
+  const result = await askUserTool.handler(
+    {
+      questions: [
+        {
+          question: 'Which auth method should we use?',
+          header: 'Auth',
+          type: 'choice',
+        },
+      ],
+    },
+    createTestToolRuntimeContext({ rootDir: PROJECT_ROOT }),
+    createTestToolInvocationContext(),
+  );
+
+  assertEqual(result.isError, true, 'A choice question without options should fail');
+  assertEqual(
+    getResultText(result),
+    "Question 1: type='choice' requires 'options' array with 2-4 items.",
+    'Handler should enforce the choice-options parameter relationship',
+  );
+  assertEqual(pendingQuestions.size, 0, 'Invalid choice relations should not create a session');
+}
+
 async function testHandlerAnswerResult(): Promise<void> {
   pendingQuestions.clear();
 
@@ -274,6 +300,7 @@ async function main(): Promise<void> {
       { name: 'non-string form values stringify safely', run: testNormalizeNonStringValues },
       { name: 'answer result formatter writes compact JSON text', run: testFormatAnswerResult },
       { name: 'cancel result formatter uses natural text', run: testFormatCanceledResult },
+      { name: 'choice questions require options', run: testChoiceQuestionRequiresOptions },
       { name: 'handler formats answered result', run: testHandlerAnswerResult },
     ],
   });
