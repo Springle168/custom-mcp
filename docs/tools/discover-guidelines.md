@@ -14,7 +14,7 @@
 | `exclude` | `string[]` | 否 | `[]` | 只过滤 glob 自动发现结果；literal path 绕过 |
 | `use_ignore_files` | `boolean` | 否 | `false` | 是否使用 matched root 的 `ignoreFiles` 过滤 glob 自动发现结果；literal path 绕过，deny 始终生效 |
 
-Input Schema 和 executor 都拒绝未知字段。`include` 至少包含一个非空字符串；`exclude` 中的每项也必须是非空字符串。
+Input Schema 拒绝未知字段，并保证 `include` 至少包含一个非空字符串、`exclude` 中的每项也是非空字符串；executor 在 schema 校验后只处理文件选择、Front Matter 语义和运行时边界。
 
 `use_ignore_files` 默认关闭，使指南发现能够覆盖被通用源码 ignore 规则隐藏的候选。宽泛 selector 需要应用 workspace 的软过滤时，可以显式设为 `true`。
 

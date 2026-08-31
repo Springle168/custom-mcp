@@ -53,8 +53,6 @@ Each item in the questions array must be an object with these fields:
                 properties: {
                   label: {
                     type: 'string',
-                    minLength: 1,
-                    pattern: '\\S',
                     description:
                       'The display text for this option (1-5 words). Example: "OAuth 2.0"',
                   },
@@ -80,6 +78,25 @@ Each item in the questions array must be an object with these fields:
           },
           required: ['question', 'header', 'type'],
           additionalProperties: false,
+          allOf: [
+            {
+              if: {
+                properties: { type: { const: 'choice' } },
+                required: ['type'],
+              },
+              then: {
+                properties: {
+                  options: {
+                    items: {
+                      properties: {
+                        label: { minLength: 1, pattern: '\\S' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
         },
       },
     },

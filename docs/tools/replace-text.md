@@ -97,24 +97,24 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ---
 
-## 输出 JSON
+## 输出
 
-成功和失败都返回 MCP 标准外壳：
+所有结果都返回 MCP 标准外壳：
 
 ```json
 {
-  "content": [{ "type": "text", "text": "{...json...}" }]
+  "content": [{ "type": "text", "text": "<result text>" }]
 }
 ```
 
-失败时额外设置 `isError: true`，且 `content[0].text` 中的 JSON `success=false`。不使用 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
+结构无效的参数在进入 executor 前由 catalog 拒绝：结果设置 `isError: true`，`content[0].text` 是 schema validation 文本，不是下述 JSON payload。进入 executor 后，成功结果和业务或运行时失败都在 `content[0].text` 中返回 JSON；失败时额外设置 `isError: true` 且 JSON `success=false`。所有结果都不使用 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
 
-`content[0].text` 解析后的对象包含：
+executor 返回的 `content[0].text` 解析后包含：
 
 | 字段 | 类型 | 说明 |
 |-|-|-|
 | `success` | `boolean` | 工具是否执行成功 |
-| `file_path` | `string` | 调用方传入的原始 `file_path`；缺失或非字符串时为 `""` |
+| `file_path` | `string` | 已通过 input schema 校验的原始 `file_path` |
 | `match_mode` | `"default" \| "regex"` | 本次实际使用或规范化后的模式 |
 | `allow_multiple` | `boolean` | 本次实际使用或规范化后的多匹配设置 |
 | `matched_targets` | `number` | 扫描阶段发现的目标数量 |
@@ -131,7 +131,7 @@ JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字�
 
 ## 失败与 no-op 行为
 
-- 参数校验、未知字段、路径越界、目录路径、二进制文件、超限文件、读写失败都会返回 `isError: true`，且不会写入文件。
+- 结构无效参数和未知字段由 catalog 返回 schema validation 错误；参数关系、正则语义、路径越界、目录路径、二进制文件、超限文件和读写失败由 executor 返回 JSON 错误。两类失败都会设置 `isError: true`，且不会写入文件。
 - 无匹配时 `matched_targets=0`、`replacement_count=0`、`matched_span=null`，并在 `note` 中提示检查 `target` 或 regex pattern。
 - 多匹配但未设置 `allow_multiple=true` 时不会写入；`matched_targets` 和 `matched_span` 仍反映扫描到的匹配结果。
 - 计算后的最终内容与原文件完全一致时视为 no-op：返回失败、不写入、`replacement_count=0`，并提示检查 `target` 与 `replacement` 是否相同。

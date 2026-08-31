@@ -57,6 +57,16 @@ function testBuiltInSchemasOwnStructuralContracts(): void {
 
   assertInvalid(
     'write_file',
+    { content: '' },
+    'write_file should require file_path',
+  );
+  assertInvalid(
+    'write_file',
+    { file_path: 'a.txt' },
+    'write_file should require content',
+  );
+  assertInvalid(
+    'write_file',
     { file_path: '', content: '' },
     'write_file should reject an empty file_path',
   );
@@ -137,7 +147,22 @@ function testBuiltInSchemasOwnStructuralContracts(): void {
         ],
       }],
     },
-    'ask_user should reject whitespace-only option labels',
+    'ask_user should reject whitespace-only labels for choice options',
+  );
+  assertValid(
+    'ask_user',
+    {
+      questions: [{
+        question: 'Explain?',
+        header: 'Scope',
+        type: 'text',
+        options: [
+          { label: '   ', description: 'Ignored label' },
+          { label: '', description: 'Ignored label' },
+        ],
+      }],
+    },
+    'ask_user should preserve unused non-choice options accepted by the baseline',
   );
   assertValid(
     'ask_user',
