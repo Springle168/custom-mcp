@@ -36,22 +36,43 @@ function assertInvalid(name: ToolName, args: unknown, message: string): void {
 function testBuiltInSchemasOwnStructuralContracts(): void {
   assertInvalid(
     'replace_text',
-    { file_path: '', target: 'a', replacement: 'b' },
+    {
+      files: [{
+        file_path: '',
+        replacements: [{ target: 'a', replacement: 'b' }],
+      }],
+    },
     'replace_text should reject an empty file_path',
   );
   assertInvalid(
     'replace_text',
-    { file_path: 'a.txt', target: 'a', replacement: 'b', allow_multiple: 'yes' },
+    {
+      files: [{
+        file_path: 'a.txt',
+        allow_multiple: 'yes',
+        replacements: [{ target: 'a', replacement: 'b' }],
+      }],
+    },
     'replace_text should reject non-boolean allow_multiple',
   );
   assertInvalid(
     'replace_text',
-    { file_path: 'a.txt', target: 'a', replacement: 'b', extra: true },
+    {
+      files: [{
+        file_path: 'a.txt',
+        replacements: [{ target: 'a', replacement: 'b', extra: true }],
+      }],
+    },
     'replace_text should reject unknown properties',
   );
   assertValid(
     'replace_text',
-    { file_path: 'a.txt', target: '', replacement: '' },
+    {
+      files: [{
+        file_path: 'a.txt',
+        replacements: [{ target: '', replacement: '' }],
+      }],
+    },
     'replace_text should leave empty-target mode semantics to the handler',
   );
 

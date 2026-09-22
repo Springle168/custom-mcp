@@ -7,7 +7,11 @@ import {
 } from '../test-utils.js';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import { createReplaceTextFixtureHarness } from './helpers.js';
+import {
+  assertSuccessResult,
+  createReplaceTextFixtureHarness,
+  singleReplaceBatch,
+} from './helpers.js';
 
 const {
   callReplace,
@@ -19,20 +23,6 @@ const {
   writeFixture,
 } = createReplaceTextFixtureHarness('smoke');
 
-interface ReplaceJsonPayload {
-  success: boolean;
-  note?: string;
-  allow_multiple: boolean;
-  matched_targets: number;
-  replacement_count: number;
-  matched_span: { start_line: number; end_line: number } | null;
-  file_line_count: { previous: number; current: number };
-}
-
-function parsePayload(result: { content?: Array<{ text?: string }> }): ReplaceJsonPayload {
-  return JSON.parse(getResultText(result)) as ReplaceJsonPayload;
-}
-
 async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
   await writeFixture('warns.ts', 'function demo() {\n  return 1;\n}\n');
 
@@ -42,9 +32,7 @@ async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
     replacement: '  // ...\n  return 2;',
   });
 
-  assert(result.isError !== true, 'Should succeed');
-  const payload = parsePayload(result);
-  assert(payload.success, 'Payload should report success');
+  const payload = assertSuccessResult(result);
   assertIncludes(payload.note, 'Warning:', 'Should include a warning');
   assertIncludes(payload.note, "'...'", 'Should name the placeholder');
   assertEqual(payload.matched_targets, 1, 'Should report one matched target');
@@ -72,9 +60,7 @@ async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
     replacement: '// ...\nactual content',
   });
 
-  assert(result.isError !== true, 'Should succeed');
-  const payload = parsePayload(result);
-  assert(payload.success, 'Payload should report success');
+  const payload = assertSuccessResult(result);
   assertEqual(payload.note, undefined, 'Should not warn for existing placeholder');
 
   const raw = await readFixture('existing-placeholder.txt');
@@ -88,41 +74,18 @@ async function testDoesNotWarnForExistingPlaceholder(): Promise<void> {
 async function testRejectsNonBooleanAllowMultiple(): Promise<void> {
   const result = await callBuiltInTool(
     'replace_text',
-    {
+    singleReplaceBatch({
       file_path: 'unused.txt',
       target: 'old',
       replacement: 'new',
-      allow_multiple: 'false',
-    },
+      allow_multiple: 'false' as unknown as boolean,
+    }),
     createTestToolContext(),
     createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
   assertIncludes(getResultText(result), 'must be boolean', 'Should report schema type validation');
-}
-
-async function testRejectsOldFieldAliases(): Promise<void> {
-  await writeFixture('old-fields.txt', 'old\n');
-
-  const result = await callBuiltInTool(
-    'replace_text',
-    {
-      file_path: 'old-fields.txt',
-      old_string: 'old',
-      new_string: 'new',
-    },
-    createTestToolContext(),
-    createTestToolInvocationContext(),
-  );
-
-  assert(result.isError === true, 'Should fail');
-  const text = getResultText(result);
-  assertIncludes(text, 'unexpected property "old_string"', 'Should mention a rejected old field');
-  assertIncludes(text, '[required]', 'Should report the missing canonical fields');
-
-  const raw = await readFixture('old-fields.txt');
-  assertEqual(raw, 'old\n', 'Should not modify the file');
 }
 
 async function main(): Promise<void> {
@@ -143,10 +106,6 @@ async function main(): Promise<void> {
       {
         name: 'Rejects non-boolean allow_multiple',
         run: testRejectsNonBooleanAllowMultiple,
-      },
-      {
-        name: 'Rejects old field aliases',
-        run: testRejectsOldFieldAliases,
       },
     ],
   });

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { LineEnding } from '../../src/config.js';
 import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
 import replaceTool from '../../src/tools/replace.js';
-import type { ToolCallResult } from '../../src/tools/types.js';
+import type { MCPTool, ToolCallResult } from '../../src/tools/types.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
@@ -35,20 +35,65 @@ export interface MatchedSpan {
   end_line: number;
 }
 
-export interface ReplaceTextV2Json {
+export interface ReplaceTextReplacementJson {
   success: boolean;
-  file_path: string;
-  match_mode: 'default' | 'regex';
-  allow_multiple: boolean;
   matched_targets: number;
   replacement_count: number;
   matched_span: MatchedSpan | null;
   replacement_line_count: number;
   file_line_count: {
-    previous: number;
-    current: number;
+    previous: number | null;
+    current: number | null;
   };
   note?: string;
+}
+
+export interface ReplaceTextFileJson {
+  success: boolean;
+  file_path: string;
+  match_mode: 'default' | 'regex';
+  allow_multiple: boolean;
+  replacements: ReplaceTextReplacementJson[];
+}
+
+export interface ReplaceTextBatchJson {
+  success: boolean;
+  files: ReplaceTextFileJson[];
+}
+
+export type ReplaceTextV2Json = ReplaceTextReplacementJson & {
+  file_path: string;
+  match_mode: 'default' | 'regex';
+  allow_multiple: boolean;
+};
+
+export interface SingleReplaceArgs {
+  file_path: string;
+  target: string;
+  replacement: string;
+  allow_multiple?: boolean;
+  match_mode?: 'default' | 'regex';
+  regex_flags?: string;
+}
+
+export function singleReplaceBatch(args: SingleReplaceArgs): Record<string, unknown> {
+  const {
+    file_path,
+    target,
+    replacement,
+    allow_multiple,
+    match_mode,
+    regex_flags,
+  } = args;
+  return {
+    files: [{
+      file_path,
+      ...(allow_multiple === undefined ? {} : { allow_multiple }),
+      ...(match_mode === undefined ? {} : { match_mode }),
+      ...(regex_flags === undefined ? {} : { regex_flags }),
+      replacements: [{ target, replacement }],
+    }],
+  };
 }
 
 export function createReplaceTextFixtureHarness(suiteName: string) {
@@ -108,11 +153,26 @@ export function createReplaceTextFixtureHarness(suiteName: string) {
     }
   }
 
-  async function callReplace(
+  async function callWithHandler(
+    handler: MCPTool['handler'],
     args: Record<string, unknown>,
     context: ToolRuntimeContext = createTestToolContext(),
   ): Promise<ToolCallResult> {
-    return replaceTool.handler(args, context, createTestToolInvocationContext());
+    return handler(args, context, createTestToolInvocationContext());
+  }
+
+  async function callReplace(
+    args: SingleReplaceArgs,
+    context: ToolRuntimeContext = createTestToolContext(),
+  ): Promise<ToolCallResult> {
+    return callWithHandler(replaceTool.handler, singleReplaceBatch(args), context);
+  }
+
+  async function callReplaceBatch(
+    args: Record<string, unknown>,
+    context: ToolRuntimeContext = createTestToolContext(),
+  ): Promise<ToolCallResult> {
+    return callWithHandler(replaceTool.handler, args, context);
   }
 
   async function assertFixtureContent(
@@ -141,13 +201,15 @@ export function createReplaceTextFixtureHarness(suiteName: string) {
     readFixture,
     makeFixtureDir,
     fixtureExists,
+    callWithHandler,
     callReplace,
+    callReplaceBatch,
     assertFixtureContent,
     assertFixtureMissing,
   };
 }
 
-export function parseResultJson(result: ToolCallResult): ReplaceTextV2Json {
+export function parseResultJson(result: ToolCallResult): ReplaceTextBatchJson {
   assertEnvelope(result);
 
   const text = getResultText(result);
@@ -156,31 +218,50 @@ export function parseResultJson(result: ToolCallResult): ReplaceTextV2Json {
     parsed = JSON.parse(text);
   } catch (error) {
     throw new Error(
-      `Expected content[0].text to be v2 JSON, but parsing failed: ${String(error)}\nText: ${text}`,
+      `Expected content[0].text to be batch JSON, but parsing failed: ${String(error)}\nText: ${text}`,
     );
   }
 
-  assertResultShape(parsed);
+  assertBatchResultShape(parsed);
   return parsed;
+}
+
+function onlyResult(batch: ReplaceTextBatchJson): ReplaceTextV2Json {
+  assertEqual(batch.files.length, 1, 'Expected exactly one file result');
+  const file = batch.files[0];
+  assert(file !== undefined, 'Expected one file result');
+  assertEqual(file.replacements.length, 1, 'Expected exactly one replacement result');
+  const replacement = file.replacements[0];
+  assert(replacement !== undefined, 'Expected one replacement result');
+  return {
+    ...replacement,
+    file_path: file.file_path,
+    match_mode: file.match_mode,
+    allow_multiple: file.allow_multiple,
+  };
 }
 
 export function assertSuccessResult(result: ToolCallResult): ReplaceTextV2Json {
   assertEqual(result.isError, false, 'Success result should set isError: false');
-  const json = parseResultJson(result);
-  assertEqual(json.success, true, 'JSON success should be true');
+  const batch = parseResultJson(result);
+  assertEqual(batch.success, true, 'Batch JSON success should be true');
+  const json = onlyResult(batch);
+  assertEqual(json.success, true, 'Replacement JSON success should be true');
   return json;
 }
 
 export function assertErrorResult(result: ToolCallResult): ReplaceTextV2Json {
   assertEqual(result.isError, true, 'Failure result should set isError: true');
-  const json = parseResultJson(result);
-  assertEqual(json.success, false, 'JSON success should be false');
+  const batch = parseResultJson(result);
+  assertEqual(batch.success, false, 'Batch JSON success should be false');
+  const json = onlyResult(batch);
+  assertEqual(json.success, false, 'Replacement JSON success should be false');
   assert(typeof json.note === 'string', 'Failure JSON should include note');
   return json;
 }
 
 export function assertSpan(
-  json: ReplaceTextV2Json,
+  json: ReplaceTextReplacementJson,
   startLine: number,
   endLine: number,
   message: string,
@@ -195,26 +276,26 @@ export function assertSpan(
 }
 
 export function assertNoSpan(
-  json: ReplaceTextV2Json,
+  json: ReplaceTextReplacementJson,
   message: string,
 ): void {
   assertEqual(json.matched_span, null, message);
 }
 
 export function assertJsonNoteIncludes(
-  json: ReplaceTextV2Json,
+  json: ReplaceTextReplacementJson,
   substring: string,
   message: string,
 ): void {
   assertIncludes(json.note, substring, message);
 }
 
-export function assertJsonDefaults(json: ReplaceTextV2Json): void {
+export function assertJsonDefaults(json: ReplaceTextReplacementJson): void {
   assertEqual(json.matched_targets, 0, 'Default matched_targets');
   assertEqual(json.replacement_count, 0, 'Default replacement_count');
   assertNoSpan(json, 'Default matched_span');
-  assertEqual(json.file_line_count.previous, 0, 'Default previous line count');
-  assertEqual(json.file_line_count.current, 0, 'Default current line count');
+  assertEqual(json.file_line_count.previous, null, 'Unknown previous line count');
+  assertEqual(json.file_line_count.current, null, 'Unknown current line count');
 }
 
 export function assertDeepEqual(
@@ -249,18 +330,52 @@ function assertEnvelope(result: ToolCallResult): void {
   );
   assert(
     !('structuredContent' in result),
-    'replace_text v2 should not return structuredContent',
+    'replace_text should not return structuredContent',
   );
 }
 
-function assertResultShape(value: unknown): asserts value is ReplaceTextV2Json {
+function assertBatchResultShape(value: unknown): asserts value is ReplaceTextBatchJson {
   assert(isRecord(value), 'Parsed JSON should be an object');
+  assertDeepEqual(
+    Object.keys(value).sort(),
+    ['files', 'success'],
+    'Batch result should contain only success and files',
+  );
+  assert(typeof value.success === 'boolean', 'Batch success should be boolean');
+  assert(Array.isArray(value.files), 'Batch files should be an array');
+  for (const file of value.files) assertFileResultShape(file);
+}
+
+function assertFileResultShape(value: unknown): asserts value is ReplaceTextFileJson {
+  assert(isRecord(value), 'File result should be an object');
+  assertDeepEqual(
+    Object.keys(value).sort(),
+    ['allow_multiple', 'file_path', 'match_mode', 'replacements', 'success'],
+    'File result should contain only declared fields',
+  );
+  assert(typeof value.success === 'boolean', 'File success should be boolean');
+  assert(typeof value.file_path === 'string', 'file_path should be string');
+  assert(
+    value.match_mode === 'default' || value.match_mode === 'regex',
+    'match_mode should be default or regex',
+  );
+  assert(
+    typeof value.allow_multiple === 'boolean',
+    'allow_multiple should be boolean',
+  );
+  assert(Array.isArray(value.replacements), 'replacements should be an array');
+  for (const replacement of value.replacements) {
+    assertReplacementResultShape(replacement);
+  }
+}
+
+function assertReplacementResultShape(
+  value: unknown,
+): asserts value is ReplaceTextReplacementJson {
+  assert(isRecord(value), 'Replacement result should be an object');
 
   const requiredKeys = [
     'success',
-    'file_path',
-    'match_mode',
-    'allow_multiple',
     'matched_targets',
     'replacement_count',
     'matched_span',
@@ -274,23 +389,14 @@ function assertResultShape(value: unknown): asserts value is ReplaceTextV2Json {
     Object.keys(value)
       .filter((key) => allowedKeys.includes(key))
       .sort(),
-    'JSON result should not contain undeclared fields',
+    'Replacement result should not contain undeclared fields',
   );
 
   for (const key of requiredKeys) {
-    assert(key in value, `JSON result should include ${key}`);
+    assert(key in value, `Replacement result should include ${key}`);
   }
 
   assert(typeof value.success === 'boolean', 'success should be boolean');
-  assert(typeof value.file_path === 'string', 'file_path should be string');
-  assert(
-    value.match_mode === 'default' || value.match_mode === 'regex',
-    'match_mode should be default or regex',
-  );
-  assert(
-    typeof value.allow_multiple === 'boolean',
-    'allow_multiple should be boolean',
-  );
   assertNonNegativeInteger(value.matched_targets, 'matched_targets');
   assertNonNegativeInteger(value.replacement_count, 'replacement_count');
   assertNonNegativeInteger(
@@ -315,11 +421,11 @@ function assertResultShape(value: unknown): asserts value is ReplaceTextV2Json {
     ['current', 'previous'],
     'file_line_count should contain only previous and current',
   );
-  assertNonNegativeInteger(
+  assertNullableNonNegativeInteger(
     value.file_line_count.previous,
     'file_line_count.previous',
   );
-  assertNonNegativeInteger(
+  assertNullableNonNegativeInteger(
     value.file_line_count.current,
     'file_line_count.current',
   );
@@ -338,6 +444,14 @@ function assertNonNegativeInteger(value: unknown, fieldName: string): void {
     Number.isInteger(value) && typeof value === 'number' && value >= 0,
     `${fieldName} should be a non-negative integer`,
   );
+}
+
+function assertNullableNonNegativeInteger(
+  value: unknown,
+  fieldName: string,
+): void {
+  if (value === null) return;
+  assertNonNegativeInteger(value, fieldName);
 }
 
 function assertPositiveInteger(value: unknown, fieldName: string): void {

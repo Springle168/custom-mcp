@@ -34,313 +34,174 @@ async function assertBuiltInSchemaError(
     createTestToolContext(),
     createTestToolInvocationContext(),
   );
-
-  assertEqual(result.isError, true, `${message}: result should set isError: true`);
+  assertEqual(result.isError, true, `${message}: should set isError`);
   const text = getResultText(result);
-  assertIncludes(
-    text,
-    'configured input schema',
-    `${message}: result should identify the configured input schema`,
-  );
+  assertIncludes(text, 'configured input schema', `${message}: schema error prefix`);
   for (const fragment of expectedFragments) {
-    assertIncludes(text, fragment, `${message}: schema error should identify ${fragment}`);
+    assertIncludes(text, fragment, `${message}: should identify ${fragment}`);
   }
 }
 
-async function testNewParameterNamesAndDefaults(): Promise<void> {
-  await resetFixtures();
-  await writeFixture('new-params.txt', 'alpha\n');
+function validFile(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    file_path: 'example.txt',
+    replacements: [{ target: 'alpha', replacement: 'beta' }],
+    ...overrides,
+  };
+}
 
-  const result = await callReplace({
-    file_path: 'new-params.txt',
+async function testDefaults(): Promise<void> {
+  await resetFixtures();
+  await writeFixture('defaults.txt', 'alpha\n');
+  const json = assertSuccessResult(await callReplace({
+    file_path: 'defaults.txt',
     target: 'alpha',
     replacement: 'beta',
-  });
+  }));
+  assertEqual(json.file_path, 'defaults.txt', 'file_path should echo input');
+  assertEqual(json.match_mode, 'default', 'match_mode default');
+  assertEqual(json.allow_multiple, false, 'allow_multiple default');
+  await assertFixtureContent('defaults.txt', 'beta\n', 'Default batch should write');
+}
 
-  const json = assertSuccessResult(result);
-  assertEqual(json.file_path, 'new-params.txt', 'file_path should echo input');
-  assertEqual(json.match_mode, 'default', 'match_mode should default to default');
-  assertEqual(json.allow_multiple, false, 'allow_multiple should default to false');
-  assertEqual(json.matched_targets, 1, 'Should match once');
-  assertEqual(json.replacement_count, 1, 'Should replace once');
-  await assertFixtureContent(
-    'new-params.txt',
-    'beta\n',
-    'Should write replacement using v2 parameter names',
+async function testRootShapeValidation(): Promise<void> {
+  await assertBuiltInSchemaError({}, ['files', '[required]'], 'Missing files');
+  await assertBuiltInSchemaError({ files: [] }, ['/files', '[minItems]'], 'Empty files');
+  await assertBuiltInSchemaError(
+    { files: [validFile()], extra: true },
+    ['unexpected property "extra"', '[additionalProperties]'],
+    'Root unknown field',
   );
 }
 
-async function testMissingFilePathRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    target: 'alpha',
-    replacement: 'beta',
-  }, ['file_path', '[required]'], 'Missing file_path');
+async function testFileShapeValidation(): Promise<void> {
+  await assertBuiltInSchemaError(
+    { files: [{ replacements: [{ target: 'a', replacement: 'b' }] }] },
+    ['file_path', '[required]'],
+    'Missing file_path',
+  );
+  await assertBuiltInSchemaError(
+    { files: [{ file_path: 'a.txt' }] },
+    ['replacements', '[required]'],
+    'Missing replacements',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ file_path: '' })] },
+    ['/files/0/file_path', '[minLength]'],
+    'Empty file_path',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ replacements: [] })] },
+    ['/files/0/replacements', '[minItems]'],
+    'Empty replacements',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ allow_multiple: 'true' })] },
+    ['/files/0/allow_multiple', '[type]'],
+    'Non-boolean allow_multiple',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ match_mode: 'regexp' })] },
+    ['/files/0/match_mode', '[enum]'],
+    'Invalid match_mode',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ unexpected: true })] },
+    ['unexpected property "unexpected"', '[additionalProperties]'],
+    'File unknown field',
+  );
 }
 
-async function testMissingTargetRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'missing-target.txt',
-    replacement: 'beta',
-  }, ['target', '[required]'], 'Missing target');
-}
-
-async function testMissingReplacementRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'missing-replacement.txt',
-    target: 'alpha',
-  }, ['replacement', '[required]'], 'Missing replacement');
-}
-
-async function testNonStringFilePathRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 42,
-    target: 'alpha',
-    replacement: 'beta',
-  }, ['/file_path', '[type]'], 'Non-string file_path');
-}
-
-async function testNonStringTargetRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'non-string-target.txt',
-    target: ['alpha'],
-    replacement: 'beta',
-  }, ['/target', '[type]'], 'Non-string target');
-}
-
-async function testNonStringReplacementRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'non-string-replacement.txt',
-    target: 'alpha',
-    replacement: { text: 'beta' },
-  }, ['/replacement', '[type]'], 'Non-string replacement');
-}
-
-async function testNonBooleanAllowMultipleRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'bad-allow-multiple.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    allow_multiple: 'true',
-  }, ['/allow_multiple', '[type]'], 'Non-boolean allow_multiple');
-}
-
-async function testInvalidMatchModeRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'bad-match-mode.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    match_mode: 'regexp',
-  }, ['/match_mode', '[enum]'], 'Invalid match_mode');
-}
-
-async function testNonStringRegexFlagsRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'bad-regex-flags-type.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    match_mode: 'regex',
-    regex_flags: ['m'],
-  }, ['/regex_flags', '[type]'], 'Non-string regex_flags');
+async function testReplacementShapeValidation(): Promise<void> {
+  await assertBuiltInSchemaError(
+    { files: [validFile({ replacements: [{ replacement: 'b' }] })] },
+    ['target', '[required]'],
+    'Missing target',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ replacements: [{ target: 'a' }] })] },
+    ['replacement', '[required]'],
+    'Missing replacement',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ replacements: [{ target: [], replacement: 'b' }] })] },
+    ['/files/0/replacements/0/target', '[type]'],
+    'Non-string target',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ replacements: [{ target: 'a', replacement: 1 }] })] },
+    ['/files/0/replacements/0/replacement', '[type]'],
+    'Non-string replacement',
+  );
+  await assertBuiltInSchemaError(
+    { files: [validFile({ replacements: [{ target: 'a', replacement: 'b', extra: true }] })] },
+    ['unexpected property "extra"', '[additionalProperties]'],
+    'Replacement unknown field',
+  );
 }
 
 async function testRegexFlagsWithoutRegexModeRejected(): Promise<void> {
   await resetFixtures();
-  await writeFixture('regex-flags-default-mode.txt', 'alpha\n');
-
-  const result = await callReplace({
-    file_path: 'regex-flags-default-mode.txt',
+  await writeFixture('flags-default.txt', 'alpha\n');
+  const json = assertErrorResult(await callReplace({
+    file_path: 'flags-default.txt',
     target: 'alpha',
     replacement: 'beta',
     regex_flags: 'm',
-  });
-
-  const json = assertErrorResult(result);
+  }));
   assertJsonNoteIncludes(json, "match_mode is 'regex'", 'regex_flags mode note');
   assertJsonDefaults(json);
-  await assertFixtureContent(
-    'regex-flags-default-mode.txt',
-    'alpha\n',
-    'regex_flags without regex mode should not modify the file',
-  );
+  await assertFixtureContent('flags-default.txt', 'alpha\n', 'Invalid flags should not write');
 }
 
-async function testRegexFlagsInvalidCharacterRejected(): Promise<void> {
+async function testInvalidRegexFlagsRejected(): Promise<void> {
   await resetFixtures();
-  await writeFixture('bad-regex-flags-char.txt', 'alpha\n');
-
-  const result = await callReplace({
-    file_path: 'bad-regex-flags-char.txt',
+  await writeFixture('flags-invalid.txt', 'alpha\n');
+  const invalid = assertErrorResult(await callReplace({
+    file_path: 'flags-invalid.txt',
     target: 'alpha',
     replacement: 'beta',
     match_mode: 'regex',
     regex_flags: 'mi',
-  });
+  }));
+  assertJsonNoteIncludes(invalid, "'g', 'm', and 's'", 'Invalid flag note');
+  assertJsonDefaults(invalid);
 
-  const json = assertErrorResult(result);
-  assertJsonNoteIncludes(json, "'g', 'm', and 's'", 'regex_flags character note');
-  assertJsonDefaults(json);
-  await assertFixtureContent(
-    'bad-regex-flags-char.txt',
-    'alpha\n',
-    'Invalid regex_flags character should not modify the file',
-  );
-}
-
-async function testRegexFlagsDuplicateCharacterRejected(): Promise<void> {
-  await resetFixtures();
-  await writeFixture('bad-regex-flags-repeat.txt', 'alpha\n');
-
-  const result = await callReplace({
-    file_path: 'bad-regex-flags-repeat.txt',
+  const duplicate = assertErrorResult(await callReplace({
+    file_path: 'flags-invalid.txt',
     target: 'alpha',
     replacement: 'beta',
     match_mode: 'regex',
     regex_flags: 'msm',
-  });
-
-  const json = assertErrorResult(result);
-  assertJsonNoteIncludes(json, 'must not repeat flags', 'regex_flags duplicate note');
-  assertJsonDefaults(json);
-  await assertFixtureContent(
-    'bad-regex-flags-repeat.txt',
-    'alpha\n',
-    'Duplicate regex_flags character should not modify the file',
-  );
-}
-
-async function testUnknownFieldRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'unknown-field.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    extra: true,
-  }, ['unexpected property "extra"', '[additionalProperties]'], 'Unknown field');
-}
-
-async function testLegacyFieldsOnlyRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'legacy-only.txt',
-    old_string: 'alpha',
-    new_string: 'beta',
-  }, [
-    'unexpected property "old_string"',
-    'unexpected property "new_string"',
-    '[additionalProperties]',
-    'target',
-    'replacement',
-    '[required]',
-  ], 'Legacy fields only');
-}
-
-async function testLegacyExtraFieldsRejected(): Promise<void> {
-  await assertBuiltInSchemaError({
-    file_path: 'legacy-extra.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    old_string: 'alpha',
-    new_string: 'beta',
-  }, [
-    'unexpected property "old_string"',
-    'unexpected property "new_string"',
-    '[additionalProperties]',
-  ], 'Legacy extra fields');
+  }));
+  assertJsonNoteIncludes(duplicate, 'must not repeat flags', 'Duplicate flag note');
+  assertJsonDefaults(duplicate);
 }
 
 async function testRouteUsesProvidedFixtureRootOnly(): Promise<void> {
   await resetFixtures();
   await writeFixture('fixture-root.txt', 'alpha\n');
-
-  const result = await callReplace(
-    {
-      file_path: 'fixture-root.txt',
-      target: 'alpha',
-      replacement: 'beta',
-    },
-    createTestToolContext(),
-  );
-
-  assertSuccessResult(result);
-  await assertFixtureContent(
-    'fixture-root.txt',
-    'beta\n',
-    'Test should use explicit fixture root config, not root config.json',
-  );
+  assertSuccessResult(await callReplace({
+    file_path: 'fixture-root.txt',
+    target: 'alpha',
+    replacement: 'beta',
+  }, createTestToolContext()));
+  await assertFixtureContent('fixture-root.txt', 'beta\n', 'Should use explicit fixture root');
 }
 
 async function main(): Promise<void> {
   await runTestSuite({
-    title: 'replace_text v2 runtime validation tests',
-    details: 'Covers v2 defaults, catalog schema validation, and regex_flags runtime semantics.',
+    title: 'replace_text batch runtime validation tests',
+    details: 'Covers nested schema validation, defaults, and file-level regex semantics.',
     afterAll: cleanupFixtures,
     tests: [
-      {
-        name: 'New parameter names succeed and omitted options default',
-        run: testNewParameterNamesAndDefaults,
-      },
-      {
-        name: 'Missing file_path is rejected by the input schema',
-        run: testMissingFilePathRejected,
-      },
-      {
-        name: 'Missing target is rejected by the input schema',
-        run: testMissingTargetRejected,
-      },
-      {
-        name: 'Missing replacement is rejected by the input schema',
-        run: testMissingReplacementRejected,
-      },
-      {
-        name: 'Non-string file_path is rejected by the input schema',
-        run: testNonStringFilePathRejected,
-      },
-      {
-        name: 'Non-string target is rejected by the input schema',
-        run: testNonStringTargetRejected,
-      },
-      {
-        name: 'Non-string replacement is rejected by the input schema',
-        run: testNonStringReplacementRejected,
-      },
-      {
-        name: 'Non-boolean allow_multiple is rejected by the input schema',
-        run: testNonBooleanAllowMultipleRejected,
-      },
-      {
-        name: 'Invalid match_mode is rejected by the input schema',
-        run: testInvalidMatchModeRejected,
-      },
-      {
-        name: 'Non-string regex_flags is rejected by the input schema',
-        run: testNonStringRegexFlagsRejected,
-      },
-      {
-        name: 'regex_flags without regex mode is rejected',
-        run: testRegexFlagsWithoutRegexModeRejected,
-      },
-      {
-        name: 'regex_flags invalid character is rejected',
-        run: testRegexFlagsInvalidCharacterRejected,
-      },
-      {
-        name: 'regex_flags duplicate character is rejected',
-        run: testRegexFlagsDuplicateCharacterRejected,
-      },
-      {
-        name: 'Unknown field is rejected by the input schema',
-        run: testUnknownFieldRejected,
-      },
-      {
-        name: 'Legacy fields alone are rejected by the input schema',
-        run: testLegacyFieldsOnlyRejected,
-      },
-      {
-        name: 'Legacy fields as extras are rejected by the input schema',
-        run: testLegacyExtraFieldsRejected,
-      },
-      {
-        name: 'Tests use explicit fixture root config',
-        run: testRouteUsesProvidedFixtureRootOnly,
-      },
+      { name: 'File options apply defaults', run: testDefaults },
+      { name: 'Root batch shape is validated', run: testRootShapeValidation },
+      { name: 'File item shape is validated', run: testFileShapeValidation },
+      { name: 'Replacement item shape is validated', run: testReplacementShapeValidation },
+      { name: 'regex_flags requires regex mode', run: testRegexFlagsWithoutRegexModeRejected },
+      { name: 'regex_flags syntax is validated', run: testInvalidRegexFlagsRejected },
+      { name: 'Tests use explicit fixture root config', run: testRouteUsesProvidedFixtureRootOnly },
     ],
   });
 }

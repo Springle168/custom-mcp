@@ -204,9 +204,10 @@ async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
   await fs.writeFile(replaceTarget, 'export const flag = true;\n', 'utf-8');
   const replaceResult = await replaceTool.handler(
     {
-      file_path: replaceTarget,
-      target: 'true',
-      replacement: 'false',
+      files: [{
+        file_path: replaceTarget,
+        replacements: [{ target: 'true', replacement: 'false' }],
+      }],
     },
     multiRootContext, createTestToolInvocationContext(),
   );

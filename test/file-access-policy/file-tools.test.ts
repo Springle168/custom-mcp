@@ -333,9 +333,10 @@ async function testWriteAndReplaceDenyFutureTargets(): Promise<void> {
 
   const replaceResult = await replaceTool.handler(
     {
-      file_path: 'denied/replaced.txt',
-      target: '',
-      replacement: 'must-not-exist',
+      files: [{
+        file_path: 'denied/replaced.txt',
+        replacements: [{ target: '', replacement: 'must-not-exist' }],
+      }],
     },
     context, createTestToolInvocationContext(),
   );

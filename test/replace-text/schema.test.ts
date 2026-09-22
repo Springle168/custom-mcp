@@ -33,198 +33,161 @@ function asRecord(value: unknown, message: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function testInputSchemaUsesV2FieldsOnly(): void {
+function getSchemaLayers(): {
+  inputSchema: Record<string, unknown>;
+  files: Record<string, unknown>;
+  fileItem: Record<string, unknown>;
+  fileProperties: Record<string, unknown>;
+  replacements: Record<string, unknown>;
+  replacementItem: Record<string, unknown>;
+  replacementProperties: Record<string, unknown>;
+} {
   const definition = getReplaceDefinition();
   const inputSchema = asRecord(definition.inputSchema, 'inputSchema should be an object');
-  const properties = asRecord(inputSchema.properties, 'properties should be an object');
-
-  assertDeepEqual(
-    Object.keys(properties).sort(),
-    [
-      'allow_multiple',
-      'file_path',
-      'match_mode',
-      'regex_flags',
-      'replacement',
-      'target',
-    ],
-    'replace_text schema should expose only v2.1 input fields',
+  const rootProperties = asRecord(inputSchema.properties, 'root properties should be an object');
+  const files = asRecord(rootProperties.files, 'files should be an object');
+  const fileItem = asRecord(files.items, 'files items should be an object');
+  const fileProperties = asRecord(fileItem.properties, 'file properties should be an object');
+  const replacements = asRecord(fileProperties.replacements, 'replacements should be an object');
+  const replacementItem = asRecord(replacements.items, 'replacement items should be an object');
+  const replacementProperties = asRecord(
+    replacementItem.properties,
+    'replacement properties should be an object',
   );
-  assert(!('old_string' in properties), 'old_string should not be a schema property');
-  assert(!('new_string' in properties), 'new_string should not be a schema property');
+  return {
+    inputSchema,
+    files,
+    fileItem,
+    fileProperties,
+    replacements,
+    replacementItem,
+    replacementProperties,
+  };
 }
 
-function testInputSchemaRequiredAndAdditionalProperties(): void {
-  const definition = getReplaceDefinition();
-  const inputSchema = asRecord(definition.inputSchema, 'inputSchema should be an object');
-  const properties = asRecord(inputSchema.properties, 'properties should be an object');
-  const filePath = asRecord(
-    properties.file_path,
-    'file_path property should be an object',
-  );
+function testInputSchemaUsesBatchShape(): void {
+  const {
+    inputSchema,
+    files,
+    fileItem,
+    fileProperties,
+    replacements,
+    replacementItem,
+    replacementProperties,
+  } = getSchemaLayers();
 
+  assertDeepEqual(inputSchema.required, ['files'], 'Root should require files');
+  assertEqual(inputSchema.additionalProperties, false, 'Root should reject unknown fields');
+  assertEqual(files.type, 'array', 'files should be an array');
+  assertEqual(files.minItems, 1, 'files should be non-empty');
   assertDeepEqual(
-    inputSchema.required,
-    ['file_path', 'target', 'replacement'],
-    'inputSchema required should match v2 required fields',
+    Object.keys(fileProperties).sort(),
+    ['allow_multiple', 'file_path', 'match_mode', 'regex_flags', 'replacements'],
+    'File items should expose only file-scoped fields',
   );
+  assertDeepEqual(fileItem.required, ['file_path', 'replacements'], 'File item required fields');
+  assertEqual(fileItem.additionalProperties, false, 'File items should reject unknown fields');
   assertEqual(
-    inputSchema.additionalProperties,
-    false,
-    'inputSchema should reject additional properties',
-  );
-  assertEqual(
-    filePath.minLength,
+    asRecord(fileProperties.file_path, 'file_path schema').minLength,
     1,
-    'file_path should require at least one character',
+    'file_path should be non-empty',
+  );
+  assertEqual(replacements.type, 'array', 'replacements should be an array');
+  assertEqual(replacements.minItems, 1, 'replacements should be non-empty');
+  assertDeepEqual(
+    Object.keys(replacementProperties).sort(),
+    ['replacement', 'target'],
+    'Replacement items should expose target and replacement',
+  );
+  assertDeepEqual(
+    replacementItem.required,
+    ['target', 'replacement'],
+    'Replacement item required fields',
+  );
+  assertEqual(
+    replacementItem.additionalProperties,
+    false,
+    'Replacement items should reject unknown fields',
   );
 }
 
 function testMatchModeSchema(): void {
-  const definition = getReplaceDefinition();
-  const inputSchema = asRecord(definition.inputSchema, 'inputSchema should be an object');
-  const properties = asRecord(inputSchema.properties, 'properties should be an object');
-  const matchMode = asRecord(
-    properties.match_mode,
-    'match_mode property should be an object',
-  );
-
-  assertEqual(matchMode.type, 'string', 'match_mode should be a string');
-  assertDeepEqual(
-    matchMode.enum,
-    ['default', 'regex'],
-    'match_mode enum should be default | regex',
-  );
+  const { fileProperties } = getSchemaLayers();
+  const matchMode = asRecord(fileProperties.match_mode, 'match_mode schema');
+  assertDeepEqual(matchMode.enum, ['default', 'regex'], 'match_mode enum');
 }
 
-function testDescriptionsDocumentV2Boundaries(): void {
+function testDescriptionsFollowSchemaResponsibilities(): void {
   const definition = getReplaceDefinition();
   const description = String(definition.description ?? '').toLowerCase();
-  const inputSchema = asRecord(definition.inputSchema, 'inputSchema should be an object');
-  const properties = asRecord(inputSchema.properties, 'properties should be an object');
+  const {
+    files,
+    fileProperties,
+    replacements,
+    replacementProperties,
+  } = getSchemaLayers();
 
-  assertIncludes(description, 'target', 'Tool description should mention target');
-  assertIncludes(
-    description,
-    'replacement',
-    'Tool description should mention replacement',
-  );
-  assertIncludes(description, 'default', 'Tool description should mention default mode');
-  assertIncludes(
-    description,
-    'exact literal source text',
-    'Tool description should require an exact default-mode target',
-  );
-  assertIncludes(description, 'regex', 'Tool description should mention regex mode');
-  assertIncludes(
-    description,
-    'regex_flags',
-    'Tool description should mention regex_flags',
-  );
-  assertIncludes(
-    description,
-    'global',
-    'Tool description should warn that regex matching is global',
-  );
-  assertIncludes(description, 'dotall', 'Tool description should mention dotAll');
-  assertIncludes(
-    description,
-    '[^\\n]+',
-    'Tool description should recommend a line-local capture pattern',
-  );
+  assertIncludes(description, 'ordered batch', 'Tool description should describe batching');
+  assertIncludes(description, 'does not roll back', 'Tool description should describe partial success');
+  assert(!description.includes('regex_flags'), 'Tool description should not duplicate nested flag details');
 
+  assertIncludes(String(files.description).toLowerCase(), 'ordered', 'files should describe ordering');
+  assertIncludes(String(files.description).toLowerCase(), 'repeated path', 'files should describe repeated paths');
   assertIncludes(
-    String(asRecord(properties.target, 'target schema should be object').description),
-    'literal',
-    'target description should document default literal behavior',
+    String(replacements.description),
+    're-reads',
+    'replacements should describe state refresh',
   );
   assertIncludes(
-    String(asRecord(properties.target, 'target schema should be object').description),
-    'RegExp',
-    'target description should document regex RegExp behavior',
+    String(asRecord(fileProperties.allow_multiple, 'allow_multiple schema').description),
+    'exactly one',
+    'allow_multiple should describe match-count behavior',
   );
   assertIncludes(
-    String(
-      asRecord(properties.replacement, 'replacement schema should be object')
-        .description,
-    ),
-    '$!n',
-    'replacement description should document regex capture syntax',
-  );
-  const regexFlagsDescription = String(
-    asRecord(properties.regex_flags, 'regex_flags schema should be object')
-      .description,
-  );
-  assertIncludes(
-    regexFlagsDescription,
+    String(asRecord(fileProperties.regex_flags, 'regex_flags schema').description),
     'g is always enabled',
-    'regex_flags description should document forced global matching',
+    'regex_flags should describe forced global matching',
   );
   assertIncludes(
-    regexFlagsDescription,
-    "'.' must not match newlines",
-    'regex_flags description should document disabling dotAll',
+    String(asRecord(replacementProperties.target, 'target schema').description),
+    'exact literal',
+    'target should describe default matching',
+  );
+  assertIncludes(
+    String(asRecord(replacementProperties.replacement, 'replacement schema').description),
+    '$!n',
+    'replacement should describe capture expansion',
   );
 }
 
 function testNoOutputSchemaOnDefinition(): void {
   const definition = getReplaceDefinition();
-  assert(
-    !('outputSchema' in definition),
-    'replace_text should not expose MCP outputSchema',
-  );
+  assert(!('outputSchema' in definition), 'replace_text should not expose MCP outputSchema');
 }
 
 async function testToolResultHasNoStructuredContent(): Promise<void> {
   await resetFixtures();
   await writeFixture('schema-result.txt', 'alpha\n');
-
-  const result = await callReplace(
-    {
-      file_path: 'schema-result.txt',
-      target: 'alpha',
-      replacement: 'beta',
-    },
-    createTestToolContext(),
-  );
-
-  assert(
-    !('structuredContent' in result),
-    'Tool call result should not include structuredContent',
-  );
+  const result = await callReplace({
+    file_path: 'schema-result.txt',
+    target: 'alpha',
+    replacement: 'beta',
+  }, createTestToolContext());
+  assert(!('structuredContent' in result), 'Tool result should not include structuredContent');
   parseResultJson(result);
 }
 
 async function main(): Promise<void> {
   await runTestSuite({
-    title: 'replace_text v2 schema tests',
-    details: 'Covers tools/list schema, prompt descriptions, and output transport shape.',
+    title: 'replace_text batch schema tests',
+    details: 'Covers nested input schema, layered descriptions, and output transport shape.',
     afterAll: cleanupFixtures,
     tests: [
-      {
-        name: 'Input schema exposes v2 fields only',
-        run: testInputSchemaUsesV2FieldsOnly,
-      },
-      {
-        name: 'Input schema requires non-empty v2 fields and rejects additional properties',
-        run: testInputSchemaRequiredAndAdditionalProperties,
-      },
-      {
-        name: 'Input schema defines match_mode enum',
-        run: testMatchModeSchema,
-      },
-      {
-        name: 'Descriptions document v2 boundaries',
-        run: testDescriptionsDocumentV2Boundaries,
-      },
-      {
-        name: 'Definition does not expose outputSchema',
-        run: testNoOutputSchemaOnDefinition,
-      },
-      {
-        name: 'Tool result does not expose structuredContent',
-        run: testToolResultHasNoStructuredContent,
-      },
+      { name: 'Input schema uses strict non-empty batch shape', run: testInputSchemaUsesBatchShape },
+      { name: 'Input schema defines match_mode enum', run: testMatchModeSchema },
+      { name: 'Descriptions follow schema-layer responsibilities', run: testDescriptionsFollowSchemaResponsibilities },
+      { name: 'Definition does not expose outputSchema', run: testNoOutputSchemaOnDefinition },
+      { name: 'Tool result does not expose structuredContent', run: testToolResultHasNoStructuredContent },
     ],
   });
 }

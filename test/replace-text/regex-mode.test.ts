@@ -307,8 +307,8 @@ async function testRegexEmptyTargetFailsWithoutCreating(): Promise<void> {
   });
 
   const json = assertErrorResult(result);
-  assertEqual(json.file_line_count.previous, 0, 'Regex empty target previous line count');
-  assertEqual(json.file_line_count.current, 0, 'Regex empty target current line count');
+  assertEqual(json.file_line_count.previous, null, 'Regex empty target previous line count is unknown');
+  assertEqual(json.file_line_count.current, null, 'Regex empty target current line count is unknown');
   assertNoSpan(json, 'Regex empty target should not report span');
   assertEqual(
     await fixtureExists('regex-empty-target.txt'),

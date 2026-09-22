@@ -20,26 +20,50 @@ import {
   validateFileAccessWriteTarget,
 } from '../utils/file-access-policy.js';
 import { withFileLock } from '../utils/file-lock.js';
+import type { SafePath } from '../utils/paths.js';
 import { REPLACE_TOOL_DEFINITION } from './definitions/replace-text.definition.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 import { textErrorResult, textResult } from './results.js';
 
 type MatchMode = 'default' | 'regex';
 
-interface ReplaceTextPayload {
-  success: boolean;
+interface ReplacementInput {
+  target: string;
+  replacement: string;
+}
+
+interface FileInput {
   file_path: string;
-  match_mode: MatchMode;
-  allow_multiple: boolean;
+  allow_multiple?: boolean;
+  match_mode?: MatchMode;
+  regex_flags?: string;
+  replacements: ReplacementInput[];
+}
+
+interface ReplaceTextReplacementResult {
+  success: boolean;
   matched_targets: number;
   replacement_count: number;
   matched_span: MatchedSpan | null;
   replacement_line_count: number;
   file_line_count: {
-    previous: number;
-    current: number;
+    previous: number | null;
+    current: number | null;
   };
   note?: string;
+}
+
+interface ReplaceTextFileResult {
+  success: boolean;
+  file_path: string;
+  match_mode: MatchMode;
+  allow_multiple: boolean;
+  replacements: ReplaceTextReplacementResult[];
+}
+
+interface ReplaceTextBatchPayload {
+  success: boolean;
+  files: ReplaceTextFileResult[];
 }
 
 interface ValidationResult {
@@ -47,20 +71,20 @@ interface ValidationResult {
   note?: string;
 }
 
-function successResult(payload: ReplaceTextPayload): ToolCallResult {
-  return textResult(JSON.stringify(payload));
+interface ReplaceDependencies {
+  writeTextContent: (
+    resolved: string,
+    content: string,
+    lineEnding: '\r\n' | '\n',
+  ) => Promise<string | null>;
 }
 
-function errorResult(payload: ReplaceTextPayload): ToolCallResult {
-  return textErrorResult(JSON.stringify(payload));
+function getMatchMode(file: FileInput): MatchMode {
+  return file.match_mode ?? 'default';
 }
 
-function getMatchMode(args: Record<string, unknown>): MatchMode {
-  return (args.match_mode as MatchMode | undefined) ?? 'default';
-}
-
-function getAllowMultiple(args: Record<string, unknown>): boolean {
-  return (args.allow_multiple as boolean | undefined) ?? false;
+function getAllowMultiple(file: FileInput): boolean {
+  return file.allow_multiple ?? false;
 }
 
 function normalizeTextLineEndings(text: string): string {
@@ -81,22 +105,19 @@ function countLines(text: string): number {
   return text === '' ? 0 : normalizeTextLineEndings(text).split('\n').length;
 }
 
-function payloadFromArgs(
-  args: Record<string, unknown>,
+function replacementResult(
+  replacement: ReplacementInput,
   success: boolean,
   note: string | undefined,
-  overrides: Partial<ReplaceTextPayload> = {},
-): ReplaceTextPayload {
-  const previousLineCount = overrides.file_line_count?.previous ?? 0;
-  const payload: ReplaceTextPayload = {
+  overrides: Partial<ReplaceTextReplacementResult> = {},
+): ReplaceTextReplacementResult {
+  const previousLineCount = overrides.file_line_count?.previous ?? null;
+  const result: ReplaceTextReplacementResult = {
     success,
-    file_path: args.file_path as string,
-    match_mode: getMatchMode(args),
-    allow_multiple: getAllowMultiple(args),
     matched_targets: 0,
     replacement_count: 0,
     matched_span: null,
-    replacement_line_count: countLines(args.replacement as string),
+    replacement_line_count: countLines(replacement.replacement),
     file_line_count: {
       previous: previousLineCount,
       current: previousLineCount,
@@ -105,10 +126,23 @@ function payloadFromArgs(
   };
 
   if (note !== undefined && note.length > 0) {
-    payload.note = note;
+    result.note = note;
   }
 
-  return payload;
+  return result;
+}
+
+function fileResult(
+  file: FileInput,
+  replacements: ReplaceTextReplacementResult[],
+): ReplaceTextFileResult {
+  return {
+    success: replacements.every((result) => result.success),
+    file_path: file.file_path,
+    match_mode: getMatchMode(file),
+    allow_multiple: getAllowMultiple(file),
+    replacements,
+  };
 }
 
 function joinNotes(...notes: Array<string | null | undefined>): string | undefined {
@@ -118,10 +152,7 @@ function joinNotes(...notes: Array<string | null | undefined>): string | undefin
   return filteredNotes.length > 0 ? filteredNotes.join(' ') : undefined;
 }
 
-function formatFileReadinessError(
-  filePath: string,
-  reason: string,
-): string {
+function formatFileReadinessError(filePath: string, reason: string): string {
   return `Could not prepare ${filePath}: ${reason}. Check the path, permissions, and file type before retrying.`;
 }
 
@@ -151,14 +182,11 @@ function validateRegexFlagCharactersAndRepetition(
   return { ok: true };
 }
 
-function validateRegexFlagsForMode(
-  matchMode: MatchMode,
-  regexFlags: string | undefined,
-): ValidationResult {
-  if (regexFlags === undefined) {
+function validateFileSemantics(file: FileInput): ValidationResult {
+  if (file.regex_flags === undefined) {
     return { ok: true };
   }
-  if (matchMode !== 'regex') {
+  if (getMatchMode(file) !== 'regex') {
     return {
       ok: false,
       note:
@@ -166,41 +194,7 @@ function validateRegexFlagsForMode(
     };
   }
 
-  return validateRegexFlagCharactersAndRepetition(regexFlags);
-}
-
-function validateRegexTargetIsNonEmpty(
-  matchMode: MatchMode,
-  target: string,
-): ValidationResult {
-  if (matchMode === 'regex' && target === '') {
-    return {
-      ok: false,
-      note:
-        "The 'target' parameter must be non-empty when match_mode is 'regex'. Provide a regex pattern that consumes text.",
-    };
-  }
-
-  return { ok: true };
-}
-
-function validateReplaceSemantics(
-  args: Record<string, unknown>,
-): ValidationResult {
-  const matchMode = getMatchMode(args);
-  const regexFlags = args.regex_flags as string | undefined;
-  const flagsValidation = validateRegexFlagsForMode(matchMode, regexFlags);
-  if (!flagsValidation.ok) {
-    return flagsValidation;
-  }
-
-  const target = args.target as string;
-  const targetValidation = validateRegexTargetIsNonEmpty(matchMode, target);
-  if (!targetValidation.ok) {
-    return targetValidation;
-  }
-
-  return { ok: true };
+  return validateRegexFlagCharactersAndRepetition(file.regex_flags);
 }
 
 function isDotsOnly(text: string): boolean {
@@ -394,295 +388,386 @@ async function writeTextContent(
 }
 
 function buildMatchedFailure(
-  args: Record<string, unknown>,
+  replacement: ReplacementInput,
   note: string,
   previousLineCount: number,
   calculation: ReplacementResult,
   currentContent: string,
-): ToolCallResult {
-  return errorResult(
-    payloadFromArgs(args, false, note, {
-      matched_targets: calculation.matchedTargets,
-      replacement_count: 0,
-      matched_span: calculateMatchedSpan(currentContent, calculation.matchRanges),
+): ReplaceTextReplacementResult {
+  return replacementResult(replacement, false, note, {
+    matched_targets: calculation.matchedTargets,
+    replacement_count: 0,
+    matched_span: calculateMatchedSpan(currentContent, calculation.matchRanges),
+    file_line_count: {
+      previous: previousLineCount,
+      current: previousLineCount,
+    },
+  });
+}
+
+async function recoverCurrentLineCount(
+  safePath: SafePath,
+  filePath: string,
+  context: ToolRuntimeContext,
+): Promise<number | null> {
+  const safetyResult = await validateFileAccessWriteTarget(
+    safePath,
+    context.fileAccessPolicyContext,
+  );
+  if (!safetyResult.ok) return null;
+
+  const recovered = await readExistingTextFile(safePath.resolvedPath, filePath);
+  if (recovered.exists === true) return recovered.lineCount;
+  if (recovered.exists === false) return 0;
+  return null;
+}
+
+async function executeReplacement(
+  file: FileInput,
+  replacement: ReplacementInput,
+  safePath: SafePath,
+  context: ToolRuntimeContext,
+  dependencies: ReplaceDependencies,
+): Promise<ReplaceTextReplacementResult> {
+  const filePath = file.file_path;
+  const matchMode = getMatchMode(file);
+  const allowMultiple = getAllowMultiple(file);
+  const regexFlags = file.regex_flags;
+  const target = replacement.target;
+  const replacementText = replacement.replacement;
+
+  if (matchMode === 'regex' && target === '') {
+    return replacementResult(
+      replacement,
+      false,
+      "The 'target' parameter must be non-empty when match_mode is 'regex'. Provide a regex pattern that consumes text.",
+    );
+  }
+
+  const safetyResult = await validateFileAccessWriteTarget(
+    safePath,
+    context.fileAccessPolicyContext,
+  );
+  if (!safetyResult.ok) {
+    return replacementResult(replacement, false, safetyResult.reason);
+  }
+
+  const existingFile = await readExistingTextFile(safePath.resolvedPath, filePath);
+  if (existingFile.exists === null) {
+    return replacementResult(replacement, false, existingFile.error);
+  }
+
+  const placeholderWarning = getOmissionPlaceholderWarning(
+    target,
+    replacementText,
+  );
+
+  if (!existingFile.exists) {
+    if (matchMode === 'default' && target === '') {
+      if (await isBinaryFile(safePath.resolvedPath)) {
+        return replacementResult(
+          replacement,
+          false,
+          `Cannot create text content at binary-looking path: ${filePath}. Provide a text file path instead.`,
+          { file_line_count: { previous: 0, current: 0 } },
+        );
+      }
+
+      const normalizedReplacement = normalizeTextLineEndings(replacementText);
+      const lineEnding = resolveLineEnding(context.lineEnding, null);
+      try {
+        await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
+      } catch (err: unknown) {
+        const error = err as NodeJS.ErrnoException;
+        return replacementResult(
+          replacement,
+          false,
+          `Could not create parent directory for ${filePath}: ${error.message}. Check the path and permissions before retrying.`,
+          { file_line_count: { previous: 0, current: 0 } },
+        );
+      }
+
+      const postMkdirSafetyResult = await validateFileAccessWriteTarget(
+        safePath,
+        context.fileAccessPolicyContext,
+      );
+      if (!postMkdirSafetyResult.ok) {
+        return replacementResult(
+          replacement,
+          false,
+          postMkdirSafetyResult.reason,
+          { file_line_count: { previous: 0, current: 0 } },
+        );
+      }
+
+      const writeError = await dependencies.writeTextContent(
+        safePath.resolvedPath,
+        normalizedReplacement,
+        lineEnding,
+      );
+      if (writeError) {
+        const currentLineCount = await recoverCurrentLineCount(
+          safePath,
+          filePath,
+          context,
+        );
+        return replacementResult(
+          replacement,
+          false,
+          `${writeError} The file may have been truncated, partially written, or fully written; use read_file to verify its actual content.`,
+          { file_line_count: { previous: 0, current: currentLineCount } },
+        );
+      }
+
+      return replacementResult(
+        replacement,
+        true,
+        joinNotes(`File created at ${filePath}.`, placeholderWarning),
+        {
+          file_line_count: {
+            previous: 0,
+            current: countLines(normalizedReplacement),
+          },
+        },
+      );
+    }
+
+    return replacementResult(
+      replacement,
+      false,
+      `File not found: ${filePath}. Verify the path with read_file, or in default mode use an empty target only when you intend to create a missing file.`,
+      { file_line_count: { previous: 0, current: 0 } },
+    );
+  }
+
+  const currentContent = existingFile.content;
+  const previousLineCount = existingFile.lineCount;
+
+  if (matchMode === 'default' && target === '') {
+    return replacementResult(
+      replacement,
+      false,
+      `File already exists: ${filePath}. Empty target is only allowed for creating a missing file; provide a non-empty target to modify an existing file.`,
+      {
+        file_line_count: {
+          previous: previousLineCount,
+          current: previousLineCount,
+        },
+      },
+    );
+  }
+
+  const params: ReplaceParams = {
+    file_path: filePath,
+    target,
+    replacement: replacementText,
+    allow_multiple: allowMultiple,
+    regex_flags: regexFlags,
+  };
+
+  let calculation: ReplacementResult;
+  let invalidReplacementSyntax = false;
+  let hasMultilineRegexMatch = false;
+
+  if (matchMode === 'regex') {
+    const regexResult = calculateRegexReplacement(currentContent, params);
+    if (!regexResult.ok) {
+      const note = regexResult.reason === 'invalid_regex'
+        ? `Invalid regex target: ${regexResult.message}. Provide a bare JavaScript RegExp pattern without slash delimiters or flags.`
+        : regexResult.message;
+      return replacementResult(replacement, false, note, {
+        file_line_count: {
+          previous: previousLineCount,
+          current: previousLineCount,
+        },
+      });
+    }
+    calculation = regexResult;
+    invalidReplacementSyntax = regexResult.invalidReplacementSyntax;
+    hasMultilineRegexMatch = regexResult.hasMultilineMatch;
+  } else {
+    calculation = calculateReplacement(currentContent, params);
+  }
+
+  if (calculation.matchedTargets === 0) {
+    const note = matchMode === 'regex'
+      ? `No regex matches found for target in ${filePath}. Verify the JavaScript RegExp pattern against the file content.`
+      : `No matches found for target in ${filePath}. Use read_file to verify exact content, whitespace, indentation, and context.`;
+    return buildMatchedFailure(
+      replacement,
+      note,
+      previousLineCount,
+      calculation,
+      currentContent,
+    );
+  }
+
+  if (!allowMultiple && calculation.matchedTargets !== 1) {
+    return buildMatchedFailure(
+      replacement,
+      `Expected exactly 1 match but found ${calculation.matchedTargets} in ${filePath}. If you intended to replace multiple matches, set allow_multiple=true.`,
+      previousLineCount,
+      calculation,
+      currentContent,
+    );
+  }
+
+  if (calculation.newContent === currentContent) {
+    return buildMatchedFailure(
+      replacement,
+      'No changes to apply. The computed replacement is identical to the current file content; check whether target and replacement are the same.',
+      previousLineCount,
+      calculation,
+      currentContent,
+    );
+  }
+
+  const currentLineCount = countLines(calculation.newContent);
+  const lineEnding = resolveLineEnding(
+    context.lineEnding,
+    existingFile.detectedLineEnding,
+  );
+  const preWriteSafetyResult = await validateFileAccessWriteTarget(
+    safePath,
+    context.fileAccessPolicyContext,
+  );
+  if (!preWriteSafetyResult.ok) {
+    return replacementResult(replacement, false, preWriteSafetyResult.reason, {
       file_line_count: {
         previous: previousLineCount,
         current: previousLineCount,
       },
-    }),
+    });
+  }
+
+  const writeError = await dependencies.writeTextContent(
+    safePath.resolvedPath,
+    calculation.newContent,
+    lineEnding,
+  );
+  if (writeError) {
+    const recoveredLineCount = await recoverCurrentLineCount(
+      safePath,
+      filePath,
+      context,
+    );
+    return replacementResult(
+      replacement,
+      false,
+      `${writeError} The file may have been truncated, partially written, or fully written; use read_file to verify its actual content.`,
+      {
+        matched_targets: calculation.matchedTargets,
+        replacement_count: 0,
+        matched_span: calculateMatchedSpan(
+          currentContent,
+          calculation.matchRanges,
+        ),
+        file_line_count: {
+          previous: previousLineCount,
+          current: recoveredLineCount,
+        },
+      },
+    );
+  }
+
+  return replacementResult(
+    replacement,
+    true,
+    joinNotes(
+      placeholderWarning,
+      getRegexFlagsWarning(matchMode, regexFlags),
+      getInvalidRegexReplacementWarning(matchMode, invalidReplacementSyntax),
+      getRegexMultilineMatchWarning(matchMode, hasMultilineRegexMatch),
+    ),
+    {
+      matched_targets: calculation.matchedTargets,
+      replacement_count: calculation.replacementCount,
+      matched_span: calculateMatchedSpan(
+        currentContent,
+        calculation.matchRanges,
+      ),
+      file_line_count: {
+        previous: previousLineCount,
+        current: currentLineCount,
+      },
+    },
   );
 }
 
-export async function handleReplace(
-  args: Record<string, unknown>,
+async function executeFile(
+  file: FileInput,
   context: ToolRuntimeContext,
-): Promise<ToolCallResult> {
-  const validation = validateReplaceSemantics(args);
+  dependencies: ReplaceDependencies,
+): Promise<ReplaceTextFileResult> {
+  const validation = validateFileSemantics(file);
   if (!validation.ok) {
-    return errorResult(payloadFromArgs(args, false, validation.note));
+    return fileResult(
+      file,
+      file.replacements.map((replacement) =>
+        replacementResult(replacement, false, validation.note),
+      ),
+    );
   }
 
-  const filePath = args.file_path as string;
-  const target = args.target as string;
-  const replacement = args.replacement as string;
-  const matchMode = getMatchMode(args);
-  const allowMultiple = getAllowMultiple(args);
-  const regexFlags = args.regex_flags as string | undefined;
-  const placeholderWarning = getOmissionPlaceholderWarning(target, replacement);
-
-  const fileAccessPolicyContext = context.fileAccessPolicyContext;
   const safePathResult = resolveFileAccessPath(
-    filePath,
-    fileAccessPolicyContext,
+    file.file_path,
+    context.fileAccessPolicyContext,
   );
   if (!safePathResult.ok) {
-    return errorResult(
-      payloadFromArgs(
-        args,
-        false,
-        safePathResult.reason,
+    return fileResult(
+      file,
+      file.replacements.map((replacement) =>
+        replacementResult(replacement, false, safePathResult.reason),
       ),
     );
   }
-  const safePath = safePathResult.path;
 
-  return withFileLock(safePath.resolvedPath, async () => {
-    const safetyResult = await validateFileAccessWriteTarget(
-      safePath,
-      fileAccessPolicyContext,
-    );
-    if (!safetyResult.ok) {
-      return errorResult(payloadFromArgs(args, false, safetyResult.reason));
-    }
-
-    const existingFile = await readExistingTextFile(safePath.resolvedPath, filePath);
-    if (existingFile.exists === null) {
-      return errorResult(payloadFromArgs(args, false, existingFile.error));
-    }
-
-    if (!existingFile.exists) {
-      if (matchMode === 'default' && target === '') {
-        if (await isBinaryFile(safePath.resolvedPath)) {
-          return errorResult(
-            payloadFromArgs(
-              args,
-              false,
-              `Cannot create text content at binary-looking path: ${filePath}. Provide a text file path instead.`,
-            ),
-          );
-        }
-
-        const normalizedReplacement = normalizeTextLineEndings(replacement);
-        const lineEnding = resolveLineEnding(context.lineEnding, null);
-        try {
-          await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
-        } catch (err: unknown) {
-          const error = err as NodeJS.ErrnoException;
-          return errorResult(
-            payloadFromArgs(
-              args,
-              false,
-              `Could not create parent directory for ${filePath}: ${error.message}. Check the path and permissions before retrying.`,
-            ),
-          );
-        }
-        const postMkdirSafetyResult = await validateFileAccessWriteTarget(
-          safePath,
-          fileAccessPolicyContext,
-        );
-        if (!postMkdirSafetyResult.ok) {
-          return errorResult(
-            payloadFromArgs(args, false, postMkdirSafetyResult.reason),
-          );
-        }
-
-        const writeError = await writeTextContent(
-          safePath.resolvedPath,
-          normalizedReplacement,
-          lineEnding,
-        );
-        if (writeError) {
-          return errorResult(payloadFromArgs(args, false, writeError));
-        }
-
-        return successResult(
-          payloadFromArgs(
-            args,
-            true,
-            joinNotes(`File created at ${filePath}.`, placeholderWarning),
-            {
-              matched_targets: 0,
-              replacement_count: 0,
-              matched_span: null,
-              file_line_count: {
-                previous: 0,
-                current: countLines(normalizedReplacement),
-              },
-            },
-          ),
-        );
-      }
-
-      return errorResult(
-        payloadFromArgs(
-          args,
-          false,
-          `File not found: ${filePath}. Verify the path with read_file, or in default mode use an empty target only when you intend to create a missing file.`,
+  return withFileLock(safePathResult.path.resolvedPath, async () => {
+    const results: ReplaceTextReplacementResult[] = [];
+    for (const replacement of file.replacements) {
+      results.push(
+        await executeReplacement(
+          file,
+          replacement,
+          safePathResult.path,
+          context,
+          dependencies,
         ),
       );
     }
-
-    const currentContent = existingFile.content;
-    const previousLineCount = existingFile.lineCount;
-
-    if (matchMode === 'default' && target === '') {
-      return errorResult(
-        payloadFromArgs(
-          args,
-          false,
-          `File already exists: ${filePath}. Empty target is only allowed for creating a missing file; provide a non-empty target to modify an existing file.`,
-          {
-            file_line_count: {
-              previous: previousLineCount,
-              current: previousLineCount,
-            },
-          },
-        ),
-      );
-    }
-
-    const params: ReplaceParams = {
-      file_path: filePath,
-      target,
-      replacement,
-      allow_multiple: allowMultiple,
-      regex_flags: regexFlags,
-    };
-
-    let calculation: ReplacementResult;
-    let invalidReplacementSyntax = false;
-    let hasMultilineRegexMatch = false;
-
-    if (matchMode === 'regex') {
-      const regexResult = calculateRegexReplacement(currentContent, params);
-      if (!regexResult.ok) {
-        const note = regexResult.reason === 'invalid_regex'
-          ? `Invalid regex target: ${regexResult.message}. Provide a bare JavaScript RegExp pattern without slash delimiters or flags.`
-          : regexResult.message;
-        return errorResult(
-          payloadFromArgs(args, false, note, {
-            matched_targets: 0,
-            replacement_count: 0,
-            matched_span: null,
-            file_line_count: {
-              previous: previousLineCount,
-              current: previousLineCount,
-            },
-          }),
-        );
-      }
-      calculation = regexResult;
-      invalidReplacementSyntax = regexResult.invalidReplacementSyntax;
-      hasMultilineRegexMatch = regexResult.hasMultilineMatch;
-    } else {
-      calculation = calculateReplacement(currentContent, params);
-    }
-
-    if (calculation.matchedTargets === 0) {
-      const note = matchMode === 'regex'
-        ? `No regex matches found for target in ${filePath}. Verify the JavaScript RegExp pattern against the file content.`
-        : `No matches found for target in ${filePath}. Use read_file to verify exact content, whitespace, indentation, and context.`;
-      return buildMatchedFailure(
-        args,
-        note,
-        previousLineCount,
-        calculation,
-        currentContent,
-      );
-    }
-
-    if (!allowMultiple && calculation.matchedTargets !== 1) {
-      return buildMatchedFailure(
-        args,
-        `Expected exactly 1 match but found ${calculation.matchedTargets} in ${filePath}. If you intended to replace multiple matches, set allow_multiple=true.`,
-        previousLineCount,
-        calculation,
-        currentContent,
-      );
-    }
-
-    if (calculation.newContent === currentContent) {
-      return buildMatchedFailure(
-        args,
-        'No changes to apply. The computed replacement is identical to the current file content; check whether target and replacement are the same.',
-        previousLineCount,
-        calculation,
-        currentContent,
-      );
-    }
-
-    const currentLineCount = countLines(calculation.newContent);
-    const lineEnding = resolveLineEnding(
-      context.lineEnding,
-      existingFile.detectedLineEnding,
-    );
-    const preWriteSafetyResult = await validateFileAccessWriteTarget(
-      safePath,
-      fileAccessPolicyContext,
-    );
-    if (!preWriteSafetyResult.ok) {
-      return errorResult(
-        payloadFromArgs(args, false, preWriteSafetyResult.reason, {
-          file_line_count: {
-            previous: previousLineCount,
-            current: previousLineCount,
-          },
-        }),
-      );
-    }
-
-    const writeError = await writeTextContent(
-      safePath.resolvedPath,
-      calculation.newContent,
-      lineEnding,
-    );
-    if (writeError) {
-      return errorResult(
-        payloadFromArgs(args, false, writeError, {
-          file_line_count: {
-            previous: previousLineCount,
-            current: previousLineCount,
-          },
-        }),
-      );
-    }
-
-    return successResult(
-      payloadFromArgs(
-        args,
-        true,
-        joinNotes(
-          placeholderWarning,
-          getRegexFlagsWarning(matchMode, regexFlags),
-          getInvalidRegexReplacementWarning(matchMode, invalidReplacementSyntax),
-          getRegexMultilineMatchWarning(matchMode, hasMultilineRegexMatch),
-        ),
-        {
-          matched_targets: calculation.matchedTargets,
-          replacement_count: calculation.replacementCount,
-          matched_span: calculateMatchedSpan(
-            currentContent,
-            calculation.matchRanges,
-          ),
-          file_line_count: {
-            previous: previousLineCount,
-            current: currentLineCount,
-          },
-        },
-      ),
-    );
+    return fileResult(file, results);
   });
 }
+
+export function createReplaceTextHandler(
+  dependencies: Partial<ReplaceDependencies> = {},
+): MCPTool['handler'] {
+  const resolvedDependencies: ReplaceDependencies = {
+    writeTextContent,
+    ...dependencies,
+  };
+
+  return async (
+    args: Record<string, unknown>,
+    context: ToolRuntimeContext,
+  ): Promise<ToolCallResult> => {
+    const files = args.files as FileInput[];
+    const fileResults: ReplaceTextFileResult[] = [];
+
+    for (const file of files) {
+      fileResults.push(await executeFile(file, context, resolvedDependencies));
+    }
+
+    const payload: ReplaceTextBatchPayload = {
+      success: fileResults.every((result) => result.success),
+      files: fileResults,
+    };
+    const text = JSON.stringify(payload);
+    return payload.success ? textResult(text) : textErrorResult(text);
+  };
+}
+
+export const handleReplace = createReplaceTextHandler();
 
 const replaceTool: MCPTool = {
   definition: REPLACE_TOOL_DEFINITION,
