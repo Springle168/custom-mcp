@@ -23,7 +23,7 @@ docs/tools/
 
 | 工具名 | 功能 | 文档 |
 |-|-|-|
-| `replace_text` | 文件局部替换，default 模式使用精确字面匹配，regex 模式使用显式 JavaScript 正则 | [docs/tools/replace-text.md](tools/replace-text.md) |
+| `replace_text` | 按输入顺序批量执行文件局部替换，支持 default 精确字面匹配与显式 JavaScript regex | [docs/tools/replace-text.md](tools/replace-text.md) |
 | `read_many_files` | 批量读取多个文本文件，支持相对路径、位于 allowed roots 内的 drive-absolute 路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `discover_guidelines` | 从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文 | [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
 | `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
@@ -280,6 +280,8 @@ MCP 客户端可能并发发送多个 `tools/call` 请求。并发策略按资�
 - **同一 Android workspace**：`android_assembleDebug` 与 `android_testDebugUnitTest` 共享可取消的 FIFO gate；gate 持有到进程 confirmed/optimistic drain 和报告后处理都完成。
 
 文件锁基于 Promise 链（`src/utils/file-lock.ts`）；Android gate 使用显式 waiter queue，以便 queued cancellation 原子移除。两类 registry 都会清理 idle entry。
+
+`replace_text` 的每个文件项单独持有一次文件锁，该锁覆盖文件项中的全部 replacements；每个 replacement 都重新检查并读取磁盘状态。重复路径文件项之间会释放并重新获取锁，不构成跨文件项事务。批量执行、部分成功和逐项结果细节见 [replace_text 工具文档](tools/replace-text.md)。
 
 **重要：** 只有涉及文件写入的工具需要使用 `withFileLock()`。只读工具（如 `read_many_files`）不需要加锁。
 

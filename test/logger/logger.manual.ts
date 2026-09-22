@@ -206,13 +206,13 @@ await withFixedNow(fixedNow, async () => {
   // 测试 2: 小 JSON 参数（各种数据类型）
   const replaceTextContext = demoLogContext('call_replace_text_demo');
   logger.logToolCall('replace_text', {
-    file_path: 'src/index.ts',
-    target: 'const port = 3000;',
-    replacement: 'const port = 3100;',
-    allow_multiple: false,
-    match_mode: 'default',
-    max_count: 10,
-    metadata: null,
+    files: [{
+      file_path: 'src/index.ts',
+      replacements: [{
+        target: 'const port = 3000;',
+        replacement: 'const port = 3100;',
+      }],
+    }],
   }, replaceTextContext);
 
   logger.logToolResult(
@@ -221,7 +221,7 @@ await withFixedNow(fixedNow, async () => {
       content: [
         {
           type: 'text',
-          text: '{"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":1,"end_line":1},"replacement_line_count":1,"file_line_count":{"previous":10,"current":10}}',
+          text: '{"success":true,"files":[{"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"replacements":[{"success":true,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":1,"end_line":1},"replacement_line_count":1,"file_line_count":{"previous":10,"current":10}}]}]}',
         },
       ],
       isError: false,

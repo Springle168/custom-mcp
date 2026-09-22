@@ -60,17 +60,17 @@ properties
                 └── label      ← description ✗ 丢失
 ```
 
-扁平结构（如 `replace_text`、`read_many_files`）不受影响。
+扁平结构（如 `read_many_files`）不受影响。`replace_text` 使用嵌套的批量文件项与 replacement 结构，因此 Android Studio 会丢失其嵌套字段 description。
 
 ### 规避方案
 
-凡是含有嵌套 `items.properties` 的工具，必须在顶层 `description` 中用纯文本描述所有嵌套字段的语义、类型、取值范围和使用条件。`inputSchema` 本身保持完整，仍负责结构校验；顶层 `description` 负责向 AI 传达语义。
+宿主兼容策略按工具确定。`ask_user` 在顶层 `description` 中补充嵌套字段语义；`replace_text` 保持工具、集合、文件项和 replacement 的正常职责分层，不为该宿主复制整套嵌套字段说明。`inputSchema` 始终保持完整并负责结构校验。
 
-当前受影响工具：`ask_user`（已按此方案处理）。
+受影响工具包括 `ask_user` 和 `replace_text`。
 
 ### 新增工具时的检查项
 
-- 若工具 schema 含有嵌套对象数组（`array` of `object`），必须将嵌套字段的说明上提到顶层 `description`。
+- 若工具 schema 含有嵌套对象数组（`array` of `object`），需要评估 Android Studio 丢失嵌套 description 的影响；只有工具自身的兼容策略要求时才上提说明，避免在多个层级重复维护同一契约。
 - 可运行 `node --import tsx test/tools/inspect-tools.ts` 查看原始 schema 结构，但该脚本无法模拟 Android Studio 的转换行为，需在宿主中实际验证。
 
 工具开发总则见 [docs/TOOLS.md](TOOLS.md)。

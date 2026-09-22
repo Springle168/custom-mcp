@@ -21,16 +21,22 @@
   Session: session_13a09d50-0000-4000-8000-000000000000
   Call ID: call_7c2c62a1-0000-4000-8000-000000000000
   {
-    "file_path": "src/index.ts",
-    "target": "...",
-    "replacement": "...",
-    "allow_multiple": false,
-    "match_mode": "default"
+    "files": [
+      {
+        "file_path": "src/index.ts",
+        "replacements": [
+          {
+            "target": "const port = 3000;",
+            "replacement": "const port = 3100;"
+          }
+        ]
+      }
+    ]
   }
 [2025-01-15T22:30:00.050+08:00] → OK replace_text (50ms)
   Session: session_13a09d50-0000-4000-8000-000000000000
   Call ID: call_7c2c62a1-0000-4000-8000-000000000000
-  {"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":10,"end_line":10},"replacement_line_count":1,"file_line_count":{"previous":120,"current":120}}
+  {"success":true,"files":[{"success":true,"file_path":"src/index.ts","match_mode":"default","allow_multiple":false,"replacements":[{"success":true,"matched_targets":1,"replacement_count":1,"matched_span":{"start_line":10,"end_line":10},"replacement_line_count":1,"file_line_count":{"previous":120,"current":120}}]}]}
 ```
 
 ### 启动配置摘要

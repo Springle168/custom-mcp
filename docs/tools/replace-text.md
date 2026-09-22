@@ -1,61 +1,71 @@
 # replace_text 工具文档
 
-版本：v2.1
+版本：v3
 
 ## 概述
 
-`replace_text` 对单个文本文件执行局部替换，并在 MCP 标准 `content[0].text` 中返回可解析的 JSON 字符串。
+`replace_text` 在一次调用中按顺序执行一个或多个文件项，每个文件项包含一个或多个局部文本替换。工具在 MCP 标准 `content[0].text` 中返回可解析的批量 JSON 结果。
+
+批次采用部分成功语义：每次成功修改立即写入；任一 replacement 失败不会回滚先前修改，也不会阻止后续 replacement 或文件项。任一 replacement 失败时，结果外壳设置 `isError: true`，调用方需要检查逐项结果判断已经落盘的修改。
 
 ---
 
-## 测试文件
+## 输入 Schema
 
-```text
-test/replace-text/
-├── smoke.test.ts                    # replace_text 轻量回归入口
-├── helpers.ts                       # suite-scoped fixture harness、调用封装和结果 JSON 断言
-├── schema.test.ts                   # Schema、description 和输出外壳
-├── runtime-validation.test.ts       # catalog 结构校验与 handler 参数关系语义
-├── default-mode.test.ts             # default 匹配、创建文件、行数与 no-op
-├── regex-mode.test.ts               # regex 匹配、捕获组、$ 语法和零长度保护
-├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
-├── output-safety.test.ts            # JSON 失败形状、sandbox 和安全写入
-└── line-ending-concurrency.test.ts  # CRLF/LF 规范化与并发回归
+顶层只接受必填的 `files`：
 
-test/fixtures/replace-text/
-└── <suite>/                         # 每个测试脚本独立创建并清理的 fixture root
+```json
+{
+  "files": [
+    {
+      "file_path": "src/example.ts",
+      "allow_multiple": false,
+      "match_mode": "default",
+      "replacements": [
+        {
+          "target": "return 1;",
+          "replacement": "return 2;"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-各测试脚本通过 fixture harness 绑定确定性的 suite 目录；reset 和 cleanup 只作用于该脚本拥有的 root，root 外负向测试路径也使用 suite-specific sibling 名称。
+`files` 至少包含一个文件项。文件项按数组顺序执行，同一路径可以重复出现，用于表达使用不同模式或选项的阶段。每个文件项包含：
 
----
-
-## Schema
-
-### 工具名称
-
-`replace_text`
-
-### 参数
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
-| `file_path` | `string` | ✅ | — | 要修改的文件路径；结果 JSON 原样返回调用方传入的字符串 |
-| `target` | `string` | ✅ | — | 要定位的内容；`default` 模式为普通文本，`regex` 模式为裸 JavaScript `RegExp` pattern |
-| `replacement` | `string` | ✅ | — | 完整替换内容；`default` 模式为普通文本，`regex` 模式仅解释 `$!n` 捕获组和 `$$` |
-| `allow_multiple` | `boolean` | ❌ | `false` | 是否允许替换全部匹配；默认要求恰好一个匹配 |
-| `match_mode` | `"default" \| "regex"` | ❌ | `"default"` | 匹配模式；`default` 使用精确字面匹配，`regex` 使用显式 JavaScript 正则流程 |
-| `regex_flags` | `string` | ❌ | `"ms"` | 仅 `regex` 模式可用；可控制 `m` / `s`，`g` 始终由工具强制启用 |
+| `file_path` | `string` | 是 | — | 非空文件路径；结果原样返回该字符串 |
+| `replacements` | `array` | 是 | — | 非空有序 replacement 数组 |
+| `allow_multiple` | `boolean` | 否 | `false` | 作用于该文件项中的全部 replacements；`false` 要求每项恰好匹配一次 |
+| `match_mode` | `"default" \| "regex"` | 否 | `"default"` | 作用于该文件项中的全部 replacements |
+| `regex_flags` | `string` | 否 | `"ms"` | 仅 regex 模式可用；只允许不重复的 `g`、`m`、`s` |
 
-`inputSchema` 设置 `additionalProperties=false`，并由 built-in implementation validator 在进入 handler 前统一校验必填字段、字段类型、枚举值、非空 `file_path` 和未知字段。handler 只校验 `regex_flags` 的模式依赖与语法，以及 regex 模式下 `target` 非空等参数关系。
+每个 replacement 必须包含字符串 `target` 和 `replacement`。各层对象均拒绝未知字段。Schema 负责结构、类型、枚举、非空数组和非空 `file_path`；handler 负责 flags 参数关系、regex 非空 target、文件状态和匹配语义。
 
-### description 设计意图
+## 执行顺序与锁
 
-工具与参数 description 按调用风险分层：
+批次使用确定性的全局顺序：
 
-- **精确输入契约**：default 模式要求 AI 提供从目标文件取得的精确原文，包括空白、缩进和换行，不转义、不近似构造。
-- **正则风险提示**：主 description 提醒 regex 模式使用裸 JavaScript pattern、始终全局匹配、默认启用 dotAll，并建议行内捕获优先使用 `[^\\n]+`。`regex_flags` 参数 description 负责合法 flags、默认值和关闭 dotAll 的具体方式。
-- **参数局部约束**：匹配数量、模式默认值、捕获组语法和未知字段拒绝等规则由对应参数 description 与 `inputSchema` 表达，主 description 不逐项复述。
+```text
+files[0].replacements[0]
+files[0].replacements[1]
+...
+files[1].replacements[0]
+...
+```
+
+不同文件项不会在同一次 handler 调用内并行。每个文件项单独解析路径并获取一次 `withFileLock()` 文件锁，锁覆盖该项中的全部 replacements；文件项结束后释放锁。重复路径文件项分别获取锁，因此其它同路径调用可能在两个文件项之间执行。
+
+每个 replacement 都在文件项锁内重新执行写入目标安全校验、文件类型和大小检查、二进制检测与文本读取。成功 replacement 立即写回；后项从文件系统重新读取，不使用前项的内存内容。该边界保证：
+
+- 后项能看到前项实际写入的内容；
+- 前项计算或写入失败后，后项不会用陈旧缓存覆盖未知磁盘状态；
+- 前项把文件写成二进制或超过 `20MB` 后，后项会在自己的读取入口拒绝该文件；
+- 其它同路径调用不能插入一个文件项的两个 replacements 之间。
+
+整批调用不持有多个文件锁，不提供跨文件或跨文件项事务隔离。不同文件上的独立工具调用仍可并行。
 
 ---
 
@@ -63,138 +73,173 @@ test/fixtures/replace-text/
 
 ### default
 
-`default` 模式把 `target` 和 `replacement` 都作为普通文本处理，不解释 `$!1`、`$1`、`$&`、`$$` 等任何 replacement 特殊语法。
+`default` 把 `target` 和 `replacement` 作为普通文本处理。输入在匹配前规范化为 LF；缩进、空白和文本必须精确一致，不解释 replacement 特殊语法。
 
-`target` 和 `replacement` 规范化为 LF 后进行字面匹配。缩进、空白或文本内容存在差异时不会匹配。
-
-空 `target` 只在 `default` 模式且目标文件不存在时表示创建新文件；目标文件已存在时会失败。创建新文件仍建议优先使用 `write_file`。
+空 `target` 仅在目标文件不存在时表示创建文本文件。文件已经存在时，空 target 失败。创建成功的 replacement 返回 `matched_targets=0`、`replacement_count=0`，并在 `note` 中说明文件已创建。
 
 ### regex
 
-`regex` 模式把 `target` 编译为裸 JavaScript pattern。工具始终强制启用全局扫描 `g`，默认 `regex_flags="ms"`，等价于 `new RegExp(target, 'gms')`。
+`regex` 把 `target` 编译为裸 JavaScript pattern。工具始终启用全局扫描 `g`，默认 `regex_flags="ms"`：
 
-- 不支持 `/pattern/flags` 形式；如需调整 flags，使用 `regex_flags`。
-- `regex_flags` 只允许字符 `g`、`m`、`s`，每个最多出现一次；出现其它字符或重复字符会失败且不写入。
-- `g` 可以传入但不需要传入；工具始终强制启用 `g`，传入时会在成功结果的 `note` 中提示。
-- `regex_flags` 实际只控制 `m` / `s`：例如 `"m"` 编译为 `gm`，`"s"` 编译为 `gs`，`""` 编译为 `g`。
-- 默认 dotAll (`s`) 下 `.` 会匹配换行；行内捕获推荐优先使用 `[^\n]+`，不要使用容易跨行吞内容的 `.+`。
-- 不使用 default 模式的字面匹配。
-- `target` 必须非空；非法正则、无匹配、零长度匹配都会失败且不写入。
-- 扫描阶段先收集全部匹配，再根据 `allow_multiple`、no-op 和写入规则决定是否修改文件。
-- 成功替换且任一匹配跨多行时，`note` 会提示检查 dotAll / `.` 是否误伤。
+- 不接受 `/pattern/flags` 形式；flags 通过文件项的 `regex_flags` 指定；
+- `regex_flags` 只允许不重复的 `g`、`m`、`s`；显式 `g` 是冗余配置，成功项会在 `note` 中提示；
+- `target` 必须非空；非法正则与零长度匹配失败且不写入；
+- 默认 dotAll 下 `.` 会匹配换行；行内捕获优先使用 `[^\n]+`；
+- 匹配跨行时，成功项的 `note` 提示检查 dotAll 风险。
 
-`replacement` 只解释以下语法：
+regex replacement 只解释：
 
 | 语法 | 结果 |
 |-|-|
 | `$!0` | 完整匹配文本 |
-| `$!1`、`$!2`、`$!10` | 对应捕获组；不存在或未参与匹配时为空字符串 |
-| `$!01`、`$!00` | 允许前导零，分别等价于 `$!1`、`$!0` |
+| `$!1`、`$!2`、`$!10` | 对应捕获组；不存在或未参与时为空字符串 |
+| `$!01`、`$!00` | 允许前导零 |
 | `$$` | 字面量 `$` |
-| `$!`、`$!x` | 按字面量写入，并在成功结果的 `note` 中给出警告 |
+| `$!`、`$!x` | 按字面量写入，并在成功项中返回警告 |
 
-JavaScript 原生 replacement 语法如 `$1`、`$&`、`$\``、`$'` 都保持字面量。
+JavaScript 原生 replacement 语法如 `$1`、`$&`、``$` `` 和 `$'` 保持字面量。
 
 ---
 
 ## 输出
 
-所有结果都返回 MCP 标准外壳：
+executor 的 `content[0].text` 是以下结构的 JSON 字符串：
 
-```json
-{
-  "content": [{ "type": "text", "text": "<result text>" }]
+```typescript
+interface ReplaceTextBatchPayload {
+  success: boolean;
+  files: Array<{
+    success: boolean;
+    file_path: string;
+    match_mode: 'default' | 'regex';
+    allow_multiple: boolean;
+    replacements: Array<{
+      success: boolean;
+      matched_targets: number;
+      replacement_count: number;
+      matched_span: { start_line: number; end_line: number } | null;
+      replacement_line_count: number;
+      file_line_count: {
+        previous: number | null;
+        current: number | null;
+      };
+      note?: string;
+    }>;
+  }>;
 }
 ```
 
-结构无效的参数在进入 executor 前由 catalog 拒绝：结果设置 `isError: true`，`content[0].text` 是 schema validation 文本，不是下述 JSON payload。进入 executor 后，成功结果和业务或运行时失败都在 `content[0].text` 中返回 JSON；失败时额外设置 `isError: true` 且 JSON `success=false`。所有结果都不使用 `structuredContent`，工具定义也不暴露 MCP `outputSchema`。
+顶层 `files`、文件项的 `replacements` 与输入数组保持相同顺序和长度。顶层和文件项的 `success` 仅在其全部后代成功时为 `true`。结果不回显 `target` 或 `replacement`，也不增加索引字段。
 
-executor 返回的 `content[0].text` 解析后包含：
+所有 replacement 成功时使用 `textResult` 并显式返回 `isError=false`；任一失败时使用 `textErrorResult` 并显式返回 `isError=true`。`isError=true` 不表示没有写入。Schema validation 或 executor 前取消由 catalog 返回标准错误文本，不返回批量 JSON。
 
-| 字段 | 类型 | 说明 |
-|-|-|-|
-| `success` | `boolean` | 工具是否执行成功 |
-| `file_path` | `string` | 已通过 input schema 校验的原始 `file_path` |
-| `match_mode` | `"default" \| "regex"` | 本次实际使用或规范化后的模式 |
-| `allow_multiple` | `boolean` | 本次实际使用或规范化后的多匹配设置 |
-| `matched_targets` | `number` | 扫描阶段发现的目标数量 |
-| `replacement_count` | `number` | 实际写入阶段执行的替换次数 |
-| `matched_span` | `object \| null` | 所有匹配目标的整体行号跨度：`{ start_line, end_line }` |
-| `replacement_line_count` | `number` | 输入 `replacement` 的行数 |
-| `file_line_count.previous` | `number` | 修改前文件行数 |
-| `file_line_count.current` | `number` | 修改后文件行数；失败未写入时等于 `previous` |
-| `note` | `string` | 可选说明；失败原因、创建提示和非阻断警告都放在这里 |
+工具不声明 `outputSchema`，handler 不构造 `structuredContent`。运行时通用 request policy adapter 仍可按统一规则复制标准结果壳。
 
-行号与行数都基于规范化 LF 后的内容计算。行数口径为：空字符串是 `0` 行，否则使用 `text.split('\n').length`。
+### Replacement 字段
 
----
+- `matched_targets`：该项扫描到的目标数量。
+- `replacement_count`：确认成功提交的替换次数。直接写入失败时固定为 `0`。
+- `matched_span`：基于该项开始时读取的规范化 LF 内容，覆盖全部匹配的起止行。
+- `replacement_line_count`：输入 replacement 规范化为 LF 后的行数。
+- `file_line_count.previous`：该项开始时的实际行数；缺失文件为 `0`，无法安全确定为 `null`。
+- `file_line_count.current`：该项结束后可确认的实际行数；确认缺失为 `0`，无法安全确定为 `null`。
+- `note`：失败原因、创建提示或当前成功项的非阻断警告。
 
-## 失败与 no-op 行为
+空字符串为 `0` 行；其它文本使用规范化内容的 `split('\n').length`。
 
-- 结构无效参数和未知字段由 catalog 返回 schema validation 错误；参数关系、正则语义、路径越界、目录路径、二进制文件、超限文件和读写失败由 executor 返回 JSON 错误。两类失败都会设置 `isError: true`，且不会写入文件。
-- 无匹配时 `matched_targets=0`、`replacement_count=0`、`matched_span=null`，并在 `note` 中提示检查 `target` 或 regex pattern。
-- 多匹配但未设置 `allow_multiple=true` 时不会写入；`matched_targets` 和 `matched_span` 仍反映扫描到的匹配结果。
-- 计算后的最终内容与原文件完全一致时视为 no-op：返回失败、不写入、`replacement_count=0`，并提示检查 `target` 与 `replacement` 是否相同。
-- regex 模式下非法正则和零长度匹配都会失败且不写入；零长度匹配不返回部分匹配结果。
+### 写入失败恢复
 
-executor 前置失败的参数已经通过 schema 校验，结果 JSON 按下列规则填充尚未产生的运行时信息：
+直接写入失败不能证明文件保持原样。失败项保持 `success=false` 和 `replacement_count=0`，并提示文件可能已经被截断、部分写入或完整写入。handler 在同一文件锁内重新执行安全校验和读取：
 
-| 字段 | 前置失败值 |
-|-|-|
-| `file_path` | 原样返回已校验的输入值 |
-| `match_mode` | 原样返回输入值；省略时为 `"default"` |
-| `allow_multiple` | 原样返回输入值；省略时为 `false` |
-| `matched_targets` / `replacement_count` | `0` |
-| `matched_span` | `null` |
-| `replacement_line_count` | 按已校验的 `replacement` 计算 |
-| `file_line_count.previous` / `current` | 默认均为 `0`；若失败发生在成功读取已有文件后，则均为修改前行数 |
-| `note` | 必填，说明失败原因和可执行的修正建议 |
+- 恢复读取成功时，`current` 返回实际行数；
+- 确认文件缺失时，`current=0`；
+- 无法安全读取时，`current=null`。
+
+恢复读取只报告状态，不把失败写入重新分类为成功。后续 replacement 仍从正常入口重新检查并读取文件。
 
 ---
 
-## 安全与写入规则
+## 失败、警告与文件安全
 
-- 路径通过 `FileAccessPolicyContext` 组合输入分类、allowed-root、policy candidate 和 deny。Lexical deny 在文件锁、目录创建或既有内容读取前失败。
-- 不存在目标通过最近存在祖先计算预计 real target 并执行 deny；创建缺失父目录后和正式写入前都会重新执行 same-root 与 deny。
-- 已存在目标先按实际 file/directory 类型查询 lexical/realpath deny，再处理符号链接、目录和文件类型错误。`write_file` 与 `replace_text` 共享同一写入策略入口。
-- 写入流程使用 `withFileLock()`，同一文件并发替换会串行化，不同文件互不阻塞。
-- 已有文件超过 `20MB`、被判定为二进制，或新建路径看起来是二进制文件时会被拒绝。
-- 写回行尾符由 `ToolRuntimeContext.lineEnding` 控制：`auto` 保留已有主要行尾符，新文件默认 LF。
-- 无匹配、多匹配但未设置 `allow_multiple=true`、no-op、非法正则和零长度正则匹配都不会写入文件。
-- `replacement` 中新增疑似省略占位符会成功写入，但 `note` 会提示自检。
+无匹配、多匹配但未启用 `allow_multiple`、no-op、非法正则和零长度 regex 匹配都不写入。单项失败后继续处理后续输入。
+
+文件级共享条件失败时，例如 lexical 路径解析失败、`regex_flags` 与模式冲突或 flags 非法，该文件项的每个 replacement 都生成失败结果。目录、二进制、超限、缺失和读取错误在每个 replacement 开始时重新判断。
+
+警告只附加到产生它的成功 replacement，不提升或跨项合并：
+
+- 新增疑似省略占位符；
+- regex replacement 中可疑的 `$!`；
+- 显式包含冗余 `g`；
+- regex 匹配跨行；
+- default 空 target 创建文件。
+
+路径与写入继续使用 `FileAccessPolicyContext`、`resolveFileAccessPath()` 和 `validateFileAccessWriteTarget()`：
+
+- 所有 I/O 在 lexical 路径检查之后执行；
+- 每个 replacement 在读取入口和正式写入前检查目标；
+- 创建父目录后再次检查 same-root、deny 和实际目标；
+- 目录、符号链接、二进制路径/内容和初始大小超过 `20MB` 的文件被拒绝；
+- 一个 replacement 可以把小文件写到超过限制，后项会在下一次读取时拒绝；
+- 写回行尾符由 `ToolRuntimeContext.lineEnding` 决定，`auto` 保留已有主要行尾符，新文件使用 LF。
 
 ---
 
 ## 示例
 
-### default 精确替换
+### 同文件有序修改
 
 ```json
 {
-  "file_path": "src/example.ts",
-  "target": "return 1;",
-  "replacement": "return 2;"
+  "files": [
+    {
+      "file_path": "src/example.ts",
+      "replacements": [
+        { "target": "const value = 1;", "replacement": "const value = 2;" },
+        { "target": "return value;", "replacement": "return value * 2;" }
+      ]
+    }
+  ]
 }
 ```
 
-### regex 捕获组替换
+### 同路径的 default 与 regex 阶段
 
 ```json
 {
-  "file_path": "src/example.ts",
-  "match_mode": "regex",
-  "target": "const (\\w+) = (\\d+);",
-  "replacement": "const $!1 = Number($!2);",
-  "allow_multiple": true
+  "files": [
+    {
+      "file_path": "src/example.ts",
+      "replacements": [
+        { "target": "enabled = false", "replacement": "enabled = true" }
+      ]
+    },
+    {
+      "file_path": "src/example.ts",
+      "match_mode": "regex",
+      "replacements": [
+        { "target": "version=(\\d+)", "replacement": "version=$!1-next" }
+      ]
+    }
+  ]
 }
 ```
 
-### default 创建新文件
+---
 
-```json
-{
-  "file_path": "notes/new-file.txt",
-  "target": "",
-  "replacement": "hello\nworld"
-}
+## 测试文件
+
+```text
+test/replace-text/
+├── batch.test.ts                    # 顺序、部分成功、状态刷新、恢复读取和文件项锁
+├── smoke.test.ts                    # 轻量回归入口
+├── helpers.ts                       # fixture、批量结果断言和单项测试构造器
+├── schema.test.ts                   # 嵌套 Schema、分层 description 和输出外壳
+├── runtime-validation.test.ts       # catalog 结构校验与文件级参数关系
+├── default-mode.test.ts             # default 匹配、创建、行数与 no-op
+├── regex-mode.test.ts               # regex、捕获组、美元语法和零长度保护
+├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
+├── output-safety.test.ts            # JSON 失败形状和安全写入
+└── line-ending-concurrency.test.ts  # LF/CRLF 与跨调用并发回归
 ```
+
+`src/tools/replace.ts` 负责批量编排和 I/O 边界；`src/engine/replacement.ts` 只负责单次 replacement 的纯计算；`src/utils/file-lock.ts` 提供单 lexical resolved path 的进程内 FIFO 锁。
