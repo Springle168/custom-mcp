@@ -633,6 +633,11 @@ async function executeReplacement(
   );
   if (!preWriteSafetyResult.ok) {
     return replacementResult(replacement, false, preWriteSafetyResult.reason, {
+      matched_targets: calculation.matchedTargets,
+      matched_span: calculateMatchedSpan(
+        currentContent,
+        calculation.matchRanges,
+      ),
       file_line_count: {
         previous: previousLineCount,
         current: null,
