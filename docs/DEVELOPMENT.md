@@ -12,6 +12,7 @@
 |-|-|-|
 | 配置 | [配置概览](CONFIG.md)、[全局索引](config/global-index.md)、[workspace 配置](config/workspace-config.md)、[自定义 Tool 配置](config/tool-config.md) | 两层配置模型、全局 reference 索引、selected workspace schema、env override、runtime snapshot、Tool config v2、definitionId binding 与配置相关源码和测试 |
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、`src/tools/` 源码布局、添加新工具、schema 设计、返回值、并发模型 |
+| 自定义工具编写 | [docs/CUSTOM-TOOL-AUTHORING.md](CUSTOM-TOOL-AUTHORING.md) | 独立编写 custom-only Tool definition 与 Processor 时需要遵守的输入输出契约 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、统一 runner 与通用验证命令 |
