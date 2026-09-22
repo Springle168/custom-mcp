@@ -83,4 +83,4 @@ properties
 |-|-|-|
 | Android Studio 连接失败 | 服务器未启动 / 端口不对 | 确认 `npm run start` 正常运行，端口与 Android Studio MCP 配置一致 |
 | 工具名显示不符合预期 | server name 或 tool name 被宿主转换 | 检查 `src/index.ts` 中的 server name 和工具定义的 `name`，注意 `-` 会被转为 `_` |
-| 嵌套参数说明丢失 | Android Studio 转换层丢弃嵌套 `description` | 将嵌套字段语义上提到顶层 `description`，并在宿主中实际验证 |
+| 嵌套参数说明丢失 | Android Studio 转换层丢弃嵌套 `description` | 按该工具的宿主兼容策略决定是否上提说明，并在宿主中实际验证 |
