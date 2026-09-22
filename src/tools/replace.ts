@@ -635,7 +635,7 @@ async function executeReplacement(
     return replacementResult(replacement, false, preWriteSafetyResult.reason, {
       file_line_count: {
         previous: previousLineCount,
-        current: previousLineCount,
+        current: null,
       },
     });
   }
