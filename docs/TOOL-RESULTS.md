@@ -91,7 +91,7 @@ return result;
 - 值只包含 `null`、string、boolean、有限 number、稠密标准数组与普通 object。
 - object 的 prototype 只能是 `Object.prototype` 或 `null`，自有属性必须为可枚举 data property。
 - 数组使用标准 `Array.prototype`，不能有稀疏项或额外属性（固有的不可枚举 `length` 除外）。
-- 不接受 accessor、symbol key、普通 object 的不可枚举字段、`undefined`、`bigint`、非有限数、函数、自定义 prototype 或循环引用。
+- 不接受 Proxy、accessor、symbol key、普通 object 的不可枚举字段、`undefined`、`bigint`、非有限数、函数、自定义 prototype 或循环引用。
 
 这一约束覆盖内容块、嵌套 metadata、`structuredContent` 和未知顶层扩展字段，避免序列化时静默改变结果。
 

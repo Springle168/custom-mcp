@@ -1,3 +1,4 @@
+import { types as utilTypes } from 'node:util';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolCallResult } from '../tools/types.js';
 
@@ -54,6 +55,10 @@ function isStableJsonData(value: unknown, ancestors: Set<object>): boolean {
   }
 
   if (typeof value !== 'object') {
+    return false;
+  }
+
+  if (utilTypes.isProxy(value)) {
     return false;
   }
 
