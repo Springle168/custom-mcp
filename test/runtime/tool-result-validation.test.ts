@@ -211,6 +211,32 @@ function testContainsThrowingProxy(): void {
   );
 }
 
+function testRejectsStatefulProxyBeforeSchemaEvaluation(): void {
+  let dataReads = 0;
+  const image = new Proxy(
+    {
+      type: 'image',
+      data: IMAGE_DATA,
+      mimeType: 'image/png',
+    },
+    {
+      get(target, property, receiver) {
+        if (property === 'data') {
+          dataReads++;
+          return dataReads === 1 ? target.data : 'invalid base64!';
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+
+  assertMalformed(
+    { content: [image], isError: false },
+    'stateful image proxy',
+  );
+  assertEqual(dataReads, 0, 'Proxy results should be rejected before schema evaluation');
+}
+
 function compileTimeContractExamples(): void {
   const richResult = {
     content: [
@@ -247,6 +273,7 @@ async function main(): Promise<void> {
       { name: 'rejects unstable JSON data', run: testRejectsUnstableJsonData },
       { name: 'allows acyclic shared references and null prototypes', run: testAllowsAcyclicSharedReferencesAndNullPrototypeObjects },
       { name: 'contains throwing proxies', run: testContainsThrowingProxy },
+      { name: 'rejects stateful proxies before schema evaluation', run: testRejectsStatefulProxyBeforeSchemaEvaluation },
     ],
   });
 }

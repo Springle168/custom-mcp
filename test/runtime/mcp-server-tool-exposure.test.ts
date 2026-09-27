@@ -3,12 +3,15 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { readFile } from 'node:fs/promises';
 import { createMCPServer } from '../../src/runtime/mcp-server.js';
-import type { JsonObject } from '../../src/config/json-file.js';
+import type { RuntimeRulesConfig } from '../../src/config.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
 import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
+import { runWithRequestHeaderContext } from '../../src/runtime/request-context.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+import type { JsonObject } from '../../src/config/json-file.js';
 import {
   createWorkspaceToolService,
   getCompiledBuiltInTools,
@@ -25,6 +28,17 @@ import {
 interface ConnectedPair {
   readonly client: Client;
   readonly server: Server;
+}
+
+function matchingRules(): RuntimeRulesConfig {
+  return {
+    requestHeaders: [
+      {
+        match: [{ name: 'x-client', value: 'android-studio' }],
+        enable: ['structuredContentDup'],
+      },
+    ],
+  };
 }
 
 function textError(text: string): ToolCallResult {
@@ -170,9 +184,12 @@ function createRichResultService(): WorkspaceToolService {
   } satisfies WorkspaceToolService);
 }
 
-async function connectServer(service: WorkspaceToolService): Promise<ConnectedPair> {
+async function connectServer(
+  service: WorkspaceToolService,
+  rules: RuntimeRulesConfig = { requestHeaders: [] },
+): Promise<ConnectedPair> {
   const server = createMCPServer({
-    configStore: createTestConfigStore({ rootDir: process.cwd() }),
+    configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),
     logger: createLogger(),
     toolService: service,
   });
@@ -324,6 +341,49 @@ async function testRichResultSurvivesMCPRoundTrip(): Promise<void> {
   }
 }
 
+async function testStructuredContentDupRichResultSurvivesMCPRoundTrip(): Promise<void> {
+  const pair = await connectServer(createRichResultService(), matchingRules());
+  try {
+    const result = await runWithRequestHeaderContext(
+      createStrictRequestHeaderView(['X-Client', 'android-studio']),
+      () => pair.client.callTool({ name: 'read_file', arguments: {} }),
+    );
+    assert(
+      'content' in result && Array.isArray(result.content),
+      'MCP adapted rich result should use the standard content response shape',
+    );
+    assert(
+      typeof result.structuredContent === 'object'
+      && result.structuredContent !== null,
+      'Matched rich result should include structuredContentDup wrapper',
+    );
+
+    const wrapper = result.structuredContent as Record<string, unknown>;
+    assert(Array.isArray(wrapper.content), 'Wire wrapper should contain the full content array');
+    assertEqual(wrapper.content.length, 3, 'Wire wrapper should preserve every content block');
+    assertEqual(
+      (wrapper.content[1] as { readonly type?: unknown }).type,
+      'image',
+      'Wire wrapper should preserve image block order',
+    );
+    assertEqual(
+      (wrapper.content[1] as { readonly data?: unknown }).data,
+      'aW1hZ2UtZGF0YQ==',
+      'Wire wrapper should preserve image base64',
+    );
+    assertEqual(wrapper.isError, false, 'Wire wrapper should preserve normalized success state');
+    assert(!('width' in wrapper), 'Matched policy should overwrite tool-owned structured content');
+    assertEqual(result._meta?.['example.com/result-id'], 'result-1', 'Adaptation should preserve top-level metadata');
+    assertEqual(
+      (result.extension as { readonly retained?: unknown } | undefined)?.retained,
+      true,
+      'Adaptation should preserve top-level extension fields',
+    );
+  } finally {
+    await closePair(pair);
+  }
+}
+
 async function testIndexDoesNotUseUnfilteredRegistryEntrypoints(): Promise<void> {
   const source = await readFile(new URL('../../src/index.ts', import.meta.url), 'utf-8');
 
@@ -341,6 +401,7 @@ async function main(): Promise<void> {
       { name: 'two servers share caller-owned service', run: testTwoServersShareCallerOwnedService },
       { name: 'custom-only tool lists, validates, and returns unavailable', run: testCustomOnlyToolListsValidatesAndReturnsUnavailable },
       { name: 'rich result survives MCP round trip', run: testRichResultSurvivesMCPRoundTrip },
+      { name: 'structuredContentDup rich result survives MCP round trip', run: testStructuredContentDupRichResultSurvivesMCPRoundTrip },
       { name: 'index avoids unfiltered registry entrypoints', run: testIndexDoesNotUseUnfilteredRegistryEntrypoints },
     ],
   });
