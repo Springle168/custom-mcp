@@ -1,5 +1,5 @@
 import type { ExternalToolExecutor } from '../catalog.js';
-import { textErrorResult, textResult } from '../results.js';
+import { textErrorResult } from '../results.js';
 import type { ToolCallResult } from '../types.js';
 import { immutableMap } from '../../utils/immutable-map.js';
 import { createCanonicalRequest, type JsonObject } from './canonical-protocol.js';
@@ -238,7 +238,10 @@ function mapStrategyOutcome(outcome: ExternalRoutingStrategyOutcome): ToolCallRe
 
   const result = outcome.response.results[0];
   if (result.status === 'completed') {
-    return textResult(result.message);
+    return {
+      content: [{ type: 'text', text: result.message }],
+      isError: false,
+    };
   }
   if (result.status === 'failed') {
     return textErrorResult(`External tool failed: ${result.message}`);

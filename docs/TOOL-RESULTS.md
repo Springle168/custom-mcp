@@ -43,7 +43,7 @@
 | 字段 | 所有者 | 规则 |
 |-|-|-|
 | `content` | Tool | 决定内容块、数量和顺序。 |
-| `isError` | Tool | 显式表示业务状态；文本 helper 代为填写。 |
+| `isError` | Tool | 显式表示业务状态；简单文本错误可以由 `textErrorResult()` 代为填写。 |
 | `_meta` | Tool | 按 MCP 契约返回 metadata，具体语义由工具定义。 |
 | `structuredContent` | Tool；命中 policy 时由 adapter 覆盖 | Tool 可以自行构造；`structuredContentDup` 有意覆盖该字段。 |
 | 其他顶层扩展字段 | Tool | 沿用 SDK `CallToolResult` 的扩展边界。 |
@@ -52,18 +52,24 @@ Tool 不读取 request headers，也不判断 request policy；统一出口在�
 
 ## 构造结果
 
-普通文本工具使用 `src/tools/results.ts`：
+Tool 直接构造成功结果并显式设置 `isError`。普通单文本块成功结果也遵循这一规则：
 
 ```typescript
-import { textErrorResult, textResult } from './results.js';
+return {
+  content: [{ type: 'text', text: 'Operation completed.' }],
+  isError: false,
+};
+```
 
-return textResult('Operation completed.');
+简单文本错误可以使用 `src/tools/results.ts` 的 `textErrorResult()`，它生成一个文本块并设置 `isError: true`：
+
+```typescript
+import { textErrorResult } from './results.js';
+
 return textErrorResult('Operation failed. Check the input and retry.');
 ```
 
-两者分别生成一个文本块，并显式设置 `isError: false` / `isError: true`。普通文本工具不要重复手写文本返回壳。
-
-需要多块内容、图片、`_meta`、`structuredContent` 或扩展字段时，直接构造 `ToolCallResult`：
+该 helper 表达的是单文本块错误，不要求文本只有一行，也不是所有错误结果的强制构造方式。成功/失败共用同一内容构造逻辑，或者错误需要多个内容块、图片、`_meta`、`structuredContent` 或扩展字段时，直接构造 `ToolCallResult`：
 
 ```typescript
 import type { ToolCallResult } from './types.js';
@@ -82,7 +88,7 @@ const result = {
 return result;
 ```
 
-项目不提供镜像 MCP 顶层字段的通用 option-bag helper。具体工具可以保留稳定业务语义下的局部 helper，例如返回固定 JSON 文本 payload 的工具。
+项目不提供成功结果 helper，也不提供镜像 MCP 顶层字段的通用 option-bag helper。具体工具可以保留稳定业务语义下的局部 helper，例如返回固定富结果结构的工具。
 
 ## Runtime 结果校验
 
@@ -137,7 +143,7 @@ Built-in pre-admission cancellation 使用稳定文本 `The tool call was cancel
 
 ## External routing 结果
 
-External routing config 为 definition reference `id` 声明 route 的 custom-only Tool，在 configured input schema 校验通过后进入该 route-bound external executor。每个 route 选择自己的 endpoint 与 stage，但 route-bound executor 共享 workspace external runtime。Canonical response 保持单个 string `message`，不承载图片或通用 content block。已校验 canonical `completed` result 映射为 `textResult()`；canonical `failed`、`cancelled` 和 endpoint `error` 映射为 `textErrorResult()`。这些业务 message 来自受信任 endpoint 的 canonical result，会按其已校验文本返回。
+External routing config 为 definition reference `id` 声明 route 的 custom-only Tool，在 configured input schema 校验通过后进入该 route-bound external executor。每个 route 选择自己的 endpoint 与 stage，但 route-bound executor 共享 workspace external runtime。Canonical response 保持单个 string `message`，不承载图片或通用 content block。已校验 canonical `completed` result 由 executor 直接构造为成功的单文本块结果；canonical `failed`、`cancelled` 和 endpoint `error` 映射为 `textErrorResult()`。这些业务 message 来自受信任 endpoint 的 canonical result，会按其已校验文本返回。
 
 容量、取消、HTTP / Processor timeout、大小限制、transport、canonical protocol 与内部失败也都映射为 `textErrorResult()`。本地失败文本只说明稳定的失败类别和安全的下一步：不包含 endpoint URL 或 query、header、request / response entity、Processor stdout / stderr、executable path、argv 或底层异常。外部服务器可能已执行而未获得确认结果时，文本明确说明服务不会自动重试；调用方只应在操作可安全重复时自行重试。
 
@@ -147,19 +153,16 @@ External routing config 为 definition reference `id` 声明 route 的 custom-on
 
 ## JSON payload 工具
 
-部分工具会把 JSON 字符串放在 `content[0].text` 中，例如 `replace_text`。这类工具可以保留本地语义 helper，但内部仍应复用统一文本 helper：
+部分工具会把 JSON 字符串放在 `content[0].text` 中，例如 `replace_text`。如果成功和失败共用同一内容结构，工具直接构造结果并从 payload 状态派生 `isError`：
 
 ```typescript
-function successResult(payload: ReplaceTextPayload): ToolCallResult {
-  return textResult(JSON.stringify(payload));
-}
-
-function errorResult(payload: ReplaceTextPayload): ToolCallResult {
-  return textErrorResult(JSON.stringify(payload));
-}
+return {
+  content: [{ type: 'text', text: JSON.stringify(payload) }],
+  isError: !payload.success,
+};
 ```
 
-这样可以把工具自身的 payload 契约留在工具文件附近，同时避免重复维护 MCP 文本返回壳。
+这样可以把 payload 契约及其与 MCP 业务状态的对应关系留在工具文件附近。具有稳定富结果结构的工具也可以保留本地语义 helper。
 
 注意事项：
 
@@ -173,7 +176,7 @@ function errorResult(payload: ReplaceTextPayload): ToolCallResult {
 
 新增或修改工具返回结果时，检查以下事项：
 
-1. 普通文本路径是否使用 `textResult()` / `textErrorResult()`；富结果是否直接构造并显式填写 `isError`。
+1. Tool 是否直接构造成功结果并显式填写 `isError`；简单单文本块错误是否适合使用 `textErrorResult()`。
 2. 图文块是否按业务需要排列；图片 `data` 是否为裸 base64，`mimeType` 是否与图片内容一致。
 3. 错误文本是否包含失败原因和可操作的修正建议；JSON payload 是否保持既有 stringify 格式。
 4. `_meta`、`structuredContent` 或扩展字段是否确由该 Tool 拥有；是否考虑 `structuredContentDup` 对 `structuredContent` 的条件覆盖。

@@ -4,7 +4,7 @@ import {
   type TestReportSummary,
 } from '../engine/android-test-report.js';
 import type { ToolCallResult } from './types.js';
-import { textErrorResult, textResult } from './results.js';
+import { textErrorResult } from './results.js';
 import {
   readChangedAndroidTestReportFiles,
   snapshotAndroidTestReportFiles,
@@ -172,7 +172,10 @@ export function formatAndroidGradleToolResult(
   enhancement?: AndroidGradleFailureEnhancement,
 ): ToolCallResult {
   if (result.success) {
-    return textResult(result.summary);
+    return {
+      content: [{ type: 'text', text: result.summary }],
+      isError: false,
+    };
   }
 
   const failure = {

@@ -23,7 +23,7 @@ import { withFileLock } from '../utils/file-lock.js';
 import type { SafePath } from '../utils/paths.js';
 import { REPLACE_TOOL_DEFINITION } from './definitions/replace-text.definition.js';
 import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult, textResult } from './results.js';
+import { textErrorResult } from './results.js';
 
 type MatchMode = 'default' | 'regex';
 
@@ -767,8 +767,10 @@ export function createReplaceTextHandler(
       success: fileResults.every((result) => result.success),
       files: fileResults,
     };
-    const text = JSON.stringify(payload);
-    return payload.success ? textResult(text) : textErrorResult(text);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(payload) }],
+      isError: !payload.success,
+    };
   };
 }
 

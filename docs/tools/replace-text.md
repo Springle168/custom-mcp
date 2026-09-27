@@ -131,7 +131,7 @@ interface ReplaceTextBatchPayload {
 
 顶层 `files`、文件项的 `replacements` 与输入数组保持相同顺序和长度。顶层和文件项的 `success` 仅在其全部后代成功时为 `true`。结果不回显 `target` 或 `replacement`，也不增加索引字段。
 
-所有 replacement 成功时使用 `textResult` 并显式返回 `isError=false`；任一失败时使用 `textErrorResult` 并显式返回 `isError=true`。`isError=true` 不表示没有写入。Schema validation 或 executor 前取消由 catalog 返回标准错误文本，不返回批量 JSON。
+handler 直接构造单文本块结果，并根据 payload 的 `success` 设置相反的 `isError`：所有 replacement 成功时返回 `isError=false`，任一失败时返回 `isError=true`。`isError=true` 不表示没有写入。Schema validation 或 executor 前取消由 catalog 返回标准错误文本，不返回批量 JSON。
 
 工具不声明 `outputSchema`，handler 不构造 `structuredContent`。运行时通用 request policy adapter 仍可按统一规则复制标准结果壳。
 
