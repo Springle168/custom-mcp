@@ -1,16 +1,13 @@
 import { MAX_FILE_SIZE_MB } from '../../utils/file-read.js';
 import type { MCPTool } from '../types.js';
 
-export const READ_FILE_OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
-export const READ_FILE_OUTPUT_TERMINATOR = '--- End of content ---';
-
 export const READ_FILE_TOOL_DEFINITION = {
   name: 'read_file',
   description: `Reads and returns the content of a specified text file.
 
 Supports full-file reads and optional continuous ranges positioned by 1-based line numbers or line-by-line JavaScript RegExp patterns.
 For context efficiency, always retrieve only the minimum content necessary for your next step.
-Successful responses always start with two summary lines, then a blank line, then a '${READ_FILE_OUTPUT_SEPARATOR_FORMAT}' separator before the file content, and end with '${READ_FILE_OUTPUT_TERMINATOR}'.
+Successful responses start with two summary lines followed by the requested file content.
 Text files only. Binary files (images, archives, compiled output, etc.) are rejected.
 Files exceeding ${MAX_FILE_SIZE_MB}MB are rejected. Single-file reads do not apply line-count or line-length truncation.`,
   inputSchema: {

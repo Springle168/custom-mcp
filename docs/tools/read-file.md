@@ -102,69 +102,29 @@ Partial read: showing lines A-B of N total lines.
 
 主动范围读取输出 `Partial read` 摘要；`read_file` 正常成功结果不会因为行数或单行长度出现截断提示。
 
-成功返回固定使用以下结构，避免 summary 与正文混淆：
+成功结果固定使用两个 MCP 文本块：
 
-```text
-<summary line 1>
-<summary line 2>
+- `content[0]` 包含两行摘要并以一个换行符结尾。
+- `content[1]` 直接包含返回的文件内容；启用 `show_line_numbers` 时，行号前缀属于该内容。
 
---- {filePath} ---
-
-<file content>
-
---- End of content ---
-```
-
-输出中的 `{filePath}` 由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 primary `rootDir` 的路径。工具层不自行通过 `path.isAbsolute()` 判断显示策略。
+摘要中的文件显示路径由路径安全层统一决定：drive-absolute 输入显示解析后的绝对路径，相对输入显示相对 primary `rootDir` 的路径。工具层不自行通过 `path.isAbsolute()` 判断显示策略。
 
 ### 输出示例
 
-完整读取：
+主要示例（`# content[n].text` 仅标示块位置，不属于实际文本）：
 
 ```text
-Read 3 of 3 line(s) from src/Foo.kt.
-No truncation: all returned file content is complete.
-
---- src/Foo.kt ---
-
-package com.example.demo
-
-class Foo
-
---- End of content ---
-```
-
-行号范围读取并显示行号：
-
-```text
+# content[0].text
 Read 3 of 15 line(s) from src/Foo.kt.
 Partial read: showing lines 6-8 of 15 total lines.
 
---- src/Foo.kt ---
-
+# content[1].text
 6: data class Foo(
 7:     val id: Long,
 8:     val name: String
-
---- End of content ---
 ```
 
-正则范围读取：
-
-```text
-Read 5 of 15 line(s) from src/Foo.kt.
-Partial read: showing lines 6-10 of 15 total lines.
-
---- src/Foo.kt ---
-
-data class Foo(
-    val id: Long,
-    val name: String,
-    val email: String
-) {
-
---- End of content ---
-```
+完整读取与正则范围读取使用相同的双块结构；区别只体现在摘要文本和正文选择范围。错误结果仍返回单个错误文本块。
 
 ---
 
@@ -178,8 +138,8 @@ data class Foo(
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/definitions/read-file.definition.ts` | Tool description、Draft 2020-12 input schema 与输出分隔常量 |
-| `src/tools/read-file.ts` | 参数校验、`read_mode` 解析、路径安全、结果拼接 |
+| `src/tools/definitions/read-file.definition.ts` | Tool description 与 Draft 2020-12 input schema |
+| `src/tools/read-file.ts` | 参数校验、`read_mode` 解析、路径安全与结果组装 |
 | `src/utils/file-read.ts` | 二进制检测、20MB 文件大小保护、文本读取、可配置截断、行号前缀 |
 | `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
 | `src/utils/file-access-policy.ts` | policy candidate、lexical/realpath deny 与读取目标检查 |
