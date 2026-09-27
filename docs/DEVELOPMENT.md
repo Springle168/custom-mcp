@@ -18,7 +18,6 @@
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、统一 runner 与通用验证命令 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
 | 外部路由 | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) | External routing config v1、Processor registry v2、route-specific endpoint / stage、canonical route、共享容量、取消、shutdown 与日志边界 |
-| Android Studio | [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md) | MCP 宿主配置、工具名称规则、schema 转换层限制 |
 | 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
 
 ---
@@ -83,5 +82,4 @@ custom-mcp/
 - 配置和 workspace 选择相关问题见 [docs/CONFIG.md](CONFIG.md)。
 - 文件路径边界、allowed roots、glob 和 symlink 行为见 [docs/PATH-SAFETY.md](PATH-SAFETY.md)。
 - 工具替换、读取、写入等行为优先查看 [docs/tools/](tools/) 下对应工具文档。
-- Android Studio 连接和宿主限制见 [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md)。
 - Android 构建工具问题见 [docs/tools/android-build.md](tools/android-build.md)。

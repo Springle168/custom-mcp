@@ -2,7 +2,7 @@
 
 ## 概述
 
-批量读取多个文本文件内容并拼接返回。支持相对路径、位于任一 allowed root 内的 drive-absolute 路径和 glob 模式混合输入，解决 Android Studio 内置 `read_file` 只能逐个读取的效率问题。
+批量读取多个文本文件内容并拼接返回。支持相对路径、位于任一 allowed root 内的 drive-absolute 路径和 glob 模式混合输入，解决 `read_file` 只能逐个读取的效率问题。
 
 核心设计理念：AI 在分析代码时经常需要同时查看多个文件的内容（如一个包下的所有 `.kt` 文件），逐个调用 `read_file` 会产生大量往返，浪费 token和时间。本工具一次调用即可返回所有文件内容。
 

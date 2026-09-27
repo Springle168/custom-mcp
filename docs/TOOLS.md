@@ -237,12 +237,6 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 
 所有内置 `inputSchema` 同时作为 executor implementation contract，并在 catalog 编译时使用 Draft 2020-12 validator 编译。schema 是 built-in 参数结构的唯一校验边界，应完整表达 required、类型、枚举、简单值域、集合数量和未知字段策略；不接受未知字段的 executor 使用 `additionalProperties: false`。handler 在 schema 校验成功后运行，不重复检查这些结构约束，只负责路径、文件状态、正则可编译性、参数关系和环境条件等业务或运行时语义。结构负例测试应通过 workspace tool service 或 implementation validator 进入 schema 边界；直接调用 handler 的测试只传入满足 schema 的参数。
 
-### Android Studio 嵌套 Schema 限制
-
-仅正在为 Android Studio 的使用场景开发工具时需要注意。
-
-详细背景和验证方式见 [docs/ANDROID-STUDIO.md](ANDROID-STUDIO.md)。
-
 ### 返回值设计
 
 普通文本结果使用 `src/tools/results.ts` 的便利 helper，不手写单文本块返回壳：
