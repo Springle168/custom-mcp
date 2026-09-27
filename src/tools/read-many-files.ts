@@ -22,7 +22,6 @@ import {
 const MAX_FILES = 100;
 
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
-const OUTPUT_TERMINATOR = '--- End of content ---';
 
 function validateShallowReadContentLimitDependency(
   args: Record<string, unknown>,
@@ -135,7 +134,7 @@ async function handleReadManyFiles(
     }),
   );
 
-  const contentParts: string[] = [];
+  const fileContentBlocks: ToolCallResult['content'] = [];
   const processedFiles: Array<{
     filePath: string;
     displayPath: string;
@@ -267,7 +266,10 @@ async function handleReadManyFiles(
       }
       block += file.content;
 
-      contentParts.push(`${separator}\n\n${block}\n`);
+      fileContentBlocks.push({
+        type: 'text',
+        text: `${separator}\n\n${block}`,
+      });
     }
   }
 
@@ -301,14 +303,11 @@ async function handleReadManyFiles(
     }
   }
 
-  if (contentParts.length > 0) {
-    contentParts.push(OUTPUT_TERMINATOR);
-  }
-
-  const output = [...summaryParts, '', ...contentParts].join('\n');
-
   return {
-    content: [{ type: 'text', text: output }],
+    content: [
+      { type: 'text', text: `${summaryParts.join('\n')}\n` },
+      ...fileContentBlocks,
+    ],
     isError: processedFiles.length === 0,
   };
 }

@@ -2,7 +2,7 @@
 
 ## 概述
 
-批量读取多个文本文件内容并拼接返回。支持相对路径、位于任一 allowed root 内的 drive-absolute 路径和 glob 模式混合输入，解决 `read_file` 只能逐个读取的效率问题。
+批量读取多个文本文件内容，以一个摘要文本块和逐文件文本块返回。支持相对路径、位于任一 allowed root 内的 drive-absolute 路径和 glob 模式混合输入，解决 `read_file` 只能逐个读取的效率问题。
 
 核心设计理念：AI 在分析代码时经常需要同时查看多个文件的内容（如一个包下的所有 `.kt` 文件），逐个调用 `read_file` 会产生大量往返，浪费 token和时间。本工具一次调用即可返回所有文件内容。
 
@@ -111,7 +111,7 @@ Literal 是显式访问，因此 relative 与 drive-absolute literal 都不走 i
 
 `shallow_read: true` 时仍会读取文本以统计行数和判断截断风险。返回信息包括每个文件的原始总行数和磁盘字节数、所有成功处理文件的总行数和总字节数，以及如果正常读取内容是否会被截断。大小统计复用 `readTextFile()` 读取前取得的 `fs.stat().size`，不会为此增加额外的文件系统访问；被跳过、读取失败或因总文件数限制而未处理的文件不计入合计。
 
-提供 `shallow_read_content_limit_bytes` 时，成功处理文件的原始磁盘总大小小于或等于该配置值便同时返回浅读统计和文件内容；超过配置值则只返回浅读统计。该参数必须是正整数并显式搭配 `shallow_read: true`。参数比较不计入行号前缀、文件分隔符、浅读统计、截断警告、内容结束标记或 MCP 返回壳，因此配置值不是最终响应体的硬上限。
+提供 `shallow_read_content_limit_bytes` 时，成功处理文件的原始磁盘总大小小于或等于该配置值便同时返回浅读统计和文件内容；超过配置值则只返回浅读统计。该参数必须是正整数并显式搭配 `shallow_read: true`。参数比较不计入行号前缀、文件块路径标题、浅读统计、截断警告或 MCP 返回壳，因此配置值不是最终响应体的硬上限。
 
 `SHALLOW_READ_BATCH_SIZE_BYTES` 是建议的内容返回批次大小，值为 `50 * 1024` 字节，不限制调用者配置更大的 `shallow_read_content_limit_bytes`。实际附带内容的原始磁盘总大小超过该建议值时，服务器仍返回内容并追加接收端风险警告：
 
@@ -131,73 +131,38 @@ WARNING: Included file contents exceed the recommended 50.0 KB batch size. The r
 
 ### 输出格式
 
-返回中的文件显示路径由路径安全层统一决定：drive-absolute 字面路径或 drive-absolute glob 命中的文件显示绝对路径；相对路径、relative glob 和 slash-leading glob 命中的文件显示相对 primary `rootDir` 的路径。正文分隔符和 `shallow_read` 文件列表使用同一显示规则。
+成功读取正文时，MCP `content` 数组使用以下结构：
 
-```
+- `content[0]` 是以一个换行符结尾的摘要文本块，包含读取数量、整体截断状态、文件数量限制、policy note 和 skipped 列表等调用级信息。
+- 后续每个成功处理的文件各占一个文本块，并保持按读取路径排序后的顺序。
+- 每个文件块以 `--- <display path> ---` 开头；该块内紧接该文件自己的截断警告和正文。
+- 不使用全局内容结束标记；MCP 内容块数组本身定义结果边界。
+
+主要示例（`# content[n].text` 仅标示块位置，不属于实际文本）：
+
+```text
+# content[0].text
 Read 3 file(s), skipped 1.
 Files without a truncation warning are returned completely.
 Skipped:
 - /path/to/logo.png (binary file)
 
+# content[1].text
 --- src/Foo.kt ---
 
 <文件内容>
 
---- src/Bar.kt ---
-
-<文件内容>
-
+# content[2].text
 --- src/Baz.kt ---
 
 [WARNING: Truncated. showing lines 1-2000 of 5432. Use read_file or a similar file-reading tool for full content.]
 
 <截断后的文件内容>
-
---- End of content ---
 ```
 
-无任何截断时，返回头部会明确包含：
+全部文件完整返回时，摘要包含 `No truncation: all returned file contents are complete.`。省略正文的 `shallow_read` 只返回摘要块，其中列出总行数、总大小和逐文件截断风险；配置阈值允许附带正文时，摘要保留这些统计，后续文件块沿用普通读取结构。
 
-```
-No truncation: all returned file contents are complete.
-```
-
-浅读取模式示例：
-
-```
-Read 2 file(s).
-Shallow read: file contents omitted.
-Total lines: 120.
-Total size: 62.4 KB (63898 bytes).
-Files:
-- src/Foo.kt: 40 line(s), 12.1 KB (12390 bytes), would be truncated: no.
-- src/Large.kt: 80 line(s), 50.3 KB (51508 bytes), would be truncated: no.
-```
-
-AI 可以直接从分隔符中提取路径调用 `read_file` 查看完整内容。
-
-配置阈值允许返回内容时，浅读统计之后追加与普通读取相同的截断状态、文件内容分隔符和结束标记：
-
-```text
-Read 2 file(s).
-Shallow read: file contents included because total size is within the configured 10.0 KB (10240 bytes) limit.
-Total lines: 120.
-Total size: 8.5 KB (8704 bytes).
-Files:
-- src/Foo.kt: 40 line(s), 3.1 KB (3174 bytes), would be truncated: no.
-- src/Bar.kt: 80 line(s), 5.4 KB (5530 bytes), would be truncated: no.
-No truncation: all returned file contents are complete.
-
---- src/Foo.kt ---
-
-<文件内容>
-
---- src/Bar.kt ---
-
-<文件内容>
-
---- End of content ---
-```
+文件显示路径由路径安全层统一决定：drive-absolute 输入命中的文件显示绝对路径；relative 和 slash-leading glob 命中的文件显示相对 primary `rootDir` 的路径。文件块标题和 `shallow_read` 文件列表使用同一规则，AI 可以据此调用 `read_file` 精读对应文件。
 
 ### Ignore、deny 与 mixed result
 
@@ -216,7 +181,7 @@ No truncation: all returned file contents are complete.
 | 文件 | 职责 |
 |-|-|
 | `src/tools/definitions/read-many-files.definition.ts` | Tool description、Draft 2020-12 input schema 与浅读推荐阈值 |
-| `src/tools/read-many-files.ts` | `shallow_read` 参数关系、默认值、文件数量限制、并行读取与结果拼接 |
+| `src/tools/read-many-files.ts` | `shallow_read` 参数关系、默认值、文件数量限制、并行读取与结果组装 |
 | `src/utils/file-selection.ts` | literal / glob 分类、discovery exclude、ignoreFiles 开关、去重与选择结果汇总 |
 | `src/utils/file-read.ts` | 常量、二进制检测（`isBinaryFile`）、文本读取与截断（`readTextFile`）、`BINARY_EXTENSIONS` 集合 |
 | `src/utils/paths.ts` | 路径分类、root 边界和 glob static base 的 lexical 解析 |

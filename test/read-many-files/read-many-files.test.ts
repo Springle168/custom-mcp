@@ -11,6 +11,7 @@ import {
 } from './fixtures.js';
 import {
   assert,
+  assertEqual,
   assertIncludes,
   assertNotIncludes,
   getResultText,
@@ -34,11 +35,19 @@ async function testSingleFileAbsolutePath() {
   
   assert(!result.isError, 'Should succeed');
   const text = getResultText(result);
-  
+
+  assertEqual(result.content.length, 2, 'Should return one summary block and one file block');
+  const summaryBlock = result.content[0];
+  assert(summaryBlock?.type === 'text', 'The first block should contain the summary');
+  assertIncludes(summaryBlock.text, 'Read 1 file(s)', 'The first block should report the summary');
+  assert(summaryBlock.text.endsWith('\n'), 'The summary block should end with a newline');
+  const fileBlock = result.content[1];
+  assert(fileBlock?.type === 'text', 'The second block should contain the file');
+  assertIncludes(fileBlock.text, `--- ${fooPath} ---`, 'The file block should identify its path');
+  assertIncludes(fileBlock.text, 'data class Foo', 'The file block should contain the file content');
   assertIncludes(text, 'Read 1 file(s)', 'Should report 1 file read');
   assertIncludes(text, `--- ${fooPath} ---`, 'Should include file separator with absolute path');
   assertIncludes(text, 'data class Foo', 'Should include file content');
-  assertIncludes(text, '--- End of content ---', 'Should include terminator');
   
 }
 
@@ -366,6 +375,7 @@ async function testShallowRead() {
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
+  assertEqual(result.content.length, 1, 'Content-omitting shallow reads should return only the summary block');
   assertIncludes(text, 'Read 2 file(s)', 'Should report 2 files read');
   assertIncludes(text, 'Shallow read: file contents omitted.', 'Should explain shallow mode');
   assertIncludes(text, 'Total lines: 37.', 'Should report total line count');
@@ -374,7 +384,6 @@ async function testShallowRead() {
   assertIncludes(text, `docs\\README.md: 22 line(s), ${readmeStat.size} bytes, would be truncated: no.`, 'Should report README line count and size');
   assertNotIncludes(text, 'Recommendation:', 'Should not recommend splitting a small read');
   assertNotIncludes(text, 'data class Foo', 'Should not include file content');
-  assertNotIncludes(text, '--- End of content ---', 'Should not include content terminator');
 
 }
 
@@ -400,6 +409,7 @@ async function testShallowReadContentAtConfiguredLimit() {
   assert(result.isError !== true, 'Should succeed at the configured limit');
   const text = getResultText(result);
 
+  assertEqual(result.content.length, 3, 'Should return one summary block and two file blocks');
   assertIncludes(
     text,
     `Shallow read: file contents included because total size is within the configured ${totalSizeBytes} bytes limit.`,
@@ -408,7 +418,6 @@ async function testShallowReadContentAtConfiguredLimit() {
   assertIncludes(text, `Total size: ${totalSizeBytes} bytes.`, 'Should report the compared original file size');
   assertIncludes(text, 'Files:', 'Should retain shallow-read file statistics');
   assertIncludes(text, '1: package com.example.demo', 'Should apply line numbers to included contents');
-  assertIncludes(text, '--- End of content ---', 'Should include the content terminator');
 
 }
 
@@ -433,6 +442,7 @@ async function testShallowReadContentAboveConfiguredLimit() {
   assert(result.isError !== true, 'Should succeed above the configured limit');
   const text = getResultText(result);
 
+  assertEqual(result.content.length, 1, 'Content-omitting shallow reads should return only the summary block');
   assertIncludes(
     text,
     `Shallow read: file contents omitted because total size exceeds the configured ${totalSizeBytes - 1} bytes limit.`,
@@ -440,7 +450,6 @@ async function testShallowReadContentAboveConfiguredLimit() {
   );
   assertIncludes(text, `Total size: ${totalSizeBytes} bytes.`, 'Should report the compared original file size');
   assertNotIncludes(text, 'data class Foo', 'Should omit file contents');
-  assertNotIncludes(text, '--- End of content ---', 'Should omit the content terminator');
 
 }
 
@@ -508,7 +517,6 @@ async function testShallowReadRecommendedBatchWarning() {
       'WARNING: Included file contents exceed the recommended',
       'Should not emit the receiving-side warning at the recommended threshold'
     );
-    assertIncludes(atThresholdText, '--- End of content ---', 'Should include contents at the recommended threshold');
 
     await fs.appendFile(secondPath, 'b', 'utf-8');
 
@@ -529,7 +537,6 @@ async function testShallowReadRecommendedBatchWarning() {
       'Should warn about receiving-side limits above the recommended batch size'
     );
     assertIncludes(overThresholdText, `--- ${firstPath} ---`, 'Should still include contents above the recommended size');
-    assertIncludes(overThresholdText, '--- End of content ---', 'Should include the content terminator');
   } finally {
     await Promise.all([
       fs.rm(firstPath, { force: true }),

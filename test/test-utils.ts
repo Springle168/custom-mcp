@@ -125,10 +125,13 @@ export async function writeSplitConfigFixture(
 }
 
 export function getResultText(result: TextResultLike): string {
-  const first = result.content?.[0];
-  return first?.type === 'text' && typeof first.text === 'string'
-    ? first.text
-    : '';
+  return result.content
+    ?.filter(
+      (block): block is { readonly type: 'text'; readonly text: string } =>
+        block.type === 'text' && typeof block.text === 'string',
+    )
+    .map((block) => block.text)
+    .join('\n') ?? '';
 }
 
 export async function runTest(name: string, test: TestFn): Promise<void> {
