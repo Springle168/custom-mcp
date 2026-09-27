@@ -17,7 +17,6 @@ import writeFileTool from './write-file.js';
 import readManyFilesTool from './read-many-files.js';
 import discoverGuidelinesTool from './discover-guidelines.js';
 import readFileTool from './read-file.js';
-import askUserTool from './ask-user.js';
 import androidAssembleDebugTool from './android-assemble-debug.js';
 import androidTestDebugUnitTestTool from './android-test-debug-unit-test.js';
 
@@ -27,7 +26,6 @@ const importedTools: readonly MCPTool[] = [
   readManyFilesTool,
   discoverGuidelinesTool,
   readFileTool,
-  askUserTool,
   androidAssembleDebugTool,
   androidTestDebugUnitTestTool,
 ];

@@ -19,7 +19,6 @@ import {
   formatFileAccessPolicyStartupLines,
 } from './runtime/startup-logging.js';
 import { createWorkspaceToolService } from './tools/index.js';
-import { registerAskUserRoutes } from './tools/ask-user-routes.js';
 import { Logger } from './utils/logger.js';
 import { buildHttpUrl, formatHostPort } from './utils/http-url.js';
 import { androidGradleGateRegistry } from './utils/android-gradle-gate.js';
@@ -102,7 +101,6 @@ async function main() {
 
   const app = express();
   app.use(express.json());
-  registerAskUserRoutes(app);
 
   const sessions = new Map<string, McpPostSession>();
   let lifecycle: ApplicationLifecycle | undefined;

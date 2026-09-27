@@ -72,7 +72,7 @@ custom-mcp/
 | `src/utils/android-gradle-gate.ts`, `src/utils/android-gradle.ts` | Android workspace FIFO、queued/active cancellation、Gradle execution settle/drain 与 bounded recovery 见 [docs/tools/android-build.md](tools/android-build.md) |
 | `src/utils/file-read.ts` | [docs/tools/read-file.md](tools/read-file.md)、[docs/tools/read-many-files.md](tools/read-many-files.md) |
 | `src/utils/file-lock.ts` | [docs/TOOLS.md](TOOLS.md) 的并发模型，以及写入类工具文档 |
-| `src/utils/http-url.ts` | HTTP bind host 的 IPv6 host:port 格式和 MCP / `ask_user` endpoint URL 生成，见 [workspace 配置](config/workspace-config.md) |
+| `src/utils/http-url.ts` | HTTP bind host 的 IPv6 host:port 格式和 MCP endpoint URL 生成，见 [workspace 配置](config/workspace-config.md) |
 | `src/utils/logger.ts` | [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | [docs/tools/android-build.md](tools/android-build.md) |
 
