@@ -41,13 +41,25 @@ function testNoMatchReturnsOriginalObject(): void {
 }
 
 function testMatchedSuccessAddsWrapper(): void {
-  const original = result(false);
+  const original: ToolCallResult = {
+    content: [
+      { type: 'text', text: 'before' },
+      { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+      { type: 'text', text: 'after' },
+    ],
+    _meta: { 'example.com/id': 'result-1' },
+    extension: { retained: true },
+    isError: false,
+  };
   const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
   const wrapper = getStructuredContent(adapted);
 
   assert(adapted !== original, 'Matched policy should return a new result object');
   assertEqual(wrapper.content, original.content, 'Wrapper should contain the result content');
   assertEqual(wrapper.isError, false, 'Successful wrapper should expose isError false');
+  assertEqual(adapted._meta, original._meta, 'Matched policy should preserve top-level metadata');
+  assertEqual(adapted.extension, original.extension, 'Matched policy should preserve top-level extensions');
+  assertEqual(original.content[1]?.type, 'image', 'Adapter should preserve mixed content order');
 }
 
 function testMatchedErrorAddsWrapper(): void {

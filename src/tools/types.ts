@@ -1,12 +1,18 @@
+import type {
+  CallToolResult as MCPCallToolResult,
+  ImageContent,
+  TextContent,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import type { ToolName } from './names.js';
 
-export interface ToolCallResult {
-  content: Array<{ type: 'text'; text: string }>;
+export type ToolResultContent = TextContent | ImageContent;
+
+export type ToolCallResult = Omit<MCPCallToolResult, 'content' | 'isError'> & {
+  content: ToolResultContent[];
   isError: boolean;
-  [key: string]: unknown;
-}
+};
 
 export interface ToolDefinition {
   readonly name: string;

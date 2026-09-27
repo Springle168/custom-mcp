@@ -239,6 +239,65 @@ async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
   assertNotIncludes(logText, 'stale-protocol-field', 'Logger should not log stale handler structuredContent values');
 }
 
+async function testMixedImageContentIsLoggedInOrder(): Promise<void> {
+  const firstImage = 'Zmlyc3QtaW1hZ2U=';
+  const secondImage = 'c2Vjb25kLWltYWdl';
+  const logText = await writeAndReadLog('mixed-image-content', (logger) => {
+    logger.logToolResult(
+      'image_tool',
+      {
+        content: [
+          { type: 'text', text: 'before image' },
+          { type: 'image', data: firstImage, mimeType: 'image/png' },
+          { type: 'image', data: secondImage, mimeType: 'image/webp' },
+          { type: 'text', text: 'after images' },
+        ],
+        structuredContent: {
+          content: [{ type: 'image', data: firstImage, mimeType: 'image/png' }],
+        },
+        _meta: { 'example.com/private': 'metadata-secret' },
+        isError: false,
+      },
+      12,
+      resultLogContext(metadata({
+        rulesConfigured: true,
+        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        enabledFeatures: ['structuredContentDup'],
+      })),
+    );
+  });
+
+  const expectedBody = [
+    '  before image',
+    '  [image image/png]',
+    `  ${firstImage}`,
+    '  [image image/webp]',
+    `  ${secondImage}`,
+    '  after images',
+  ].join('\n');
+  assertIncludes(logText, expectedBody, 'Logger should preserve mixed content order and full image data');
+  assertEqual(countOccurrences(logText, firstImage), 1, 'structuredContentDup should not duplicate image data in RESULT logs');
+  assertNotIncludes(logText, 'metadata-secret', 'Logger should not serialize top-level metadata');
+}
+
+async function testImageOnlyResultHasBody(): Promise<void> {
+  const imageData = 'cHVyZS1pbWFnZQ==';
+  const logText = await writeAndReadLog('image-only-content', (logger) => {
+    logger.logToolResult(
+      'image_tool',
+      {
+        content: [{ type: 'image', data: imageData, mimeType: 'image/jpeg' }],
+        isError: true,
+      },
+      1,
+      resultLogContext(metadata({ rulesConfigured: false })),
+    );
+  });
+
+  assertIncludes(logText, '→ FAIL image_tool (1ms)', 'Image-only errors should retain failure status');
+  assertIncludes(logText, `  [image image/jpeg]\n  ${imageData}`, 'Image-only results should have a non-empty log body');
+}
+
 async function testToolCallIdentityIsWrittenForCallAndResult(): Promise<void> {
   const context: ToolCallResultLogContext = {
     sessionId: 'session_identity_test',
@@ -293,6 +352,8 @@ async function main(): Promise<void> {
       { name: 'file log does not contain ANSI escape codes', run: testFileLogDoesNotContainAnsiEscapeCodes },
       { name: 'rules log does not contain header names or values', run: testRulesLogDoesNotContainHeaderNamesOrValues },
       { name: 'structuredContent protocol field is not logged', run: testStructuredContentProtocolFieldIsNotLogged },
+      { name: 'mixed image content is logged in order', run: testMixedImageContentIsLoggedInOrder },
+      { name: 'image-only result has a log body', run: testImageOnlyResultHasBody },
       { name: 'tool call identity is written for call and result', run: testToolCallIdentityIsWrittenForCallAndResult },
       { name: 'missing session is explicitly written', run: testMissingSessionIsExplicitlyWritten },
     ],

@@ -140,6 +140,36 @@ function createCustomOnlyService(): WorkspaceToolService {
   return createWorkspaceToolService(catalog);
 }
 
+function createRichResultService(): WorkspaceToolService {
+  return Object.freeze({
+    getDefinitions() {
+      return [{
+        name: 'read_file',
+        description: 'Rich result test tool',
+        inputSchema: { type: 'object' },
+      }];
+    },
+    async routeToolCall() {
+      return {
+        content: [
+          { type: 'text', text: 'before' },
+          {
+            type: 'image',
+            data: 'aW1hZ2UtZGF0YQ==',
+            mimeType: 'image/png',
+            _meta: { 'example.com/image-id': 'image-1' },
+          },
+          { type: 'text', text: 'after' },
+        ],
+        structuredContent: { width: 800, height: 600 },
+        _meta: { 'example.com/result-id': 'result-1' },
+        extension: { retained: true },
+        isError: false,
+      } satisfies ToolCallResult;
+    },
+  } satisfies WorkspaceToolService);
+}
+
 async function connectServer(service: WorkspaceToolService): Promise<ConnectedPair> {
   const server = createMCPServer({
     configStore: createTestConfigStore({ rootDir: process.cwd() }),
@@ -250,6 +280,50 @@ async function testCustomOnlyToolListsValidatesAndReturnsUnavailable(): Promise<
   }
 }
 
+async function testRichResultSurvivesMCPRoundTrip(): Promise<void> {
+  const pair = await connectServer(createRichResultService());
+  try {
+    const result = await pair.client.callTool({ name: 'read_file', arguments: {} });
+    assert(
+      'content' in result && Array.isArray(result.content),
+      'MCP rich result should use the standard content response shape',
+    );
+
+    assertEqual(result.content.length, 3, 'MCP round trip should preserve every content block');
+    assertEqual(result.content[0]?.type, 'text', 'MCP round trip should preserve leading text');
+    assertEqual(result.content[1]?.type, 'image', 'MCP round trip should preserve image position');
+    assertEqual(result.content[2]?.type, 'text', 'MCP round trip should preserve trailing text');
+
+    const image = result.content[1];
+    assert(image?.type === 'image', 'Expected the second wire content block to be an image');
+    assertEqual(image.data, 'aW1hZ2UtZGF0YQ==', 'MCP round trip should preserve image base64');
+    assertEqual(image.mimeType, 'image/png', 'MCP round trip should preserve image MIME type');
+    assertEqual(
+      image._meta?.['example.com/image-id'],
+      'image-1',
+      'MCP round trip should preserve image metadata',
+    );
+    assert(
+      typeof result.structuredContent === 'object'
+      && result.structuredContent !== null,
+      'MCP round trip should preserve structured content',
+    );
+    assertEqual(
+      (result.structuredContent as Record<string, unknown>).width,
+      800,
+      'MCP round trip should preserve structured content values',
+    );
+    assertEqual(result._meta?.['example.com/result-id'], 'result-1', 'MCP round trip should preserve result metadata');
+    assertEqual(
+      (result.extension as { readonly retained?: unknown } | undefined)?.retained,
+      true,
+      'MCP round trip should preserve top-level extension fields',
+    );
+  } finally {
+    await closePair(pair);
+  }
+}
+
 async function testIndexDoesNotUseUnfilteredRegistryEntrypoints(): Promise<void> {
   const source = await readFile(new URL('../../src/index.ts', import.meta.url), 'utf-8');
 
@@ -266,6 +340,7 @@ async function main(): Promise<void> {
       { name: 'server reports the package version', run: testServerReportsPackageVersion },
       { name: 'two servers share caller-owned service', run: testTwoServersShareCallerOwnedService },
       { name: 'custom-only tool lists, validates, and returns unavailable', run: testCustomOnlyToolListsValidatesAndReturnsUnavailable },
+      { name: 'rich result survives MCP round trip', run: testRichResultSurvivesMCPRoundTrip },
       { name: 'index avoids unfiltered registry entrypoints', run: testIndexDoesNotUseUnfilteredRegistryEntrypoints },
     ],
   });

@@ -176,7 +176,9 @@ export class Logger {
     const rulesFileLine = this.formatRulesFileLine(context.requestHeaderPolicy);
     const rulesConsoleLine = this.formatRulesConsoleLine(context.requestHeaderPolicy);
     const text = result.content
-      .map((c) => c.text ?? '')
+      .map((content) => content.type === 'text'
+        ? content.text
+        : `[image ${content.mimeType}]\n${content.data}`)
       .filter(Boolean)
       .join('\n');
 

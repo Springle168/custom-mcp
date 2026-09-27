@@ -116,7 +116,8 @@ function getStructuredContent(result: ToolCallResult): Record<string, unknown> {
 }
 
 function getFirstText(result: ToolCallResult): string {
-  return result.content[0]?.text ?? '';
+  const first = result.content[0];
+  return first?.type === 'text' ? first.text : '';
 }
 
 async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
@@ -404,6 +405,53 @@ async function testHandlerContainsRouterFailuresAndMalformedResults(): Promise<v
   );
 }
 
+async function testMalformedNestedAccessorIsIsolatedBeforeAdapterAndLogger(): Promise<void> {
+  const { store } = createCountingStore(matchingRules());
+  const diagnostics: ToolCallPipelineDiagnostic[] = [];
+  let accessorReads = 0;
+  let loggedResult: ToolCallResult | undefined;
+  const image = {
+    type: 'image',
+    mimeType: 'image/png',
+  } as Record<string, unknown>;
+  Object.defineProperty(image, 'data', {
+    enumerable: true,
+    get() {
+      accessorReads++;
+      throw new Error('private accessor failure');
+    },
+  });
+
+  const handler = createToolCallRequestHandler({
+    configStore: store,
+    logger: {
+      logToolCall() {},
+      logToolResult(_toolName, result) {
+        loggedResult = result;
+      },
+    },
+    onDiagnostic(diagnostic) {
+      diagnostics.push(diagnostic);
+    },
+    routeToolCall: async () => ({
+      content: [image],
+      isError: false,
+    } as unknown as ToolCallResult),
+  });
+
+  const returned = await runWithRequestHeaderContext(
+    createStrictRequestHeaderView(['X-Client', 'android-studio']),
+    () => handler({ params: { name: 'accessor_result', arguments: {} } }),
+  );
+
+  assertEqual(accessorReads, 0, 'Validation should reject accessors without evaluating them');
+  assertEqual(returned.isError, true, 'Malformed nested accessors should become controlled tool errors');
+  assert('structuredContent' in returned, 'Controlled malformed errors should still receive request policy adaptation');
+  assertEqual(loggedResult, returned, 'Logger should receive only the controlled adapted error');
+  assertEqual(diagnostics.length, 1, 'Malformed nested accessors should emit one diagnostic');
+  assertEqual(diagnostics[0]?.kind, 'malformed_result', 'Nested accessor failure should be classified as malformed');
+}
+
 async function testLoggerFailuresAreIsolatedAndResultIsAttemptedOnce(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
   let routedAfterCallLogFailure = 0;
@@ -478,6 +526,7 @@ async function main(): Promise<void> {
       { name: 'handler order uses adapted result for logger', run: testHandlerOrderUsesAdaptedResultForLogger },
       { name: 'handler waits for asynchronous CALL logging', run: testHandlerWaitsForAsyncCallLogBeforeRouting },
       { name: 'router failures and malformed results are contained', run: testHandlerContainsRouterFailuresAndMalformedResults },
+      { name: 'malformed nested accessor is isolated before adapter and logger', run: testMalformedNestedAccessorIsIsolatedBeforeAdapterAndLogger },
       { name: 'logger failures are isolated with one RESULT attempt', run: testLoggerFailuresAreIsolatedAndResultIsAttemptedOnce },
     ],
   });

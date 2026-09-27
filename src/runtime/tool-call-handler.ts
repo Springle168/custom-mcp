@@ -14,6 +14,7 @@ import type {
   ToolCallResultLogContext,
 } from './tool-call-log-context.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
+import { isToolCallResult } from './tool-result-validation.js';
 import type { ConfigStore } from './config-store.js';
 import type { ToolCallResult } from '../tools/types.js';
 import { textErrorResult } from '../tools/results.js';
@@ -226,46 +227,4 @@ function emitToolCallDiagnostic(
 
 function ignoreToolCallDiagnosticFailure(): void {
   // A diagnostics-only channel must never create an unhandled rejection.
-}
-
-function isToolCallResult(value: unknown): value is ToolCallResult {
-  try {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return false;
-    }
-
-    const result = value as Record<string, unknown>;
-    if (!hasOnlyDataProperties(result)) {
-      return false;
-    }
-
-    return (
-      typeof result.isError === 'boolean'
-      && Array.isArray(result.content)
-      && result.content.every(isTextContent)
-    );
-  } catch {
-    // Dependency implementations are allowed to be injected in tests. Treat
-    // exotic objects or throwing accessors as a malformed result boundary.
-    return false;
-  }
-}
-
-function isTextContent(value: unknown): value is ToolCallResult['content'][number] {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const content = value as Record<string, unknown>;
-  return (
-    hasOnlyDataProperties(content)
-    && content.type === 'text'
-    && typeof content.text === 'string'
-  );
-}
-
-function hasOnlyDataProperties(value: Record<string, unknown>): boolean {
-  return Object.values(Object.getOwnPropertyDescriptors(value)).every(
-    (descriptor) => 'value' in descriptor,
-  );
 }
