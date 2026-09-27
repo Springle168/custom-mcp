@@ -1,6 +1,6 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult, textResult } from './results.js';
+import { textErrorResult } from './results.js';
 import {
   selectReadableFiles,
   type SelectedReadableFile,
@@ -307,9 +307,10 @@ async function handleReadManyFiles(
 
   const output = [...summaryParts, '', ...contentParts].join('\n');
 
-  return processedFiles.length > 0
-    ? textResult(output)
-    : textErrorResult(output);
+  return {
+    content: [{ type: 'text', text: output }],
+    isError: processedFiles.length === 0,
+  };
 }
 
 const readManyFilesTool: MCPTool = {

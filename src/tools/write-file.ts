@@ -14,7 +14,7 @@ import {
 } from '../utils/file-access-policy.js';
 import { WRITE_FILE_TOOL_DEFINITION } from './definitions/write-file.definition.js';
 import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult, textResult } from './results.js';
+import { textErrorResult } from './results.js';
 
 function isDotsOnly(text: string): boolean {
   if (text.length < 3) return false;
@@ -165,7 +165,10 @@ async function handleWriteFile(
     }
 
     const message = `Success: wrote ${safePath.displayPath}. Total lines: ${countLines(finalContent)}.`;
-    return textResult(appendWarning(message, placeholderWarning));
+    return {
+      content: [{ type: 'text', text: appendWarning(message, placeholderWarning) }],
+      isError: false,
+    };
   });
 }
 

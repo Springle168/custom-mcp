@@ -52,7 +52,7 @@ closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指
 
 ## 返回值
 
-正常发现使用 `textResult(JSON.stringify(payload))` 返回紧凑 JSON：
+正常发现直接构造成功的单文本块结果，文本内容是 `JSON.stringify(payload)` 生成的紧凑 JSON：
 
 ```json
 {"guidelines":[{"name":"release-notes","description":"Generate release notes from repository changes.","file_path":"docs/guidelines/release-notes.md"}]}

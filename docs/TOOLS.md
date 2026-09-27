@@ -45,7 +45,7 @@ src/tools/
 ├── custom-tool-config.ts            # custom tool config / definition 加载
 ├── input-schema-validator.ts        # Draft 2020-12 validator facade
 ├── types.ts                         # definition、executor 与 ToolCallResult 类型
-├── results.ts                       # textResult / textErrorResult 等返回值 helper
+├── results.ts                       # textErrorResult 单文本块错误 helper
 ├── definitions/                     # built-in Tool definition 模块
 ├── replace.ts                       # replace_text 工具
 ├── read-file.ts                     # read_file 工具
@@ -145,7 +145,6 @@ import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
 import { READ_FILE_TOOL_DEFINITION } from './definitions/read-file.definition.js';
 import type { MCPTool, ToolCallResult } from './types.js';
-import { textResult } from './results.js';
 
 async function handleReadFile(
   args: Record<string, unknown>,
@@ -156,7 +155,10 @@ async function handleReadFile(
   // 业务逻辑；文件类工具从 context.fileAccessPolicyContext 使用统一文件访问策略
   // 需要响应单次调用取消时使用 invocation.signal；不需要时可以省略该形参
   // 返回结果
-  return textResult('结果文本');
+  return {
+    content: [{ type: 'text', text: '结果文本' }],
+    isError: false,
+  };
 }
 
 const readFileTool: MCPTool = {
@@ -239,17 +241,20 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 
 ### 返回值设计
 
-普通文本结果使用 `src/tools/results.ts` 的便利 helper，不手写单文本块返回壳：
+Tool 直接构造成功结果并显式填写 `isError`。简单单文本块错误可以使用 `src/tools/results.ts` 的 `textErrorResult()`：
 
 ```typescript
 // 成功
-return textResult('给 AI 看的结果描述');
+return {
+  content: [{ type: 'text', text: '给 AI 看的结果描述' }],
+  isError: false,
+};
 
-// 失败
+// 简单文本错误
 return textErrorResult('错误描述 + 引导 AI 下一步怎么做');
 ```
 
-需要图片、多个内容块、顶层 `_meta` 或 `structuredContent` 时，直接构造 `ToolCallResult`，并显式填写 `isError`：
+成功/失败共用同一内容结构，或者结果需要图片、多个内容块、顶层 `_meta` 或 `structuredContent` 时，直接构造 `ToolCallResult`，并根据业务状态填写 `isError`：
 
 ```typescript
 const result = {

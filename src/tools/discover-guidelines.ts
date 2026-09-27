@@ -26,7 +26,7 @@ import {
   MAX_GUIDELINE_PREFIX_BYTES,
   MAX_GUIDELINE_READ_WORKERS,
 } from './definitions/discover-guidelines.definition.js';
-import { textErrorResult, textResult } from './results.js';
+import { textErrorResult } from './results.js';
 import type { MCPTool, ToolCallResult } from './types.js';
 
 const CANCELLED_MESSAGE = 'The discover_guidelines tool call was cancelled.';
@@ -235,7 +235,10 @@ function successPayload(
     notes.length === 0
       ? { guidelines }
       : { guidelines, note: notes.join(' ') };
-  return textResult(JSON.stringify(payload));
+  return {
+    content: [{ type: 'text', text: JSON.stringify(payload) }],
+    isError: false,
+  };
 }
 
 async function discoverGuidelines(

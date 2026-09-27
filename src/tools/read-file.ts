@@ -1,6 +1,6 @@
 import type { ToolRuntimeContext } from '../runtime/tool-context.js';
 import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult, textResult } from './results.js';
+import { textErrorResult } from './results.js';
 import {
   resolveFileAccessPath,
   validateFileAccessReadTarget,
@@ -234,9 +234,13 @@ async function handleReadFile(
     summaryParts.push('No truncation: all returned file content is complete.');
   }
 
-  return textResult(
-    `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${READ_FILE_OUTPUT_TERMINATOR}`,
-  );
+  return {
+    content: [{
+      type: 'text',
+      text: `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${READ_FILE_OUTPUT_TERMINATOR}`,
+    }],
+    isError: false,
+  };
 }
 
 const readFileTool: MCPTool = {
