@@ -19,7 +19,10 @@ export interface TestSuiteResult {
 }
 
 export interface TextResultLike {
-  content?: Array<{ text?: string }>;
+  content?: Array<{
+    readonly type?: unknown;
+    readonly text?: unknown;
+  }>;
 }
 
 type ConsoleMethod = 'log' | 'info' | 'warn' | 'error';
@@ -122,7 +125,10 @@ export async function writeSplitConfigFixture(
 }
 
 export function getResultText(result: TextResultLike): string {
-  return result.content?.[0]?.text ?? '';
+  const first = result.content?.[0];
+  return first?.type === 'text' && typeof first.text === 'string'
+    ? first.text
+    : '';
 }
 
 export async function runTest(name: string, test: TestFn): Promise<void> {

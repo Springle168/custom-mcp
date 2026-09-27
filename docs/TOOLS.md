@@ -67,6 +67,7 @@ src/tools/
 | 区域 | 归属 |
 |-|-|
 | `src/runtime/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
+| `src/runtime/tool-call-handler.ts`、`src/runtime/tool-result-validation.ts`、`src/runtime/tool-result-adapter.ts` | 统一工具调用出口、结果校验与 request policy 适配，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
 | `src/runtime/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
 | `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
 | `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
@@ -248,7 +249,7 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 
 ### 返回值设计
 
-详细约定见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)。新增工具不要手写 MCP 文本返回壳，优先使用 `src/tools/results.ts` 中的统一 helper。
+普通文本结果使用 `src/tools/results.ts` 的便利 helper，不手写单文本块返回壳：
 
 ```typescript
 // 成功
@@ -258,7 +259,23 @@ return textResult('给 AI 看的结果描述');
 return textErrorResult('错误描述 + 引导 AI 下一步怎么做');
 ```
 
-**关键原则：错误消息应该引导 AI 自我纠正。** 不只是说“失败了”，要告诉 AI 为什么失败、怎么修复。
+需要图片、多个内容块、顶层 `_meta` 或 `structuredContent` 时，直接构造 `ToolCallResult`，并显式填写 `isError`：
+
+```typescript
+const result = {
+  content: [
+    { type: 'text', text: 'Generated preview:' },
+    { type: 'image', data: pngBase64, mimeType: 'image/png' },
+  ],
+  isError: false,
+} satisfies ToolCallResult;
+
+return result;
+```
+
+图片 `data` 使用裸 base64，而非 data URI；Tool 决定 text/image 块的数量和顺序。`structuredContent` 可由 Tool 构造，但命中 `structuredContentDup` request policy 时会由统一出口覆盖。完整字段所有权、稳定 JSON 与 SDK schema 校验、适配规则见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)。
+
+**错误消息应该引导 AI 自我纠正**，说明失败原因和修正方式。
 
 ### 文件操作类工具的通用考虑
 

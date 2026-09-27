@@ -319,9 +319,10 @@ function assertEnvelope(result: ToolCallResult): void {
     'Result should contain MCP content array',
   );
   assertEqual(result.content.length, 1, 'Result should have one content item');
-  assertEqual(result.content[0]?.type, 'text', 'Result content type');
+  const firstContent = result.content[0];
+  assert(firstContent?.type === 'text', 'Result content type should be text');
   assert(
-    typeof result.content[0]?.text === 'string',
+    typeof firstContent.text === 'string',
     'Result content text should be a string',
   );
   assert(

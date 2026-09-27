@@ -134,7 +134,8 @@ async function testAskUser() {
   console.log(JSON.stringify(result, null, 2));
 
   if (result.result?.content?.[0]?.text) {
-    const text = result.result.content[0].text;
+    const firstContent = result.result.content[0];
+    const text = firstContent?.type === 'text' ? firstContent.text : '';
     try {
       const parsed = JSON.parse(text);
       console.log('\nParsed answers:');

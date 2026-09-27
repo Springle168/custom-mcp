@@ -173,7 +173,10 @@ async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
         );
       },
       logToolResult(toolName, toolResult, durationMs) {
-        loggerEvents.push(`result:${toolName}:${toolResult.content[0]?.text}:${durationMs}`);
+        const firstContent = toolResult.content[0];
+        loggerEvents.push(
+          `result:${toolName}:${firstContent?.type === 'text' ? firstContent.text : ''}:${durationMs}`,
+        );
       },
     },
     now: () => {
