@@ -155,7 +155,7 @@ async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise
   assert(readResult.isError !== true, 'read_file should read absolute paths in additional roots');
   assertIncludes(
     getResultText(readResult),
-    `--- ${additionalFile} ---`,
+    `Read 2 of 2 line(s) from ${additionalFile}.`,
     'Additional root read_file display should stay absolute',
   );
   assertIncludes(

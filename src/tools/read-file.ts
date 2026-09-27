@@ -9,11 +9,7 @@ import {
   isBinaryFile,
   readTextFile,
 } from '../utils/file-read.js';
-import {
-  READ_FILE_OUTPUT_SEPARATOR_FORMAT,
-  READ_FILE_OUTPUT_TERMINATOR,
-  READ_FILE_TOOL_DEFINITION,
-} from './definitions/read-file.definition.js';
+import { READ_FILE_TOOL_DEFINITION } from './definitions/read-file.definition.js';
 
 type ReadMode = 'line' | 'regex';
 
@@ -221,7 +217,6 @@ async function handleReadFile(
   }
 
   const displayPath = safePath.displayPath;
-  const separator = READ_FILE_OUTPUT_SEPARATOR_FORMAT.replace('{filePath}', displayPath);
   const summaryParts = [
     `Read ${result.linesRead} of ${result.originalLineCount} line(s) from ${displayPath}.`,
   ];
@@ -235,10 +230,16 @@ async function handleReadFile(
   }
 
   return {
-    content: [{
-      type: 'text',
-      text: `${summaryParts.join('\n')}\n\n${separator}\n\n${result.content}\n\n${READ_FILE_OUTPUT_TERMINATOR}`,
-    }],
+    content: [
+      {
+        type: 'text',
+        text: `${summaryParts.join('\n')}\n`,
+      },
+      {
+        type: 'text',
+        text: result.content,
+      },
+    ],
     isError: false,
   };
 }

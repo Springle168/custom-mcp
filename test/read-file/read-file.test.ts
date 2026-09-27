@@ -26,21 +26,6 @@ async function prepareTestContext(): Promise<void> {
   testContext = createTestToolRuntimeContext({ rootDir: FIXTURES_DIR });
 }
 
-function getReturnedContent(text: string): string {
-  const separatorMatch = text.match(/\n\n--- .+ ---\n\n/);
-  if (separatorMatch?.index === undefined) {
-    throw new Error('Could not find read_file content separator');
-  }
-
-  const contentStart = separatorMatch.index + separatorMatch[0].length;
-  const contentEnd = text.lastIndexOf('\n\n--- End of content ---');
-  if (contentEnd < contentStart) {
-    throw new Error('Could not find read_file content terminator');
-  }
-
-  return text.slice(contentStart, contentEnd);
-}
-
 async function testReadFullFile() {
 
   const result = await readFileTool.handler(
@@ -51,11 +36,19 @@ async function testReadFullFile() {
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
+  assertEqual(result.content.length, 2, 'Should return one summary block and one file-content block');
+  const summaryBlock = result.content[0];
+  assert(summaryBlock?.type === 'text', 'The first block should contain the summary');
+  assertEqual(
+    summaryBlock.text,
+    'Read 15 of 15 line(s) from src\\Foo.kt.\nNo truncation: all returned file content is complete.\n',
+    'The summary block should contain two lines and end with one newline',
+  );
+  const contentBlock = result.content[1];
+  assert(contentBlock?.type === 'text', 'The second block should contain the file content');
   assertIncludes(text, 'Read 15 of 15 line(s) from src\\Foo.kt.', 'Should report line count');
   assertIncludes(text, 'No truncation: all returned file content is complete.', 'Should report no truncation');
-  assertIncludes(text, '--- src\\Foo.kt ---', 'Should separate summary from content');
-  assertIncludes(text, '--- End of content ---', 'Should terminate content block');
-  assertIncludes(text, 'data class Foo', 'Should include file content');
+  assertIncludes(contentBlock.text, 'data class Foo', 'Should include file content');
   assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report truncation');
 
 }
@@ -144,7 +137,9 @@ async function testLongLineIsNotShortened() {
 
     assert(result.isError !== true, 'Should succeed');
     const text = getResultText(result);
-    const contentLine = getReturnedContent(text);
+    const contentBlock = result.content[1];
+    assert(contentBlock?.type === 'text', 'The second block should contain the file content');
+    const contentLine = contentBlock.text;
 
     assertEqual(contentLine.length, 2010, 'Returned content line should not be shortened');
     assertEqual(contentLine, longLine, 'Returned content line should be complete');
