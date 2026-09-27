@@ -22,7 +22,6 @@
 ```text
 custom-mcp/test/
 ├── android-build/              # Android 构建工具测试，见 docs/tools/android-build.md
-├── ask-user/                   # ask_user 答案、HTTP 路由测试与人工交互脚本，见 docs/tools/ask-user.md
 ├── config/                     # 全局配置、workspace selection、env override 和 snapshot 测试，见 docs/CONFIG.md
 ├── fixtures/                   # 测试数据与运行期生成的 fixture 目录
 ├── helpers/                    # 测试辅助函数，如 runtime-config.ts

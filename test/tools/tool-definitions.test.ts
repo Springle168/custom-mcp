@@ -150,47 +150,6 @@ function testBuiltInSchemasOwnStructuralContracts(): void {
     'discover_guidelines should reject non-boolean use_ignore_files',
   );
 
-  assertInvalid(
-    'ask_user',
-    { questions: [{ question: '', header: 'Scope', type: 'text' }] },
-    'ask_user should reject an empty question',
-  );
-  assertInvalid(
-    'ask_user',
-    {
-      questions: [{
-        question: 'Choose?',
-        header: 'Scope',
-        type: 'choice',
-        options: [
-          { label: '   ', description: 'Blank label' },
-          { label: 'Valid', description: 'Valid label' },
-        ],
-      }],
-    },
-    'ask_user should reject whitespace-only labels for choice options',
-  );
-  assertValid(
-    'ask_user',
-    {
-      questions: [{
-        question: 'Explain?',
-        header: 'Scope',
-        type: 'text',
-        options: [
-          { label: '   ', description: 'Ignored label' },
-          { label: '', description: 'Ignored label' },
-        ],
-      }],
-    },
-    'ask_user should preserve unused non-choice options accepted by the baseline',
-  );
-  assertValid(
-    'ask_user',
-    { questions: [{ question: 'Choose?', header: 'Scope', type: 'choice' }] },
-    'ask_user should leave the choice-options dependency to the handler',
-  );
-
   for (const name of ['android_assembleDebug', 'android_testDebugUnitTest'] as const) {
     assertInvalid(name, { offline: 'yes' }, `${name} should reject non-boolean options`);
     assertInvalid(name, { profile: true }, `${name} should reject unknown properties`);

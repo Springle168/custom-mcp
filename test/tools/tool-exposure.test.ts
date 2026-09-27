@@ -1,4 +1,3 @@
-import { pendingQuestions } from '../../src/tools/ask-user.js';
 import {
   compileWorkspaceToolCatalog,
   type CompiledBuiltInTool,
@@ -541,17 +540,6 @@ async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
   assertEqual(executionCalls, 0, 'Hidden and unknown routes must not run external executors');
 }
 
-async function testDisabledAskUserDoesNotReachExecutor(): Promise<void> {
-  const service = createWorkspaceToolService(createCatalog({
-    exposure: { mode: 'disable', names: ['ask_user'] },
-  }));
-  const beforeCount = pendingQuestions.size;
-  await service.routeToolCall('ask_user', {
-    questions: [{ question: 'Proceed?', header: 'Confirm', type: 'yesno' }],
-  }, createContext(), createInvocationContext());
-  assertEqual(pendingQuestions.size, beforeCount, 'Hidden ask_user should not create pending state');
-}
-
 function testCatalogAndServiceFacadesAreFrozen(): void {
   const catalog = createCatalog();
   const service = createWorkspaceToolService(catalog);
@@ -576,7 +564,6 @@ async function main(): Promise<void> {
       { name: 'override remains bound to its built-in executor', run: testOverrideRemainsBoundToBuiltInExecutor },
       { name: 'pre-aborted built-in calls preserve validation ordering', run: testPreAbortedBuiltInCallsRespectValidationOrdering },
       { name: 'hidden and unknown tools do not validate or execute', run: testHiddenAndUnknownDoNotValidateOrExecute },
-      { name: 'disabled ask_user does not reach executor', run: testDisabledAskUserDoesNotReachExecutor },
       { name: 'catalog and service facades are frozen', run: testCatalogAndServiceFacadesAreFrozen },
     ],
   });

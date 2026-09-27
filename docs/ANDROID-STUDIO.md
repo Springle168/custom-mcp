@@ -51,22 +51,20 @@ Android Studio 将 MCP `tools/list` 的 `inputSchema` 转换为宿主 Function C
 
 ```text
 properties
-└── questions (ARRAY)          ← description ✓ 保留
+└── files (ARRAY)              ← description ✓ 保留
     └── items.properties
-        ├── question (STRING)  ← description ✗ 丢失
-        ├── type (STRING)      ← description ✗ 丢失
-        └── options (ARRAY)
+        ├── file_path (STRING) ← description ✗ 丢失
+        └── replacements (ARRAY)
             └── items.properties
-                └── label      ← description ✗ 丢失
+                ├── target      ← description ✗ 丢失
+                └── replacement ← description ✗ 丢失
 ```
 
 扁平结构（如 `read_many_files`）不受影响。`replace_text` 使用嵌套的批量文件项与 replacement 结构，因此 Android Studio 会丢失其嵌套字段 description。
 
 ### 规避方案
 
-宿主兼容策略按工具确定。`ask_user` 在顶层 `description` 中补充嵌套字段语义；`replace_text` 保持工具、集合、文件项和 replacement 的正常职责分层，不为该宿主复制整套嵌套字段说明。`inputSchema` 始终保持完整并负责结构校验。
-
-受影响工具包括 `ask_user` 和 `replace_text`。
+宿主兼容策略按工具确定。`replace_text` 保持工具、集合、文件项和 replacement 的正常职责分层，不为该宿主复制整套嵌套字段说明。`inputSchema` 始终保持完整并负责结构校验。
 
 ### 新增工具时的检查项
 

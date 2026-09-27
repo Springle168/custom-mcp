@@ -1,6 +1,6 @@
 # custom-mcp
 
-一个使用 TypeScript 和 Node.js 构建的 MCP 工具集，通过 Streamable HTTP 提供文件读写、文本替换、批量读取和用户交互等能力，并支持把 configured custom-only Tool 路由到受控 Processor 与外部 HTTP endpoint。
+一个使用 TypeScript 和 Node.js 构建的 MCP 工具集，通过 Streamable HTTP 提供文件读写、文本替换和批量读取等能力，并支持把 configured custom-only Tool 路由到受控 Processor 与外部 HTTP endpoint。
 
 ## Built-in 工具
 
@@ -9,7 +9,6 @@
 - `discover_guidelines`：从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文。
 - `write_file`：写入完整文本文件。
 - `replace_text`：通过精确文本或正则表达式执行局部替换。
-- `ask_user`：在工具调用过程中向用户提问并收集回答。
 - `android_assembleDebug` / `android_testDebugUnitTest`：执行 Android 项目的 Debug 构建和单元测试。
 
 完整工具列表和参数说明见 [docs/TOOLS.md](docs/TOOLS.md) 与 [docs/tools/](docs/tools/)。
