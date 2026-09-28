@@ -1,8 +1,12 @@
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import ignore from 'ignore';
 import { ConfigError } from './errors.js';
 import type { ParsedFileAccessConfig, ParsedWorkspaceConfig } from './schema.js';
+import {
+  readStrictUtf8RegularFile,
+  StrictUtf8FileError,
+} from './strict-utf8-file.js';
 import type {
   FileAccessPolicyQuery,
   RootFileAccessPolicy,
@@ -216,22 +220,6 @@ function validatePolicyFileReference(
   }
 
   const resolvedPolicyFile = path.resolve(policyFile);
-  try {
-    const realPolicyFile = realpathSync(resolvedPolicyFile);
-    if (!statSync(realPolicyFile).isFile()) {
-      throw new Error('The resolved target is not a regular file.');
-    }
-  } catch (err: unknown) {
-    throwPolicyError(
-      configFilePath,
-      fieldPath,
-      workspaceLabel,
-      resolvedPolicyFile,
-      'The policy file must exist, be accessible, and resolve to a regular file.',
-      err,
-    );
-  }
-
   return resolvedPolicyFile;
 }
 
@@ -242,16 +230,35 @@ function readPolicyFile(
   fieldPath: string,
 ): string {
   try {
-    const bytes = readFileSync(policyFile);
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch (err: unknown) {
+    return readStrictUtf8RegularFile(policyFile);
+  } catch (error: unknown) {
+    if (!(error instanceof StrictUtf8FileError)) {
+      throw error;
+    }
+
+    if (
+      error.reason === 'not_found'
+      || error.reason === 'not_regular'
+      || error.reason === 'open_failed'
+      || error.reason === 'inspect_failed'
+    ) {
+      throwPolicyError(
+        configFilePath,
+        fieldPath,
+        workspaceLabel,
+        policyFile,
+        'The policy file must exist, be accessible, and resolve to a regular file.',
+        error.cause,
+      );
+    }
+
     throwPolicyError(
       configFilePath,
       fieldPath,
       workspaceLabel,
       policyFile,
       'The policy file could not be read as strict UTF-8.',
-      err,
+      error.cause,
     );
   }
 }

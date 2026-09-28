@@ -71,7 +71,13 @@ async function testCompilesRootSpecificQueriesAndFreezesSnapshot(): Promise<void
   const overrideIgnore = path.join(POLICIES_DIR, 'override.ignore');
   const primaryDeny = path.join(POLICIES_DIR, 'primary.deny');
   const additionalDeny = path.join(POLICIES_DIR, 'additional.deny');
-  await fs.writeFile(baseIgnore, 'generated/**\n', 'utf-8');
+  await fs.writeFile(
+    baseIgnore,
+    Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('generated/**\n', 'utf-8'),
+    ]),
+  );
   await fs.writeFile(overrideIgnore, '!generated/keep.txt\n', 'utf-8');
   await fs.writeFile(primaryDeny, 'private-primary/**\n', 'utf-8');
   await fs.writeFile(additionalDeny, 'private/**\n', 'utf-8');
@@ -210,6 +216,74 @@ async function testRejectsInvalidUtf8PolicyFile(): Promise<void> {
   assertIncludes(error.message, 'strict UTF-8', 'Invalid UTF-8 must fail closed');
 }
 
+async function testPolicyFileBoundaryDiagnosticsAndSymlinks(): Promise<void> {
+  await resetFixtures();
+  const missingPolicy = path.join(POLICIES_DIR, 'missing.ignore');
+  await writeConfig({
+    version: 1,
+    workspaces: [workspace({
+      fileAccess: { rootDir: { ignoreFiles: [missingPolicy] } },
+    })],
+  });
+
+  let error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  );
+  assertEqual(error.fieldPath, 'fileAccess.rootDir.ignoreFiles[0]', 'Missing policy should identify its reference');
+  assertIncludes(error.message, 'must exist, be accessible', 'Missing policy should use the inaccessible-target diagnostic');
+
+  await writeConfig({
+    version: 1,
+    workspaces: [workspace({
+      fileAccess: { rootDir: { ignoreFiles: [POLICIES_DIR] } },
+    })],
+  });
+  error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  );
+  assertIncludes(error.message, 'regular file', 'A policy directory should fail the regular-file boundary');
+
+  const loopingPolicy = path.join(POLICIES_DIR, 'looping.ignore');
+  try {
+    await fs.symlink(loopingPolicy, loopingPolicy, 'file');
+  } catch (symlinkError: unknown) {
+    const fileError = symlinkError as NodeJS.ErrnoException;
+    if (process.platform === 'win32' && fileError.code === 'EPERM') {
+      console.log('  - Skipped policy symlink assertion: symlink permission unavailable');
+      return;
+    }
+    throw symlinkError;
+  }
+  await writeConfig({
+    version: 1,
+    workspaces: [workspace({
+      fileAccess: { rootDir: { ignoreFiles: [loopingPolicy] } },
+    })],
+  });
+  error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+  );
+  assertIncludes(error.message, 'must exist, be accessible', 'A symlink loop should use the inaccessible-target diagnostic');
+
+  await fs.rm(loopingPolicy);
+  const targetPolicy = path.join(POLICIES_DIR, 'target.ignore');
+  const linkedPolicy = path.join(POLICIES_DIR, 'linked.ignore');
+  await fs.writeFile(targetPolicy, 'linked/**\n', 'utf-8');
+  await fs.symlink(targetPolicy, linkedPolicy, 'file');
+  await writeConfig({
+    version: 1,
+    workspaces: [workspace({
+      fileAccess: { rootDir: { ignoreFiles: [linkedPolicy] } },
+    })],
+  });
+
+  const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} });
+  assert(
+    snapshot.fileAccessPolicyContext.roots[0]?.ignore.isIgnored('linked/output.txt') === true,
+    'A policy symlink should load when its opened target is a regular file',
+  );
+}
+
 async function testRejectsUnassociatedAdditionalRootKey(): Promise<void> {
   await resetFixtures();
   await writeConfig({
@@ -255,6 +329,7 @@ async function main(): Promise<void> {
       { name: 'only selected workspace policy files enter snapshot', run: testOnlySelectedWorkspacePolicyFilesEnterSnapshot },
       { name: 'does not read unselected workspace policy files', run: testDoesNotReadUnselectedWorkspacePolicyFiles },
       { name: 'rejects invalid UTF-8 policy file', run: testRejectsInvalidUtf8PolicyFile },
+      { name: 'enforces policy file boundary diagnostics and symlink behavior', run: testPolicyFileBoundaryDiagnosticsAndSymlinks },
       { name: 'rejects unassociated additional root key', run: testRejectsUnassociatedAdditionalRootKey },
       { name: 'fileAccess cannot be env overridden', run: testFileAccessCannotBeEnvOverridden },
     ],

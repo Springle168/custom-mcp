@@ -40,6 +40,13 @@ async function writeBomJson(filePath: string, value: unknown): Promise<void> {
   await fs.writeFile(filePath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), json]));
 }
 
+async function writeDoubleBomJson(filePath: string, value: unknown): Promise<void> {
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  const json = Buffer.from(JSON.stringify(value, null, 2), 'utf-8');
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, Buffer.concat([bom, bom, json]));
+}
+
 function reference(id: string, toolDefinitionFile: string): Record<string, unknown> {
   return { id, toolDefinitionFile };
 }
@@ -403,6 +410,26 @@ async function testReferencedDefinitionFailuresUseActualFileAndReferenceId(): Pr
   assertIncludes(error.message, 'missing-ref', 'Regular-file failure should retain reference id');
 }
 
+async function testRejectsDoubleBomJson(): Promise<void> {
+  await resetFixtures();
+  await writeJson(FIRST_DEFINITION_FILE, definition());
+  await writeDoubleBomJson(TOOL_CONFIG_FILE, toolConfig());
+
+  let error = captureConfigError(() =>
+    loadCustomToolConfig(TOOL_CONFIG_FILE, NO_BUILT_IN_TOOL_NAMES)
+  );
+  assertEqual(error.code, 'config_json_invalid', 'A second Tool config BOM should be JSON content');
+  assertEqual(error.configFilePath, TOOL_CONFIG_FILE, 'Double-BOM Tool config failure should identify its file');
+
+  await writeJson(TOOL_CONFIG_FILE, toolConfig());
+  await writeDoubleBomJson(FIRST_DEFINITION_FILE, definition());
+  error = captureConfigError(() =>
+    loadCustomToolConfig(TOOL_CONFIG_FILE, NO_BUILT_IN_TOOL_NAMES)
+  );
+  assertEqual(error.code, 'config_json_invalid', 'A second definition BOM should be JSON content');
+  assertEqual(error.configFilePath, FIRST_DEFINITION_FILE, 'Double-BOM definition failure should identify its file');
+}
+
 async function testRejectsDuplicateCustomNamesAtToolConfigBoundary(): Promise<void> {
   await resetFixtures();
   await writeJson(FIRST_DEFINITION_FILE, definition('same-name'));
@@ -494,6 +521,7 @@ async function main(): Promise<void> {
       { name: 'rejects strict definition shell and protocol shape', run: testRejectsStrictDefinitionShellAndProtocolShape },
       { name: 'compiles schemas in isolated resolver contexts', run: testCompilesSchemasInIsolatedResolverContexts },
       { name: 'referenced definition failures use actual file and reference id', run: testReferencedDefinitionFailuresUseActualFileAndReferenceId },
+      { name: 'rejects double-BOM JSON documents', run: testRejectsDoubleBomJson },
       { name: 'rejects duplicate custom names at Tool config boundary', run: testRejectsDuplicateCustomNamesAtToolConfigBoundary },
       { name: 'loads external routing config from v2 Tool config', run: testLoadsExternalRoutingConfigFromV2ToolConfig },
       { name: 'rejects external route for built-in override', run: testRejectsExternalRouteForBuiltInOverride },
