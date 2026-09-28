@@ -54,6 +54,14 @@ async function writeGlobalConfig(config: unknown): Promise<void> {
   await writeSplitConfigFixture(CONFIG_FILE, config);
 }
 
+async function prependBom(filePath: string): Promise<void> {
+  const contents = await fs.readFile(filePath);
+  await fs.writeFile(
+    filePath,
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), contents]),
+  );
+}
+
 function captureConfigError(run: () => unknown): ConfigError {
   try {
     run();
@@ -304,6 +312,48 @@ async function testInvalidJsonThrowsStructuredError(): Promise<void> {
   assertEqual(error.configFilePath, CONFIG_FILE, 'Invalid JSON error should include the config file path');
 }
 
+async function testAcceptsOneBomAndRejectsTwo(): Promise<void> {
+  await resetFixtures();
+  await writeGlobalConfig(createGlobalConfig());
+  await prependBom(CONFIG_FILE);
+  await prependBom(WORKSPACE_CONFIG_FILE);
+
+  const snapshot = loadRuntimeConfig({
+    homeDir: HOME_DIR,
+    workspaceId: 'primary-workspace',
+    env: {},
+  });
+  assertEqual(snapshot.workspaceId, 'primary-workspace', 'One BOM should be accepted in both configuration layers');
+
+  await prependBom(WORKSPACE_CONFIG_FILE);
+  let error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary-workspace', env: {} })
+  );
+  assertEqual(error.code, 'config_json_invalid', 'A second workspace BOM should be treated as JSON content');
+  assertEqual(error.configFilePath, WORKSPACE_CONFIG_FILE, 'Double-BOM workspace failure should identify its file');
+
+  await resetFixtures();
+  await writeGlobalConfig(createGlobalConfig());
+  await prependBom(CONFIG_FILE);
+  await prependBom(CONFIG_FILE);
+  error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary-workspace', env: {} })
+  );
+  assertEqual(error.code, 'config_json_invalid', 'A second global BOM should be treated as JSON content');
+  assertEqual(error.configFilePath, CONFIG_FILE, 'Double-BOM global failure should identify its file');
+}
+
+async function testRejectsNonRegularGlobalConfig(): Promise<void> {
+  await resetFixtures();
+  await fs.mkdir(CONFIG_FILE);
+
+  const error = captureConfigError(() =>
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary-workspace', env: {} })
+  );
+  assertEqual(error.code, 'config_file_read_failed', 'A directory should fail at the file-reading boundary');
+  assertIncludes(error.message, 'regular file', 'A directory should produce a regular-file diagnostic');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing runtime config loading',
@@ -316,6 +366,8 @@ async function main(): Promise<void> {
       { name: 'missing config throws without process.exit', run: testMissingConfigThrowsWithoutProcessExit },
       { name: 'does not read current directory config.json', run: testDoesNotReadCurrentDirectoryConfigJson },
       { name: 'invalid JSON throws structured error', run: testInvalidJsonThrowsStructuredError },
+      { name: 'accepts one BOM and rejects two', run: testAcceptsOneBomAndRejectsTwo },
+      { name: 'rejects a non-regular global config', run: testRejectsNonRegularGlobalConfig },
     ],
   });
 }

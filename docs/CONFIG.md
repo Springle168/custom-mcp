@@ -87,7 +87,9 @@ CompiledWorkspaceToolCatalog
 
 workspace `tools` 先解析 tool config path 与未决 exposure selector。selected workspace 引用的 Tool config v2 和全部 definitions 随后读取并编译；`externalRoutingConfigFile` 存在时，还会读取并校验 External routing config、显式 Processor registry 与每条 route endpoint，按 definition reference `id` 编译 route binding。catalog compiler 合并内置 registry 与 custom definitions，再校验 selector 成员；至少有一条 route 时才创建共享 external runtime。definitions、validators、executor bindings 和 exposure 归独立的 compiled catalog 所有，不进入 runtime snapshot。
 
-配置文件和策略文件在启动期读取。`ConfigStore` 只暴露只读 snapshot 与 identity，不提供 watcher、reload apply 或 snapshot mutation API；修改配置或策略后需要重启服务。工具层只消费由 snapshot 派生的 `ToolRuntimeContext`，不直接读取配置文件。
+配置文件和策略文件在启动期读取。所有 strict UTF-8 配置文本通过共享的普通文件边界打开：先打开目标，再对同一文件描述符确认普通文件类型并读取，从而确保类型检查与实际读取针对同一 symlink 最终目标。JSON 文件随后进入共享 JSON 解析与诊断边界，策略文本则进入 field-aware policy 编译边界。
+
+`ConfigStore` 只暴露只读 snapshot 与 identity，不提供 watcher、reload apply 或 snapshot mutation API；修改配置或策略后需要重启服务。工具层只消费由 snapshot 派生的 `ToolRuntimeContext`，不直接读取配置文件。
 
 ---
 

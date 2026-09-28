@@ -245,6 +245,11 @@ async function testSelectedWorkspaceFileReadFailuresAreStructured(): Promise<voi
   );
   assertEqual(missing.code, 'config_file_not_found', 'Missing selected workspace file should have a precise code');
   assertEqual(missing.configFilePath, WORKSPACE_CONFIG_A, 'Missing workspace error should point to the reference target');
+  assertIncludes(
+    missing.suggestion,
+    'fix its configFile entry in the global config',
+    'Missing workspace guidance should retain the global reference recovery action',
+  );
 
   await fs.writeFile(WORKSPACE_CONFIG_A, Buffer.from([0xc3, 0x28]));
   const invalidUtf8 = captureConfigError(() =>

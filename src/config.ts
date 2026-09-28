@@ -1,4 +1,3 @@
-import { readFileSync, statSync } from 'node:fs';
 import {
   buildRuntimeConfigSnapshot,
   type RuntimeConfigSnapshot,
@@ -12,6 +11,7 @@ import {
   type DefaultGlobalConfigPathOptions,
 } from './config/global-config-path.js';
 import { parseGlobalConfig } from './config/global-config-schema.js';
+import { readJsonFile } from './config/json-file.js';
 import { parseWorkspaceConfig } from './config/schema.js';
 import type { ParsedWorkspaceToolsConfig } from './config/tool-exposure.js';
 import {
@@ -88,7 +88,10 @@ export function loadRuntimeConfigWithIdentity(
   const location = getDefaultGlobalConfigPath(options);
   const defaultLogsDir = getDefaultGlobalLogsDir(options);
   const globalConfig = parseGlobalConfig(
-    readJsonConfigFile(location.configFilePath, 'global'),
+    readJsonFile(location.configFilePath, {
+      label: 'Global config file',
+      notFoundSuggestion: `Create ${location.configFilePath}.\nMinimum global config:\n${MINIMAL_GLOBAL_CONFIG_EXAMPLE}`,
+    }),
     { configFilePath: location.configFilePath },
   );
   const reference = selectWorkspaceReference({
@@ -97,7 +100,10 @@ export function loadRuntimeConfigWithIdentity(
     workspaceId: options.workspaceId,
   });
   const parsedWorkspace = parseWorkspaceConfig(
-    readJsonConfigFile(reference.configFile, 'workspace'),
+    readJsonFile(reference.configFile, {
+      label: 'Workspace config file',
+      notFoundSuggestion: `Create the referenced workspace config file at ${reference.configFile}, or fix its configFile entry in the global config.`,
+    }),
     { configFilePath: reference.configFile },
   );
 
@@ -147,78 +153,6 @@ export function loadRuntimeConfigWithIdentity(
       configFilePath: reference.configFile,
       message,
       suggestion: `Fix the configuration in ${reference.configFile} and restart the server.`,
-      cause: err,
-    });
-  }
-}
-
-function readJsonConfigFile(
-  configFilePath: string,
-  kind: 'global' | 'workspace',
-): unknown {
-  const label = kind === 'global' ? 'Global config file' : 'Workspace config file';
-
-  let raw: Buffer;
-  try {
-    const stats = statSync(configFilePath);
-    if (!stats.isFile()) {
-      throw new ConfigError({
-        code: 'config_file_read_failed',
-        configFilePath,
-        message: `${label} must be a regular file: ${configFilePath}`,
-        suggestion: 'Point the configuration reference to a readable JSON file.',
-      });
-    }
-    raw = readFileSync(configFilePath);
-  } catch (err: unknown) {
-    if (err instanceof ConfigError) {
-      throw err;
-    }
-
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') {
-      throw new ConfigError({
-        code: 'config_file_not_found',
-        configFilePath,
-        message: `${label} does not exist: ${configFilePath}`,
-        suggestion: kind === 'global'
-          ? `Create ${configFilePath}.\nMinimum global config:\n${MINIMAL_GLOBAL_CONFIG_EXAMPLE}`
-          : `Create the referenced workspace config file at ${configFilePath}, or fix its configFile entry in the global config.`,
-        cause: err,
-      });
-    }
-
-    throw new ConfigError({
-      code: 'config_file_read_failed',
-      configFilePath,
-      message: `Failed to read ${label.toLowerCase()} at ${configFilePath}: ${error.message}`,
-      suggestion: 'Check that the file exists, is a regular file, and that the current user can read it.',
-      cause: err,
-    });
-  }
-
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(raw);
-  } catch (err: unknown) {
-    throw new ConfigError({
-      code: 'config_file_read_failed',
-      configFilePath,
-      message: `${label} must contain valid UTF-8 text: ${configFilePath}`,
-      suggestion: 'Save the JSON file as UTF-8 and restart the server.',
-      cause: err,
-    });
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new ConfigError({
-      code: 'config_json_invalid',
-      configFilePath,
-      message: `${label} contains invalid JSON: ${message}`,
-      suggestion: `Fix the JSON syntax in ${configFilePath} and restart the server.`,
       cause: err,
     });
   }
