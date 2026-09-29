@@ -11,6 +11,8 @@ import type {
   TransportSendOptions,
 } from '@modelcontextprotocol/sdk/shared/transport.js';
 
+const MAX_LATE_RESPONSE_TOMBSTONES = 1_024;
+
 interface Deferred<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T | PromiseLike<T>) => void;
@@ -145,7 +147,7 @@ export class TrackedMcpTransport implements Transport {
     } catch (error: unknown) {
       finishRequestSend?.();
       finishCancellationSend?.();
-      this.#markTransportFailure(request?.id ?? cancellationId);
+      if (request !== undefined) this.#markTransportFailure(request.id);
       throw error;
     }
     void sent.then(
@@ -159,8 +161,8 @@ export class TrackedMcpTransport implements Transport {
         if (requestExchange?.requestHttpResponseStarted === true) {
           requestExchange.protocolFailed = true;
           this.#hooks.onProtocolError?.();
-        } else {
-          this.#markTransportFailure(request?.id ?? cancellationId);
+        } else if (request !== undefined) {
+          this.#markTransportFailure(request.id);
         }
       },
     );
@@ -210,10 +212,7 @@ export class TrackedMcpTransport implements Transport {
       } catch (error: unknown) {
         finishBody?.();
         if (init?.method === 'GET') this.#hooks.onSharedStreamTerminated?.();
-        const failedRequestId = requestId ?? cancellationId;
-        if (failedRequestId !== undefined) {
-          this.#markTransportFailure(failedRequestId);
-        }
+        if (requestId !== undefined) this.#markTransportFailure(requestId);
         throw error;
       }
 
@@ -223,6 +222,9 @@ export class TrackedMcpTransport implements Transport {
       if (init?.method === 'GET') {
         const sharedSse = response.ok
           && response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') === true;
+        if (!sharedSse && response.status !== 405) {
+          this.#hooks.onSharedStreamTerminated?.();
+        }
         return sharedSse
           ? wrapResponseBody(response, () => this.#hooks.onSharedStreamTerminated?.())
           : response;
@@ -232,17 +234,18 @@ export class TrackedMcpTransport implements Transport {
       }
       return wrapResponseBody(response, () => {
         finishBody();
-        if (
-          requestId !== undefined
-          && exchange !== undefined
-          && !exchange.responseSeen
-          && response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') === true
-          && !exchange.callerSettled
-        ) {
+        if (requestId === undefined || exchange === undefined) return;
+        if (response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') !== true) return;
+
+        // The SDK's decoder/parser pipeline may publish the final SSE event one
+        // turn after the wrapped source observes EOF. Recheck after that turn
+        // before treating an event-less stream end as terminal.
+        setTimeout(() => {
+          if (exchange.responseSeen || exchange.callerSettled) return;
           exchange.terminalBodyFailure = true;
           exchange.transportFailed = true;
           this.#hooks.onRequestBodyTerminated?.(requestId);
-        }
+        }, 0);
       });
     };
   }
@@ -303,7 +306,14 @@ export class TrackedMcpTransport implements Transport {
     if (this.#exchanges.get(exchange.requestId) === exchange) {
       this.#exchanges.delete(exchange.requestId);
     }
-    if (!exchange.responseSeen) this.#settledRequestIds.add(exchange.requestId);
+    if (!exchange.responseSeen) {
+      this.#settledRequestIds.add(exchange.requestId);
+      if (this.#settledRequestIds.size > MAX_LATE_RESPONSE_TOMBSTONES) {
+        // Dropping an ID would allow a later payload to reach the SDK after its
+        // handler was removed. Replace the session instead and clear all state.
+        void this.close().catch(() => undefined);
+      }
+    }
     exchange.drain.resolve();
   }
 
