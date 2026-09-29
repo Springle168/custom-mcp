@@ -1,6 +1,0 @@
-{
-  "version": 1,
-  "url": "http://127.0.0.1:43121/external/v1/encoded-tool-calls",
-  "timeoutMs": 30000,
-  "headers": {}
-}

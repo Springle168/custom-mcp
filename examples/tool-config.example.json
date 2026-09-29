@@ -8,10 +8,6 @@
     {
       "id": "external-echo",
       "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/tool-definition.json"
-    },
-    {
-      "id": "external-echo-processed",
-      "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/processed-tool-definition.json"
     }
   ],
   "externalRoutingConfigFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/external-routing-config.json"
