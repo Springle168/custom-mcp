@@ -1,9 +1,10 @@
 {
-  "version": 1,
+  "version": 2,
   "processorConfigFile": "C:/Users/username/.custom-mcp/processors/processor-config.json",
   "routes": [
     {
       "definitionId": "external-echo",
+      "routingMode": "http",
       "httpEndpointConfigFile": "C:/Users/username/.custom-mcp/processors/http-endpoint-config.json",
       "routingStrategy": {
         "request-to-external": [
@@ -20,6 +21,7 @@
     },
     {
       "definitionId": "external-echo-processed",
+      "routingMode": "http",
       "httpEndpointConfigFile": "C:/Users/username/.custom-mcp/processors/processed-http-endpoint-config.json",
       "routingStrategy": {
         "request-to-external": [

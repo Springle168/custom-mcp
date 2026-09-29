@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { validateHeaderName, validateHeaderValue } from 'node:http';
 import * as path from 'node:path';
 import { MIMEType } from 'node:util';
@@ -51,13 +51,22 @@ export interface ExternalHttpEndpointConfig {
   readonly headers: Readonly<Record<string, string>>;
 }
 
+export interface ExternalMcpServerConfig {
+  /** Native real path; the workspace-owned downstream connection identity. */
+  readonly identity: string;
+  readonly url: string;
+  readonly timeoutMs: number;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
 export interface ExternalToolDefinitionBinding {
   readonly definitionId: string;
   readonly toolName: string;
   readonly builtIn: boolean;
 }
 
-export interface CompiledExternalRoute {
+export interface CompiledHttpRoute {
+  readonly routingMode: 'http';
   readonly definitionId: string;
   readonly toolName: string;
   readonly endpointConfigFilePath: string;
@@ -66,21 +75,43 @@ export interface CompiledExternalRoute {
   readonly responseStage: ExternalResponseRoutingStage;
 }
 
+export interface CompiledMcpRoute {
+  readonly routingMode: 'mcp';
+  readonly definitionId: string;
+  readonly toolName: string;
+  readonly serverConfigFilePath: string;
+  readonly server: ExternalMcpServerConfig;
+}
+
+export type CompiledExternalRoute = CompiledHttpRoute | CompiledMcpRoute;
+
 /** Fully validated, startup-stable routing configuration for one workspace. */
 export interface CompiledExternalRoutingConfig {
   readonly configFilePath: string;
   readonly processorConfigFilePath?: string;
   readonly processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>;
+  /** Declaration order, including routes hidden by workspace exposure. */
+  readonly routes: readonly CompiledExternalRoute[];
   readonly routesByDefinitionId: ReadonlyMap<string, CompiledExternalRoute>;
 }
 
-interface ParsedExternalRoute {
+interface ParsedHttpRoute {
   readonly index: number;
+  readonly routingMode: 'http';
   readonly definitionId: string;
   readonly endpointConfigFilePath: string;
   readonly requestStage: ExternalRequestRoutingStage;
   readonly responseStage: ExternalResponseRoutingStage;
 }
+
+interface ParsedMcpRoute {
+  readonly index: number;
+  readonly routingMode: 'mcp';
+  readonly definitionId: string;
+  readonly serverConfigFilePath: string;
+}
+
+type ParsedExternalRoute = ParsedHttpRoute | ParsedMcpRoute;
 
 interface ParsedExternalRoutingConfig {
   readonly processorConfigFilePath?: string;
@@ -88,17 +119,20 @@ interface ParsedExternalRoutingConfig {
 }
 
 const EXTERNAL_ROUTING_CONFIG_FIELDS = new Set(['version', 'processorConfigFile', 'routes']);
-const ROUTE_FIELDS = new Set([
+const HTTP_ROUTE_FIELDS = new Set([
   'definitionId',
+  'routingMode',
   'httpEndpointConfigFile',
   'routingStrategy',
 ]);
+const MCP_ROUTE_FIELDS = new Set(['definitionId', 'routingMode', 'mcpServerConfigFile']);
 const ROUTING_STRATEGY_FIELDS = new Set([
   'request-to-external',
   'response-from-external',
 ]);
 const PROCESSOR_CONFIG_FIELDS = new Set(['version', 'processors']);
 const ENDPOINT_CONFIG_FIELDS = new Set(['version', 'url', 'timeoutMs', 'headers']);
+const MCP_SERVER_CONFIG_FIELDS = new Set(['version', 'url', 'timeoutMs', 'headers']);
 const PROCESSOR_FIELDS = new Set([
   'name',
   'executable',
@@ -131,6 +165,13 @@ const FORBIDDEN_ENDPOINT_HEADERS = new Set([
   'proxy-authorization',
   'proxy-connection',
 ]);
+const FORBIDDEN_MCP_HEADERS = new Set([
+  ...FORBIDDEN_ENDPOINT_HEADERS,
+  'accept',
+  'mcp-session-id',
+  'mcp-protocol-version',
+  'last-event-id',
+]);
 
 /**
  * Loads every referenced routing artifact and validates cross-file bindings.
@@ -159,7 +200,10 @@ export function loadExternalRoutingConfig(
     definition,
   ]));
   const endpointsByPath = new Map<string, ExternalHttpEndpointConfig>();
+  const serversByRealPath = new Map<string, ExternalMcpServerConfig>();
+  const serversByDeclaredPath = new Map<string, ExternalMcpServerConfig>();
   const routesByDefinitionId = new Map<string, CompiledExternalRoute>();
+  const routes: CompiledExternalRoute[] = [];
 
   for (const route of parsedConfig.routes) {
     const definitionPath = `routes[${route.index}].definitionId`;
@@ -179,38 +223,76 @@ export function loadExternalRoutingConfig(
       );
     }
 
-    assertStageProcessorReference(
-      route.requestStage,
-      `routes[${route.index}].routingStrategy.request-to-external[0]`,
-      parsedConfig.processorConfigFilePath,
-      processorsByName,
-      validatedConfigFilePath,
-    );
-    assertStageProcessorReference(
-      route.responseStage,
-      `routes[${route.index}].routingStrategy.response-from-external[0]`,
-      parsedConfig.processorConfigFilePath,
-      processorsByName,
-      validatedConfigFilePath,
-    );
+    let compiledRoute: CompiledExternalRoute;
+    if (route.routingMode === 'http') {
+      assertStageProcessorReference(
+        route.requestStage,
+        `routes[${route.index}].routingStrategy.request-to-external[0]`,
+        parsedConfig.processorConfigFilePath,
+        processorsByName,
+        validatedConfigFilePath,
+      );
+      assertStageProcessorReference(
+        route.responseStage,
+        `routes[${route.index}].routingStrategy.response-from-external[0]`,
+        parsedConfig.processorConfigFilePath,
+        processorsByName,
+        validatedConfigFilePath,
+      );
 
-    let endpoint = endpointsByPath.get(route.endpointConfigFilePath);
-    if (endpoint === undefined) {
-      const rawEndpoint = readJsonFile(route.endpointConfigFilePath, {
-        label: 'External routing HTTP endpoint config file',
+      let endpoint = endpointsByPath.get(route.endpointConfigFilePath);
+      if (endpoint === undefined) {
+        const rawEndpoint = readJsonFile(route.endpointConfigFilePath, {
+          label: 'External routing HTTP endpoint config file',
+        });
+        endpoint = parseEndpointConfig(rawEndpoint, route.endpointConfigFilePath);
+        endpointsByPath.set(route.endpointConfigFilePath, endpoint);
+      }
+      compiledRoute = deepFreeze({
+        routingMode: 'http',
+        definitionId: route.definitionId,
+        toolName: definition.toolName,
+        endpointConfigFilePath: route.endpointConfigFilePath,
+        endpoint,
+        requestStage: route.requestStage,
+        responseStage: route.responseStage,
       });
-      endpoint = parseEndpointConfig(rawEndpoint, route.endpointConfigFilePath);
-      endpointsByPath.set(route.endpointConfigFilePath, endpoint);
+    } else {
+      let server = serversByDeclaredPath.get(route.serverConfigFilePath);
+      if (server === undefined) {
+        // Read at the declared path first so file/JSON failures retain their source identity.
+        const rawServer = readJsonFile(route.serverConfigFilePath, {
+          label: 'External routing MCP server config file',
+        });
+        let identity: string;
+        try {
+          identity = realpathSync.native(route.serverConfigFilePath);
+        } catch (cause: unknown) {
+          throw new ConfigError({
+            code: 'config_file_read_failed',
+            configFilePath: route.serverConfigFilePath,
+            message: `Failed to resolve MCP server config file at ${route.serverConfigFilePath}.`,
+            suggestion: 'Check the referenced file and its symlink target, then restart the server.',
+            cause,
+          });
+        }
+        server = serversByRealPath.get(identity);
+        if (server === undefined) {
+          server = parseMcpServerConfig(rawServer, route.serverConfigFilePath, identity);
+          serversByRealPath.set(identity, server);
+        }
+        serversByDeclaredPath.set(route.serverConfigFilePath, server);
+      }
+      compiledRoute = deepFreeze({
+        routingMode: 'mcp',
+        definitionId: route.definitionId,
+        toolName: definition.toolName,
+        serverConfigFilePath: route.serverConfigFilePath,
+        server,
+      });
     }
-
-    routesByDefinitionId.set(route.definitionId, deepFreeze({
-      definitionId: route.definitionId,
-      toolName: definition.toolName,
-      endpointConfigFilePath: route.endpointConfigFilePath,
-      endpoint,
-      requestStage: route.requestStage,
-      responseStage: route.responseStage,
-    }));
+    routes.push(compiledRoute);
+    routesByDefinitionId.set(route.definitionId, compiledRoute);
   }
 
   return Object.freeze({
@@ -219,6 +301,7 @@ export function loadExternalRoutingConfig(
       ? {}
       : { processorConfigFilePath: parsedConfig.processorConfigFilePath }),
     processorsByName: immutableMap(processorsByName),
+    routes: Object.freeze(routes),
     routesByDefinitionId: immutableMap(routesByDefinitionId),
   });
 }
@@ -242,11 +325,11 @@ function parseExternalRoutingConfig(
     fieldPath,
     `${fieldPath} is required.`,
   ));
-  if (rawConfig.version !== 1) {
+  if (rawConfig.version !== 2) {
     failConfig(
       configFilePath,
       'version',
-      'version must be the number 1. The server only supports external routing config schema version 1.',
+      'version must be the number 2. The server only supports external routing config schema version 2.',
     );
   }
   if (!Array.isArray(rawConfig.routes)) {
@@ -295,12 +378,20 @@ function parseExternalRoute(
     fieldPath,
     `${fieldPath} must be a JSON object.`,
   ));
-  assertKnownFields(rawRoute, ROUTE_FIELDS, (field) => failConfig(
+  if (rawRoute.routingMode !== 'http' && rawRoute.routingMode !== 'mcp') {
+    failConfig(
+      configFilePath,
+      `${fieldPath}.routingMode`,
+      `${fieldPath}.routingMode must be exactly "http" or "mcp".`,
+    );
+  }
+  const fields = rawRoute.routingMode === 'http' ? HTTP_ROUTE_FIELDS : MCP_ROUTE_FIELDS;
+  assertKnownFields(rawRoute, fields, (field) => failConfig(
     configFilePath,
     `${fieldPath}.${field}`,
     `Unknown route field ${fieldPath}.${field}. Remove it.`,
   ));
-  assertRequiredFields(rawRoute, ROUTE_FIELDS, (field) => failConfig(
+  assertRequiredFields(rawRoute, fields, (field) => failConfig(
     configFilePath,
     `${fieldPath}.${field}`,
     `${fieldPath}.${field} is required.`,
@@ -310,6 +401,15 @@ function parseExternalRoute(
     `${fieldPath}.definitionId`,
     configFilePath,
   );
+  if (rawRoute.routingMode === 'mcp') {
+    const serverConfigFilePath = unwrapValuePolicy(
+      configFilePath,
+      readLocalAbsolutePath(rawRoute.mcpServerConfigFile, {
+        fieldPath: `${fieldPath}.mcpServerConfigFile`,
+      }),
+    );
+    return Object.freeze({ index, routingMode: 'mcp', definitionId, serverConfigFilePath });
+  }
   const endpointConfigFilePath = unwrapValuePolicy(
     configFilePath,
     readLocalAbsolutePath(rawRoute.httpEndpointConfigFile, {
@@ -323,6 +423,7 @@ function parseExternalRoute(
   );
   return deepFreeze({
     index,
+    routingMode: 'http' as const,
     definitionId,
     endpointConfigFilePath,
     requestStage: routing.request,
@@ -376,7 +477,7 @@ function readSingleStageArray(
     failConfig(
       configFilePath,
       fieldPath,
-      `${fieldPath} must contain exactly one stage in external routing config schema version 1.`,
+      `${fieldPath} must contain exactly one stage in external routing config schema version 2.`,
     );
   }
   return value as unknown as readonly [JsonValue];
@@ -729,9 +830,59 @@ function parseEndpointConfig(
   });
 }
 
+function parseMcpServerConfig(
+  value: JsonValue,
+  serverConfigFilePath: string,
+  identity: string,
+): ExternalMcpServerConfig {
+  const rawConfig = readObject(value, () => failConfig(
+    serverConfigFilePath,
+    undefined,
+    'External routing MCP server config file must contain a JSON object.',
+  ));
+  assertKnownFields(rawConfig, MCP_SERVER_CONFIG_FIELDS, (fieldPath) => failConfig(
+    serverConfigFilePath,
+    fieldPath,
+    `Unknown MCP server config field ${fieldPath}. Remove it.`,
+  ));
+  assertRequiredFields(rawConfig, new Set(['version', 'url', 'timeoutMs']), (fieldPath) =>
+    failConfig(serverConfigFilePath, fieldPath, `${fieldPath} is required.`));
+  if (rawConfig.version !== 1) {
+    failConfig(
+      serverConfigFilePath,
+      'version',
+      'version must be the number 1. The server only supports MCP server config schema version 1.',
+    );
+  }
+  const url = readEndpointUrl(rawConfig.url, serverConfigFilePath);
+  if (!/^https?:\/\/[^/?#]+/i.test(url)) {
+    failConfig(
+      serverConfigFilePath,
+      'url',
+      'url must be an absolute http: or https: URL with a hostname.',
+    );
+  }
+  const timeoutMs = unwrapValuePolicy(
+    serverConfigFilePath,
+    readJsonPositiveInteger(rawConfig.timeoutMs, {
+      fieldPath: 'timeoutMs',
+      max: MAX_TIMEOUT_MS,
+      rangeDescription: `in the range 1..${MAX_TIMEOUT_MS}`,
+      label: 'timeoutMs',
+    }),
+  );
+  return deepFreeze({
+    identity,
+    url,
+    timeoutMs,
+    headers: parseEndpointHeaders(rawConfig.headers, serverConfigFilePath, FORBIDDEN_MCP_HEADERS),
+  });
+}
+
 function parseEndpointHeaders(
   value: JsonValue | undefined,
   endpointConfigFilePath: string,
+  forbiddenHeaders: ReadonlySet<string> = FORBIDDEN_ENDPOINT_HEADERS,
 ): Readonly<Record<string, string>> {
   if (value === undefined) return Object.freeze({});
   const rawHeaders = readObject(value, () => failConfig(
@@ -764,7 +915,7 @@ function parseEndpointHeaders(
         `headers must not contain duplicate field names ignoring case: "${name}".`,
       );
     }
-    if (FORBIDDEN_ENDPOINT_HEADERS.has(normalizedName)) {
+    if (forbiddenHeaders.has(normalizedName)) {
       failConfig(
         endpointConfigFilePath,
         fieldPath,

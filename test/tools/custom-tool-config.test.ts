@@ -84,12 +84,13 @@ function directRoutingStrategy(): Record<string, unknown> {
 function externalRoutingConfig(
   routes: unknown[] = [{
     definitionId: 'external-reference',
+    routingMode: 'http',
     httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
     routingStrategy: directRoutingStrategy(),
   }],
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return { version: 1, routes, ...overrides };
+  return { version: 2, routes, ...overrides };
 }
 
 function externalEndpointConfig(): Record<string, unknown> {
@@ -470,9 +471,12 @@ async function testLoadsExternalRoutingConfigFromV2ToolConfig(): Promise<void> {
   const compiledRoute = externalRouting?.routesByDefinitionId.get('external-reference');
   assert(externalRouting !== undefined, 'externalRoutingConfigFile should load external routing');
   assertEqual(externalRouting.configFilePath, EXTERNAL_ROUTING_CONFIG_FILE, 'External routing config source should be retained');
+  assertEqual(externalRouting.routes[0], compiledRoute, 'Ordered routes and binding lookup should share the compiled route');
   assertEqual(compiledRoute?.toolName, 'external.custom', 'Route should bind by definition reference id');
-  assertEqual(compiledRoute?.endpointConfigFilePath, ENDPOINT_CONFIG_FILE, 'Route should retain its endpoint source');
-  assertEqual(compiledRoute?.endpoint.url, 'https://external.example.test/tool-calls', 'Route endpoint should be compiled');
+  assertEqual(compiledRoute?.routingMode, 'http', 'Route should retain its HTTP mode');
+  assert(compiledRoute?.routingMode === 'http', 'Expected a compiled HTTP route');
+  assertEqual(compiledRoute.endpointConfigFilePath, ENDPOINT_CONFIG_FILE, 'Route should retain its endpoint source');
+  assertEqual(compiledRoute.endpoint.url, 'https://external.example.test/tool-calls', 'Route endpoint should be compiled');
   assert(Object.isFrozen(externalRouting), 'Compiled external routing should be immutable');
   assert(Object.isFrozen(compiledRoute), 'Compiled route should be immutable');
 
@@ -492,6 +496,7 @@ async function testRejectsExternalRouteForBuiltInOverride(): Promise<void> {
   await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
     {
       definitionId: 'read-file-override',
+      routingMode: 'http',
       httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
       routingStrategy: directRoutingStrategy(),
     },

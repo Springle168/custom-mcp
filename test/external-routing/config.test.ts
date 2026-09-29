@@ -20,6 +20,8 @@ const EXTERNAL_ROUTING_CONFIG_FILE = path.join(FIXTURES_DIR, 'external-routing-c
 const PROCESSOR_CONFIG_FILE = path.join(FIXTURES_DIR, 'processor-config.json');
 const FIRST_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'first-endpoint-config.json');
 const SECOND_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'second-endpoint-config.json');
+const FIRST_SERVER_CONFIG_FILE = path.join(FIXTURES_DIR, 'first-mcp-server.json');
+const SECOND_SERVER_CONFIG_FILE = path.join(FIXTURES_DIR, 'second-mcp-server.json');
 const EXECUTABLE_FILE = path.join(FIXTURES_DIR, 'processor.exe');
 
 const CUSTOM_DEFINITIONS: readonly ExternalToolDefinitionBinding[] = Object.freeze([
@@ -52,6 +54,16 @@ function endpoint(overrides: Record<string, unknown> = {}): Record<string, unkno
   };
 }
 
+function mcpServer(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    version: 1,
+    url: 'http://127.0.0.1:43120/mcp?secret=private',
+    timeoutMs: 60_000,
+    headers: { Authorization: 'Bearer configured-secret', 'X-API-Key': 'key' },
+    ...overrides,
+  };
+}
+
 function directRequest(): Record<string, unknown> {
   return { mode: 'direct' };
 }
@@ -78,10 +90,19 @@ function route(
 ): Record<string, unknown> {
   return {
     definitionId,
+    routingMode: 'http',
     httpEndpointConfigFile,
     routingStrategy: strategy,
     ...overrides,
   };
+}
+
+function mcpRoute(
+  definitionId: string,
+  mcpServerConfigFile: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { definitionId, routingMode: 'mcp', mcpServerConfigFile, ...overrides };
 }
 
 function processor(
@@ -114,7 +135,7 @@ function externalRoutingConfig(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    version: 1,
+    version: 2,
     routes,
     ...overrides,
   };
@@ -162,10 +183,14 @@ async function testLoadsFrozenRoutesWithIndependentEndpoints(): Promise<void> {
   const loaded = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS);
   const firstRoute = loaded.routesByDefinitionId.get('first-route');
   const secondRoute = loaded.routesByDefinitionId.get('second-route');
+  assert(firstRoute?.routingMode === 'http', 'First route should be HTTP');
+  assert(secondRoute?.routingMode === 'http', 'Second route should be HTTP');
 
   assertEqual(loaded.configFilePath, EXTERNAL_ROUTING_CONFIG_FILE, 'Source path should be retained');
   assertEqual(loaded.processorConfigFilePath, PROCESSOR_CONFIG_FILE, 'Processor registry path should be retained');
   assertEqual(loaded.routesByDefinitionId.size, 2, 'Both configured routes should be compiled');
+  assertEqual(loaded.routes[0], firstRoute, 'Ordered routes should retain the first declaration');
+  assertEqual(loaded.routes[1], secondRoute, 'Ordered routes should retain the second declaration');
   assertEqual(loaded.processorsByName.size, 2, 'The full Processor registry should be retained');
   assertEqual(firstRoute?.toolName, 'first.custom', 'Route should resolve its definition id to Tool name');
   assertEqual(firstRoute?.endpointConfigFilePath, FIRST_ENDPOINT_CONFIG_FILE, 'First route should retain its endpoint source');
@@ -188,6 +213,7 @@ async function testLoadsFrozenRoutesWithIndependentEndpoints(): Promise<void> {
   assertEqual(loaded.processorsByName.get('unused-registry-entry')?.name, 'unused-registry-entry', 'Unused Processor registry entries should remain valid');
 
   assert(Object.isFrozen(loaded), 'Compiled routing config should be frozen');
+  assert(Object.isFrozen(loaded.routes), 'Ordered routes should be frozen');
   assert(Object.isFrozen(loaded.routesByDefinitionId), 'Route map should be frozen');
   assertEqual(
     'set' in loaded.routesByDefinitionId,
@@ -240,12 +266,27 @@ async function testRejectsNewSchemaShellAndRouteShape(): Promise<void> {
   assertEqual(error.configFilePath, EXTERNAL_ROUTING_CONFIG_FILE, 'External routing shell errors belong to its file');
   assertEqual(error.fieldPath, 'unexpected', 'Unknown external routing fields should be identified');
 
-  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([], { version: 2 }));
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([], { version: 1 }));
   error = captureConfigError(() => loadExternalRoutingConfig(
     EXTERNAL_ROUTING_CONFIG_FILE,
     CUSTOM_DEFINITIONS,
   ));
-  assertEqual(error.fieldPath, 'version', 'External routing config must only accept version 1');
+  assertEqual(error.fieldPath, 'version', 'External routing config must only accept version 2');
+
+  for (const invalidRoutes of [null, {}, 'routes']) {
+    await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([], { routes: invalidRoutes }));
+    error = captureConfigError(() => loadExternalRoutingConfig(
+      EXTERNAL_ROUTING_CONFIG_FILE,
+      CUSTOM_DEFINITIONS,
+    ));
+    assertEqual(error.fieldPath, 'routes', 'External routing routes must be an array');
+  }
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, { version: 2 });
+  error = captureConfigError(() => loadExternalRoutingConfig(
+    EXTERNAL_ROUTING_CONFIG_FILE,
+    CUSTOM_DEFINITIONS,
+  ));
+  assertEqual(error.fieldPath, 'routes', 'External routing routes are required');
 
   await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([], {
     processorConfigFile: 'relative-processor-config.json',
@@ -269,11 +310,12 @@ async function testRejectsNewSchemaShellAndRouteShape(): Promise<void> {
   await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
     {
       definitionId: 'first-route',
+      routingMode: 'http',
       httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE,
       routingStrategy: routingStrategy(),
     },
   ], {
-    routes: [{ definitionId: 'first-route' }],
+    routes: [{ definitionId: 'first-route', routingMode: 'http' }],
   }));
   error = captureConfigError(() => loadExternalRoutingConfig(
     EXTERNAL_ROUTING_CONFIG_FILE,
@@ -571,6 +613,7 @@ async function testValidatesBodyEncoderMediaTypeAndEndpointHeaderBoundary(): Pro
 
   const loaded = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS);
   const loadedRoute = loaded.routesByDefinitionId.get('first-route');
+  assert(loadedRoute?.routingMode === 'http', 'Body encoder route should be HTTP');
   assertEqual(loadedRoute?.requestStage.mode, 'body-encoder', 'Body encoder should load with a legal media type');
   assertEqual(
     loadedRoute?.requestStage.mode === 'body-encoder' ? loadedRoute.requestStage.contentType : undefined,
@@ -604,6 +647,200 @@ async function testValidatesBodyEncoderMediaTypeAndEndpointHeaderBoundary(): Pro
   assertEqual(error.fieldPath, 'headers["content-type"]', 'Static Content-Type must not compete with request strategy');
 }
 
+async function testEnforcesRouteModesAndCrossModeBindings(): Promise<void> {
+  await resetFixtures();
+  const cases: ReadonlyArray<{ readonly routeValue: unknown; readonly fieldPath: string }> = [
+    { routeValue: { definitionId: 'first-route', mcpServerConfigFile: FIRST_SERVER_CONFIG_FILE }, fieldPath: 'routes[0].routingMode' },
+    { routeValue: mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE, { routingMode: 'unknown' }), fieldPath: 'routes[0].routingMode' },
+    { routeValue: mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE, { routingMode: 42 }), fieldPath: 'routes[0].routingMode' },
+    { routeValue: mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE, { routingStrategy: routingStrategy() }), fieldPath: 'routes[0].routingStrategy' },
+    { routeValue: mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE, { httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE }), fieldPath: 'routes[0].httpEndpointConfigFile' },
+    { routeValue: route('first-route', FIRST_ENDPOINT_CONFIG_FILE, routingStrategy(), { mcpServerConfigFile: FIRST_SERVER_CONFIG_FILE }), fieldPath: 'routes[0].mcpServerConfigFile' },
+    { routeValue: { definitionId: 'first-route', routingMode: 'mcp' }, fieldPath: 'routes[0].mcpServerConfigFile' },
+    { routeValue: { definitionId: 'first-route', routingMode: 'http', httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE }, fieldPath: 'routes[0].routingStrategy' },
+  ];
+  for (const { routeValue, fieldPath } of cases) {
+    await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([routeValue]));
+    const error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+    assertEqual(error.configFilePath, EXTERNAL_ROUTING_CONFIG_FILE, 'Route shape errors belong to the routing config');
+    assertEqual(error.fieldPath, fieldPath, 'Strict mode union should identify its invalid field');
+  }
+
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    route('first-route', FIRST_ENDPOINT_CONFIG_FILE),
+    mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE),
+  ]));
+  let error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+  assertEqual(error.fieldPath, 'routes[1].definitionId', 'Binding identity must be unique across modes');
+
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('missing-route', FIRST_SERVER_CONFIG_FILE),
+  ]));
+  error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+  assertEqual(error.fieldPath, 'routes[0].definitionId', 'MCP route must reference a known definition');
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('built-in-override', FIRST_SERVER_CONFIG_FILE),
+  ]));
+  error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, [
+    { definitionId: 'built-in-override', toolName: 'read_file', builtIn: true },
+  ]));
+  assertEqual(error.fieldPath, 'routes[0].definitionId', 'MCP route cannot bind a built-in override');
+}
+
+async function testMcpServerPathPolicyAndSourceErrors(): Promise<void> {
+  await resetFixtures();
+  for (const invalidPath of [
+    'relative.json', '~/server.json', ' server.json', 'server.json ',
+    '\\\\server\\share\\config.json', '\\\\?\\C:\\server.json',
+    'C:server.json', '\\rooted.json',
+  ]) {
+    await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+      mcpRoute('first-route', invalidPath),
+    ]));
+    const error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+    assertEqual(error.configFilePath, EXTERNAL_ROUTING_CONFIG_FILE, 'Invalid reference belongs to routing config');
+    assertEqual(error.fieldPath, 'routes[0].mcpServerConfigFile', 'MCP server path must use the local absolute path policy');
+  }
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE),
+  ]));
+  let error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+  assertEqual(error.code, 'config_file_not_found', 'Missing MCP server should retain referenced-file error code');
+  assertEqual(error.configFilePath, FIRST_SERVER_CONFIG_FILE, 'Missing MCP server should identify its declared path');
+
+  await fs.writeFile(FIRST_SERVER_CONFIG_FILE, '{invalid', 'utf-8');
+  error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+  assertEqual(error.code, 'config_json_invalid', 'MCP server JSON errors should retain referenced-file error code');
+  assertEqual(error.configFilePath, FIRST_SERVER_CONFIG_FILE, 'Invalid MCP server JSON should identify its declared path');
+}
+
+async function testMcpServerSchemaUrlTimeoutAndHeaders(): Promise<void> {
+  await resetFixtures();
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE),
+  ]));
+  const cases: ReadonlyArray<{
+    readonly value: unknown;
+    readonly fieldPath?: string;
+  }> = [
+    { value: [] },
+    { value: mcpServer({ extra: true }), fieldPath: 'extra' },
+    { value: mcpServer({ version: 2 }), fieldPath: 'version' },
+    { value: mcpServer({ url: undefined }), fieldPath: 'url' },
+    { value: mcpServer({ url: 'ftp://127.0.0.1/mcp' }), fieldPath: 'url' },
+    { value: mcpServer({ url: 'http://user:password@127.0.0.1/mcp' }), fieldPath: 'url' },
+    { value: mcpServer({ url: 'https://127.0.0.1/mcp#secret' }), fieldPath: 'url' },
+    { value: mcpServer({ url: 'http:///mcp' }), fieldPath: 'url' },
+    { value: mcpServer({ timeoutMs: 0 }), fieldPath: 'timeoutMs' },
+    { value: mcpServer({ timeoutMs: 2_147_483_648 }), fieldPath: 'timeoutMs' },
+    { value: mcpServer({ timeoutMs: 1.5 }), fieldPath: 'timeoutMs' },
+    { value: mcpServer({ headers: [] }), fieldPath: 'headers' },
+    { value: mcpServer({ headers: { 'X-Test': 42 } }), fieldPath: 'headers["X-Test"]' },
+    { value: mcpServer({ headers: { 'X-Test': 'bad\u0001value' } }), fieldPath: 'headers["X-Test"]' },
+    { value: mcpServer({ headers: { 'bad name': 'value' } }), fieldPath: 'headers["bad name"]' },
+    { value: mcpServer({ headers: { Authorization: 'first', authorization: 'second' } }), fieldPath: 'headers["authorization"]' },
+  ];
+  for (const { value, fieldPath } of cases) {
+    await writeJson(FIRST_SERVER_CONFIG_FILE, value);
+    const error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+    assertEqual(error.configFilePath, FIRST_SERVER_CONFIG_FILE, 'MCP server validation belongs to server config');
+    assertEqual(error.fieldPath, fieldPath, 'MCP server validation should identify the rejected field');
+  }
+  for (const forbidden of [
+    'Host', 'Content-Length', 'Content-Type', 'Accept', 'Accept-Encoding', 'Transfer-Encoding',
+    'Connection', 'Keep-Alive', 'TE', 'Trailer', 'Upgrade', 'Proxy-Authenticate',
+    'Proxy-Authorization', 'Proxy-Connection', 'mCp-SeSsIoN-Id', 'mcp-protocol-version',
+    'Last-Event-ID',
+  ]) {
+    await writeJson(FIRST_SERVER_CONFIG_FILE, mcpServer({ headers: { [forbidden]: 'configured' } }));
+    const error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+    assertEqual(error.configFilePath, FIRST_SERVER_CONFIG_FILE, 'Reserved MCP header belongs to server config');
+    assertEqual(error.fieldPath, `headers[${JSON.stringify(forbidden)}]`, 'Reserved headers must be rejected case-insensitively');
+  }
+  await writeJson(FIRST_SERVER_CONFIG_FILE, mcpServer({ timeoutMs: 2_147_483_647 }));
+  const routeValue = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS).routes[0];
+  assert(routeValue?.routingMode === 'mcp', 'A valid MCP server config should compile');
+  assertEqual(routeValue.server.timeoutMs, 2_147_483_647, 'Maximum timeout should be accepted');
+  assertEqual(routeValue.server.url, 'http://127.0.0.1:43120/mcp?secret=private', 'Query should remain in endpoint snapshot');
+  assertEqual(routeValue.server.headers.Authorization, 'Bearer configured-secret', 'Authorization is an allowed static header');
+  assert(Object.isFrozen(routeValue.server.headers), 'MCP headers must be frozen');
+  assert(Object.isFrozen(routeValue.server), 'MCP server snapshot must be frozen');
+}
+
+async function testMcpServerRealPathIdentityAndDeclarationOrder(): Promise<void> {
+  await resetFixtures();
+  await fs.mkdir(path.join(FIXTURES_DIR, 'nested'));
+  await writeJson(FIRST_SERVER_CONFIG_FILE, mcpServer());
+  await writeJson(SECOND_SERVER_CONFIG_FILE, mcpServer());
+  const aliasPath = path.join(FIXTURES_DIR, 'nested', '..', 'first-mcp-server.json');
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('second-route', FIRST_SERVER_CONFIG_FILE),
+    mcpRoute('first-route', aliasPath),
+  ]));
+  const shared = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS);
+  const first = shared.routes[0];
+  const alias = shared.routes[1];
+  assert(first?.routingMode === 'mcp' && alias?.routingMode === 'mcp', 'Both routes should be MCP');
+  assertEqual(first.definitionId, 'second-route', 'Routes should preserve declaration order');
+  assertEqual(alias.definitionId, 'first-route', 'Routes should preserve declaration order, not definition order');
+  assertEqual(shared.routesByDefinitionId.get('first-route'), alias, 'Lookup and ordered view share route objects');
+  assertEqual(first.server, alias.server, 'Realpath alias should share a server snapshot');
+  assertEqual(alias.serverConfigFilePath, aliasPath, 'Alias must retain its declared source path');
+  assertEqual(first.server.identity, await fs.realpath(FIRST_SERVER_CONFIG_FILE), 'Server identity must use native realpath');
+  assert(Object.isFrozen(shared.routes), 'Declaration-order view must be immutable');
+
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE),
+    mcpRoute('second-route', SECOND_SERVER_CONFIG_FILE),
+  ]));
+  const separate = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS);
+  const firstSeparate = separate.routes[0];
+  const secondSeparate = separate.routes[1];
+  assert(firstSeparate?.routingMode === 'mcp' && secondSeparate?.routingMode === 'mcp', 'Both routes should be MCP');
+  assert(firstSeparate.server !== secondSeparate.server, 'Separate real paths with equal content must not merge');
+  assert(firstSeparate.server.identity !== secondSeparate.server.identity, 'Separate server identities must stay distinct');
+
+  const symlinkPath = path.join(FIXTURES_DIR, 'server-link.json');
+  try {
+    await fs.symlink(FIRST_SERVER_CONFIG_FILE, symlinkPath, 'file');
+  } catch (error: unknown) {
+    // Some Windows hosts disallow symlink creation without Developer Mode or privilege.
+    if (process.platform === 'win32' && typeof error === 'object' && error !== null &&
+        'code' in error && (error.code === 'EPERM' || error.code === 'EACCES')) return;
+    throw error;
+  }
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    mcpRoute('first-route', FIRST_SERVER_CONFIG_FILE),
+    mcpRoute('second-route', symlinkPath),
+  ]));
+  const linked = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS);
+  const original = linked.routes[0];
+  const symlink = linked.routes[1];
+  assert(original?.routingMode === 'mcp' && symlink?.routingMode === 'mcp', 'Both linked routes should be MCP');
+  assertEqual(original.server, symlink.server, 'Symlink alias should share the realpath identity');
+  assertEqual(symlink.serverConfigFilePath, symlinkPath, 'Symlink declaration should retain its source path');
+}
+
+async function testHiddenMcpRouteStillLoadsAndValidates(): Promise<void> {
+  await resetFixtures();
+  // The config loader receives all definitions before catalog exposure filters the visible tools.
+  await writeJson(FIRST_ENDPOINT_CONFIG_FILE, endpoint());
+  await writeJson(EXTERNAL_ROUTING_CONFIG_FILE, externalRoutingConfig([
+    route('first-route', FIRST_ENDPOINT_CONFIG_FILE),
+    mcpRoute('second-route', FIRST_SERVER_CONFIG_FILE),
+  ]));
+  await writeJson(FIRST_SERVER_CONFIG_FILE, mcpServer({ headers: { 'MCP-Session-ID': 'forbidden' } }));
+  const error = captureConfigError(() => loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS));
+  assertEqual(error.configFilePath, FIRST_SERVER_CONFIG_FILE, 'A later-hidden route must still validate its server config');
+  assertEqual(error.fieldPath, 'headers["MCP-Session-ID"]', 'Hidden route still rejects invalid server headers');
+
+  await writeJson(FIRST_SERVER_CONFIG_FILE, mcpServer());
+  const loaded = loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, CUSTOM_DEFINITIONS);
+  assertEqual(loaded.routes[0]?.routingMode, 'http', 'Mixed config should preserve HTTP route first');
+  assertEqual(loaded.routes[1]?.routingMode, 'mcp', 'Mixed config should preserve MCP route second');
+  assertEqual(loaded.routesByDefinitionId.size, 2, 'Both mode routes should be compiled before exposure');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external routing configuration loading',
@@ -617,6 +854,11 @@ async function main(): Promise<void> {
       { name: 'validates Processor references and registry errors', run: testValidatesProcessorReferencesAndRegistryErrors },
       { name: 'validates endpoint files at their actual paths', run: testValidatesEndpointFilesAtTheirActualPaths },
       { name: 'validates body media type and endpoint header boundary', run: testValidatesBodyEncoderMediaTypeAndEndpointHeaderBoundary },
+      { name: 'enforces route modes and cross-mode bindings', run: testEnforcesRouteModesAndCrossModeBindings },
+      { name: 'validates MCP server path policy and source errors', run: testMcpServerPathPolicyAndSourceErrors },
+      { name: 'validates MCP server schema, URL, timeout, and headers', run: testMcpServerSchemaUrlTimeoutAndHeaders },
+      { name: 'preserves MCP realpath identities and route declaration order', run: testMcpServerRealPathIdentityAndDeclarationOrder },
+      { name: 'validates MCP routes even when later hidden by exposure', run: testHiddenMcpRouteStillLoadsAndValidates },
     ],
   });
 }

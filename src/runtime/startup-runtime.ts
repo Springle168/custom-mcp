@@ -17,6 +17,7 @@ import {
   type CreatedExternalRoutingExecutor,
 } from '../tools/external-routing/executor.js';
 import type { ExternalRoutingProcessorDrainDiagnostic } from '../tools/external-routing/strategy-adapter.js';
+import type { McpConnectionDiagnostic } from '../tools/external-routing/mcp-connection-manager.js';
 import { getCompiledBuiltInTools } from '../tools/index.js';
 
 const CLOSED_APPLICATION_RUNTIME = Promise.resolve();
@@ -25,12 +26,16 @@ export interface LoadApplicationRuntimeOptions extends LoadRuntimeConfigOptions 
   readonly onExternalProcessorDrain?: (
     diagnostic: ExternalRoutingProcessorDrainDiagnostic,
   ) => void | Promise<void>;
+  readonly onMcpConnectionDiagnostic?: (
+    diagnostic: McpConnectionDiagnostic,
+  ) => void | Promise<void>;
 }
 
 export interface LoadedApplicationRuntime extends LoadedRuntimeConfig {
   readonly toolCatalog: CompiledWorkspaceToolCatalog;
   readonly externalRouting?: CreatedExternalRoutingExecutor;
   readonly externalRoutingConfig?: CompiledExternalRoutingConfig;
+  warmUp(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -66,6 +71,7 @@ export function loadApplicationRuntime(
       ...loadedConfig,
       toolCatalog: validatedCatalog,
       ...(externalRoutingConfig === undefined ? {} : { externalRoutingConfig }),
+      warmUp: () => CLOSED_APPLICATION_RUNTIME,
       close: () => CLOSED_APPLICATION_RUNTIME,
     });
   }
@@ -74,6 +80,9 @@ export function loadApplicationRuntime(
     ...(options.onExternalProcessorDrain === undefined
       ? {}
       : { onProcessorDrain: options.onExternalProcessorDrain }),
+    ...(options.onMcpConnectionDiagnostic === undefined
+      ? {}
+      : { onMcpConnectionDiagnostic: options.onMcpConnectionDiagnostic }),
   });
   const toolCatalog = compileWorkspaceToolCatalog({
     ...catalogOptions,
@@ -85,6 +94,7 @@ export function loadApplicationRuntime(
     toolCatalog,
     externalRouting,
     externalRoutingConfig,
+    warmUp: () => externalRouting.executor.warmUp(),
     close: () => externalRouting.executor.close(),
   });
 }

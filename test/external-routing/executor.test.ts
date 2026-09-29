@@ -1,12 +1,7 @@
-import type { CanonicalResponse } from '../../src/tools/external-routing/canonical-protocol.js';
 import {
   ExternalRoutingExecutor,
-  type ExternalRoutingStrategyOperation,
+  type ExternalRouteOperation,
 } from '../../src/tools/external-routing/executor.js';
-import type {
-  ExternalRoutingStrategyExchange,
-  ExternalRoutingStrategyOutcome,
-} from '../../src/tools/external-routing/strategy-adapter.js';
 import {
   assert,
   assertEqual,
@@ -29,28 +24,15 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-function canonical(response: CanonicalResponse): ExternalRoutingStrategyOutcome {
-  if ('error' in response) {
-    return { kind: 'canonical', code: 'external_rejected', response };
-  }
-  const status = response.results[0].status;
-  const code = status === 'completed'
-    ? 'external_tool_completed'
-    : status === 'failed'
-      ? 'external_tool_failed'
-      : 'external_tool_cancelled';
-  return { kind: 'canonical', code, response };
+type RouteOutcome = Awaited<ReturnType<ExternalRouteOperation['exchange']>['settled']>;
+
+function textOutcome(message: string, isError = false): RouteOutcome {
+  return { kind: 'result', result: { content: [{ type: 'text', text: message }], isError } };
 }
 
-function successResponse(status: 'completed' | 'failed' | 'cancelled', message: string): CanonicalResponse {
+function fixedRoute(outcome: RouteOutcome): ExternalRouteOperation {
   return {
-    results: [{ id: 'call_test', status, message }],
-  };
-}
-
-function fixedStrategy(outcome: ExternalRoutingStrategyOutcome): ExternalRoutingStrategyOperation {
-  return {
-    exchange(): ExternalRoutingStrategyExchange {
+    exchange() {
       return {
         settled: Promise.resolve(outcome),
         drained: Promise.resolve(),
@@ -73,39 +55,22 @@ function invocation(overrides: Partial<{
   };
 }
 
-async function testMapsCanonicalBusinessOutcomes(): Promise<void> {
+async function testReturnsRouteResults(): Promise<void> {
   const completedExecutor = new ExternalRoutingExecutor({
-    strategy: fixedStrategy(canonical(successResponse('completed', 'done'))),
+    routes: fixedRoute(textOutcome('done')),
   });
   const completed = await completedExecutor.execute('test-route', invocation());
   assertEqual(completed.isError, false, 'Completed external result should be a successful ToolCallResult');
   assertEqual(getResultText(completed), 'done', 'Completed message should be returned unchanged');
   await completedExecutor.close();
 
-  for (const [status, prefix] of [
-    ['failed', 'External tool failed:'] as const,
-    ['cancelled', 'External tool reported cancellation:'] as const,
-  ]) {
-    const executor = new ExternalRoutingExecutor({
-      strategy: fixedStrategy(canonical(successResponse(status, 'business message'))),
-    });
-    const result = await executor.execute('test-route', invocation());
-    assertEqual(result.isError, true, `${status} should be an MCP tool error`);
-    assertIncludes(getResultText(result), prefix, `${status} should use its controlled domain prefix`);
-    assertIncludes(getResultText(result), 'business message', 'Validated canonical business output may reach the caller');
-    await executor.close();
-  }
-
-  const rejectedExecutor = new ExternalRoutingExecutor({
-    strategy: fixedStrategy(canonical({
-      error: { code: 'invalid_request', message: 'configured rejection' },
-    })),
+  const failedExecutor = new ExternalRoutingExecutor({
+    routes: fixedRoute(textOutcome('business message', true)),
   });
-  const rejected = await rejectedExecutor.execute('test-route', invocation());
-  assertEqual(rejected.isError, true, 'Canonical errors should be MCP tool errors');
-  assertIncludes(getResultText(rejected), 'invalid_request', 'Validated rejection code should reach the caller');
-  assertIncludes(getResultText(rejected), 'configured rejection', 'Validated rejection message should reach the caller');
-  await rejectedExecutor.close();
+  const failed = await failedExecutor.execute('test-route', invocation());
+  assertEqual(failed.isError, true, 'Route business errors should remain ToolCallResult errors');
+  assertEqual(getResultText(failed), 'business message', 'Route result content should remain unchanged');
+  await failedExecutor.close();
 }
 
 async function testMapsControlledLocalFailuresWithoutRawData(): Promise<void> {
@@ -117,13 +82,20 @@ async function testMapsControlledLocalFailuresWithoutRawData(): Promise<void> {
     'external_protocol_failed',
     'processor_failed',
     'processor_timeout',
+    'mcp_connection_failed',
+    'mcp_capability_missing',
+    'mcp_call_failed',
+    'mcp_timeout',
+    'mcp_protocol_failed',
+    'mcp_result_unsupported',
+    'mcp_transport_failed',
     'external_internal_failed',
     'cancelled',
   ] as const;
 
   for (const code of codes) {
     const executor = new ExternalRoutingExecutor({
-      strategy: fixedStrategy({ kind: 'failure', code }),
+      routes: fixedRoute({ kind: 'failure', code }),
     });
     const result = await executor.execute('test-route', invocation());
     const text = getResultText(result);
@@ -135,36 +107,32 @@ async function testMapsControlledLocalFailuresWithoutRawData(): Promise<void> {
   }
 }
 
-async function testRejectsInvalidLocalCanonicalInputWithoutCallingStrategy(): Promise<void> {
-  let calls = 0;
+async function testPassesRouteIdentityAndInvocation(): Promise<void> {
+  let receivedDefinitionId: string | undefined;
+  let receivedName: string | undefined;
   const executor = new ExternalRoutingExecutor({
-    strategy: {
-      exchange() {
-        calls++;
-        return fixedStrategy({ kind: 'failure', code: 'external_internal_failed' }).exchange({
-          definitionId: 'test-route',
-          request: undefined as never,
-        });
+    routes: {
+      exchange(options) {
+        receivedDefinitionId = options.definitionId;
+        receivedName = options.invocation.name;
+        return fixedRoute(textOutcome('routed')).exchange(options);
       },
     },
   });
-
-  const cyclic: Record<string, unknown> = {};
-  cyclic.self = cyclic;
-  const result = await executor.execute('test-route', invocation({ arguments: cyclic }));
-  assertEqual(result.isError, true, 'Non-JSON-compatible arguments should fail locally');
-  assertIncludes(getResultText(result), 'internal failure', 'Invalid local input should use a stable internal template');
-  assertEqual(calls, 0, 'Invalid local canonical input must not reach strategy execution');
+  const result = await executor.execute('test-route', invocation());
+  assertEqual(getResultText(result), 'routed', 'Route result should reach the caller');
+  assertEqual(receivedDefinitionId, 'test-route', 'Route should receive the bound definition ID');
+  assertEqual(receivedName, 'external_tool', 'Route should receive the local Tool name');
   await executor.close();
 }
 
 async function testCancellationSettlesBeforeStrategyDrain(): Promise<void> {
-  const settled = deferred<ExternalRoutingStrategyOutcome>();
+  const settled = deferred<RouteOutcome>();
   const drained = deferred<void>();
   let operationSignal: AbortSignal | undefined;
   const controller = new AbortController();
   const executor = new ExternalRoutingExecutor({
-    strategy: {
+    routes: {
       exchange(options) {
         operationSignal = options.signal;
         return { settled: settled.promise, drained: drained.promise };
@@ -190,12 +158,12 @@ async function testRouteBoundCallsShareOneAdmissionPool(): Promise<void> {
   const drains = Array.from({ length: 9 }, () => deferred<void>());
   const startedDefinitionIds: string[] = [];
   const executor = new ExternalRoutingExecutor({
-    strategy: {
+    routes: {
       exchange(options) {
         const index = startedDefinitionIds.length;
-        startedDefinitionIds.push(options.definitionId ?? 'missing');
+        startedDefinitionIds.push(options.definitionId);
         return {
-          settled: Promise.resolve(canonical(successResponse('completed', 'done'))),
+          settled: Promise.resolve(textOutcome('done')),
           drained: drains[index]?.promise ?? Promise.resolve(),
         };
       },
@@ -231,11 +199,11 @@ async function testRouteBoundCallsShareOneAdmissionPool(): Promise<void> {
 }
 
 async function testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent(): Promise<void> {
-  const settled = deferred<ExternalRoutingStrategyOutcome>();
+  const settled = deferred<RouteOutcome>();
   const drained = deferred<void>();
   const events: string[] = [];
   const executor = new ExternalRoutingExecutor({
-    strategy: {
+    routes: {
       exchange() {
         return { settled: settled.promise, drained: drained.promise };
       },
@@ -258,16 +226,44 @@ async function testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent(): Pr
   assertEqual(events.join(','), 'resources', 'Resources should close once after runtime drain');
 }
 
+async function testCloseStartsDrainingResourcesBeforeActiveDrain(): Promise<void> {
+  const settled = deferred<RouteOutcome>();
+  const drained = deferred<void>();
+  const events: string[] = [];
+  const executor = new ExternalRoutingExecutor({
+    routes: {
+      exchange() {
+        return { settled: settled.promise, drained: drained.promise };
+      },
+    },
+    closeDrainingResources: async () => {
+      events.push('draining');
+      drained.resolve();
+    },
+    closeResources: async () => {
+      events.push('after-drain');
+    },
+  });
+
+  void executor.execute('test-route', invocation());
+  const closed = executor.close();
+  assertEqual(events.join(','), 'draining', 'MCP-owned resources must start closing before active drain completes');
+  settled.resolve({ kind: 'failure', code: 'cancelled' });
+  await closed;
+  assertEqual(events.join(','), 'draining,after-drain', 'HTTP resources close only after active drain');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing executor mapping and ownership',
     tests: [
-      { name: 'maps canonical business outcomes', run: testMapsCanonicalBusinessOutcomes },
+      { name: 'returns route results', run: testReturnsRouteResults },
       { name: 'maps controlled local failures without raw data', run: testMapsControlledLocalFailuresWithoutRawData },
-      { name: 'rejects invalid local canonical input before strategy', run: testRejectsInvalidLocalCanonicalInputWithoutCallingStrategy },
+      { name: 'passes route identity and invocation', run: testPassesRouteIdentityAndInvocation },
       { name: 'settles cancellation before strategy drain', run: testCancellationSettlesBeforeStrategyDrain },
       { name: 'shares one admission pool across route-bound calls', run: testRouteBoundCallsShareOneAdmissionPool },
       { name: 'closes resources only after runtime drain', run: testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent },
+      { name: 'starts draining resource close before active drain', run: testCloseStartsDrainingResourcesBeforeActiveDrain },
     ],
   });
 }

@@ -44,6 +44,7 @@ const SECOND_TOOL_DEFINITION_FILE = path.join(FIXTURES_DIR, 'second-external-cus
 const EXTERNAL_ROUTING_CONFIG_FILE = path.join(FIXTURES_DIR, 'external-routing-config.json');
 const FIRST_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'endpoint-config.json');
 const SECOND_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'second-endpoint-config.json');
+const MCP_SERVER_CONFIG_FILE = path.join(FIXTURES_DIR, 'mcp-server-config.json');
 const FIRST_TOOL_NAME = 'external_custom_tool';
 const SECOND_TOOL_NAME = 'second_external_custom_tool';
 const FIRST_COMPLETED_MESSAGE = 'First loopback endpoint completed the custom tool.';
@@ -65,6 +66,14 @@ interface LoopbackEndpoint {
 interface ConnectedMcpPair {
   readonly client: Client;
   readonly server: McpServer;
+}
+
+interface DownstreamMcpServer {
+  readonly url: string;
+  readonly calls: readonly Record<string, unknown>[];
+  initializeCount(): number;
+  listCount(): number;
+  close(): Promise<void>;
 }
 
 function getTextContent(result: unknown): string {
@@ -133,10 +142,11 @@ async function writeExternalRoutingFixture(
     }, null, 2), 'utf-8'),
   ]);
   await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
-    version: 1,
+    version: 2,
     routes: [
       {
         definitionId: 'external-custom-tool',
+        routingMode: 'http',
         httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE,
         routingStrategy: {
           'request-to-external': [{ mode: 'direct' }],
@@ -145,6 +155,7 @@ async function writeExternalRoutingFixture(
       },
       {
         definitionId: 'second-external-custom-tool',
+        routingMode: 'http',
         httpEndpointConfigFile: SECOND_ENDPOINT_CONFIG_FILE,
         routingStrategy: {
           'request-to-external': [{ mode: 'direct' }],
@@ -255,6 +266,88 @@ function handleEndpointRequest(
   });
 }
 
+async function startDownstreamMcpServer(): Promise<DownstreamMcpServer> {
+  const calls: Record<string, unknown>[] = [];
+  const sockets = new Set<Socket>();
+  let initializeCount = 0;
+  let listCount = 0;
+  const server = createServer(async (request, response) => {
+    if (request.method === 'GET') {
+      response.writeHead(405).end();
+      return;
+    }
+    if (request.method === 'DELETE') {
+      response.writeHead(200).end();
+      return;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+    if (message.method === 'initialize') {
+      initializeCount++;
+      writeDownstreamJson(response, message.id, {
+        protocolVersion: '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'downstream-integration', version: '1' },
+      }, { 'Mcp-Session-Id': 'shared-downstream-session' });
+      return;
+    }
+    if (message.method === 'notifications/initialized') {
+      response.writeHead(202).end();
+      return;
+    }
+    if (message.method === 'tools/list') {
+      listCount++;
+      writeDownstreamJson(response, message.id, { tools: [] });
+      return;
+    }
+    if (message.method === 'tools/call') {
+      calls.push(message);
+      const params = message.params as Record<string, unknown>;
+      writeDownstreamJson(response, message.id, {
+        content: [{ type: 'text', text: `downstream:${String(params.name)}` }],
+      });
+      return;
+    }
+    response.writeHead(400).end();
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  assert(address !== null && typeof address !== 'string', 'Downstream MCP server should expose a port.');
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    calls,
+    initializeCount: () => initializeCount,
+    listCount: () => listCount,
+    close: () => closeHttpServer(server, sockets),
+  };
+}
+
+function writeDownstreamJson(
+  response: ServerResponse,
+  id: unknown,
+  result: Record<string, unknown>,
+  headers: Record<string, string> = {},
+): void {
+  const body = JSON.stringify({ jsonrpc: '2.0', id, result });
+  response.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Content-Length': String(Buffer.byteLength(body)),
+    ...headers,
+  });
+  response.end(body);
+}
+
 async function closeHttpServer(
   server: HttpServer,
   sockets: ReadonlySet<Socket>,
@@ -321,6 +414,79 @@ async function cleanupRuntimeResources(options: {
 
   if (errors.length > 0) {
     throw errors[0];
+  }
+}
+
+async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
+  const downstream = await startDownstreamMcpServer();
+  let runtime: LoadedApplicationRuntime | undefined;
+  let pair: ConnectedMcpPair | undefined;
+  try {
+    const inputSchema = {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+      required: ['value'],
+      additionalProperties: false,
+    };
+    await Promise.all([
+      fs.writeFile(FIRST_TOOL_DEFINITION_FILE, JSON.stringify({
+        name: FIRST_TOOL_NAME,
+        description: 'First MCP routed tool.',
+        inputSchema,
+      }), 'utf8'),
+      fs.writeFile(SECOND_TOOL_DEFINITION_FILE, JSON.stringify({
+        name: SECOND_TOOL_NAME,
+        description: 'Second MCP routed tool.',
+        inputSchema,
+      }), 'utf8'),
+      fs.writeFile(MCP_SERVER_CONFIG_FILE, JSON.stringify({
+        version: 1,
+        url: downstream.url,
+        timeoutMs: 1_000,
+      }), 'utf8'),
+    ]);
+    await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
+      version: 2,
+      routes: [
+        { definitionId: 'external-custom-tool', routingMode: 'mcp', mcpServerConfigFile: MCP_SERVER_CONFIG_FILE },
+        { definitionId: 'second-external-custom-tool', routingMode: 'mcp', mcpServerConfigFile: MCP_SERVER_CONFIG_FILE },
+      ],
+    }), 'utf8');
+    await fs.writeFile(TOOL_CONFIG_FILE, JSON.stringify({
+      version: 2,
+      definitions: [
+        { id: 'external-custom-tool', toolDefinitionFile: FIRST_TOOL_DEFINITION_FILE },
+        { id: 'second-external-custom-tool', toolDefinitionFile: SECOND_TOOL_DEFINITION_FILE },
+      ],
+      externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
+    }), 'utf8');
+    await writeSplitConfigFixture(CONFIG_FILE, {
+      workspaces: [{
+        id: 'selected',
+        rootDir: ROOT_DIR,
+        host: '127.0.0.1',
+        port: 4914,
+        lineEnding: 'auto',
+        logsDir: LOGS_DIR,
+        tools: { toolConfigFile: TOOL_CONFIG_FILE },
+      }],
+    });
+
+    runtime = loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
+    await runtime.warmUp();
+    pair = await connectMcpServer(runtime);
+    const [first, second] = await Promise.all([
+      pair.client.callTool({ name: FIRST_TOOL_NAME, arguments: { value: 'one' } }),
+      pair.client.callTool({ name: SECOND_TOOL_NAME, arguments: { value: 'two' } }),
+    ]);
+    assertEqual(getTextContent(first), `downstream:${FIRST_TOOL_NAME}`, 'First route should preserve its local Tool name.');
+    assertEqual(getTextContent(second), `downstream:${SECOND_TOOL_NAME}`, 'Second route should preserve its local Tool name.');
+    assertEqual(downstream.initializeCount(), 1, 'Routes sharing one server config should share one downstream session.');
+    assertEqual(downstream.listCount(), 0, 'External MCP routing must not call downstream tools/list.');
+    assertEqual(downstream.calls.length, 2, 'Each upstream call should be sent downstream exactly once.');
+  } finally {
+    await cleanupRuntimeResources({ pair, runtime, endpoints: [] });
+    await downstream.close();
   }
 }
 
@@ -419,6 +585,7 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'routes two custom-only tools through independent loopback endpoints', run: testExternalRoutingThroughRuntimeAndMcp },
+      { name: 'shares one downstream MCP session across two routes', run: testMcpRoutesShareOneDownstreamSession },
     ],
   });
 }

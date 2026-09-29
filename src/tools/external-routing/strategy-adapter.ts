@@ -10,7 +10,7 @@ import {
   type CanonicalResponse,
 } from './canonical-protocol.js';
 import type {
-  CompiledExternalRoute,
+  CompiledHttpRoute,
   ExternalProcessorDefinition,
 } from './config.js';
 import type {
@@ -65,7 +65,7 @@ export interface ExternalRoutingProcessorDrainDiagnostic {
 
 export interface ExternalRoutingStrategyAdapterOptions {
   /** Startup-validated configuration snapshot for this external route. */
-  readonly route: CompiledExternalRoute;
+  readonly route: CompiledHttpRoute;
   readonly processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>;
   readonly processorRunner?: ExternalRoutingProcessorRunner;
   readonly httpTransport: ExternalRoutingHttpTransport;
@@ -147,7 +147,7 @@ type ResponseAdaptation =
  * may settle before cleanup; only the returned `drained` waits for all of it.
  */
 export class ExternalRoutingStrategyAdapter {
-  readonly #route: CompiledExternalRoute;
+  readonly #route: CompiledHttpRoute;
   readonly #processorsByName: ReadonlyMap<string, ExternalProcessorDefinition>;
   readonly #processorRunner: ExternalRoutingProcessorRunner | undefined;
   readonly #httpTransport: ExternalRoutingHttpTransport;

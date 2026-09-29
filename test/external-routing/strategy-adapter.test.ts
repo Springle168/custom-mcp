@@ -4,7 +4,7 @@ import {
   type CanonicalRequest,
 } from '../../src/tools/external-routing/canonical-protocol.js';
 import type {
-  CompiledExternalRoute,
+  CompiledHttpRoute,
   ExternalProcessorDefinition,
   ExternalRequestRoutingStage,
   ExternalResponseRoutingStage,
@@ -125,8 +125,9 @@ function spec(
   requestStage: ExternalRequestRoutingStage,
   responseStage: ExternalResponseRoutingStage,
   processors: readonly ExternalProcessorDefinition[] = [],
-): CompiledExternalRoute & { readonly processors: readonly ExternalProcessorDefinition[] } {
+): CompiledHttpRoute & { readonly processors: readonly ExternalProcessorDefinition[] } {
   return {
+    routingMode: 'http',
     definitionId: 'source-definition',
     toolName: 'source.tool',
     endpointConfigFilePath: 'C:\\test-workspace\\endpoint.json',
@@ -224,7 +225,7 @@ function successfulExchange(
 }
 
 function adapter(
-  routeSpec: CompiledExternalRoute & {
+  routeSpec: CompiledHttpRoute & {
     readonly processors: readonly ExternalProcessorDefinition[];
   },
   runner: FakeProcessorRunner,

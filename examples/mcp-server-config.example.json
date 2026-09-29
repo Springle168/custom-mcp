@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "url": "http://127.0.0.1:43130/mcp",
+  "timeoutMs": 60000,
+  "headers": {
+    "Authorization": "Bearer replace-with-local-token"
+  }
+}

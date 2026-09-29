@@ -22,7 +22,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 |-|-|-|-|
 | `version` | `2` | 是 | Tool config schema version。 |
 | `definitions` | object[] | 是 | 有序的 Tool definition reference 列表；空数组合法。 |
-| `externalRoutingConfigFile` | local absolute path | 否 | External routing config v1 文件。 |
+| `externalRoutingConfigFile` | local absolute path | 否 | External routing config v2 文件。 |
 
 每个 `definitions[]` reference 只允许下列字段：
 
@@ -44,8 +44,9 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 - [Processor registry](../../examples/processor-config.example.json)
 - [direct HTTP endpoint config](../../examples/http-endpoint-config.example.json)
 - [Processor HTTP endpoint config](../../examples/processed-http-endpoint-config.example.json)
+- [MCP server config](../../examples/mcp-server-config.example.json)
 
-使用模板前应替换其中的本地绝对路径和值。External routing config、Processor registry、endpoint config 与外部调用行为见 [External routing](../EXTERNAL-ROUTING.md)。
+使用模板前应替换其中的本地绝对路径和值。External routing config、Processor registry、HTTP endpoint config、MCP server config 与外部调用行为见 [External routing](../EXTERNAL-ROUTING.md)。
 
 ---
 
@@ -69,7 +70,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 ## 加载、binding 与调用行为
 
-Tool config、全部 Tool definition、已配置的 External routing config、其显式 Processor registry 和每条 route 的 endpoint config 都在启动期读取、校验并编译。Processor registry 即使未被任何 route 使用也会被读取和校验；相同 endpoint config path 被多条 route 引用时可共享已编译的 endpoint snapshot。运行期不重新读取这些配置；修改后需要重启服务。
+Tool config、全部 Tool definition、已配置的 External routing config、其显式 Processor registry 和每条 route 引用的 HTTP endpoint 或 MCP server config 都在启动期读取、校验并编译。Processor registry 即使未被任何 route 使用也会被读取和校验；相同 HTTP endpoint path 可共享已编译 snapshot，解析到相同 real path 的 MCP server config 共享 server identity。运行期不重新读取这些配置；修改后需要重启服务。
 
 custom definition 与内置工具同名时，完整替换 `tools/list` 暴露的 description 与 input schema，同时保留内置 executor 和 implementation contract。调用时必须同时通过 custom 对外 schema 和内置 implementation schema。External route 只能绑定 custom-only definition；route 引用 built-in override 是启动期配置错误。
 
@@ -79,7 +80,7 @@ custom-only definition 的 executor 由其 definition reference `id` 决定：
 - 没有 route 时，definition 仍可暴露且输入仍会校验；调用返回 deterministic unavailable route 工具错误。
 - route 不按 Tool `name` 匹配，因此修改 definition 文件中的 `name` 不会改变配置 binding identity。
 
-`routes: []` 表示 external routing 已配置但没有执行 route。此状态不创建 external admission runtime、Processor runner 或 HTTP Agents；custom-only definitions 仍保留 unavailable binding。被 `enabled` / `disabled` 隐藏的 definition 和 route 也会完成启动期加载与校验，但隐藏名称不会出现在 `tools/list`，调用返回 `Unknown tool`。
+`routes: []` 表示 external routing 已配置但没有执行 route。此状态不创建 external admission runtime、Processor runner、HTTP Agents 或 MCP connection manager；custom-only definitions 仍保留 unavailable binding。被 `enabled` / `disabled` 隐藏的 definition 和 route 也会完成启动期加载与校验，但隐藏名称不会出现在 `tools/list`，调用返回 `Unknown tool`。
 
 effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](../TOOLS.md)。
 
@@ -87,7 +88,7 @@ effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](.
 
 ## 错误与维护入口
 
-Tool config、Tool definition、External routing config、Processor registry 或 endpoint config 的文件读取、JSON、严格外壳和 schema 错误归属实际出错的 referenced 文件；definition 诊断会附带对应 reference `id`。route binding、重复 binding 和 Processor reference 错误归属 External routing config。workspace `enabled` / `disabled` selector 不存在的错误仍归属 workspace 配置。
+Tool config、Tool definition、External routing config、Processor registry、HTTP endpoint config 或 MCP server config 的文件读取、JSON、严格外壳和 schema 错误归属实际出错的 referenced 文件；definition 诊断会附带对应 reference `id`。route union、binding、重复 binding 和 Processor reference 错误归属 External routing config。workspace `enabled` / `disabled` selector 不存在的错误仍归属 workspace 配置。
 
 | 区域 | 职责 |
 |-|-|
@@ -95,10 +96,10 @@ Tool config、Tool definition、External routing config、Processor registry 或
 | `src/tools/custom-tool-config.ts` | Tool config v2 / definition 加载、严格外壳、source metadata，以及 External routing config 加载入口。 |
 | `src/tools/input-schema-validator.ts` | 隔离的 Draft 2020-12 schema 编译与 validator facade。 |
 | `src/tools/catalog.ts` | effective catalog 合并、selector 成员校验、exposed catalog，以及按 definition reference id 注入 external binding。 |
-| `src/tools/external-routing/config.ts` | External routing config v1、Processor registry v2、endpoint config 与跨文件 binding 校验。 |
-| `src/runtime/startup-runtime.ts` | 全部纯配置 / catalog 校验后创建共享 external runtime，空 route 的无资源 close。 |
+| `src/tools/external-routing/config.ts` | External routing config v2、HTTP/MCP route union、Processor registry、HTTP endpoint / MCP server config 与跨文件 binding 校验。 |
+| `src/runtime/startup-runtime.ts` | 全部纯配置 / catalog 校验后创建共享 external runtime，暴露 MCP warm-up 与空 route 的无资源 close。 |
 | `src/tools/external-routing/executor.ts` | workspace 共享 admission、route-bound executor facade 与资源 close。 |
-| `src/tools/external-routing/strategy-adapter.ts` | route-specific stage 编排、endpoint dispatch 与 Processor drain metadata。 |
+| `src/tools/external-routing/strategy-adapter.ts` | HTTP route-specific stage 编排、endpoint dispatch 与 Processor drain metadata。 |
 | `test/tools/custom-tool-config.test.ts` | Tool config / definition 外壳、schema dialect 与 validator。 |
 | `test/tools/tool-exposure.test.ts` | effective/exposed catalog、override、definition-id external binding 与 unavailable executor。 |
 | `test/external-routing/config.test.ts` | External routing config、Processor registry、endpoint config、route / Processor reference 校验。 |
