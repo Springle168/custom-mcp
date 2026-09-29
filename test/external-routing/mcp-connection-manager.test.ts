@@ -24,6 +24,8 @@ async function startMcpServer(options: {
   readonly requestSseEndDelayMs?: number;
   readonly sharedGetDelayMs?: number;
   readonly malformedRequestSse?: boolean;
+  readonly acceptCallsWithoutResult?: boolean;
+  readonly cancellationResponseDelayMs?: number;
 } = {}): Promise<TestMcpServer> {
   const calls: Record<string, unknown>[] = [];
   let sharedGetResponse: ServerResponse | undefined;
@@ -78,7 +80,14 @@ async function startMcpServer(options: {
       }, { 'Mcp-Session-Id': 'test-session' });
       return;
     }
-    if (message.method === 'notifications/initialized' || message.method === 'notifications/cancelled') {
+    if (message.method === 'notifications/initialized') {
+      response.writeHead(202).end();
+      return;
+    }
+    if (message.method === 'notifications/cancelled') {
+      if (options.cancellationResponseDelayMs !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, options.cancellationResponseDelayMs));
+      }
       response.writeHead(202).end();
       return;
     }
@@ -100,7 +109,15 @@ async function startMcpServer(options: {
           id: message.id,
           result: options.result ?? { content: [{ type: 'text', text: 'downstream result' }] },
         })}\n\n`);
-        setTimeout(() => response.end(), options.requestSseEndDelayMs);
+        if (options.requestSseEndDelayMs === 0) {
+          response.end();
+        } else {
+          setTimeout(() => response.end(), options.requestSseEndDelayMs);
+        }
+        return;
+      }
+      if (options.acceptCallsWithoutResult === true) {
+        response.writeHead(202).end();
         return;
       }
       if (options.sharedGetDelayMs !== undefined) {
@@ -331,6 +348,22 @@ await runTestSuite({
     },
   },
   {
+    name: 'request-scoped SSE accepts a final result in the same chunk as EOF',
+    run: async () => {
+      const downstream = await startMcpServer({ requestSseEndDelayMs: 0 });
+      const manager = createManager(downstream);
+      try {
+        const exchange = manager.callTool({ name: 'local_tool', arguments: {} });
+        const outcome = await exchange.settled;
+        assertEqual(outcome.kind, 'result', 'SSE EOF must not outrun parsing of the final result event.');
+        await exchange.drained;
+      } finally {
+        await manager.close();
+        await downstream.close();
+      }
+    },
+  },
+  {
     name: '202 Accepted receives its final result through the shared GET stream',
     run: async () => {
       const downstream = await startMcpServer({ sharedGetDelayMs: 10 });
@@ -436,6 +469,32 @@ await runTestSuite({
         await manager.close();
         await exchange.drained;
         assertEqual(drained, true, 'Transport close should release the drain barrier.');
+      } finally {
+        await manager.close();
+        await downstream.close();
+      }
+    },
+  },
+  {
+    name: 'timeout drain waits for the cancellation notification response body',
+    run: async () => {
+      const downstream = await startMcpServer({
+        sharedGetDelayMs: 0,
+        acceptCallsWithoutResult: true,
+        cancellationResponseDelayMs: 80,
+      });
+      const manager = createManager(downstream, 30);
+      try {
+        await manager.warmUp();
+        const exchange = manager.callTool({ name: 'local_tool', arguments: {} });
+        const outcome = await exchange.settled;
+        assert(outcome.kind === 'failure' && outcome.code === 'mcp_timeout', 'Accepted call should time out without a shared result.');
+        let drained = false;
+        void exchange.drained.then(() => { drained = true; });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        assertEqual(drained, false, 'Cancellation notification HTTP lifecycle should retain the drain barrier.');
+        await exchange.drained;
+        assertEqual(drained, true, 'Drain should finish after the cancellation notification response completes.');
       } finally {
         await manager.close();
         await downstream.close();
