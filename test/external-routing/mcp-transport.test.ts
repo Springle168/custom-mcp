@@ -1,5 +1,6 @@
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { TrackedMcpTransport } from '../../src/tools/external-routing/mcp-transport.js';
 import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
@@ -10,13 +11,14 @@ class FakeTransport implements Transport {
   readonly sent: JSONRPCMessage[] = [];
   closeCount = 0;
   rejectCancellation = false;
+  cancellationError: Error = new Error('cancel notification failed');
 
   async start(): Promise<void> {}
 
   async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
     this.sent.push(message);
     if ('method' in message && message.method === 'notifications/cancelled' && this.rejectCancellation) {
-      throw new Error('cancel notification failed');
+      throw this.cancellationError;
     }
   }
 
@@ -103,10 +105,17 @@ await runTestSuite({
             params: { requestId: 51, reason: 'test cancellation' },
           }),
         }).catch(() => undefined);
+        delegate.cancellationError = new StreamableHTTPError(404, 'invalid session');
+        await tracked.send({
+          jsonrpc: '2.0',
+          method: 'notifications/cancelled',
+          params: { requestId: 51, reason: 'test cancellation' },
+        }).catch(() => undefined);
         captured.exchange.markCallerSettled();
         await captured.exchange.drained;
 
-        assertEqual(failedRequestIds.length, 0, 'Cancellation notification failure must not invalidate unrelated calls.');
+        assertEqual(failedRequestIds.length, 1, 'Only an explicit invalid-session response should invalidate the connection.');
+        assertEqual(failedRequestIds[0], 51, 'Invalid-session cancellation failure should identify the affected request.');
       },
     },
     {
