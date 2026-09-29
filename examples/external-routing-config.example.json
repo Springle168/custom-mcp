@@ -38,6 +38,11 @@
           }
         ]
       }
+    },
+    {
+      "definitionId": "external-echo-mcp",
+      "routingMode": "mcp",
+      "mcpServerConfigFile": "C:/Users/username/.custom-mcp/mcp-servers/mcp-server-config.json"
     }
   ]
 }

@@ -35,18 +35,16 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 `toolDefinitionFile` 和 `externalRoutingConfigFile` 都遵循与 `toolConfigFile` 相同的本地绝对路径边界。引用文件不要求位于 workspace allowed roots 内。
 
-完整模板见下列示例：
+`examples/` 提供相关配置的独立参考片段：
 
 - [Tool config](../../examples/tool-config.example.json)
 - [direct custom-only Tool definition](../../examples/tool-definition.example.json)
-- [Processor custom-only Tool definition](../../examples/processed-tool-definition.example.json)
 - [External routing config](../../examples/external-routing-config.example.json)
 - [Processor registry](../../examples/processor-config.example.json)
 - [direct HTTP endpoint config](../../examples/http-endpoint-config.example.json)
-- [Processor HTTP endpoint config](../../examples/processed-http-endpoint-config.example.json)
 - [MCP server config](../../examples/mcp-server-config.example.json)
 
-使用模板前应替换其中的本地绝对路径和值。External routing config、Processor registry、HTTP endpoint config、MCP server config 与外部调用行为见 [External routing](../EXTERNAL-ROUTING.md)。
+使用示例前应替换其中的本地绝对路径和值。External routing config、Processor registry、HTTP endpoint config、MCP server config 与外部调用行为见 [External routing](../EXTERNAL-ROUTING.md)。
 
 ---
 
