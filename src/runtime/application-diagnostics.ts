@@ -3,6 +3,7 @@ import type {
   ToolCallPipelineDiagnostic,
 } from './tool-call-handler.js';
 import type { ExternalRoutingProcessorDrainDiagnostic } from '../tools/external-routing/strategy-adapter.js';
+import type { McpConnectionDiagnostic } from '../tools/external-routing/mcp-connection-manager.js';
 
 export interface ApplicationDiagnosticLogger {
   info(message: string): void;
@@ -24,6 +25,12 @@ export class ApplicationDiagnostics {
     diagnostic: ExternalRoutingProcessorDrainDiagnostic,
   ): void => {
     this.#report(formatProcessorDrainDiagnostic(diagnostic));
+  };
+
+  readonly onMcpConnectionDiagnostic = (
+    diagnostic: McpConnectionDiagnostic,
+  ): void => {
+    this.#report(formatMcpConnectionDiagnostic(diagnostic));
   };
 
   bind(logger: ApplicationDiagnosticLogger): void {
@@ -65,6 +72,24 @@ export class ApplicationDiagnostics {
 
 function formatToolCallDiagnostic(diagnostic: ToolCallPipelineDiagnostic): string {
   return `Tool-call diagnostic: kind=${diagnostic.kind} callId=${diagnostic.callId}`;
+}
+
+function formatMcpConnectionDiagnostic(diagnostic: McpConnectionDiagnostic): string {
+  if (diagnostic.outcome === 'connected') {
+    return `Downstream MCP connected: server=${diagnostic.server} durationMs=${diagnostic.durationMs}`;
+  }
+  const label = diagnostic.phase === 'call'
+    ? 'Downstream MCP call failed:'
+    : diagnostic.phase === 'shutdown'
+      ? 'Downstream MCP shutdown failed:'
+      : 'Downstream MCP connection failed:';
+  return [
+    label,
+    `server=${diagnostic.server}`,
+    `phase=${diagnostic.phase}`,
+    `classification=${diagnostic.classification ?? 'external_internal_failed'}`,
+    `durationMs=${diagnostic.durationMs}`,
+  ].join(' ');
 }
 
 function formatProcessorDrainDiagnostic(

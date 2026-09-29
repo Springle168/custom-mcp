@@ -132,12 +132,13 @@ async function writeExternalRoutingFiles(options: {
     }), 'utf-8');
   }
   await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
-    version: 1,
+    version: 2,
     ...(options.processorConfigFile === undefined
       ? {}
       : { processorConfigFile: options.processorConfigFile }),
     routes: routes.map((route) => ({
       definitionId: route.definitionId,
+      routingMode: 'http',
       httpEndpointConfigFile: route.endpointConfigFile,
       routingStrategy: {
         'request-to-external': [route.requestStage ?? { mode: 'direct' }],

@@ -17,7 +17,7 @@
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、统一 runner 与通用验证命令 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
-| 外部路由 | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) | External routing config v1、Processor registry v2、route-specific endpoint / stage、canonical route、共享容量、取消、shutdown 与日志边界 |
+| 外部路由 | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) | External routing config v2、HTTP/MCP route、Processor registry、下游会话、共享容量、取消、shutdown 与日志边界 |
 | 单工具文档 | [docs/tools/](tools/) | 各工具的参数契约、实现细节、设计边界、相关源码和测试 |
 
 ---

@@ -90,6 +90,7 @@ async function main() {
   const initialRuntime = loadApplicationRuntime({
     workspaceId: cliOptions.workspaceId,
     onExternalProcessorDrain: diagnostics.onExternalProcessorDrain,
+    onMcpConnectionDiagnostic: diagnostics.onMcpConnectionDiagnostic,
   });
   const initialSnapshot = initialRuntime.snapshot;
   const configStore = createConfigStore(initialRuntime);
@@ -199,6 +200,9 @@ async function main() {
     }
     logger.info(`  Line ending: ${initialSnapshot.lineEnding}`);
     logger.info(`  Log file: ${logger.logFile}`);
+    void initialRuntime.warmUp().catch(() => {
+      // Individual manager outcomes are reported through the diagnostic sink.
+    });
   });
   lifecycle = new ApplicationLifecycle({
     listener,

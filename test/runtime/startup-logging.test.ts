@@ -1,6 +1,7 @@
 import type {
   CompiledExternalRoute,
   CompiledExternalRoutingConfig,
+  CompiledHttpRoute,
   ExternalRequestRoutingStage,
   ExternalResponseRoutingStage,
 } from '../../src/tools/external-routing/config.js';
@@ -20,8 +21,9 @@ function externalRoute(options: {
   readonly endpointUrl: string;
   readonly requestStage: ExternalRequestRoutingStage;
   readonly responseStage: ExternalResponseRoutingStage;
-}): CompiledExternalRoute {
+}): CompiledHttpRoute {
   return {
+    routingMode: 'http',
     definitionId: options.definitionId,
     toolName: options.toolName,
     endpointConfigFilePath: `C:\\RouteConfig\\${options.definitionId}-endpoint.json`,
@@ -32,6 +34,25 @@ function externalRoute(options: {
     },
     requestStage: options.requestStage,
     responseStage: options.responseStage,
+  };
+}
+
+function mcpRoute(options: {
+  readonly definitionId: string;
+  readonly toolName: string;
+  readonly serverUrl: string;
+}): CompiledExternalRoute {
+  return {
+    routingMode: 'mcp',
+    definitionId: options.definitionId,
+    toolName: options.toolName,
+    serverConfigFilePath: `C:\\RouteConfig\\${options.definitionId}-server.json`,
+    server: {
+      identity: 'C:\\RealConfig\\shared-server.json',
+      url: options.serverUrl,
+      timeoutMs: 30_000,
+      headers: { Authorization: 'mcp-header-secret', 'X-Test-Secret': 'mcp-value-secret' },
+    },
   };
 }
 
@@ -54,6 +75,7 @@ function externalRoutingConfig(
         timeoutMs: 30_000,
       },
     ]]),
+    routes,
     routesByDefinitionId: new Map(routes.map((route) => [route.definitionId, route])),
   };
 }
@@ -66,6 +88,11 @@ function testFormatsStableSafeMultiRouteExternalRoutingSummary(): void {
       endpointUrl: 'http://second-user:second-password@second.example.test:8080/second?access=second-query#ignored-fragment',
       requestStage: { mode: 'direct' },
       responseStage: { mode: 'canonical-filter', processor: 'body-codec' },
+    }),
+    mcpRoute({
+      definitionId: 'external-mcp',
+      toolName: 'mcp_tool',
+      serverUrl: 'https://mcp-user:mcp-password@mcp.example.test:8443/mcp?token=mcp-query-secret#fragment-secret',
     }),
     externalRoute({
       definitionId: 'external-first',
@@ -84,13 +111,19 @@ function testFormatsStableSafeMultiRouteExternalRoutingSummary(): void {
     summary,
     [
       '  External routing: enabled',
-      '    Routes: 2',
+      '    Routes: 3',
       '    Route: external-second',
+      '      Routing mode: http',
       '      Tool: second_tool',
       '      Request stages: direct',
       '      Response stages: canonical-filter',
       '      Endpoint: http://second.example.test:8080/second',
+      '    Route: external-mcp',
+      '      Routing mode: mcp',
+      '      Tool: mcp_tool',
+      '      Server: https://mcp.example.test:8443/mcp',
       '    Route: external-first',
+      '      Routing mode: http',
       '      Tool: first_tool',
       '      Request stages: body-encoder',
       '      Response stages: body-decoder',
@@ -107,6 +140,15 @@ function testFormatsStableSafeMultiRouteExternalRoutingSummary(): void {
     'second-query',
     'ignored-fragment',
     'header-value-not-for-startup',
+    'mcp-user',
+    'mcp-password',
+    'mcp-query-secret',
+    'fragment-secret',
+    'mcp-header-secret',
+    'X-Test-Secret',
+    'mcp-value-secret',
+    'shared-server.json',
+    'external-mcp-server.json',
     'C:\\RouteConfig\\external-routing.json',
     'C:\\RouteConfig\\processor.json',
     'C:\\RouteConfig\\external-first-endpoint.json',
@@ -157,6 +199,7 @@ function testDoesNotExposeMalformedEndpointInput(): void {
       '  External routing: enabled',
       '    Routes: 1',
       '    Route: external-malformed',
+      '      Routing mode: http',
       '      Tool: malformed_tool',
       '      Request stages: direct',
       '      Response stages: direct',
@@ -169,6 +212,29 @@ function testDoesNotExposeMalformedEndpointInput(): void {
     'not a valid endpoint',
     'Malformed endpoint input must not be copied into startup logs',
   );
+}
+
+function testDoesNotExposeMalformedMcpServerInput(): void {
+  const summary = formatExternalRoutingStartupLines(externalRoutingConfig([
+    mcpRoute({
+      definitionId: 'external-malformed-mcp',
+      toolName: 'malformed_mcp_tool',
+      serverUrl: 'not a valid MCP server secret',
+    }),
+  ])).join('\n');
+  assertEqual(
+    summary,
+    [
+      '  External routing: enabled',
+      '    Routes: 1',
+      '    Route: external-malformed-mcp',
+      '      Routing mode: mcp',
+      '      Tool: malformed_mcp_tool',
+      '      Server: unavailable',
+    ].join('\n'),
+    'Malformed server input should use a safe fallback',
+  );
+  assertNotIncludes(summary, 'not a valid MCP server secret', 'Raw server URL must not enter startup logs');
 }
 
 function testFormatsRootSpecificPolicyFiles(): void {
@@ -242,6 +308,10 @@ async function main(): Promise<void> {
       {
         name: 'does not expose malformed external endpoint input',
         run: testDoesNotExposeMalformedEndpointInput,
+      },
+      {
+        name: 'does not expose malformed downstream MCP server input',
+        run: testDoesNotExposeMalformedMcpServerInput,
       },
       {
         name: 'formats root-specific policy files',

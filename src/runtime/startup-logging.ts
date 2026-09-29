@@ -12,7 +12,7 @@ export function formatExternalRoutingStartupLines(
     return ['  External routing: disabled'];
   }
 
-  const routes = [...config.routesByDefinitionId.values()];
+  const routes = config.routes;
   if (routes.length === 0) {
     return [
       '  External routing: configured',
@@ -27,11 +27,18 @@ export function formatExternalRoutingStartupLines(
   for (const route of routes) {
     lines.push(
       `    Route: ${route.definitionId}`,
+      `      Routing mode: ${route.routingMode}`,
       `      Tool: ${route.toolName}`,
-      `      Request stages: ${route.requestStage.mode}`,
-      `      Response stages: ${route.responseStage.mode}`,
-      `      Endpoint: ${formatExternalRoutingEndpointIdentity(route.endpoint.url)}`,
     );
+    if (route.routingMode === 'http') {
+      lines.push(
+        `      Request stages: ${route.requestStage.mode}`,
+        `      Response stages: ${route.responseStage.mode}`,
+        `      Endpoint: ${formatExternalRoutingEndpointIdentity(route.endpoint.url)}`,
+      );
+    } else {
+      lines.push(`      Server: ${formatExternalRoutingEndpointIdentity(route.server.url)}`);
+    }
   }
   return lines;
 }

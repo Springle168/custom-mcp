@@ -1,8 +1,8 @@
 # External Routing
 
-External routing 为 selected workspace 中的 custom-only Tool 提供受控的 HTTP 执行 route。Tool config v2 以 definition reference `id` 连接到 External routing config v1；每条 route 选择自己的 endpoint snapshot 与 request / response stage，同时共享 workspace 范围的容量、生命周期和资源所有权。
+External routing 为 selected workspace 中的 custom-only Tool 提供 HTTP 和下游 MCP 两种执行 route。Tool config v2 以 definition reference `id` 连接到 External routing config v2；每条 route 通过 `routingMode` 选择协议，共享 workspace 范围的容量、生命周期和资源所有权。
 
-本机制不为 built-in Tool 增加 HTTP route，也不改变同名 custom override 的内置 executor。它面向已配置且受信任的本地 Processor 与外部 endpoint；运行期不重新读取任何 route 配置文件。
+本机制不为 built-in Tool 增加 external route，也不改变同名 custom override 的内置 executor。HTTP route 面向已配置且受信任的本地 Processor 与 HTTP endpoint；MCP route 作为独立的 MCP Client 调用已配置的下游 Server。运行期不重新读取任何 route 配置文件。
 
 ---
 
@@ -15,17 +15,16 @@ workspace tools.toolConfigFile
   └─ Tool config v2
        ├─ definitions[]: id + toolDefinitionFile
        └─ externalRoutingConfigFile
-            └─ External routing config v1
-                 ├─ processorConfigFile (optional)
-                 └─ routes[]
-                      ├─ definitionId
-                      ├─ httpEndpointConfigFile
-                      └─ routingStrategy
+             └─ External routing config v2
+                  ├─ processorConfigFile (optional)
+                  └─ routes[]
+                       ├─ routingMode: http → httpEndpointConfigFile + routingStrategy
+                       └─ routingMode: mcp  → mcpServerConfigFile
 ```
 
-启动期先读取并编译 Tool config 与全部 Tool definition，再读取已配置的 External routing config、Processor registry 和每条 route endpoint，完成 definition binding、Processor reference 和 workspace exposure 校验。仅在所有纯配置与 catalog 校验成功、且至少存在一条 route 后，才创建 Processor runner、HTTP transport 与 admission runtime。
+启动期先读取并编译 Tool config 与全部 Tool definition，再读取 External routing config、显式 Processor registry，以及每条 route 引用的 HTTP endpoint 或 MCP server config，完成 definition binding、Processor reference 和 workspace exposure 校验。所有纯配置与 catalog 校验成功且至少存在一条 route 后，创建共享 admission runtime；HTTP route 按需创建 Processor runner 和专用 HTTP transport，MCP route 按 server identity 创建 connection manager。
 
-启动不探测 endpoint，也不发送 HTTP 请求。任何引用文件的读取、JSON 或字段错误都使启动失败，并将 `ConfigError.configFilePath` 指向实际出错文件；字段错误同时携带 field path。修改 Tool config、External routing config、Processor registry 或 endpoint config 后需要重启服务。
+配置加载和 runtime 构造不发送下游请求。HTTP listener 成功监听并输出启动摘要后，非阻塞 warm-up 各 MCP server identity 一次；连接失败记录安全 diagnostic，不阻止 listener 或其它工具工作。引用文件的读取、JSON 或字段错误则使启动失败，并将 `ConfigError.configFilePath` 指向实际出错文件；字段错误同时携带 field path。修改任何引用配置后需要重启服务。
 
 所有 config reference path 都必须是无首尾 whitespace 的本地绝对路径。Windows 下只接受 drive-absolute 路径；不接受相对路径、UNC、namespace、drive-relative、rooted-without-drive 或 `~`。这些引用文件不要求位于 workspace allowed roots 内。
 
@@ -38,41 +37,55 @@ workspace tools.toolConfigFile
 | 文件 | version | 职责 |
 |-|-|-|
 | Tool config | `2` | 引用 Tool definition，并可选启用 External routing config。 |
-| External routing config | `1` | 将 custom-only definition reference 绑定到 endpoint 和两个方向的 stage。 |
+| External routing config | `2` | 将 custom-only definition reference 绑定到 HTTP 或 MCP route。 |
 | Processor config | `2` | 提供可被多条 route 复用的 Processor definition registry。 |
 | HTTP endpoint config | `1` | 定义一个 endpoint 的 URL、timeout 与静态 headers。 |
+| MCP server config | `1` | 定义一个下游 Streamable HTTP endpoint、timeout 与静态 headers。 |
 
 Tool config 的完整字段、definition schema、路径 policy 和 exposure 见 [自定义 Tool 配置](config/tool-config.md)。
 
 ---
 
-## External routing config v1
+## External routing config v2
 
 External routing config 顶层只允许下列字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 |-|-|-|-|
-| `version` | `1` | 是 | External routing config schema version。 |
-| `processorConfigFile` | local absolute path | 否 | Processor config v2 registry。 |
+| `version` | `2` | 是 | External routing config schema version。 |
+| `processorConfigFile` | local absolute path | 否 | HTTP Processor config v2 registry。 |
 | `routes` | object[] | 是 | 有序 route definitions；空数组合法。 |
 
 `processorConfigFile` 出现时会在启动期读取并完整校验，即使没有 stage 引用其中的 Processor，或 `routes` 为空。Processor registry 可以包含未被 route 使用的 definition。
 
-`routes: []` 表示 routing config 已配置但没有执行 route。此状态不会创建 external admission runtime、Processor runner 或 HTTP Agents；application `close()` 直接完成。custom-only Tool 保留 unavailable binding。
+`routes: []` 表示 routing config 已配置但没有执行 route。此状态不会创建 external admission runtime、Processor runner、HTTP Agents 或 MCP connection manager；application `close()` 直接完成。custom-only Tool 保留 unavailable binding。
 
-每个 `routes[]` object 只允许下列字段：
+`routes[]` 是以 `routingMode` 为 discriminant 的严格 union。HTTP route 只允许下列字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 |-|-|-|-|
 | `definitionId` | string | 是 | Tool config `definitions[].id` 的 binding identity。 |
+| `routingMode` | `"http"` | 是 | 使用 HTTP canonical protocol。 |
 | `httpEndpointConfigFile` | local absolute path | 是 | 此 route 使用的 endpoint config v1。 |
 | `routingStrategy` | object | 是 | request 与 response 的单 stage strategy。 |
 
-`definitionId` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，在同一 External routing config 内只能出现一次，并且必须引用所属 Tool config 中的一个 definition reference。binding 不按 MCP Tool `name` 匹配；canonical request 仍发送 Tool definition 的 `name`。
+MCP route 只允许 `definitionId`、`routingMode: "mcp"` 和必填本地绝对路径 `mcpServerConfigFile`。MCP route 不允许 HTTP endpoint 和 routing strategy；HTTP route 不允许 MCP server config。
+
+例如 Tool config 中 `definitions[].id` 为 `external-mcp-tool` 的 custom-only definition 可绑定：
+
+```json
+{
+  "definitionId": "external-mcp-tool",
+  "routingMode": "mcp",
+  "mcpServerConfigFile": "C:/Users/username/.custom-mcp/mcp-servers/local-server.json"
+}
+```
+
+`definitionId` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，在整个有序 `routes[]` 内唯一，并且必须引用所属 Tool config 中的一个 definition reference。binding 不按 MCP Tool `name` 匹配；HTTP canonical request 与 MCP `tools/call` 都使用 Tool definition 的 `name`。MCP route 不调用下游 `tools/list`、不导入下游 Tool 或映射 Tool name。
 
 route 只能引用 custom-only definition。definition 的 `name` 属于 built-in registry 时，它是 built-in override，保留 built-in executor；route 引用它会在启动期失败。custom-only definition 可以没有 route，此时保持 deterministic unavailable binding。被 workspace exposure 隐藏的 route 仍在启动期完成加载与校验，但隐藏 Tool 调用返回 `Unknown tool`。
 
-每条 route 都读取并冻结自己的 endpoint snapshot。不同 route 可以引用同一 endpoint config path；重复 path 可以复用已编译 snapshot，且不会改变 route 的 source identity。声明顺序用于稳定加载、诊断和启动日志；调用通过唯一 `definitionId` 直接定位 route，不存在优先级。
+HTTP route 的 endpoint snapshot 可按相同 config path 复用。MCP server config 在成功读取后以 native real path 为 server identity；相同 real path 共享冻结的 server snapshot 与 connection manager，不同 real path 即使 URL 相同也不合并。source metadata 使用配置中声明的绝对路径。声明顺序用于稳定加载、诊断和启动日志；调用通过唯一 `definitionId` 直接定位 route，不存在优先级。
 
 ### `routingStrategy`
 
@@ -81,7 +94,7 @@ route 只能引用 custom-only definition。definition 的 `name` 属于 built-i
 - `request-to-external`
 - `response-from-external`
 
-两个字段都必须是数组，并且在 External routing config v1 中都必须精确包含一个 stage。空数组、多个 stage、缺少任一方向或额外字段都是配置错误。
+两个字段都必须是数组，并且在 External routing config v2 中都必须精确包含一个 stage。空数组、多个 stage、缺少任一方向或额外字段都是配置错误。
 
 request stage 位于 `request-to-external[0]`：
 
@@ -114,6 +127,7 @@ Processor stage 要求配置 `processorConfigFile`，并且名称必须存在于
 - [Processor registry](../examples/processor-config.example.json)
 - [direct HTTP endpoint config](../examples/http-endpoint-config.example.json)
 - [Processor HTTP endpoint config](../examples/processed-http-endpoint-config.example.json)
+- [MCP server config](../examples/mcp-server-config.example.json)
 
 ---
 
@@ -164,6 +178,23 @@ HTTPS 使用 Node.js 默认 TLS 行为，只信任运行环境认可的服务端
 
 ---
 
+## MCP server config v1
+
+MCP route 的 `mcpServerConfigFile` 指向严格 JSON object，只允许以下字段：
+
+| 字段 | 类型 | 必填 | 约束 |
+|-|-|-|-|
+| `version` | `1` | 是 | MCP server config schema version。 |
+| `url` | string | 是 | absolute `http://` 或 `https://` Streamable HTTP URL；须有 hostname，拒绝 credentials 与 fragment；允许 query。 |
+| `timeoutMs` | positive integer | 是 | 范围 `1..2147483647`，用于 initialize、连接 deadline 和每次普通 `tools/call`；progress 不重置 timeout。 |
+| `headers` | object | 否 | 所有下游 MCP HTTP 请求使用的静态 headers。 |
+
+Header name 大小写不重复，value 必须是 string 并通过 Node.js header 校验。允许业务认证 header；拒绝 HTTP transport 自有和 hop-by-hop headers，包括 `Host`、`Content-Length`、`Content-Type`、`Content-Encoding`、`Accept`、`Accept-Encoding`、`Transfer-Encoding`、`Connection`、`Keep-Alive`、`TE`、`Trailer`、`Upgrade`、`Proxy-Authenticate`、`Proxy-Authorization`、`Proxy-Connection`，以及 MCP 自有的 `Mcp-Session-Id`、`MCP-Protocol-Version`、`Last-Event-ID`。HTTP endpoint 与 MCP server 的 header 禁止集合分别校验。
+
+下游使用 Node.js 默认 HTTPS TLS 行为，不提供自定义 CA、mTLS 或关闭证书校验的配置。Streamable HTTP 请求禁止 redirect，避免静态认证 header 被转发。MCP server config 只在启动期读取，不会由下游 `tools/list` 自动发现或校验 Tool。
+
+---
+
 ## Catalog binding 与调用边界
 
 catalog 以 Tool config definition reference `id` 接收 route-bound external executor：
@@ -172,15 +203,15 @@ catalog 以 Tool config definition reference `id` 接收 route-bound external ex
 - built-in override 使用 custom definition 的对外 schema，但保留 built-in executor 和 implementation contract。
 - custom-only definition 有 route 时绑定对应 external executor；没有 route 时绑定 unavailable executor。
 
-所有 definition、route、Processor 和 endpoint artifact 都在 exposure 过滤之前加载与校验。随后 compiler 构建 effective catalog，校验 workspace `enabled` / `disabled` selector，并派生 exposed catalog。隐藏 Tool 不会绕过 exposure 到达 external executor。
+所有 definition、route、显式 Processor registry、HTTP endpoint 和 MCP server artifact 都在 exposure 过滤之前加载与校验。随后 compiler 构建 effective catalog，校验 workspace `enabled` / `disabled` selector，并派生 exposed catalog。隐藏 Tool 不会绕过 exposure 到达 external executor；被隐藏的 MCP route 仍参与对应 server identity 的启动后 warm-up。
 
 external invocation 只接收 invocation call id、Tool name、已校验 arguments 和 caller `AbortSignal`，不接收 `ToolRuntimeContext`、workspace roots 或本地文件访问能力。
 
 ---
 
-## Canonical protocol 与 stage 编排
+## HTTP canonical protocol 与 stage 编排
 
-每次有效调用被构造成一个单调用 canonical request。route 的 request stage 产生最终 HTTP request entity；HTTP `POST` 交换使用该 route 的 endpoint snapshot；response stage 将 endpoint result 转换为项目标准 `ToolCallResult`。
+HTTP route 的每次有效调用被构造成一个单调用 canonical request。route 的 request stage 产生最终 HTTP request entity；HTTP `POST` 交换使用该 route 的 endpoint snapshot；response stage 将 endpoint result 转换为项目标准 `ToolCallResult`。MCP route 不使用此 canonical wrapper 或 Processor stage。
 
 canonical request 是只含一个 call 的 JSON object：`calls` 是长度为一的数组，call 含 `id`、`name` 和 object 类型 `arguments`；可选 `extensions` 只接受非空、非 `custom-mcp` namespace 的 object 值。`id` 使用 MCP invocation call id，`name` 使用 Tool definition 的 MCP name，`definitionId` 不进入 canonical protocol。
 
@@ -236,15 +267,27 @@ canonical JSON 使用严格 UTF-8，Processor canonical output 不允许 BOM。�
 
 ---
 
+## MCP route 与下游会话
+
+External runtime 按不同 MCP server config real path 维护 workspace-owned connection manager。一个 manager 共享一个 MCP Client、Streamable HTTP transport 和下游 session，可被多个 route、调用和上游 MCP session 复用；上下游 request ID、session ID、initialize 与能力协商相互独立。下游调用只发送本地 Tool definition 的 `name` 与已校验的 `arguments`，不发送 definition ID、本地 call ID、上游会话、workspace roots、请求 headers 或 canonical wrapper。
+
+HTTP listener listening 且启动摘要写出后，对每个 server identity 非阻塞 warm-up 一次。Manager 采用 single-flight initialize，检查下游声明 `tools` capability，不调用 `tools/list`。失败回到 idle，并输出安全 diagnostic；未来 Tool 调用可再次按需连接，同期 waiter 共享同一次连接。单个 waiter 取消不会终止共享 initialize。Transport/session 无效后废弃连接，后续新调用建立新 session；已发送的调用不自动重试。
+
+下游合法 `CallToolResult` 保留 text/image content、annotations、`_meta` 与 `structuredContent` 等项目支持的字段，将省略的 `isError` 归一化为 `false`。下游 `isError: true` 是业务结果；JSON-RPC、timeout、连接、transport 或协议错误成为本地稳定的 `isError: true` Tool result。audio、resource、resource link 和其它不满足项目统一 text/image 结果边界的内容不会截断或转成文本返回。结果仍经过统一验证、request policy 和 Tool-call/result logger；下游 raw error data 不进入新增 MCP diagnostic。
+
+MCP `tools/call` 使用独立下游 request ID。Caller cancellation 通过 route-owned signal 触发 SDK cancellation notification，但不复用上游 ID，也不重试调用。已结算的调用继续占据 active slot，直到对应 request-specific HTTP body 及关联 cancellation notification HTTP lifecycle drain；MCP connection manager 的 transport close 提供 shutdown 时的最终 drain barrier。上游单个 session close 仅取消该 session 的调用，不关闭 workspace-owned 下游 session。
+
+---
+
 ## 共享资源、容量、失败与取消
 
 有至少一条 route 时，workspace 创建一个共享 external runtime：
 
-- 所有 route 共用最多 8 个 active exchange 和 64 个 FIFO pending exchange；第 65 个 pending 调用返回 `external_capacity_exceeded`，不会启动 Processor 或 HTTP request。
+- HTTP 与 MCP route 共用最多 8 个 active exchange 和 64 个 FIFO pending exchange；第 65 个 pending 调用返回 `external_capacity_exceeded`，不会启动外部工作。
 - active slot 直到 exchange 的 `drained` 完成后释放，而不是 caller-visible result `settled` 时释放。
-- 每条 route 具有独立 immutable endpoint snapshot 和 stage adapter，但不会获得独立 capacity pool。
-- 所有 route 共用一组 owner-scoped HTTP/HTTPS Agents；Agent 可按 origin 管理连接池，不使用或关闭 process-global Agent。
-- 只要任一 route 使用 Processor stage，就创建一个共享 Processor runner 和一个共享 Processor registry。runner 进入 degraded cleanup state 后会拒绝后续 Processor admission；direct route 不调用该 runner。
+- HTTP route 具有 immutable endpoint snapshot 和 stage adapter，HTTP route 共用一组 owner-scoped HTTP/HTTPS Agents；不使用或关闭 process-global Agent。
+- 使用 Processor stage 时创建共享 Processor runner 和显式 registry。runner 进入 degraded cleanup state 后会拒绝后续 Processor admission；direct route 与 MCP route 不调用该 runner。
+- MCP route 按 server config real path 共享 connection manager、MCP Client 和下游 session；不与 HTTP route 共享 transport resource。Tool 调用触发的 connect 位于 admission 之后；后台 warm-up 不占用 Tool exchange slot。
 
 字节与时间边界：
 
@@ -266,7 +309,7 @@ HTTP body 在 request stage 完成编码后检查；`body-encoder` 的结果也�
 | Classification | 语义 |
 |-|-|
 | `external_capacity_exceeded` | 8 个 active 和 64 个 pending exchange 都已占满；调用未启动外部工作。 |
-| `external_request_too_large` | 最终 request body 超过 50 MiB；HTTP request 未发送。 |
+| `external_request_too_large` | HTTP 最终 request body 超过 50 MiB；HTTP request 未发送。 |
 | `external_transport_failed` | DNS、连接、TLS 或 HTTP stream 失败。 |
 | `external_timeout` | route endpoint 的 HTTP exchange 超过其 `timeoutMs`。 |
 | `external_response_too_large` | response body 超过 50 MiB。 |
@@ -276,14 +319,21 @@ HTTP body 在 request stage 完成编码后检查；`body-encoder` 的结果也�
 | `external_tool_cancelled` | endpoint 返回合法 canonical result `cancelled`；这是远端领域结果。 |
 | `processor_failed` | Processor spawn、stdio、exit、signal、大小限制或输出 contract 失败。 |
 | `processor_timeout` | Processor invocation 超过 `timeoutMs`。 |
+| `mcp_connection_failed` | 未建立可用下游 MCP session。 |
+| `mcp_capability_missing` | 下游没有声明 `tools` capability。 |
+| `mcp_call_failed` | 下游 `tools/call` 返回 JSON-RPC error。 |
+| `mcp_timeout` | 下游 initialize 或普通调用超时。 |
+| `mcp_protocol_failed` | 下游 MCP message / result 不符合协议。 |
+| `mcp_result_unsupported` | 下游 result 超出项目 text/image 边界。 |
+| `mcp_transport_failed` | 下游 MCP transport / session 交换失败。 |
 | `external_internal_failed` | 统一调用管线捕获未建模的内部异常。 |
 | `cancelled` | MCP caller cancellation 或 application shutdown 中止本地 exchange。 |
 
 服务不自动重试外部调用，也不接受晚到结果。transport、timeout、response-side Processor timeout 和 caller cancellation 后，外部服务可能已经执行操作；调用方只能在该操作可安全重复时自行重试。
 
-caller `AbortSignal` 会传递到 pending / active admission、Processor 和 HTTP transport。取消 queued 调用会移出 FIFO；取消 active 调用先结算为 `cancelled`，然后继续等待本地 drain。Processor 在 timeout 或取消时关闭 stdio、先向 direct child 发送 `SIGTERM`，再在有界等待后发送 `SIGKILL`；若 child 未确认关闭，runner 进入 degraded cleanup 并拒绝未来 Processor admission。
+caller `AbortSignal` 会传递到 pending / active admission 和对应 HTTP 或 MCP route adapter。取消 queued 调用会移出 FIFO；取消 active 调用先结算为 `cancelled`，然后继续等待本地 drain。HTTP Processor 在 timeout 或取消时关闭 stdio、先向 direct child 发送 `SIGTERM`，再在有界等待后发送 `SIGKILL`；若 child 未确认关闭，runner 进入 degraded cleanup 并拒绝未来 Processor admission。
 
-首次 `SIGINT` 或 `SIGTERM` 启动幂等 application shutdown：先停止 HTTP listener 与新 MCP session admission，并立即启动 Android runtime close，使 Android gate 停止 admission、取消 queued / active Gradle work；随后关闭已有 MCP session 以传播其它调用取消。HTTP listener 与 session drain 完成后等待 Android 完整 barrier，再调用 `LoadedApplicationRuntime.close()`。external runtime 停止新 admission、取消 pending work、abort active work 并等待 active exchange drain，随后关闭共享 Processor runner（存在时）和专用 HTTP/HTTPS Agents；最后关闭 logger。单个 MCP session 的 DELETE 或 transport close 只关闭该 session，不关闭 Android 或 workspace external runtime。所有 application shutdown 调用复用同一个 completion promise。某个关闭阶段失败时仍继续执行后续阶段，最终以聚合错误报告；transport 在每个 active exchange 脱离本地 listener 后才销毁其 dedicated Agents，且不影响 process-global Agent。
+首次 `SIGINT` 或 `SIGTERM` 启动幂等 application shutdown：先停止 HTTP listener 与新上游 MCP session admission，并立即启动 Android runtime close；随后关闭已有上游 session 传播调用取消。HTTP listener 与 session drain 完成后等待 Android barrier，再调用 `LoadedApplicationRuntime.close()`。External runtime 停止新 admission、取消 pending 并 abort active invocation，同时启动 MCP connection manager close，解除下游 HTTP lifecycle 的 drain barrier；active drain 与 manager close 完成后，再关闭 Processor runner（存在时）和专用 HTTP/HTTPS Agents，最后关闭 logger。已有下游 session best-effort 发送 DELETE，最多等待 5 秒，失败或超时仍关闭本地 Client/transport。单个上游 session DELETE 或 transport close 不关闭 workspace external runtime。关闭复用一个 completion promise；某个关闭阶段失败仍继续后续阶段并聚合报告。
 
 ---
 
@@ -308,13 +358,18 @@ External routing config 存在但 `routes` 为空时输出 configured。
   External routing: enabled
     Routes: 2
     Route: external-echo
+      Routing mode: http
       Tool: external_echo
       Request stages: body-encoder
       Response stages: body-decoder
       Endpoint: http://127.0.0.1:43120/external/v1/tool-calls
+    Route: external-mcp
+      Routing mode: mcp
+      Tool: external_mcp_tool
+      Server: http://127.0.0.1:43130/mcp
 ```
 
-有 route 时，摘要按 route 声明顺序输出 definition id、Tool name、两个 stage mode 和 endpoint identity。endpoint identity 会剥离 URL query、credentials 与 fragment。摘要不输出 endpoint headers、Processor config path、endpoint config path、Processor executable path 或 argv。
+有 route 时，摘要按全局 route 声明顺序输出 definition id、routing mode、Tool name；HTTP route 输出两个 stage mode 与 endpoint identity，MCP route 输出 server identity。URL identity 剥离 query、credentials 与 fragment。摘要不输出静态 header、配置文件路径、Processor executable path 或 argv。Manager connection diagnostic 按 server identity 记录 connected / failed、phase、classification、duration；shared server 的一次 warm-up 仅产生一次 outcome。新增 MCP diagnostic 不含静态 header name/value、下游 request/session ID、arguments、result payload、下游原始错误或 URL query。
 
 Processor post-drain diagnostics 还会记录安全的 `route=<definitionId>` 与 `tool=<toolName>`，以及 role、Processor name、duration、byte counts、stderr truncation 和 cleanup state。诊断不包含 endpoint URL、header value、payload、executable path、argv、stdout 或 stderr text。诊断 sink 的异常或耗时不会改变调用结果或延迟资源 cleanup。
 
@@ -342,13 +397,14 @@ Request Processor 不接收 response-only metadata。Response `body-decoder` 应
 | `src/runtime/startup-runtime.ts` | 纯配置 / catalog 校验、空 route 无资源运行时、共享 executor 创建和 shutdown | `test/runtime/startup-runtime.test.ts` |
 | `src/runtime/application-lifecycle.ts` | listener、Android runtime、MCP session、external runtime 与 logger 的关闭顺序；Android close 在 session drain 前启动，External runtime 在 Android barrier 后关闭 | `test/runtime/application-lifecycle.test.ts` |
 | `src/tools/catalog.ts` | definition-id external binding、unavailable binding、override 保持 built-in binding | `test/tools/tool-exposure.test.ts` |
-| `src/tools/external-routing/config.ts` | External routing config、Processor registry、endpoint config、route / Processor binding | `test/external-routing/config.test.ts` |
+| `src/tools/external-routing/config.ts` | External routing config v2、Processor registry、HTTP endpoint / MCP server config、route union 与 binding | `test/external-routing/config.test.ts` |
+| `src/tools/external-routing/mcp-connection-manager.ts`, `src/tools/external-routing/mcp-transport.ts` | 下游 MCP Client/session、single-flight warm-up、tracked exchange 和 transport close barrier | `test/external-routing/` 下的 MCP 专题测试 |
 | `src/tools/external-routing/canonical-protocol.ts` | canonical JSON contract 与 filter invariant | `test/external-routing/canonical-protocol.test.ts` |
 | `src/tools/external-routing/strategy-adapter.ts` | route-specific stage 编排、status / protocol mapping、drain diagnostics | `test/external-routing/strategy-adapter.test.ts` |
 | `src/tools/external-routing/http-transport.ts` | shared HTTP resources、endpoint snapshot、limits、metadata、failure / cancel / shutdown | `test/external-routing/http-transport.test.ts` |
 | `src/tools/external-routing/processor-runner.ts` | subprocess limits、environment、termination 与 drain | `test/external-routing/processor-runner.test.ts` |
 | `src/tools/external-routing/runtime.ts` | workspace 8 active / 64 pending admission、FIFO、cancel 与 close | `test/external-routing/runtime-lifecycle.test.ts` |
-| `src/tools/external-routing/executor.ts` | route-bound facade、canonical-to-`ToolCallResult` mapping 与 shared resource close | `test/external-routing/executor.test.ts` |
+| `src/tools/external-routing/executor.ts` | route-bound facade、HTTP canonical-to-`ToolCallResult` mapping、MCP route dispatch 与 shared resource close | `test/external-routing/executor.test.ts` |
 | `test/runtime/external-routing-integration.test.ts` | selected workspace 到 MCP / loopback endpoint 的多 route custom-only 集成 | `test/runtime/external-routing-integration.test.ts` |
-| `src/runtime/startup-logging.ts` | disabled / configured / enabled 启动摘要与 endpoint 脱敏 | `test/runtime/startup-logging.test.ts` |
-| `src/runtime/application-diagnostics.ts` | Processor drain 的 route / Tool 安全诊断格式 | `test/runtime/application-diagnostics.test.ts` |
+| `src/runtime/startup-logging.ts` | disabled / configured / enabled 启动摘要与 HTTP/MCP URL 脱敏 | `test/runtime/startup-logging.test.ts` |
+| `src/runtime/application-diagnostics.ts` | Processor drain 与 MCP connection 的安全诊断格式 | `test/runtime/application-diagnostics.test.ts` |

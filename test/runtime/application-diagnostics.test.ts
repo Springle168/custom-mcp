@@ -17,6 +17,13 @@ async function testFormatsOnlySafeStructuredMetadata(): Promise<void> {
   });
 
   diagnostics.onToolCallDiagnostic({ kind: 'router_exception', callId: 'call_test' });
+  diagnostics.onMcpConnectionDiagnostic({
+    server: 'https://downstream.example/mcp',
+    outcome: 'failed',
+    phase: 'initialize',
+    classification: 'mcp_timeout',
+    durationMs: 42,
+  });
   diagnostics.onExternalProcessorDrain({
     definitionId: 'external-route',
     toolName: 'external_tool',
@@ -32,11 +39,14 @@ async function testFormatsOnlySafeStructuredMetadata(): Promise<void> {
     stderrTruncated: true,
   });
 
-  assertEqual(messages.length, 2, 'Each diagnostic should produce one logger message');
+  assertEqual(messages.length, 3, 'Each diagnostic should produce one logger message');
   assertIncludes(messages[0] ?? '', 'kind=router_exception', 'Tool-call diagnostic should retain its stable kind');
   assertIncludes(messages[0] ?? '', 'callId=call_test', 'Tool-call diagnostic should retain correlation');
-  assertIncludes(messages[1] ?? '', 'cleanupFailed=true', 'Processor diagnostic should retain degraded cleanup state');
+  assertIncludes(messages[1] ?? '', 'server=https://downstream.example/mcp', 'MCP diagnostic should retain the safe endpoint identity');
+  assertIncludes(messages[1] ?? '', 'classification=mcp_timeout', 'MCP diagnostic should retain stable classification');
+  assertIncludes(messages[2] ?? '', 'cleanupFailed=true', 'Processor diagnostic should retain degraded cleanup state');
   assertNotIncludes(messages.join('\n'), 'stderr text', 'Diagnostics must not contain Processor stream contents');
+  assertNotIncludes(messages.join('\n'), 'Authorization', 'Diagnostics must not contain static header names');
 }
 
 async function testLoggerFailureNeverEscapesDiagnosticCallbacks(): Promise<void> {
@@ -48,6 +58,12 @@ async function testLoggerFailureNeverEscapesDiagnosticCallbacks(): Promise<void>
   });
 
   diagnostics.onToolCallDiagnostic({ kind: 'result_log_failed', callId: 'call_test' });
+  diagnostics.onMcpConnectionDiagnostic({
+    server: 'https://downstream.example/mcp',
+    outcome: 'connected',
+    phase: 'connect',
+    durationMs: 1,
+  });
   diagnostics.onExternalProcessorDrain({
     definitionId: 'external-route',
     toolName: 'external_tool',
