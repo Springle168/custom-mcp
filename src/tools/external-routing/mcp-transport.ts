@@ -10,6 +10,7 @@ import type {
   Transport,
   TransportSendOptions,
 } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 const MAX_LATE_RESPONSE_TOMBSTONES = 1_024;
 
@@ -147,7 +148,11 @@ export class TrackedMcpTransport implements Transport {
     } catch (error: unknown) {
       finishRequestSend?.();
       finishCancellationSend?.();
-      if (request !== undefined) this.#markTransportFailure(request.id);
+      if (request !== undefined) {
+        this.#markTransportFailure(request.id);
+      } else if (cancellationId !== undefined && isSessionInvalidError(error)) {
+        this.#markTransportFailure(cancellationId);
+      }
       throw error;
     }
     void sent.then(
@@ -155,7 +160,7 @@ export class TrackedMcpTransport implements Transport {
         finishRequestSend?.();
         finishCancellationSend?.();
       },
-      () => {
+      (error: unknown) => {
         finishRequestSend?.();
         finishCancellationSend?.();
         if (requestExchange?.requestHttpResponseStarted === true) {
@@ -163,6 +168,8 @@ export class TrackedMcpTransport implements Transport {
           this.#hooks.onProtocolError?.();
         } else if (request !== undefined) {
           this.#markTransportFailure(request.id);
+        } else if (cancellationId !== undefined && isSessionInvalidError(error)) {
+          this.#markTransportFailure(cancellationId);
         }
       },
     );
@@ -337,6 +344,10 @@ export class TrackedMcpTransport implements Transport {
 
 function isProtocolParseError(error: Error): boolean {
   return error instanceof SyntaxError || error.name === 'ZodError';
+}
+
+function isSessionInvalidError(error: unknown): boolean {
+  return error instanceof StreamableHTTPError && error.code === 404;
 }
 
 function parseOutboundBody(body: BodyInit | null | undefined): JSONRPCMessage | undefined {
