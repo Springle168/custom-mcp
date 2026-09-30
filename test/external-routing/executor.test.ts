@@ -1,7 +1,16 @@
+import { createServer } from 'node:http';
 import {
+  createExternalRoutingExecutor,
   ExternalRoutingExecutor,
   type ExternalRouteOperation,
 } from '../../src/tools/external-routing/executor.js';
+import {
+  parseCanonicalRequestDocument,
+  type CanonicalContentBlock,
+  type CanonicalRequest,
+} from '../../src/tools/external-routing/canonical-protocol.js';
+import type { CompiledHttpRoute } from '../../src/tools/external-routing/config.js';
+import { isToolCallResult } from '../../src/runtime/tool-result-validation.js';
 import {
   assert,
   assertEqual,
@@ -53,6 +62,145 @@ function invocation(overrides: Partial<{
     arguments: overrides.arguments ?? { value: 'ok' },
     ...(overrides.signal === undefined ? {} : { signal: overrides.signal }),
   };
+}
+
+async function withHttpExecutor(
+  responseFor: (request: CanonicalRequest) => unknown,
+  run: (executor: ExternalRoutingExecutor) => Promise<void>,
+): Promise<void> {
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const canonicalRequest = parseCanonicalRequestDocument(Buffer.concat(chunks));
+    const body = JSON.stringify(responseFor(canonicalRequest));
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(body);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address !== null && typeof address !== 'string', 'HTTP fixture should expose a TCP port');
+  const route: CompiledHttpRoute = {
+    routingMode: 'http',
+    definitionId: 'test-route',
+    toolName: 'external_tool',
+    endpointConfigFilePath: 'test-endpoint.json',
+    endpoint: {
+      url: `http://127.0.0.1:${address.port}/canonical`,
+      timeoutMs: 5_000,
+      headers: {},
+    },
+    requestStage: { mode: 'direct' },
+    responseStage: { mode: 'direct' },
+  };
+  const { executor } = createExternalRoutingExecutor({
+    configFilePath: 'test-routing.json',
+    processorsByName: new Map(),
+    routes: [route],
+    routesByDefinitionId: new Map([[route.definitionId, route]]),
+  });
+  try {
+    await run(executor);
+  } finally {
+    await executor.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
+async function testHttpCanonicalContentMapping(): Promise<void> {
+  // These bytes test encoding only; canonical validation does not inspect image files.
+  const content: readonly CanonicalContentBlock[] = [
+    { type: 'text', text: 'Preview:' },
+    { type: 'image', data: 'AQID', mime_type: 'image/webp' },
+    { type: 'unknown', value: { type: 'image', data: 'example', url: 'https://example.test/image' } },
+    { type: 'text', text: '' },
+    { type: 'text', text: 'adjacent text' },
+    ...[null, false, 0, '', 'hello', [1, null]].map((value) => ({ type: 'unknown' as const, value })),
+  ];
+  const expectedContent = [
+    { type: 'text', text: 'Preview:' },
+    { type: 'image', data: 'AQID', mimeType: 'image/webp' },
+    { type: 'text', text: '{"type":"image","data":"example","url":"https://example.test/image"}' },
+    { type: 'text', text: '' },
+    { type: 'text', text: 'adjacent text' },
+    ...['null', 'false', '0', '""', '"hello"', '[1,null]'].map((text) => ({ type: 'text', text })),
+  ];
+  await withHttpExecutor((request) => ({
+    results: [{
+      id: request.calls[0].id,
+      status: request.calls[0].arguments.status,
+      content: request.calls[0].arguments.empty ? [] : content,
+    }],
+    extensions: { fixture: { notMcpMetadata: true } },
+  }), async (executor) => {
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      for (const empty of [false, true]) {
+        const result = await executor.execute('test-route', invocation({ arguments: { status, empty } }));
+        assertEqual(result.isError, status !== 'completed', 'Only completed should map to successful MCP status');
+        assertEqual(
+          JSON.stringify(result.content),
+          JSON.stringify(empty ? [] : expectedContent),
+          'HTTP mapping must preserve every block, text boundary, JSON value and image byte',
+        );
+        assertEqual(Object.keys(result).sort().join(','), 'content,isError', 'Mapping must not add metadata or structuredContent');
+        assert(isToolCallResult(result), 'Mapped HTTP results must pass unified runtime validation');
+      }
+    }
+  });
+}
+
+async function testHttpRejectionsRemainControlled(): Promise<void> {
+  await withHttpExecutor(() => ({
+    error: { code: 'invalid_request', message: '' },
+  }), async (executor) => {
+    const result = await executor.execute('test-route', invocation());
+    assertEqual(result.isError, true, 'Top-level rejection should remain an error');
+    assertEqual(getResultText(result), 'External endpoint rejected the tool call (invalid_request): ', 'Endpoint error mapping should be unchanged');
+  });
+
+  for (const invalidContent of [
+    [{ type: 'text', text: 'raw-business-secret' }, { type: 'image', data: 'bad-image-secret', mime_type: 'image/png' }],
+    [{ type: 'unknown', value: null, extra: 'raw-business-secret' }],
+  ]) {
+    await withHttpExecutor((request) => ({
+      results: [{ id: request.calls[0].id, status: 'completed', content: invalidContent }],
+    }), async (executor) => {
+      const result = await executor.execute('test-route', invocation());
+      assertEqual(result.isError, true, 'One invalid block should reject the whole response');
+      assertEqual(result.content.length, 1, 'Invalid response must produce only the local failure block');
+      assertIncludes(getResultText(result), 'invalid HTTP or canonical response', 'Protocol failure should use its stable local template');
+      assertNotIncludes(JSON.stringify(result), 'secret', 'Local rejection must not expose partial content or invalid data');
+    });
+  }
+}
+
+async function testHttpAdaptationExceptionIsControlled(): Promise<void> {
+  await withHttpExecutor((request) => ({
+    results: [{
+      id: request.calls[0].id,
+      status: 'completed',
+      content: [
+        { type: 'text', text: 'partial-business-secret' },
+        { type: 'unknown', value: 'adaptation-failure-fixture' },
+      ],
+    }],
+  }), async (executor) => {
+    const stringify = JSON.stringify;
+    try {
+      // Model an unanticipated serialization failure after wire validation.
+      JSON.stringify = (value: unknown) => {
+        if (value === 'adaptation-failure-fixture') throw new Error('raw-adaptation-secret');
+        return stringify(value);
+      };
+      const result = await executor.execute('test-route', invocation());
+      assertEqual(result.isError, true, 'Adaptation exceptions should be controlled local failures');
+      assertIncludes(getResultText(result), 'internal failure', 'Adaptation rejection should follow external_internal_failed');
+      assertEqual(result.content.length, 1, 'Adaptation failure must not return any partial business content');
+      assertNotIncludes(stringify(result), 'secret', 'Neither partial content nor thrown details may escape');
+    } finally {
+      JSON.stringify = stringify;
+    }
+  });
 }
 
 async function testReturnsRouteResults(): Promise<void> {
@@ -257,6 +405,9 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing executor mapping and ownership',
     tests: [
+      { name: 'maps actual HTTP canonical content for all statuses', run: testHttpCanonicalContentMapping },
+      { name: 'keeps actual HTTP rejections controlled and atomic', run: testHttpRejectionsRemainControlled },
+      { name: 'controls exceptions after HTTP wire validation', run: testHttpAdaptationExceptionIsControlled },
       { name: 'returns route results', run: testReturnsRouteResults },
       { name: 'maps controlled local failures without raw data', run: testMapsControlledLocalFailuresWithoutRawData },
       { name: 'passes route identity and invocation', run: testPassesRouteIdentityAndInvocation },

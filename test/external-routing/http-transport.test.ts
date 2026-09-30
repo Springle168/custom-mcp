@@ -247,7 +247,7 @@ async function testRawEncodedEntityAndBodyDecoderHeaders(): Promise<void> {
 }
 
 async function testEarlyFinalResponseCannotWinOverPendingRequestFailure(): Promise<void> {
-  const responseBody = '{"results":[{"id":"call_1","status":"completed","message":"done"}]}';
+  const responseBody = '{"results":[{"id":"call_1","status":"completed","content":[{"type":"text","text":"done"}]}]}';
   const responseBytes = Buffer.from([
     'HTTP/1.1 200 OK',
     'Content-Type: application/json; charset=utf-8',
