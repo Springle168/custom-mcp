@@ -3,6 +3,7 @@
  * external endpoints, and Processors. Keep validation here so transports and
  * runners never need to make their own, potentially divergent, assumptions.
  */
+import { types } from 'node:util';
 
 export type JsonPrimitive = null | boolean | number | string;
 
@@ -37,10 +38,19 @@ export interface CreateCanonicalRequestOptions {
 
 export type CanonicalResultStatus = 'completed' | 'failed' | 'cancelled';
 
+export type CanonicalContentBlock =
+  | { readonly type: 'text'; readonly text: string }
+  | {
+      readonly type: 'image';
+      readonly data: string;
+      readonly mime_type: 'image/png' | 'image/jpeg' | 'image/webp';
+    }
+  | { readonly type: 'unknown'; readonly value: JsonValue };
+
 export interface CanonicalResult {
   readonly id: string;
   readonly status: CanonicalResultStatus;
-  readonly message: string;
+  readonly content: readonly CanonicalContentBlock[];
 }
 
 export interface CanonicalSuccessResponse {
@@ -97,7 +107,10 @@ const RESERVED_EXTENSION_NAMESPACE = 'custom-mcp';
 const REQUEST_FIELDS = new Set(['calls', 'extensions']);
 const CALL_FIELDS = new Set(['id', 'name', 'arguments']);
 const SUCCESS_RESPONSE_FIELDS = new Set(['results', 'extensions']);
-const RESULT_FIELDS = new Set(['id', 'status', 'message']);
+const RESULT_FIELDS = new Set(['id', 'status', 'content']);
+const TEXT_FIELDS = new Set(['type', 'text']);
+const IMAGE_FIELDS = new Set(['type', 'data', 'mime_type']);
+const UNKNOWN_FIELDS = new Set(['type', 'value']);
 const ERROR_RESPONSE_FIELDS = new Set(['error', 'extensions']);
 const ERROR_FIELDS = new Set(['code', 'message']);
 
@@ -314,6 +327,7 @@ export function parseStrictUtf8JsonDocument(bytes: Uint8Array): JsonValue {
 export function isCanonicalSuccessResponse(
   response: CanonicalResponse,
 ): response is CanonicalSuccessResponse {
+  rejectProxy(response, 'response', 'invalid_response');
   return Object.prototype.hasOwnProperty.call(response, 'results');
 }
 
@@ -411,9 +425,9 @@ function validateCanonicalSuccessResponseInternal(
     'response.results[0].status',
     code,
   );
-  const message = readString(
-    readRequiredField(result, 'message', 'response.results[0].message', code),
-    'response.results[0].message',
+  const content = cloneCanonicalContent(
+    readRequiredField(result, 'content', 'response.results[0].content', code),
+    'response.results[0].content',
     code,
   );
   const extensions = response.has('extensions')
@@ -421,7 +435,7 @@ function validateCanonicalSuccessResponseInternal(
     : undefined;
 
   const results: readonly [CanonicalResult] = Object.freeze([
-    Object.freeze({ id, status, message }),
+    Object.freeze({ id, status, content }),
   ]) as readonly [CanonicalResult];
   const canonicalResponse: CanonicalSuccessResponse = extensions === undefined
     ? { results }
@@ -510,16 +524,115 @@ function readSingleArrayItem(
   path: string,
   code: CanonicalProtocolValidationErrorCode,
 ): unknown {
-  if (!Array.isArray(value) || value.length !== 1) {
+  const descriptors = readArrayDescriptors(value, path, code);
+  if ((value as readonly unknown[]).length !== 1) {
     throw protocolFailure(code, 'The canonical message is invalid.', path);
   }
 
-  const descriptors = readArrayDescriptors(value, path, code);
   const item = descriptors['0'];
   if (!item || !item.enumerable || !('value' in item)) {
     throw protocolFailure(code, 'The canonical message is invalid.', `${path}[0]`);
   }
   return item.value;
+}
+
+function cloneCanonicalContent(
+  value: unknown,
+  path: string,
+  code: CanonicalProtocolValidationErrorCode,
+): readonly CanonicalContentBlock[] {
+  const descriptors = readArrayDescriptors(value, path, code);
+  const content: CanonicalContentBlock[] = [];
+  for (let index = 0; index < (value as readonly unknown[]).length; index++) {
+    const descriptor = descriptors[String(index)];
+    if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) {
+      throw protocolFailure(code, 'The canonical message is invalid.', `${path}[${index}]`);
+    }
+    content.push(cloneCanonicalContentBlock(descriptor.value, `${path}[${index}]`, code));
+  }
+  return Object.freeze(content);
+}
+
+function cloneCanonicalContentBlock(
+  value: unknown,
+  path: string,
+  code: CanonicalProtocolValidationErrorCode,
+): CanonicalContentBlock {
+  const fields = readObjectFields(value, path, code);
+  const type = readRequiredField(fields, 'type', `${path}.type`, code);
+  const allowedFields = type === 'text' ? TEXT_FIELDS
+    : type === 'image' ? IMAGE_FIELDS
+      : type === 'unknown' ? UNKNOWN_FIELDS
+        : undefined;
+  if (allowedFields === undefined) {
+    throw protocolFailure(code, 'The canonical message is invalid.', `${path}.type`);
+  }
+  for (const key of fields.keys()) {
+    if (!allowedFields.has(key)) {
+      throw protocolFailure(code, 'The canonical message is invalid.', path);
+    }
+  }
+  if (type === 'text') {
+    return Object.freeze({
+      type,
+      text: readString(readRequiredField(fields, 'text', `${path}.text`, code), `${path}.text`, code),
+    });
+  }
+  if (type === 'image') {
+    const data = readCanonicalImageData(
+      readRequiredField(fields, 'data', `${path}.data`, code),
+      `${path}.data`,
+      code,
+    );
+    const mimeType = readRequiredField(fields, 'mime_type', `${path}.mime_type`, code);
+    if (mimeType !== 'image/png' && mimeType !== 'image/jpeg' && mimeType !== 'image/webp') {
+      throw protocolFailure(code, 'The canonical message is invalid.', `${path}.mime_type`);
+    }
+    return Object.freeze({ type, data, mime_type: mimeType });
+  }
+  return Object.freeze({
+    type: 'unknown',
+    value: cloneJsonValue(
+      readRequiredField(fields, 'value', `${path}.value`, code),
+      `${path}.value`,
+      code,
+      new Set<object>(),
+    ),
+  });
+}
+
+/**
+ * Check encoding without decoding a potentially large image. Padding bits
+ * must be zero so alternative spellings cannot represent the same bytes.
+ */
+function readCanonicalImageData(
+  value: unknown,
+  path: string,
+  code: CanonicalProtocolValidationErrorCode,
+): string {
+  const data = readNonEmptyString(value, path, code);
+  if (data.length % 4 !== 0) {
+    throw protocolFailure(code, 'The canonical message is invalid.', path);
+  }
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  let lastSextet = 0;
+  for (let index = 0; index < data.length - padding; index++) {
+    const char = data.charCodeAt(index);
+    const sextet = char >= 65 && char <= 90 ? char - 65
+      : char >= 97 && char <= 122 ? char - 71
+        : char >= 48 && char <= 57 ? char + 4
+          : char === 43 ? 62
+            : char === 47 ? 63
+              : -1;
+    if (sextet === -1) {
+      throw protocolFailure(code, 'The canonical message is invalid.', path);
+    }
+    lastSextet = sextet;
+  }
+  if ((padding === 2 && (lastSextet & 15) !== 0) || (padding === 1 && (lastSextet & 3) !== 0)) {
+    throw protocolFailure(code, 'The canonical message is invalid.', path);
+  }
+  return data;
 }
 
 function readOpaqueId(
@@ -633,6 +746,7 @@ function cloneJsonValue(
   code: CanonicalProtocolValidationErrorCode,
   ancestors: Set<object>,
 ): JsonValue {
+  rejectProxy(value, path, code);
   if (
     value === null ||
     typeof value === 'boolean' ||
@@ -688,6 +802,7 @@ function readObjectEntries(
   path: string,
   code: CanonicalProtocolValidationErrorCode,
 ): readonly (readonly [string, unknown])[] {
+  rejectProxy(value, path, code);
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw protocolFailure(code, 'The canonical message is invalid.', path);
   }
@@ -721,10 +836,14 @@ function readObjectFields(
 }
 
 function readArrayDescriptors(
-  value: readonly unknown[],
+  value: unknown,
   path: string,
   code: CanonicalProtocolValidationErrorCode,
 ): Readonly<Record<string, PropertyDescriptor>> {
+  rejectProxy(value, path, code);
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw protocolFailure(code, 'The canonical message is invalid.', path);
+  }
   if (Object.getOwnPropertySymbols(value).length !== 0) {
     throw protocolFailure(code, 'The canonical message is invalid.', path);
   }
@@ -743,6 +862,17 @@ function readArrayDescriptors(
     }
   }
   return descriptors;
+}
+
+/** Reflection and even array length reads can invoke Proxy traps. */
+function rejectProxy(
+  value: unknown,
+  path: string,
+  code: CanonicalProtocolValidationErrorCode,
+): void {
+  if (types.isProxy(value)) {
+    throw protocolFailure(code, 'The canonical message is invalid.', path);
+  }
 }
 
 function isArrayIndexKey(key: string, length: number): boolean {

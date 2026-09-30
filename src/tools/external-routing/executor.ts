@@ -2,7 +2,11 @@ import type { ExternalToolExecutor } from '../catalog.js';
 import { textErrorResult } from '../results.js';
 import type { ToolCallResult } from '../types.js';
 import { immutableMap } from '../../utils/immutable-map.js';
-import { createCanonicalRequest, type JsonObject } from './canonical-protocol.js';
+import {
+  createCanonicalRequest,
+  type CanonicalContentBlock,
+  type JsonObject,
+} from './canonical-protocol.js';
 import type {
   CompiledExternalRoutingConfig,
   CompiledHttpRoute,
@@ -264,13 +268,25 @@ function mapHttpStrategyOutcome(outcome: ExternalRoutingStrategyOutcome): Extern
     };
   }
   const result = outcome.response.results[0];
-  if (result.status === 'completed') {
-    return { kind: 'result', result: { content: [{ type: 'text', text: result.message }], isError: false } };
+  return {
+    kind: 'result',
+    result: {
+      content: result.content.map(mapCanonicalContentBlock),
+      isError: result.status !== 'completed',
+    },
+  };
+}
+
+/** Unknown stays JSON through response stages; only the MCP boundary textifies it. */
+function mapCanonicalContentBlock(block: CanonicalContentBlock): ToolCallResult['content'][number] {
+  switch (block.type) {
+    case 'text':
+      return { type: 'text', text: block.text };
+    case 'image':
+      return { type: 'image', data: block.data, mimeType: block.mime_type };
+    case 'unknown':
+      return { type: 'text', text: JSON.stringify(block.value) };
   }
-  if (result.status === 'failed') {
-    return { kind: 'result', result: textErrorResult(`External tool failed: ${result.message}`) };
-  }
-  return { kind: 'result', result: textErrorResult(`External tool reported cancellation: ${result.message}`) };
 }
 
 export type ExternalRoutingLocalFailureCode =

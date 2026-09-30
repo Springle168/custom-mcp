@@ -4,7 +4,8 @@
 
 这里的 custom-only Tool 是具有独立名称和外部执行实现的自定义工具。与内置 Tool 重名的 definition 是合法的 override，而不是 custom-only Tool，不属于本文范围。为避免意外覆盖，应使用明确、稳定且不会与内置 Tool 冲突的名称；采用项目或用途前缀通常更容易保持唯一。
 
-本文只描述文件与进程本身必须满足的契约，不涉及如何注册 definition、注册 Processor、选择处理阶段、绑定执行 route 或配置 HTTP endpoint。
+本文是可脱离仓库独立提供的编写规范，只描述文件与进程本身必须满足的契约，不依赖其他仓库文档或链接。
+本文不涉及如何注册 definition、注册 Processor、选择处理阶段、绑定执行 route 或配置 HTTP endpoint。
 
 ---
 
@@ -121,7 +122,10 @@ Processor 必须遵守以下通用规则：
 | `response.canonical-filter` | 已校验的 canonical response JSON | canonical response JSON | 必须保留 response kind；results response 还必须保留原始 result id。 |
 | `response.body-decoder` | 原始 HTTP response body 字节 | canonical response JSON | 输出 results response 时必须使用原始 call id；输出还必须与 HTTP status 相容。 |
 
-`response kind` 指 canonical results response 与 canonical error response 这两种互斥形状。`response.canonical-filter` 不能把 results response 改成 error response，也不能把 error response 改成 results response；它可以在保留 kind 的前提下调整领域 status、message、error code 或 extensions。
+`response kind` 指 canonical results response 与 canonical error response 这两种互斥形状。
+`response.canonical-filter` 不能在两种 kind 之间转换；results filter 保留 result id，可以修改 status，替换、增删或重排 content；error filter 可以修改 error code、error message。
+两者都可以修改 extensions，输出必须是完整合法消息，不会补回省略的 content 或 extensions。
+Filter stdin 中 image 保持 canonical `mime_type`，unknown 保持 JSON value；不要提前转成 MCP 内容或文本。
 
 `response.body-decoder` 收到的是 endpoint response entity 的原始字节，`custom-mcp` 不会先自动解压。若 `Content-Encoding` 表示压缩格式，decoder 应根据环境变量决定是否以及如何解码。多个 content coding 按 HTTP 语义以声明顺序的反向逐层解码。
 
@@ -147,7 +151,7 @@ Request Processor 不会收到 HTTP status、Content-Type 或 Content-Encoding�
 
 ## Canonical JSON 协议
 
-Canonical JSON 必须是严格 UTF-8、无 BOM 的单一完整 JSON document。request、call、response、result 和 error 等协议外壳拒绝未知字段；`arguments` 与 extension namespace value 内部可以承载其用途所需的 JSON 字段。所有值都必须是合法 JSON 值。
+Canonical JSON 必须是严格 UTF-8、无 BOM 的单一完整 JSON document。request、call、response、result、error 和 content block 等协议外壳拒绝未知字段；`arguments`、unknown value 与 extension namespace value 内部可以承载其用途所需的 JSON 字段。所有值都必须是合法 JSON 值。
 
 Processor 输出的每个 JSON object 都应使用唯一成员名，不要依赖不同 JSON parser 对重复成员的处理方式。
 
@@ -189,7 +193,10 @@ Canonical results response 使用 `results`，并且只包含一个 result。这
     {
       "id": "call_opaque-id",
       "status": "completed",
-      "message": "Summary completed."
+      "content": [
+        { "type": "text", "text": "Summary completed." },
+        { "type": "unknown", "value": { "sentence_count": 3 } }
+      ]
     }
   ]
 }
@@ -197,11 +204,39 @@ Canonical results response 使用 `results`，并且只包含一个 result。这
 
 约束如下：
 
-- `results` 必须恰好包含一个元素；
-- `id` 必须与原始 call id 完全相同；
+- `results` 必须恰好包含一个元素；result 恰好包含 `id`、`status` 和 `content`；
+- `id` 是非空 opaque string，必须与原始 call id 完全相同；
 - `status` 只能是 `completed`、`failed` 或 `cancelled`；
-- `message` 必须是 string，可以为空；
-- `completed` 形成成功 Tool result；`failed` 与 `cancelled` 形成错误 Tool result。
+- `content` 是有序、稠密标准数组，允许 `[]`，不能缺失或为 `null`；
+- 三个 status 都接受 text、image、unknown 或空 content；`completed` 形成成功 Tool result，`failed` 与 `cancelled` 形成错误 Tool result。
+
+每个 block 只允许以下字段：
+
+| Type | 形状 | 生产方要求 |
+|-|-|-|
+| `text` | `{ "type": "text", "text": "..." }` | text 为 string，可以为空。 |
+| `image` | `{ "type": "image", "data": "...", "mime_type": "image/png" }` | 非空规范标准 base64；MIME 仅接受精确小写的 `image/png`、`image/jpeg`、`image/webp`。 |
+| `unknown` | `{ "type": "unknown", "value": ... }` | value 必须存在，可以是 null 或任意合法 JSON 值。 |
+
+图片 data 必须使用标准 RFC 4648 base64 字母表 `A-Z`、`a-z`、`0-9`、`+`、`/`，长度为四的倍数。
+`=` 只能作为末尾一个或两个必需的 padding 字符，不能缺少、多余或出现在内部。
+两个 `=` 时最后一个有效 sextet 的低四位必须为零，一个 `=` 时低两位必须为零。
+Data 不能为空字符串，不能含空白、URL-safe 字符、data URL、URL 或文件路径。
+`mime_type` 不接受 `image/jpg`、大小写变体或参数；生产方负责图片字节与 MIME 相符，宿主不验证文件结构或修复编码。
+
+合法 JSON 值仅包括 null、string、boolean、有限 number，以及递归包含这些值的稠密数组和 object。
+Unknown value 内部字段不受 block wrapper 字段白名单限制，但每个值仍须合法；不能依赖序列化时静默省略字段、将无效数组项替换为 null 或自定义 coercion 来修复非法值。
+
+Unknown 不是未知 block type 的兜底，`audio`、`custom` 等 type 仍不合法。
+宿主只在最终 MCP 适配时对 unknown value 执行紧凑 `JSON.stringify`：一个 unknown 成为一个 text 块，string 带 JSON 引号，null 成为 `null` 文本，内部 type、URL 和 JSON 字符串不会被再次解析。
+示例中的 unknown 成为 `{"sentence_count":3}` 文本。
+文本、图片与 unknown 的数量和顺序原样保留，不合并相邻 text，不丢弃空字符串或空数组，不为 failed / cancelled 添加状态文本或固定失败前缀。
+
+任一非法块使整个 response 校验失败，不会返回部分内容。
+Result 的 `message` 结构不兼容，`message` 与 `content` 并存也拒绝，不做协议探测、自动转换或版本协商。
+Endpoint 的非法 results 产生 `external_protocol_failed`；response Processor 的非法输出产生 `processor_failed`。
+Canonical-filter 的 endpoint 输入先被校验，不能用于修复 message result；body-decoder 按 content 契约构造完整 canonical response。
+这些要求不改变 request、顶层 error、extensions 或配置 schema version。
 
 ### Canonical error response
 
@@ -252,6 +287,13 @@ Canonical request、results response 和 error response 顶层都可以包含 `e
 `extensions` 必须是 JSON object。每个 key 都必须是非空 namespace，且不能是保留名称 `custom-mcp`；每个 namespace value 必须是 JSON object。
 
 Filter 的输出是完整替换，不是与输入合并。省略 `extensions` 表示删除输入中的 extensions；需要保留时必须显式复制。除非确有跨协议传递 metadata 的需要，Processor 可以不添加 extensions。
+Extensions 不自动进入 MCP content、`_meta` 或 `structuredContent`。
+
+### 业务结果与日志边界
+
+Content 与 `error.message` 是业务结果，可能进入既有 Tool result logger，包括图片 base64 与 unknown 序列化后的 JSON。
+Canonical 校验和文本化不提供内容脱敏、HTML 转义或指令过滤；endpoint / Processor 维护者负责避免返回敏感内容。
+本地受控失败和运行诊断不泄露 raw body、stdout / stderr、header、endpoint query 或底层异常，但这不代表业务内容会被脱敏。
 
 ---
 
@@ -326,7 +368,7 @@ catch error:
 - stdout 是否只包含最终 payload，没有日志、进度或提示文本？
 - canonical JSON 输出是否为严格 UTF-8、无 BOM、单一完整 document？
 - 是否按 role 保留 call id、result id 和 response kind？
-- response 输出是否与 HTTP status 相容？
+- response 输出是否与 HTTP status 相容，results 是否包含完整合法 content 而非 message？
 - `body-decoder` 是否按需处理 Content-Encoding，并使用原始 call id？
 - 成功时是否 flush stdout 并以 `0` 退出，失败时是否使用非零退出码？
 - 是否能在 timeout、cancel 或 shutdown 时及时停止自身及其子进程？

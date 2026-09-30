@@ -143,11 +143,29 @@ Built-in pre-admission cancellation 使用稳定文本 `The tool call was cancel
 
 ## External routing 结果
 
-External routing config 为 definition reference `id` 声明 route 的 custom-only Tool，在 configured input schema 校验通过后进入该 route-bound external executor。每个 route 选择自己的 endpoint 与 stage，但 route-bound executor 共享 workspace external runtime。Canonical response 保持单个 string `message`，不承载图片或通用 content block。已校验 canonical `completed` result 由 executor 直接构造为成功的单文本块结果；canonical `failed`、`cancelled` 和 endpoint `error` 映射为 `textErrorResult()`。这些业务 message 来自受信任 endpoint 的 canonical result，会按其已校验文本返回。
+External routing config 为 definition reference `id` 声明 route 的 custom-only Tool，在 configured input schema 校验通过后进入该 route-bound external executor。每个 route 选择自己的 endpoint 与 stage，但 route-bound executor 共享 workspace external runtime。
+
+HTTP canonical result 使用有序 `content`，executor 为三种 status 共用逐块映射：
+
+- `text` 保留 text；
+- `image` 原样保留 data，将 `mime_type` 改名为 MCP `mimeType`；
+- `unknown` 对已校验 JSON value 执行紧凑 `JSON.stringify`，映射为一个 text 块。
+
+映射保留全部块的数量、顺序、相邻文本边界、空 text 和空 content，不合并、分组或补充状态文本。
+Unknown string 包含 JSON 引号，`null`、`false` 和 `0` 分别成为对应 JSON 文本；内部 `type` 或 URL 不被识别为 MCP 内容。
+`completed` 派生 `isError: false`，`failed` 与 `cancelled` 派生 `isError: true`，业务文本不添加 `External tool failed:` 或 `External tool reported cancellation:` 前缀。
+任一 content 不合法使整个 canonical response 失败，不返回部分结果。
+
+顶层 canonical `error` 通过 `textErrorResult()` 返回 `External endpoint rejected the tool call (<code>): <message>`。
+HTTP 映射不生成 annotations、`_meta` 或 `structuredContent`；命中 `structuredContentDup` 时，统一 adapter 复制映射后的 MCP content 与 isError，不恢复 unknown JSON 值。
+MCP route 不使用 canonical content，继续按下游 MCP 结果的 text/image、annotations、`_meta` 和 `structuredContent` 契约返回。
 
 容量、取消、HTTP / Processor timeout、大小限制、transport、canonical protocol 与内部失败也都映射为 `textErrorResult()`。本地失败文本只说明稳定的失败类别和安全的下一步：不包含 endpoint URL 或 query、header、request / response entity、Processor stdout / stderr、executable path、argv 或底层异常。外部服务器可能已执行而未获得确认结果时，文本明确说明服务不会自动重试；调用方只应在操作可安全重复时自行重试。
 
-外部 route 的完整映射、限制与协议边界见 [external routing](EXTERNAL-ROUTING.md)。
+业务 content（包括图片与 unknown JSON 文本）和 canonical `error.message` 可能进入既有 Tool result logger，不经过通用脱敏、HTML 转义或指令过滤。
+本地失败文本的敏感信息边界不用于过滤 endpoint / Processor 的业务内容。
+
+HTTP canonical 的严格块规则、result `message` 结构不兼容要求、response filter 契约，以及外部 route 的限制见 [external routing](EXTERNAL-ROUTING.md#http-canonical-protocol-与-stage-编排)。
 
 ---
 

@@ -13,15 +13,19 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { createConfigStore } from '../../src/runtime/config-store.js';
 import { createMCPServer } from '../../src/runtime/mcp-server.js';
+import { runWithRequestHeaderContext } from '../../src/runtime/request-context.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
 import {
   loadApplicationRuntime,
   type LoadedApplicationRuntime,
 } from '../../src/runtime/startup-runtime.js';
 import {
   parseCanonicalRequestDocument,
+  type CanonicalContentBlock,
   type CanonicalRequest,
 } from '../../src/tools/external-routing/canonical-protocol.js';
 import { createWorkspaceToolService } from '../../src/tools/index.js';
+import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   assert,
   assertEqual,
@@ -108,6 +112,7 @@ async function cleanupFixtures(): Promise<void> {
 async function writeExternalRoutingFixture(
   firstEndpointUrl: string,
   secondEndpointUrl: string,
+  structuredContentDup = false,
 ): Promise<void> {
   const inputSchema = {
     type: 'object',
@@ -186,6 +191,14 @@ async function writeExternalRoutingFixture(
       port: 4914,
       lineEnding: 'auto',
       logsDir: LOGS_DIR,
+      ...(structuredContentDup ? {
+        rules: {
+          requestHeaders: [{
+            match: { 'x-client': 'canonical-content-test' },
+            enable: ['structuredContentDup'],
+          }],
+        },
+      } : {}),
       tools: {
         toolConfigFile: TOOL_CONFIG_FILE,
         enabled: [FIRST_TOOL_NAME, SECOND_TOOL_NAME],
@@ -194,7 +207,10 @@ async function writeExternalRoutingFixture(
   });
 }
 
-async function startLoopbackEndpoint(completedMessage: string): Promise<LoopbackEndpoint> {
+async function startLoopbackEndpoint(
+  completedMessage: string,
+  responseFor?: (request: CanonicalRequest) => unknown,
+): Promise<LoopbackEndpoint> {
   const calls: CapturedEndpointCall[] = [];
   const failures: unknown[] = [];
   const sockets = new Set<Socket>();
@@ -202,7 +218,7 @@ async function startLoopbackEndpoint(completedMessage: string): Promise<Loopback
 
   const server = createServer((request, response) => {
     requestCount++;
-    handleEndpointRequest(request, response, calls, failures, completedMessage);
+    handleEndpointRequest(request, response, calls, failures, completedMessage, responseFor);
   });
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -234,6 +250,7 @@ function handleEndpointRequest(
   calls: CapturedEndpointCall[],
   failures: unknown[],
   completedMessage: string,
+  responseFor?: (request: CanonicalRequest) => unknown,
 ): void {
   const chunks: Buffer[] = [];
   request.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -246,11 +263,11 @@ function handleEndpointRequest(
         request: canonicalRequest,
       });
       const call = canonicalRequest.calls[0];
-      const body = JSON.stringify({
+      const body = JSON.stringify(responseFor?.(canonicalRequest) ?? {
         results: [{
           id: call.id,
           status: 'completed',
-          message: completedMessage,
+          content: [{ type: 'text', text: completedMessage }],
         }],
       });
       response.writeHead(200, {
@@ -360,12 +377,18 @@ async function closeHttpServer(
   });
 }
 
-async function connectMcpServer(runtime: LoadedApplicationRuntime): Promise<ConnectedMcpPair> {
+async function connectMcpServer(
+  runtime: LoadedApplicationRuntime,
+  options: {
+    readonly rawHeaders?: readonly string[];
+    readonly onResult?: (result: ToolCallResult) => void;
+  } = {},
+): Promise<ConnectedMcpPair> {
   const server = createMCPServer({
     configStore: createConfigStore(runtime),
     logger: {
       logToolCall() {},
-      logToolResult() {},
+      logToolResult(_name, result) { options.onResult?.(result); },
     },
     toolService: createWorkspaceToolService(runtime.toolCatalog),
   });
@@ -376,7 +399,91 @@ async function connectMcpServer(runtime: LoadedApplicationRuntime): Promise<Conn
     server.connect(serverTransport),
     client.connect(clientTransport),
   ]);
+  if (options.rawHeaders !== undefined) {
+    // Model the HTTP listener's request-scoped header context at the server boundary.
+    const onmessage = serverTransport.onmessage;
+    const headerView = createStrictRequestHeaderView([...options.rawHeaders]);
+    serverTransport.onmessage = (message, extra) =>
+      runWithRequestHeaderContext(headerView, () => onmessage?.(message, extra));
+  }
   return { client, server };
+}
+
+async function testCanonicalContentThroughMcpAndPolicy(): Promise<void> {
+  // Arbitrary bytes are intentional: this fixture verifies base64, not image structure.
+  const content: readonly CanonicalContentBlock[] = [
+    { type: 'text', text: 'Preview:' },
+    { type: 'image', data: 'AQID', mime_type: 'image/png' },
+    { type: 'unknown', value: { type: 'image', details: [null, false, 0, ''] } },
+    { type: 'text', text: '' },
+    { type: 'text', text: 'adjacent' },
+    { type: 'unknown', value: null },
+    { type: 'unknown', value: false },
+    { type: 'unknown', value: 0 },
+    { type: 'unknown', value: '' },
+  ];
+  const expectedContent = [
+    { type: 'text', text: 'Preview:' },
+    { type: 'image', data: 'AQID', mimeType: 'image/png' },
+    { type: 'text', text: '{"type":"image","details":[null,false,0,""]}' },
+    { type: 'text', text: '' },
+    { type: 'text', text: 'adjacent' },
+    { type: 'text', text: 'null' },
+    { type: 'text', text: 'false' },
+    { type: 'text', text: '0' },
+    { type: 'text', text: '""' },
+  ];
+
+  for (const duplicate of [false, true]) {
+    const endpoint = await startLoopbackEndpoint('', (request) => {
+      const value = request.calls[0].arguments.value;
+      return {
+        results: [{
+          id: request.calls[0].id,
+          status: typeof value === 'string' ? value.split(':')[0] : 'completed',
+          content: typeof value === 'string' && value.endsWith(':empty') ? [] : content,
+        }],
+      };
+    });
+    let runtime: LoadedApplicationRuntime | undefined;
+    let pair: ConnectedMcpPair | undefined;
+    const logged: ToolCallResult[] = [];
+    try {
+      await writeExternalRoutingFixture(endpoint.baseUrl, endpoint.baseUrl, true);
+      runtime = loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
+      pair = await connectMcpServer(runtime, {
+        rawHeaders: ['X-Client', duplicate ? 'canonical-content-test' : 'unmatched-client'],
+        onResult: (result) => logged.push(result),
+      });
+      for (const status of ['completed', 'failed', 'cancelled'] as const) {
+        for (const empty of [false, true]) {
+          const result = await pair.client.callTool({
+            name: FIRST_TOOL_NAME,
+            arguments: { value: `${status}:${empty ? 'empty' : 'mixed'}` },
+          });
+          const expected = empty ? [] : expectedContent;
+          assertEqual(JSON.stringify(result.content), JSON.stringify(expected), 'MCP Client should receive the exact mapped block order and values');
+          assertEqual(result.isError, status !== 'completed', 'MCP Client should receive the domain status without text prefixes');
+          assert(!('_meta' in result), 'HTTP mapping must not introduce MCP metadata');
+          const loggedResult = logged.at(-1);
+          assert(loggedResult !== undefined, 'Validated results should reach the result logger');
+          assertEqual(JSON.stringify(loggedResult.content), JSON.stringify(expected), 'Logger should receive mapped MCP blocks, not canonical unknown values');
+          if (duplicate) {
+            const expectedWrapper = { content: expected, isError: status !== 'completed' };
+            assertEqual(JSON.stringify(result.structuredContent), JSON.stringify(expectedWrapper), 'Matched policy must duplicate only final MCP content and status');
+            assertEqual(JSON.stringify(loggedResult.structuredContent), JSON.stringify(expectedWrapper), 'Logger should receive the same policy-adapted content');
+          } else {
+            assert(!('structuredContent' in result), 'Unmatched policy must not add structuredContent');
+            assert(!('structuredContent' in loggedResult), 'Unmatched logger result must not acquire structuredContent');
+          }
+        }
+      }
+      assertEqual(endpoint.failures.length, 0, 'Canonical endpoint should receive valid requests throughout the MCP path');
+      assertEqual(endpoint.requestCount(), 6, 'Each call should reach the endpoint once without retries');
+    } finally {
+      await cleanupRuntimeResources({ pair, runtime, endpoints: [endpoint] });
+    }
+  }
 }
 
 async function cleanupRuntimeResources(options: {
@@ -584,6 +691,7 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
+      { name: 'preserves canonical content through validation, policy, logger and MCP Client', run: testCanonicalContentThroughMcpAndPolicy },
       { name: 'routes two custom-only tools through independent loopback endpoints', run: testExternalRoutingThroughRuntimeAndMcp },
       { name: 'shares one downstream MCP session across two routes', run: testMcpRoutesShareOneDownstreamSession },
     ],

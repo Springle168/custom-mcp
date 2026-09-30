@@ -312,7 +312,7 @@ external invocation 只接收 invocation call id、Tool name、已校验 argumen
 HTTP route 的每次有效调用被构造成一个单调用 canonical request。
 route 的 request stage 产生最终 HTTP request entity。
 HTTP `POST` 交换使用该 route 的 endpoint snapshot。
-response stage 将 endpoint result 转换为项目标准 `ToolCallResult`。
+response stage 产生已校验 canonical response，executor 再逐块映射为项目标准 `ToolCallResult`。
 MCP route 不使用 canonical wrapper 或 Processor stage。
 
 canonical request 是只含一个 call 的 JSON object：
@@ -324,10 +324,97 @@ canonical request 是只含一个 call 的 JSON object：
 `id` 使用 MCP invocation call id，`name` 使用 Tool definition 的 MCP name。
 `definitionId` 不进入 canonical protocol。
 
-canonical response 只允许两种形状之一：
+canonical response 只允许两种互斥形状之一：
 
-- `results`：长度为一的数组，result 的 `id` 必须与原 call id 相同，`status` 为 `completed`、`failed` 或 `cancelled`，并有 string `message`；
-- `error`：有 non-empty string `code` 和 string `message`。
+- `results`：长度为一的数组，每个 result 恰好包含 `id`、`status` 和 `content`；
+- `error`：恰好包含非空 string `code` 和 string `message`，message 可以为空。
+
+不能同时出现 `results` 与 `error`，也不能省略两者。两种封套都可以包含 `extensions`，不能包含其他顶层字段。
+Response extensions 沿用 request 的 namespace 规则，不自动进入 MCP content、`_meta` 或 `structuredContent`。
+
+### Result 与 content
+
+Result `id` 是非空 opaque string，必须与原 call id 完全相同，不 trim 或解析前缀。
+`status` 只能为 `completed`、`failed` 或 `cancelled`。
+`content` 必须是有序、稠密标准数组，允许 `[]`，不能缺失或为 `null`。
+三个 status 都接受任意合法内容块组合，包括图片、unknown 和空数组。
+
+每个 content block 都是严格 object，只接受下表字段：
+
+| Type | 字段 | 规则 |
+|-|-|-|
+| `text` | `type`、`text` | `text` 为 string，允许空字符串，内容原样保留。 |
+| `image` | `type`、`data`、`mime_type` | `data` 为非空规范标准 base64；MIME 精确为 `image/png`、`image/jpeg` 或 `image/webp`。 |
+| `unknown` | `type`、`value` | `value` 为合法 JSON 值，必须存在；`null` 合法。 |
+
+`unknown` 是显式 JSON 内容，不是未定义 type 的兜底；`audio`、`custom` 等块仍是协议错误。
+Result 的 `message`、`images`、`isError` 等额外字段全部拒绝；`message` 与 `content` 并存也不合法。
+
+#### 图片 wire 规则
+
+`data` 使用标准 RFC 4648 base64 字母表 `A-Z`、`a-z`、`0-9`、`+`、`/`，长度必须为四的倍数。
+`=` 只允许位于末尾，数量为编码所必需的一个或两个；拒绝缺少、多余或内部 padding。
+两个 `=` 时最后一个有效 sextet 的低四位必须为零，一个 `=` 时低两位必须为零。
+空串、空白、URL-safe 字符、data URL、URL 和文件路径均不合法。
+
+`mime_type` 不接受 `image/jpg`、大小写变体或带参数的值。
+校验只保证编码与 MIME 声明合法，不验证图片文件结构；生产方负责字节与 MIME 相符。
+项目不解码、重新编码、修复 padding、下载图片或推断 MIME。
+这些限制属于 HTTP canonical wire，不收窄 built-in Tool 或 MCP route 的 MCP 图片契约。
+
+#### Unknown 与 JSON 快照
+
+`unknown.value` 接受 `null`、string、boolean、有限 number、稠密标准数组和普通 object（包括 null-prototype object）。
+内部字段不受 block wrapper 字段白名单限制，也不解释其中的 `type`、URL、文件 ID 或 MCP 字段。
+
+Canonical validation 使用 descriptor-based 读取，复制出独立规范表示并深度冻结，包括 content 数组、块 wrapper、unknown 子树和 extensions。
+响应封套、error、results、result、content、块和 JSON 子树的全部读取路径在属性、descriptor 或 prototype 访问前拒绝 Proxy，不触发其 trap。
+JSON 数据边界还要求：
+
+- object 原型只能为 `Object.prototype` 或 `null`，数组原型只能为 `Array.prototype`；
+- 拒绝 `undefined`、bigint、function、symbol、非有限数、循环、accessor、symbol key、普通 object 的非枚举属性、稀疏数组和数组额外属性；
+- 拒绝 `Date`、`Map`、`Set`、`Buffer`、类实例和依赖自定义 `toJSON()` 的对象，不读取 accessor 值或调用输入的 coercion；
+- 非循环共享子对象合法；`__proto__`、`constructor`、`toJSON` 等普通字符串 key 保持 JSON 数据语义。
+
+源对象后续突变不能改变已校验 response、filter stdin 或 MCP 输出。
+任一块或 JSON 子树不合法，整个 response 校验失败，不跳过坏块、修复图片或返回部分内容。
+
+### Canonical-to-MCP 映射
+
+| Canonical block | MCP block |
+|-|-|
+| `{ type: 'text', text }` | `{ type: 'text', text }` |
+| `{ type: 'image', data, mime_type }` | `{ type: 'image', data, mimeType: mime_type }` |
+| `{ type: 'unknown', value }` | `{ type: 'text', text: JSON.stringify(value) }` |
+
+Executor 创建新的结果对象与内容数组，保留块数量、顺序、相邻文本边界、空 text 和空 content，不合并或分组。
+`completed` 派生 `isError: false`；`failed` 和 `cancelled` 派生 `isError: true`。
+不插入状态文本，不添加 `External tool failed:` 或 `External tool reported cancellation:` 前缀，也不为远端 cancelled 添加 MCP metadata。
+远端 cancelled 是已确认的领域结果，不等同于本地 caller cancellation。
+
+Unknown 只在 executor 的最终适配中执行一次紧凑 `JSON.stringify(value)`，每个 unknown 对应一个 text 块。
+不排序、pretty-print、添加前缀或 Markdown fence、截断或拆分 JSON 子树；不使用 `String(value)`，不解析 JSON 字符串或将内部 object 识别为 MCP 块。
+
+| Unknown value | MCP text 字符内容 |
+|-|-|
+| `null` | `null` |
+| `false` | `false` |
+| `0` | `0` |
+| `"hello"` | `"hello"`，包含 JSON 双引号 |
+| `""` | `""`，不是空 text |
+| `[1, null]` | `[1,null]` |
+| `{ "type": "image", "data": "example" }` | `{"type":"image","data":"example"}`，仍是文本 |
+
+文本化承诺 JSON 语义，不承诺保留原始 whitespace、member 顺序或数字词法表示，沿用 `JSON.parse` / `JSON.stringify` 行为。
+无效数据不能依靠 stringify 的静默省略、数组 null 替换或自定义 `toJSON` 修复。
+已校验快照后的未建模适配异常进入 `external_internal_failed`，不返回部分内容或原始异常。
+
+顶层 canonical error 使用单文本错误结果：`External endpoint rejected the tool call (<code>): <message>`。
+本地容量、取消、timeout、transport 和内部失败使用各自稳定的安全文本。
+映射后仍经过统一结果校验、request policy adapter 和 result logger。
+`structuredContentDup` 命中时复制最终 MCP content 与 isError，不恢复 unknown JSON 值；图片在顶层与 structuredContent 中各序列化一份。
+
+### Wire 示例
 
 Canonical request 示例：
 
@@ -353,11 +440,20 @@ Canonical completed response 使用相同的 call id：
     {
       "id": "call_opaque-id",
       "status": "completed",
-      "message": "Hello from the external endpoint."
+      "content": [
+        { "type": "text", "text": "Preview:" },
+        { "type": "image", "data": "AQID", "mime_type": "image/png" },
+        { "type": "unknown", "value": { "details": [null, true, "example"] } },
+        { "type": "text", "text": "" }
+      ]
     }
   ]
 }
 ```
+
+示例中的 `AQID` 只展示合法 base64 编码，不是 PNG 文件；真实生产方必须提供与 MIME 相符的图片。
+对应 MCP content 按相同顺序保留文本、将 image 字段改名为 `mimeType`、将 unknown 转成 `{"details":[null,true,"example"]}` 文本，并保留最后的空 text。
+`failed` 和 `cancelled` 使用相同 content 结构，仅派生的 isError 不同。
 
 Endpoint 拒绝请求时可以返回 canonical error：
 
@@ -369,6 +465,14 @@ Endpoint 拒绝请求时可以返回 canonical error：
   }
 }
 ```
+
+### Stage、HTTP 与协议失败
+
+Request filter 保留原 call id，可修改 Tool name、arguments 和 extensions。
+Response filter 保留 response kind；results filter 还必须保留原 result id，可以修改 status，替换、增删或重排 content。
+Filter stdin 中 image 保持 `mime_type`，unknown 保持 JSON 值，不提前映射成 MCP 文本。
+Filter 输出是完整权威替换，必须自行包含所有必需字段；省略 content 不会从输入补回，省略 extensions 表示删除。
+输出的最终 status 决定 MCP isError。
 
 HTTP transport 始终使用 `POST`，不自动解压 response entity，也不跟随 redirect。
 
@@ -384,9 +488,22 @@ HTTP status 规则如下：
 - `4xx` / `5xx` 只能携带 canonical `error` response；
 - `3xx` 和其它状态范围不会产生确认结果。
 
-canonical JSON 使用严格 UTF-8，Processor canonical output 不允许 BOM。
-所有 canonical message 拒绝未知字段、非 JSON 值、循环结构、accessor、symbol 与非标准 prototype。
-filter 输出不会补回它省略的 extensions。
+Canonical JSON 使用严格 UTF-8、无 BOM 的单一完整 document。
+协议 wrapper 拒绝未知字段；arguments、unknown value 与 extension namespace value 内部按各自 JSON 数据契约承载字段。
+
+| 不合法内容来源 | Classification |
+|-|-|
+| endpoint direct 输出 | `external_protocol_failed` |
+| canonical-filter 的 endpoint 输入 | `external_protocol_failed`，不运行 filter 修复非法输入 |
+| canonical-filter 或 body-decoder 的 Processor 输出 | `processor_failed` |
+
+合法 results 不代表 HTTP status 合法：`4xx` / `5xx` 携带 failed 或 cancelled results 仍不能确认。
+Direct / canonical-filter 的 endpoint status 违约归为 `external_protocol_failed`；body-decoder 为 `4xx` / `5xx` 构造 results 是 Processor contract violation，归为 `processor_failed`。
+
+Result `message` 结构不兼容：三个 status 均只接受 `content`，不做协议探测、自动转换或双版本协商。
+使用 message 的 endpoint results 产生 `external_protocol_failed`，response Processor 输出产生 `processor_failed`。
+Canonical-filter 不能修复不合法 endpoint 输入；私有 body 由 body-decoder 按 content 契约生成 canonical response。
+顶层 `error.message`、request、extensions、配置 schema version 和 endpoint URL 规则保持各自契约，不增加 wire version 字段。
 
 ---
 
@@ -465,6 +582,8 @@ MCP connection manager 的 transport close 提供 shutdown 时的最终 drain ba
 
 HTTP body 在 request stage 完成编码后检查，`body-encoder` 的结果也受 request limit。
 transport 使用背压分块写入，避免在一个 turn 中将大 body 全部放入 Node writable queue。
+图片按 base64 后的 entity 字节计量，unknown 按 JSON entity 字节计量，不新增 per-block 上限或绕过 entity / Processor 限制。
+最终 MCP wire 大小不保证等于 HTTP entity 大小，映射失败也必须等待 exchange drain 才释放 active slot。
 
 配置、canonical protocol、Processor、transport、timeout、容量与本地内部失败都映射为标准 `ToolCallResult` 错误。
 endpoint 的已校验 business result 也映射为标准结果：
@@ -472,7 +591,7 @@ endpoint 的已校验 business result 也映射为标准结果：
 - `completed` 为成功；
 - `failed`、`cancelled` 和 canonical `error` 为 `isError: true`。
 
-完整结果映射见 [工具返回结果](TOOL-RESULTS.md)。
+HTTP 完整结果映射见上文 [Canonical-to-MCP 映射](#canonical-to-mcp-映射)；统一 MCP 返回壳和 request policy 见 [工具返回结果](TOOL-RESULTS.md)。
 
 内部 failure classification 用于稳定诊断和受控错误构造：
 
@@ -615,9 +734,10 @@ Response `body-decoder` 应使用 `CUSTOM_MCP_EXTERNAL_CALL_ID` 构造 canonical
 即使目标私有协议不回显该 id，这项要求仍然适用。
 保留变量不包含 endpoint URL、认证 header、MCP session 或其它 response headers。
 
-已通过 canonical protocol 校验的 endpoint `message` / `error.message` 是业务结果，会进入 MCP text result。
-这些业务结果不经过通用内容脱敏。
-配置 endpoint 和 Processor 的维护者应避免在业务文本中返回敏感信息。
+已通过 canonical protocol 校验的业务 content 和 `error.message` 会进入 MCP 结果，并可能进入既有 Tool result logger；content 包括文本、图片 base64 和 unknown 序列化后的 JSON。
+规范校验和 unknown 文本化只提供数据与序列化安全，不提供内容脱敏、HTML 转义或指令过滤。
+本地失败与运行诊断不泄露 raw body、stdout / stderr、header、endpoint query 或底层异常，不代表业务内容也会被脱敏。
+配置 endpoint 和 Processor 的维护者负责避免在业务内容中返回敏感信息。
 
 ---
 
