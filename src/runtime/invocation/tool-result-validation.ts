@@ -1,6 +1,6 @@
 import { types as utilTypes } from 'node:util';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { ToolCallResult } from '../tools/types.js';
+import type { ToolCallResult } from '../../tools/types.js';
 
 export function isToolCallResult(value: unknown): value is ToolCallResult {
   try {

@@ -5,8 +5,8 @@ import {
   type ExternalToolInvocation,
 } from '../../src/tools/catalog.js';
 import type { JsonObject } from '../../src/config/json-file.js';
-import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
-import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
+import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
 import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';

@@ -1,9 +1,9 @@
-import * as requestContextApi from '../../src/runtime/request-context.js';
+import * as requestContextApi from '../../src/runtime/request/request-context.js';
 import {
   getCurrentRequestHeaderView,
   runWithRequestHeaderContext,
-} from '../../src/runtime/request-context.js';
-import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+} from '../../src/runtime/request/request-context.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
   assert,
   assertEqual,

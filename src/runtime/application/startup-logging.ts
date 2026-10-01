@@ -1,5 +1,5 @@
-import type { RootFileAccessPolicyFiles } from '../config/file-access-policy.js';
-import type { CompiledExternalRoutingConfig } from '../tools/external-routing/config.js';
+import type { RootFileAccessPolicyFiles } from '../../config/file-access-policy.js';
+import type { CompiledExternalRoutingConfig } from '../../tools/external-routing/config.js';
 
 /**
  * Formats startup-safe route identities without configuration source paths,

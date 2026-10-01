@@ -1,5 +1,5 @@
-import { MAX_FILE_SIZE_MB } from '../../utils/file-read.js';
-import type { MCPTool } from '../types.js';
+import { MAX_FILE_SIZE_MB } from '../../../utils/file-read.js';
+import type { MCPTool } from '../../types.js';
 
 export const READ_FILE_TOOL_DEFINITION = {
   name: 'read_file',

@@ -1,7 +1,7 @@
 import {
   generateMcpSessionId,
   generateToolCallId,
-} from '../../src/runtime/mcp-identifiers.js';
+} from '../../src/runtime/mcp/mcp-identifiers.js';
 import {
   assert,
   runTestSuite,

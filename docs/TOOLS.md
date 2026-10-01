@@ -46,25 +46,31 @@ src/tools/
 ├── input-schema-validator.ts        # Draft 2020-12 validator facade
 ├── types.ts                         # definition、executor 与 ToolCallResult 类型
 ├── results.ts                       # textErrorResult 单文本块错误 helper
-├── definitions/                     # built-in Tool definition 模块
-├── replace.ts                       # replace_text 工具
-├── read-file.ts                     # read_file 工具
-├── read-many-files.ts               # read_many_files 工具
-├── discover-guidelines.ts           # discover_guidelines 工具
-├── write-file.ts                    # write_file 工具
-├── android-build-shared.ts          # Android 构建工具共享逻辑
-├── android-assemble-debug.ts        # android_assembleDebug 工具
-├── android-test-debug-unit-test.ts  # android_testDebugUnitTest 工具
-└── external-routing/                # custom-only 外部路由的 config、协议和运行时组件
+├── built-in/                        # 内置工具按功能分组，definition 与 handler 共置
+│   ├── files/                       # 文件读取、写入与替换
+│   │   ├── read-file.ts
+│   │   ├── read-many-files.ts
+│   │   ├── replace.ts
+│   │   ├── write-file.ts
+│   │   └── *.definition.ts
+│   ├── guidelines/                  # 指南发现
+│   │   ├── discover-guidelines.ts
+│   │   └── discover-guidelines.definition.ts
+│   └── android/                     # Android 工具及共享编排
+│       ├── android-assemble-debug.ts
+│       ├── android-test-debug-unit-test.ts
+│       ├── android-build-shared.ts
+│       └── android-build.definition.ts
+└── external-routing/                 # custom-only 外部路由的 config、协议和运行时组件
 ```
 
 ### 共享实现归属
 
 | 区域 | 归属 |
 |-|-|
-| `src/runtime/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
-| `src/runtime/tool-call-handler.ts`、`src/runtime/tool-result-validation.ts`、`src/runtime/tool-result-adapter.ts` | 统一工具调用出口、结果校验与 request policy 适配，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
-| `src/runtime/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
+| `src/runtime/mcp/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
+| `src/runtime/invocation/tool-call-handler.ts`、`src/runtime/invocation/tool-result-validation.ts`、`src/runtime/invocation/tool-result-adapter.ts` | 统一工具调用出口、结果校验与 request policy 适配，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
+| `src/runtime/invocation/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
 | `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
 | `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
 | `src/engine/android-gradle-output.ts` | Android Gradle 输出解析，细节见 [docs/tools/android-build.md](tools/android-build.md) |
@@ -86,7 +92,9 @@ node --import tsx test/tools/inspect-tools.ts
 
 ### Built-in registry、catalog 与 workspace tool service
 
-`src/tools/definitions/` 中的 TypeScript 模块定义 built-in Tool 的 `name`、`description` 与 Draft 2020-12 `inputSchema`。definition 模块可以复用实现常量，并通过 `satisfies MCPTool['definition']` 保留 built-in identity 与 schema 的静态类型约束；handler 模块只负责绑定 definition 与 executor。
+`src/tools/` 顶层承载 registry、catalog、配置加载、schema validator 和公共契约。`src/tools/built-in/` 按 files、guidelines、android 功能分组；各组的 `*.definition.ts` 与 handler 共置，分别维护工具契约和业务实现。`src/tools/external-routing/` 承载 custom-only 工具的外部执行能力。
+
+definition 模块定义 built-in Tool 的 `name`、`description` 与 Draft 2020-12 `inputSchema`，可以复用实现常量，并通过 `satisfies MCPTool['definition']` 保留 built-in identity 与 schema 的静态类型约束。handler 模块绑定 definition 与 executor；共置不改变两者的职责边界。
 
 `src/tools/names.ts` 的 `TOOL_NAMES` 只定义内置工具名称和 canonical 顺序。`src/tools/index.ts` 按该目录检查缺失、额外和重复实现，深冻结内置 definitions，并把每份原始 `inputSchema` 编译为 built-in implementation validator。
 
@@ -112,10 +120,10 @@ catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保
 
 ### 步骤 1：创建 Tool definition
 
-在 `src/tools/definitions/` 下创建 definition 模块，例如 `src/tools/definitions/read-file.definition.ts`：
+在 `src/tools/built-in/` 的对应功能目录下创建 definition 模块，例如 `src/tools/built-in/files/read-file.definition.ts`：
 
 ```typescript
-import type { MCPTool } from '../types.js';
+import type { MCPTool } from '../../types.js';
 
 export const READ_FILE_TOOL_DEFINITION = {
   name: 'read_file',
@@ -138,13 +146,13 @@ definition 只承载 `name`、`description` 与 `inputSchema`，不携带 execut
 
 ### 步骤 2：创建工具文件
 
-在 `src/tools/` 下新建文件，例如 `src/tools/read-file.ts`：
+在 definition 所在的功能目录下创建 handler 模块，例如 `src/tools/built-in/files/read-file.ts`：
 
 ```typescript
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
-import { READ_FILE_TOOL_DEFINITION } from './definitions/read-file.definition.js';
-import type { MCPTool, ToolCallResult } from './types.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../../../runtime/invocation/tool-invocation-context.js';
+import { READ_FILE_TOOL_DEFINITION } from './read-file.definition.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
 
 async function handleReadFile(
   args: Record<string, unknown>,
@@ -178,9 +186,9 @@ export default readFileTool;
 编辑 `src/tools/index.ts`，导入工具并把实现加入 `importedTools`：
 
 ```typescript
-import replaceTool from './replace.js';
-import readManyFilesTool from './read-many-files.js';
-import readFileTool from './read-file.js';  // ← 加这行
+import replaceTool from './built-in/files/replace.js';
+import readManyFilesTool from './built-in/files/read-many-files.js';
+import readFileTool from './built-in/files/read-file.js';  // ← 加这行
 
 const importedTools: readonly MCPTool[] = [
   replaceTool,

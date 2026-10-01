@@ -1,9 +1,9 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createConfigStore, type ConfigStore } from '../../src/runtime/config-store.js';
-import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
-import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
+import { createConfigStore, type ConfigStore } from '../../src/runtime/application/config-store.js';
+import { createToolCallRequestHandler } from '../../src/runtime/invocation/tool-call-handler.js';
+import { createToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   createTestLoadedRuntimeConfig,

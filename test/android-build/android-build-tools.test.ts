@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import androidAssembleDebugTool from '../../src/tools/android-assemble-debug.js';
-import androidTestDebugUnitTestTool from '../../src/tools/android-test-debug-unit-test.js';
-import { formatAndroidGradleToolResult } from '../../src/tools/android-build-shared.js';
+import androidAssembleDebugTool from '../../src/tools/built-in/android/android-assemble-debug.js';
+import androidTestDebugUnitTestTool from '../../src/tools/built-in/android/android-test-debug-unit-test.js';
+import { formatAndroidGradleToolResult } from '../../src/tools/built-in/android/android-build-shared.js';
 import type { RunAndroidGradleResult } from '../../src/utils/android-gradle.js';
 import {
   assert,

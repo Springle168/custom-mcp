@@ -1,4 +1,4 @@
-import type { MCPTool } from '../types.js';
+import type { MCPTool } from '../../types.js';
 
 export const REPLACE_TOOL_DEFINITION = {
   name: 'replace_text',

@@ -1,5 +1,5 @@
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/invocation/tool-invocation-context.js';
 import type {
   CompiledBuiltInTool,
   CompiledWorkspaceToolCatalog,
@@ -12,13 +12,13 @@ import type {
   ToolDefinition,
 } from './types.js';
 
-import replaceTool from './replace.js';
-import writeFileTool from './write-file.js';
-import readManyFilesTool from './read-many-files.js';
-import discoverGuidelinesTool from './discover-guidelines.js';
-import readFileTool from './read-file.js';
-import androidAssembleDebugTool from './android-assemble-debug.js';
-import androidTestDebugUnitTestTool from './android-test-debug-unit-test.js';
+import replaceTool from './built-in/files/replace.js';
+import writeFileTool from './built-in/files/write-file.js';
+import readManyFilesTool from './built-in/files/read-many-files.js';
+import discoverGuidelinesTool from './built-in/guidelines/discover-guidelines.js';
+import readFileTool from './built-in/files/read-file.js';
+import androidAssembleDebugTool from './built-in/android/android-assemble-debug.js';
+import androidTestDebugUnitTestTool from './built-in/android/android-test-debug-unit-test.js';
 
 const importedTools: readonly MCPTool[] = [
   replaceTool,

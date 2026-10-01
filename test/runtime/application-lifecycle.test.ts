@@ -3,11 +3,11 @@ import {
   ApplicationLifecycle,
   ApplicationLifecycleCloseError,
   type ApplicationLifecycleClosable,
-} from '../../src/runtime/application-lifecycle.js';
+} from '../../src/runtime/application/application-lifecycle.js';
 import type {
   McpPostSession,
   McpPostTransport,
-} from '../../src/runtime/mcp-post-handler.js';
+} from '../../src/runtime/mcp/mcp-post-handler.js';
 import {
   assert,
   assertEqual,

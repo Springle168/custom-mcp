@@ -1,20 +1,20 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
 import {
   detectLineEnding,
   resolveLineEnding,
   detectOmissionPlaceholders,
-} from '../engine/text-utils.js';
-import { isBinaryFile } from '../utils/file-read.js';
-import { withFileLock } from '../utils/file-lock.js';
+} from '../../../engine/text-utils.js';
+import { isBinaryFile } from '../../../utils/file-read.js';
+import { withFileLock } from '../../../utils/file-lock.js';
 import {
   resolveFileAccessPath,
   validateFileAccessWriteTarget,
-} from '../utils/file-access-policy.js';
-import { WRITE_FILE_TOOL_DEFINITION } from './definitions/write-file.definition.js';
-import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult } from './results.js';
+} from '../../../utils/file-access-policy.js';
+import { WRITE_FILE_TOOL_DEFINITION } from './write-file.definition.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
+import { textErrorResult } from '../../results.js';
 
 function isDotsOnly(text: string): boolean {
   if (text.length < 3) return false;

@@ -1,5 +1,5 @@
 import type { Server as HttpServer } from 'node:http';
-import type { McpPostSession } from './mcp-post-handler.js';
+import type { McpPostSession } from '../mcp/mcp-post-handler.js';
 
 export interface ApplicationLifecycleClosable {
   close(): Promise<void> | void;

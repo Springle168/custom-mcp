@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import { createReplaceTextHandler } from '../../src/tools/replace.js';
+import { createReplaceTextHandler } from '../../src/tools/built-in/files/replace.js';
 import {
   assert,
   assertEqual,

@@ -1,5 +1,5 @@
-import type { ToolCallResult } from '../tools/types.js';
-import type { RequestHeaderPolicy } from './request-header-policy.js';
+import type { ToolCallResult } from '../../tools/types.js';
+import type { RequestHeaderPolicy } from '../request/request-header-policy.js';
 
 export function adaptToolCallResultForRequestPolicy(
   result: ToolCallResult,

@@ -3,7 +3,7 @@
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import readFileTool from '../../src/tools/read-file.js';
+import readFileTool from '../../src/tools/built-in/files/read-file.js';
 import {
   cleanupFixtures,
   FIXTURES_DIR,

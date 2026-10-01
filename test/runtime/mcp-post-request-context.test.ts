@@ -1,14 +1,14 @@
 import type { Request, Response } from 'express';
 import type { RuntimeRulesConfig } from '../../src/config.js';
-import type { ConfigStore } from '../../src/runtime/config-store.js';
+import type { ConfigStore } from '../../src/runtime/application/config-store.js';
 import {
   handleMcpPostRequest,
   type McpPostSession,
   type McpPostTransport,
-} from '../../src/runtime/mcp-post-handler.js';
-import { getCurrentRequestHeaderView } from '../../src/runtime/request-context.js';
-import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
-import { createToolCallRequestHandler } from '../../src/runtime/tool-call-handler.js';
+} from '../../src/runtime/mcp/mcp-post-handler.js';
+import { getCurrentRequestHeaderView } from '../../src/runtime/request/request-context.js';
+import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import { createToolCallRequestHandler } from '../../src/runtime/invocation/tool-call-handler.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
 import {

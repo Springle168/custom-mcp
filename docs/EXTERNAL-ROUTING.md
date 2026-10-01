@@ -754,7 +754,7 @@ Response `body-decoder` 应使用 `CUSTOM_MCP_EXTERNAL_CALL_ID` 构造 canonical
 - `src/tools/catalog.ts`
   - 职责：definition-id external binding、unavailable binding、override 保持 built-in binding。
   - 测试：`test/tools/tool-exposure.test.ts`。
-- `src/runtime/startup-runtime.ts`
+- `src/runtime/application/startup-runtime.ts`
   - 职责：配置与 catalog 校验、空 route 无资源运行时、共享 executor 创建和 shutdown。
   - 测试：`test/runtime/startup-runtime.test.ts`。
 
@@ -784,13 +784,13 @@ Response `body-decoder` 应使用 `CUSTOM_MCP_EXTERNAL_CALL_ID` 构造 canonical
 
 ### Application 集成与诊断
 
-- `src/runtime/application-lifecycle.ts`
+- `src/runtime/application/application-lifecycle.ts`
   - 职责：listener、Android runtime、MCP session、external runtime 与 logger 的关闭顺序。
   - 测试：`test/runtime/application-lifecycle.test.ts`。
-- `src/runtime/startup-logging.ts`
+- `src/runtime/application/startup-logging.ts`
   - 职责：disabled/configured/enabled 启动摘要与 HTTP/MCP URL 脱敏。
   - 测试：`test/runtime/startup-logging.test.ts`。
-- `src/runtime/application-diagnostics.ts`
+- `src/runtime/application/application-diagnostics.ts`
   - 职责：Processor drain 与 MCP connection 的安全诊断格式。
   - 测试：`test/runtime/application-diagnostics.test.ts`。
 - `test/runtime/external-routing-integration.test.ts`

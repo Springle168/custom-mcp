@@ -157,7 +157,7 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 
 ## 扩展日志
 
-日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。`src/runtime/tool-call-handler.ts` 在统一 `tools/call` 入口生成调用 metadata 并写入 CALL 与 RESULT，`src/index.ts` 从对应 transport 提供 session ID；**工具 handler 内部不需要写任何日志代码**。
+日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。`src/runtime/invocation/tool-call-handler.ts` 在统一 `tools/call` 入口生成调用 metadata 并写入 CALL 与 RESULT，`src/index.ts` 从对应 transport 提供 session ID；**工具 handler 内部不需要写任何日志代码**。
 
 如需在 handler 内部输出调试日志，可以将 `logger` 实例通过参数传入，或扩展 `MCPTool` 接口。
 

@@ -12,8 +12,8 @@ import chalk from 'chalk';
 import type {
   ToolCallLogContext,
   ToolCallResultLogContext,
-} from '../runtime/tool-call-log-context.js';
-import type { RequestHeaderPolicyLogMetadata } from '../runtime/request-header-policy.js';
+} from '../runtime/invocation/tool-call-log-context.js';
+import type { RequestHeaderPolicyLogMetadata } from '../runtime/request/request-header-policy.js';
 import type { ToolCallResult } from '../tools/types.js';
 
 function pad(value: number, length = 2): string {

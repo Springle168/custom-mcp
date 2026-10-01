@@ -1,4 +1,4 @@
-import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
+import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 
 const DEFAULT_TEST_TOOL_INVOCATION_IDENTITY = Object.freeze({
   callId: 'test-tool-call',

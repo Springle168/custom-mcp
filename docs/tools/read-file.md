@@ -138,8 +138,8 @@ Partial read: showing lines 6-8 of 15 total lines.
 
 | 文件 | 职责 |
 |-|-|
-| `src/tools/definitions/read-file.definition.ts` | Tool description 与 Draft 2020-12 input schema |
-| `src/tools/read-file.ts` | 参数校验、`read_mode` 解析、路径安全与结果组装 |
+| `src/tools/built-in/files/read-file.definition.ts` | Tool description 与 Draft 2020-12 input schema |
+| `src/tools/built-in/files/read-file.ts` | 参数校验、`read_mode` 解析、路径安全与结果组装 |
 | `src/utils/file-read.ts` | 二进制检测、20MB 文件大小保护、文本读取、可配置截断、行号前缀 |
 | `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
 | `src/utils/file-access-policy.ts` | policy candidate、lexical/realpath deny 与读取目标检查 |

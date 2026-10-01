@@ -2,8 +2,8 @@ import type { RuntimeRulesConfig } from '../../src/config.js';
 import {
   evaluateRequestHeaderPolicy,
   toRequestHeaderPolicyLogMetadata,
-} from '../../src/runtime/request-header-policy.js';
-import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+} from '../../src/runtime/request/request-header-policy.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
   assertEqual,
   runTestSuite,

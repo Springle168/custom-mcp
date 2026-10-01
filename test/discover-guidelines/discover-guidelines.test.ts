@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url';
 import ignore from 'ignore';
 import discoverGuidelinesTool, {
   discoverGuidelinesInternalForTests,
-} from '../../src/tools/discover-guidelines.js';
+} from '../../src/tools/built-in/guidelines/discover-guidelines.js';
 import {
   MAX_GUIDELINE_FILES,
   MAX_GUIDELINE_PREFIX_BYTES,
   MAX_GUIDELINE_READ_WORKERS,
-} from '../../src/tools/definitions/discover-guidelines.definition.js';
+} from '../../src/tools/built-in/guidelines/discover-guidelines.definition.js';
 import { getAllToolDefinitions } from '../../src/tools/index.js';
 import { TOOL_NAMES } from '../../src/tools/names.js';
 import {

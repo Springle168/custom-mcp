@@ -95,7 +95,7 @@ Tool config、Tool definition、External routing config、Processor registry、H
 | `src/tools/input-schema-validator.ts` | 隔离的 Draft 2020-12 schema 编译与 validator facade。 |
 | `src/tools/catalog.ts` | effective catalog 合并、selector 成员校验、exposed catalog，以及按 definition reference id 注入 external binding。 |
 | `src/tools/external-routing/config.ts` | External routing config v2、HTTP/MCP route union、Processor registry、HTTP endpoint / MCP server config 与跨文件 binding 校验。 |
-| `src/runtime/startup-runtime.ts` | 全部纯配置 / catalog 校验后创建共享 external runtime，暴露 MCP warm-up 与空 route 的无资源 close。 |
+| `src/runtime/application/startup-runtime.ts` | 全部纯配置 / catalog 校验后创建共享 external runtime，暴露 MCP warm-up 与空 route 的无资源 close。 |
 | `src/tools/external-routing/executor.ts` | workspace 共享 admission、route-bound executor facade 与资源 close。 |
 | `src/tools/external-routing/strategy-adapter.ts` | HTTP route-specific stage 编排、endpoint dispatch 与 Processor drain metadata。 |
 | `test/tools/custom-tool-config.test.ts` | Tool config / definition 外壳、schema dialect 与 validator。 |

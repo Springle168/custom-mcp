@@ -2,20 +2,20 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RuntimeRulesConfig } from '../../src/config.js';
-import type { ConfigStore } from '../../src/runtime/config-store.js';
-import { runWithRequestHeaderContext } from '../../src/runtime/request-context.js';
-import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
-import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+import type { ConfigStore } from '../../src/runtime/application/config-store.js';
+import { runWithRequestHeaderContext } from '../../src/runtime/request/request-context.js';
+import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
   createToolCallRequestHandler,
   type ToolCallPipelineDiagnostic,
-} from '../../src/runtime/tool-call-handler.js';
+} from '../../src/runtime/invocation/tool-call-handler.js';
 import type {
   ToolCallLogContext,
   ToolCallResultLogContext,
-} from '../../src/runtime/tool-call-log-context.js';
-import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
-import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
+} from '../../src/runtime/invocation/tool-call-log-context.js';
+import type { ToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   createTestRuntimeConfigIdentity,

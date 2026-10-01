@@ -1,15 +1,15 @@
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult } from './results.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
+import { textErrorResult } from '../../results.js';
 import {
   resolveFileAccessPath,
   validateFileAccessReadTarget,
-} from '../utils/file-access-policy.js';
+} from '../../../utils/file-access-policy.js';
 import {
   isBinaryFile,
   readTextFile,
-} from '../utils/file-read.js';
-import { READ_FILE_TOOL_DEFINITION } from './definitions/read-file.definition.js';
+} from '../../../utils/file-read.js';
+import { READ_FILE_TOOL_DEFINITION } from './read-file.definition.js';
 
 type ReadMode = 'line' | 'regex';
 

@@ -2,9 +2,9 @@ import type {
   LineEnding,
   RuntimeAndroidConfig,
   RuntimeConfigSnapshot,
-} from '../config.js';
-import type { PathSafetyContext } from '../utils/paths.js';
-import type { FileAccessPolicyContext } from '../utils/file-access-policy.js';
+} from '../../config.js';
+import type { PathSafetyContext } from '../../utils/paths.js';
+import type { FileAccessPolicyContext } from '../../utils/file-access-policy.js';
 
 export interface ToolRuntimeContext {
   readonly pathSafetyContext: PathSafetyContext;

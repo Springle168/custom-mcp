@@ -10,7 +10,7 @@ import {
   type CanonicalRequest,
 } from '../../src/tools/external-routing/canonical-protocol.js';
 import type { CompiledHttpRoute } from '../../src/tools/external-routing/config.js';
-import { isToolCallResult } from '../../src/runtime/tool-result-validation.js';
+import { isToolCallResult } from '../../src/runtime/invocation/tool-result-validation.js';
 import {
   assert,
   assertEqual,

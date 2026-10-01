@@ -1,9 +1,9 @@
 import type {
   ToolCallDiagnosticSink,
   ToolCallPipelineDiagnostic,
-} from './tool-call-handler.js';
-import type { ExternalRoutingProcessorDrainDiagnostic } from '../tools/external-routing/strategy-adapter.js';
-import type { McpConnectionDiagnostic } from '../tools/external-routing/mcp-connection-manager.js';
+} from '../invocation/tool-call-handler.js';
+import type { ExternalRoutingProcessorDrainDiagnostic } from '../../tools/external-routing/strategy-adapter.js';
+import type { McpConnectionDiagnostic } from '../../tools/external-routing/mcp-connection-manager.js';
 
 export interface ApplicationDiagnosticLogger {
   info(message: string): void;

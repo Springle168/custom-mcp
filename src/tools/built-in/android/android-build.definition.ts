@@ -1,4 +1,4 @@
-import type { MCPTool } from '../types.js';
+import type { MCPTool } from '../../types.js';
 
 const ANDROID_GRADLE_TOOL_INPUT_SCHEMA = {
   type: 'object',

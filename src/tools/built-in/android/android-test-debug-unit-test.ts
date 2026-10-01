@@ -1,8 +1,8 @@
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
-import type { MCPTool, ToolCallResult } from './types.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../../../runtime/invocation/tool-invocation-context.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
 import { executeAndroidGradleTask } from './android-build-shared.js';
-import { ANDROID_TEST_DEBUG_UNIT_TEST_TOOL_DEFINITION } from './definitions/android-build.definition.js';
+import { ANDROID_TEST_DEBUG_UNIT_TEST_TOOL_DEFINITION } from './android-build.definition.js';
 
 async function handleAndroidTestDebugUnitTest(
   args: Record<string, unknown>,

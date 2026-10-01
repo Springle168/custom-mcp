@@ -5,7 +5,7 @@
  * 运行：node --import tsx test/logger/logger.manual.ts
  */
 import { Logger } from '../../src/utils/logger.js';
-import type { ToolCallResultLogContext } from '../../src/runtime/tool-call-log-context.js';
+import type { ToolCallResultLogContext } from '../../src/runtime/invocation/tool-call-log-context.js';
 import { isVerboseTestOutput } from '../test-utils.js';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

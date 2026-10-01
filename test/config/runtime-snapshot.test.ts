@@ -8,7 +8,7 @@ import {
   loadRuntimeConfigWithIdentity,
 } from '../../src/config.js';
 import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
-import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
+import { createToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
 import {
   assert,
   assertEqual,

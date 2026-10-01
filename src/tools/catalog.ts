@@ -1,7 +1,7 @@
 import { ConfigError } from '../config/errors.js';
 import type { ParsedToolExposure } from '../config/tool-exposure.js';
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/invocation/tool-invocation-context.js';
 import type { CompiledCustomToolDefinition } from './custom-tool-config.js';
 import type { InputSchemaValidationIssue, InputSchemaValidator } from './input-schema-validator.js';
 import { textErrorResult } from './results.js';

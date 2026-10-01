@@ -242,4 +242,4 @@ test/replace-text/
 └── line-ending-concurrency.test.ts  # LF/CRLF 与跨调用并发回归
 ```
 
-`src/tools/replace.ts` 负责批量编排和 I/O 边界；`src/engine/replacement.ts` 只负责单次 replacement 的纯计算；`src/utils/file-lock.ts` 提供单 lexical resolved path 的进程内 FIFO 锁。
+`src/tools/built-in/files/replace.ts` 负责批量编排和 I/O 边界；`src/engine/replacement.ts` 只负责单次 replacement 的纯计算；`src/utils/file-lock.ts` 提供单 lexical resolved path 的进程内 FIFO 锁。

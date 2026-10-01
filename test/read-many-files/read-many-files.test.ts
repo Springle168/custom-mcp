@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import readManyFilesTool from '../../src/tools/read-many-files.js';
+import readManyFilesTool from '../../src/tools/built-in/files/read-many-files.js';
 import {
   cleanupFixtures,
   FIXTURES_DIR,

@@ -8,7 +8,7 @@ import type {
 import {
   formatExternalRoutingStartupLines,
   formatFileAccessPolicyStartupLines,
-} from '../../src/runtime/startup-logging.js';
+} from '../../src/runtime/application/startup-logging.js';
 import {
   assertEqual,
   assertNotIncludes,

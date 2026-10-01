@@ -1,4 +1,4 @@
-import { isToolCallResult } from '../../src/runtime/tool-result-validation.js';
+import { isToolCallResult } from '../../src/runtime/invocation/tool-result-validation.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   assert,

@@ -198,7 +198,7 @@ selected workspace 文件的读取、JSON、schema、path、env override 和 pol
 | `src/config/tool-exposure.ts` | `tools` 外壳、tool config path 与未决 exposure selector。 |
 | `src/config/strict-utf8-file.ts` | 配置文本共享的同一 descriptor 普通文件检查、读取与 strict UTF-8 边界。 |
 | `src/config/json-file.ts` | 全局、workspace 与 referenced JSON 的解析和 JSON-oriented 诊断边界。 |
-| `src/runtime/startup-runtime.ts` | snapshot 与 tool catalog 的启动期组合。 |
+| `src/runtime/application/startup-runtime.ts` | snapshot 与 tool catalog 的启动期组合。 |
 | `test/config/load-runtime-config.test.ts` | 两层配置加载集成行为。 |
 | `test/config/file-access-policy.test.ts` | selected-only policy 编译与 file access schema。 |
 | `test/config/env-overrides.test.ts` | allowlist、值 grammar 与选择边界。 |

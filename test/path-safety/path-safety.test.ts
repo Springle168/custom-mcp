@@ -3,10 +3,10 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import readFileTool from '../../src/tools/read-file.js';
-import readManyFilesTool from '../../src/tools/read-many-files.js';
-import replaceTool from '../../src/tools/replace.js';
-import writeFileTool from '../../src/tools/write-file.js';
+import readFileTool from '../../src/tools/built-in/files/read-file.js';
+import readManyFilesTool from '../../src/tools/built-in/files/read-many-files.js';
+import replaceTool from '../../src/tools/built-in/files/replace.js';
+import writeFileTool from '../../src/tools/built-in/files/write-file.js';
 import {
   createPathSafetyContext,
   resolveSafeGlobEntry,
