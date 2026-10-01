@@ -32,7 +32,7 @@ custom-mcp/test/
 ├── read-many-files/            # read_many_files 工具测试，见 docs/tools/read-many-files.md
 ├── replace-text/               # replace_text 工具测试，见 docs/tools/replace-text.md
 ├── runner/                     # 统一测试 runner 的发现、筛选与失败继续回归
-├── runtime/                    # ConfigStore、startup catalog composition、request policy、tool-call handler 和 MCP wiring 测试
+├── runtime/                    # 应用启动/关闭、ConfigStore、request policy、tool-call handler 和 HTTP/MCP wiring 测试
 ├── tools/                      # custom definition loader、schema validator、catalog/exposure 和 tools/list shape 回归
 ├── write-file/                 # write_file 工具测试，见 docs/tools/write-file.md
 ├── run-tests.ts                # 自动化脚本发现、串行调度、计时和汇总入口

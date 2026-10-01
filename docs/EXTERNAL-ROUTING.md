@@ -784,6 +784,9 @@ Response `body-decoder` 应使用 `CUSTOM_MCP_EXTERNAL_CALL_ID` 构造 canonical
 
 ### Application 集成与诊断
 
+- `src/runtime/application/start-application.ts`
+  - 职责：资源组装、listener 启动、启动摘要后的非阻塞 warm-up，以及 runtime / logger 接入 application lifecycle。
+  - 测试：`test/runtime/start-application.test.ts`；HTTP / MCP 接线见 [工具开发](TOOLS.md)。
 - `src/runtime/application/application-lifecycle.ts`
   - 职责：listener、Android runtime、MCP session、external runtime 与 logger 的关闭顺序。
   - 测试：`test/runtime/application-lifecycle.test.ts`。

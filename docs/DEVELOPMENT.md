@@ -45,7 +45,7 @@ custom-mcp/
 
 | 层 | 目录 | 职责 | 原则 |
 |-|-|-|-|
-| 入口层 | `src/index.ts` | HTTP 服务器、MCP 协议处理、会话管理、启动期配置错误输出 | 加新工具时通常不需要改动 |
+| 入口层 | `src/index.ts` | 解析 CLI 输入、启动应用、注册进程退出信号与输出启动失败 | HTTP / MCP 接线和资源组装由运行时层负责 |
 | CLI 层 | `src/cli.ts` | 解析启动参数，如 `--workspace` | 只负责命令行输入，不承载配置 schema 细节 |
 | 配置层 | `src/config.ts`, `src/config/` | 读取 version 2 全局索引、显式选择 reference、按需读取 version 1 workspace 配置、应用集中 value/path policy、selected workspace env override allowlist 并构建 runtime snapshot | public facade 不承载 schema/value/path/selection/env/snapshot 细节；不在工具层读取配置文件 |
 | 运行时层 | `src/runtime/` | 持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext`，通过 MCP server factory 接入 workspace tool service | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
@@ -60,10 +60,10 @@ custom-mcp/
 | 源码区域 | 主要维护入口 |
 |-|-|
 | `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts` 与 `runtime-snapshot.ts`；[自定义 Tool 配置](config/tool-config.md) 承接 `tool-exposure.ts`、Tool config v2 与 `externalRoutingConfigFile` 入口 |
-| `src/runtime/application/` | ConfigStore、启动期配置与 catalog 组合、application shutdown、诊断和启动日志，见 [配置概览](CONFIG.md)、[workspace 配置](config/workspace-config.md)、[日志](LOGGING.md) 和 [外部路由](EXTERNAL-ROUTING.md) |
+| `src/runtime/application/` | `start-application.ts` 组装资源并启动 listener；其他模块承载 ConfigStore、启动期配置与 catalog 组合、shutdown、诊断、启动日志和错误格式，见 [配置概览](CONFIG.md)、[工具开发](TOOLS.md)、[日志](LOGGING.md) 和 [外部路由](EXTERNAL-ROUTING.md) |
 | `src/runtime/request/` | HTTP request header view、异步请求上下文和 header rules policy，见 [workspace 配置](config/workspace-config.md) |
 | `src/runtime/invocation/` | workspace / 单次调用 context、调用管线、日志 metadata、结果校验与适配，见 [工具开发](TOOLS.md) 和 [工具返回结果](TOOL-RESULTS.md) |
-| `src/runtime/mcp/` | MCP server factory、POST session 接线和 session / call 标识生成，见 [工具开发](TOOLS.md) 和 [日志](LOGGING.md) |
+| `src/runtime/mcp/` | `http-app.ts` 承载 Express 路由和 transport / session 接线；其他模块承载 MCP server factory、POST request context 和 session / call 标识生成，见 [工具开发](TOOLS.md) 和 [日志](LOGGING.md) |
 | `src/tools/*.ts` | canonical registry、workspace service、公共契约、Tool config / definition 加载、schema validator 与 effective/exposed catalog，见 [工具开发](TOOLS.md) 和 [自定义 Tool 配置](config/tool-config.md) |
 | `src/tools/built-in/` | files、guidelines、android 功能组内的 definition、handler 与共享编排，见 [工具开发](TOOLS.md) 和 [单工具文档](tools/) |
 | `src/tools/external-routing/` | custom-only definitionId binding、External routing config、Processor registry、route-specific endpoint / stage、canonical protocol、共享容量和 lifecycle 见 [外部路由](EXTERNAL-ROUTING.md) |

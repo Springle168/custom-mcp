@@ -384,14 +384,6 @@ async function testStructuredContentDupRichResultSurvivesMCPRoundTrip(): Promise
   }
 }
 
-async function testIndexDoesNotUseUnfilteredRegistryEntrypoints(): Promise<void> {
-  const source = await readFile(new URL('../../src/index.ts', import.meta.url), 'utf-8');
-
-  assert(!source.includes('getAllToolDefinitions'), 'src/index.ts should not import the full definitions registry');
-  assert(!source.includes('routeToolCall'), 'src/index.ts should not import an unfiltered global router');
-  assertIncludes(source, 'createWorkspaceToolService', 'src/index.ts should construct the workspace tool service once');
-}
-
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing MCP server workspace tool exposure wiring',
@@ -402,7 +394,6 @@ async function main(): Promise<void> {
       { name: 'custom-only tool lists, validates, and returns unavailable', run: testCustomOnlyToolListsValidatesAndReturnsUnavailable },
       { name: 'rich result survives MCP round trip', run: testRichResultSurvivesMCPRoundTrip },
       { name: 'structuredContentDup rich result survives MCP round trip', run: testStructuredContentDupRichResultSurvivesMCPRoundTrip },
-      { name: 'index avoids unfiltered registry entrypoints', run: testIndexDoesNotUseUnfilteredRegistryEntrypoints },
     ],
   });
 }

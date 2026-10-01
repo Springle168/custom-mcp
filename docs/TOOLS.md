@@ -68,6 +68,8 @@ src/tools/
 
 | 区域 | 归属 |
 |-|-|
+| `src/runtime/application/start-application.ts` | 应用资源组装；创建一个 workspace tool service，并将其传入 HTTP 接线 |
+| `src/runtime/mcp/http-app.ts` | `/mcp` POST / GET / DELETE 路由、transport 创建与 session 接线；session admission 和关闭委托应用 lifecycle |
 | `src/runtime/mcp/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
 | `src/runtime/invocation/tool-call-handler.ts`、`src/runtime/invocation/tool-result-validation.ts`、`src/runtime/invocation/tool-result-adapter.ts` | 统一工具调用出口、结果校验与 request policy 适配，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
 | `src/runtime/invocation/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
@@ -109,6 +111,8 @@ selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启�
 - selector 在 effective names 构建后执行成员校验和过滤，过滤不重排。
 
 exposed catalog 同时派生 definitions view 与 route lookup。`createWorkspaceToolService()` 只包装调用方传入的 compiled catalog；`tools/list` 与 `tools/call` 因此共享完全相同的 exposure 边界。隐藏和未知名称统一返回 `Unknown tool`，不会运行 schema validator 或 executor。
+
+`startApplication()` 在 listener 启动前创建一次 workspace tool service。`createMcpHttpApp()` 将该 service 传给每个 session 的 MCP server；HTTP 层不重新编译 catalog，也不直接使用未经过 exposure 过滤的 registry。
 
 调用路由按以下顺序执行：effective input validation → built-in implementation validation（适用时）→ executor。未覆盖的内置工具复用同一 validator；override 必须同时满足 workspace 对外 contract 与内置实现 contract；custom-only 工具通过 effective validation 后，按 catalog binding 调用 route-bound external executor 或返回未配置 execution route 的标准工具错误。route-bound executor 共享 workspace external runtime 的 admission、Processor runner（需要时）和 HTTP Agents。所有这些结果继续通过 runtime result adapter 与 logger。
 
@@ -219,6 +223,8 @@ npm run start
 - `test/tools/tool-exposure.test.ts`：effective/exposed catalog、override、双重 contract、definitionId external binding 与 unavailable executor。
 - `test/runtime/startup-runtime.test.ts`：selected-only 加载、启动期组合与运行期固定 catalog。
 - `test/runtime/mcp-server-tool-exposure.test.ts`：真实 `tools/list` / `tools/call` 接线、custom-only 路由和 service 复用。
+- `test/runtime/http-app.test.ts`：loopback HTTP 上的 session 注册、共享 service、请求 policy 隔离、GET / DELETE 接线、stale session 与 admission 拒绝。
+- `test/runtime/start-application.test.ts`：应用资源组装、跨 session 的 selected exposure、listener 启动、幂等关闭与日志收尾。
 - `test/runtime/external-routing-integration.test.ts`：selected workspace、custom-only definition、MCP 调用和 loopback endpoint 的完整 route。
 
 ---

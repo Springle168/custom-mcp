@@ -6,9 +6,11 @@ import type {
   ExternalResponseRoutingStage,
 } from '../../src/tools/external-routing/config.js';
 import {
+  formatApplicationStartupLines,
   formatExternalRoutingStartupLines,
   formatFileAccessPolicyStartupLines,
 } from '../../src/runtime/application/startup-logging.js';
+import { createTestRuntimeConfigSnapshot } from '../helpers/runtime-config.js';
 import {
   assertEqual,
   assertNotIncludes,
@@ -289,10 +291,45 @@ function testFormatsEmptyPolicyState(): void {
   );
 }
 
+function testFormatsCompleteApplicationSummary(): void {
+  const snapshot = createTestRuntimeConfigSnapshot({
+    rootDir: path.join(process.cwd(), 'src'),
+    otherRootDirs: [path.join(process.cwd(), 'test')],
+    host: '::1',
+    port: 4321,
+  });
+  assertEqual(
+    formatApplicationStartupLines(snapshot, undefined, 'workspace.log').join('\n'),
+    [
+      'MCP Replace Server started',
+      '  Bind address: [::1]:4321',
+      '  Endpoint: http://[::1]:4321/mcp',
+      `  Workspace id: ${snapshot.workspaceId}`,
+      `  Snapshot version: ${snapshot.snapshotVersion}`,
+      `  Global config file: ${snapshot.globalConfigFilePath}`,
+      `  Workspace config file: ${snapshot.workspaceConfigFilePath}`,
+      `  Primary root: ${snapshot.pathSafetyContext.primaryRoot.rootDir}`,
+      '  Additional roots:',
+      ...snapshot.pathSafetyContext.allowedRoots
+        .filter((root) => root.kind === 'additional')
+        .map((root) => `    - ${root.rootDir}`),
+      '  File access policies: none',
+      '  External routing: disabled',
+      `  Line ending: ${snapshot.lineEnding}`,
+      '  Log file: workspace.log',
+    ].join('\n'),
+    'Complete startup summary should preserve line order, IPv6 formatting, and workspace details',
+  );
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing startup logging',
     tests: [
+      {
+        name: 'formats complete application summary',
+        run: testFormatsCompleteApplicationSummary,
+      },
       {
         name: 'formats stable safe multi-route external routing summary',
         run: testFormatsStableSafeMultiRouteExternalRoutingSummary,
@@ -329,3 +366,4 @@ main().catch((error) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
+import * as path from 'node:path';
