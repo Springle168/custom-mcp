@@ -61,7 +61,9 @@ Logger 不解码图片来计算大小，不截断、摘要或脱敏 base64。顶
 
 ### 启动配置摘要
 
-HTTP server 开始监听后，`src/index.ts` 输出 selected workspace 的启动配置摘要。文件访问策略部分使用 `RuntimeConfigSnapshot.fileAccessPolicyFiles`，按 primary / additional root 分组列出已验证的 resolved lexical 策略文件引用：
+HTTP server 开始监听后，`src/runtime/application/start-application.ts` 输出 selected workspace 的启动配置摘要。完整摘要由 `src/runtime/application/startup-logging.ts` 的 `formatApplicationStartupLines()` 生成，包含监听地址、workspace / 配置文件标识、allowed roots、文件访问策略、external routing、行尾符和日志文件位置。
+
+文件访问策略部分使用 `RuntimeConfigSnapshot.fileAccessPolicyFiles`，按 primary / additional root 分组列出已验证的 resolved lexical 策略文件引用：
 
 ```text
   File access policies:
@@ -157,7 +159,9 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 
 ## 扩展日志
 
-日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。`src/runtime/invocation/tool-call-handler.ts` 在统一 `tools/call` 入口生成调用 metadata 并写入 CALL 与 RESULT，`src/index.ts` 从对应 transport 提供 session ID；**工具 handler 内部不需要写任何日志代码**。
+日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。`src/runtime/mcp/http-app.ts` 创建 session transport，MCP SDK 将对应 session ID 传入调用 metadata。
+
+`src/runtime/invocation/tool-call-handler.ts` 在统一 `tools/call` 入口生成 call ID 并写入 CALL 与 RESULT。**工具 handler 内部不需要写任何日志代码**。
 
 如需在 handler 内部输出调试日志，可以将 `logger` 实例通过参数传入，或扩展 `MCPTool` 接口。
 
@@ -169,6 +173,6 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 
 `test/logger/request-header-rules-logging.test.ts` 覆盖 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界。
 
-`test/runtime/startup-logging.test.ts` 覆盖文件访问策略摘要，以及 external routing disabled / configured / enabled 状态、route summary 和 endpoint identity 的安全格式。`test/runtime/application-diagnostics.test.ts` 覆盖 Processor drain 的 route / Tool 安全诊断格式。
+`test/runtime/startup-logging.test.ts` 覆盖完整启动摘要的顺序与 IPv6 地址格式、文件访问策略摘要，以及 external routing disabled / configured / enabled 状态、route summary 和 endpoint identity 的安全格式。`test/runtime/start-application.test.ts` 验证 listener 启动与 signal shutdown 日志落盘。`test/runtime/application-diagnostics.test.ts` 覆盖 Processor drain 的 route / Tool 安全诊断格式。
 
 日志演示生成的文件显式写入 `test/logs/` 目录。通用测试与手工脚本执行约定见 [docs/TESTING.md](TESTING.md)。

@@ -1,5 +1,40 @@
+import type { RuntimeConfigSnapshot } from '../../config.js';
 import type { RootFileAccessPolicyFiles } from '../../config/file-access-policy.js';
 import type { CompiledExternalRoutingConfig } from '../../tools/external-routing/config.js';
+import { buildHttpUrl, formatHostPort } from '../../utils/http-url.js';
+
+/** Formats the complete listener-ready summary using the fixed workspace snapshot. */
+export function formatApplicationStartupLines(
+  snapshot: RuntimeConfigSnapshot,
+  externalRoutingConfig: CompiledExternalRoutingConfig | undefined,
+  logFile: string,
+): readonly string[] {
+  const primaryRoot = snapshot.pathSafetyContext.primaryRoot.rootDir;
+  const additionalRoots = snapshot.pathSafetyContext.allowedRoots
+    .filter((root) => root.kind === 'additional')
+    .map((root) => root.rootDir);
+
+  return [
+    'MCP Replace Server started',
+    `  Bind address: ${formatHostPort(snapshot.host, snapshot.port)}`,
+    `  Endpoint: ${buildHttpUrl(snapshot.host, snapshot.port, '/mcp')}`,
+    `  Workspace id: ${snapshot.workspaceId}`,
+    `  Snapshot version: ${snapshot.snapshotVersion}`,
+    `  Global config file: ${snapshot.globalConfigFilePath}`,
+    `  Workspace config file: ${snapshot.workspaceConfigFilePath}`,
+    `  Primary root: ${primaryRoot}`,
+    ...(additionalRoots.length === 0
+      ? ['  Additional roots: none']
+      : [
+          '  Additional roots:',
+          ...additionalRoots.map((rootDir) => `    - ${rootDir}`),
+        ]),
+    ...formatFileAccessPolicyStartupLines(snapshot.fileAccessPolicyFiles),
+    ...formatExternalRoutingStartupLines(externalRoutingConfig),
+    `  Line ending: ${snapshot.lineEnding}`,
+    `  Log file: ${logFile}`,
+  ];
+}
 
 /**
  * Formats startup-safe route identities without configuration source paths,
