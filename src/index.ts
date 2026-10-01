@@ -4,20 +4,20 @@ import express, { type Request } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CliError, parseCliArgs } from './cli.js';
 import { ConfigError } from './config.js';
-import { ApplicationDiagnostics } from './runtime/application-diagnostics.js';
-import { ApplicationLifecycle } from './runtime/application-lifecycle.js';
-import { createConfigStore, type ConfigStore } from './runtime/config-store.js';
-import { createMCPServer } from './runtime/mcp-server.js';
-import { loadApplicationRuntime } from './runtime/startup-runtime.js';
+import { ApplicationDiagnostics } from './runtime/application/application-diagnostics.js';
+import { ApplicationLifecycle } from './runtime/application/application-lifecycle.js';
+import { createConfigStore, type ConfigStore } from './runtime/application/config-store.js';
+import { createMCPServer } from './runtime/mcp/mcp-server.js';
+import { loadApplicationRuntime } from './runtime/application/startup-runtime.js';
 import {
   handleMcpPostRequest,
   type McpPostSession,
-} from './runtime/mcp-post-handler.js';
-import { generateMcpSessionId } from './runtime/mcp-identifiers.js';
+} from './runtime/mcp/mcp-post-handler.js';
+import { generateMcpSessionId } from './runtime/mcp/mcp-identifiers.js';
 import {
   formatExternalRoutingStartupLines,
   formatFileAccessPolicyStartupLines,
-} from './runtime/startup-logging.js';
+} from './runtime/application/startup-logging.js';
 import { createWorkspaceToolService } from './tools/index.js';
 import { Logger } from './utils/logger.js';
 import { buildHttpUrl, formatHostPort } from './utils/http-url.js';

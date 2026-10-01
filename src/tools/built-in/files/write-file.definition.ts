@@ -1,4 +1,4 @@
-import type { MCPTool } from '../types.js';
+import type { MCPTool } from '../../types.js';
 
 export const WRITE_FILE_TOOL_DEFINITION = {
   name: 'write_file',

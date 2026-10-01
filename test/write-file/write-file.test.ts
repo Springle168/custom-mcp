@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import writeFileTool from '../../src/tools/write-file.js';
+import writeFileTool from '../../src/tools/built-in/files/write-file.js';
 import {
   assert,
   assertEqual,

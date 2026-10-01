@@ -219,8 +219,8 @@ JUnit XML 被禁用、写到工作区外或使用完全自定义目录时，工�
 
 ## 实现入口
 
-- `src/tools/definitions/android-build.definition.ts`：两个 Android Tool 的 description 与共享 Draft 2020-12 input schema
-- `src/tools/android-build-shared.ts`：调用编排和失败 JSON
+- `src/tools/built-in/android/android-build.definition.ts`：两个 Android Tool 的 description 与共享 Draft 2020-12 input schema
+- `src/tools/built-in/android/android-build-shared.ts`：调用编排和失败 JSON
 - `src/utils/android-gradle-gate.ts`：workspace-scoped FIFO、queued cancellation、active ownership 与 application close
 - `src/utils/android-gradle.ts`：Gradle 进程、命令参数、超时与原始输出
 - `src/engine/android-gradle-output.ts`：纯文本失败解析

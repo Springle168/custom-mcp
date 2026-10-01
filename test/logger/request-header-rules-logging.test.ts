@@ -1,8 +1,8 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request-header-policy.js';
-import type { ToolCallResultLogContext } from '../../src/runtime/tool-call-log-context.js';
+import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import type { ToolCallResultLogContext } from '../../src/runtime/invocation/tool-call-log-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { Logger } from '../../src/utils/logger.js';
 import {

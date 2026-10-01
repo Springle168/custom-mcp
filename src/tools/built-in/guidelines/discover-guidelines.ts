@@ -9,25 +9,25 @@ import {
   realpath,
   type FileHandle,
 } from 'node:fs/promises';
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../../../runtime/invocation/tool-invocation-context.js';
 import {
   extractGuidelineFrontMatterSource,
   parseGuidelineFrontMatter,
   type GuidelineMetadata,
-} from '../engine/guideline-front-matter.js';
+} from '../../../engine/guideline-front-matter.js';
 import {
   selectReadableFiles,
   type SelectedReadableFile,
-} from '../utils/file-selection.js';
+} from '../../../utils/file-selection.js';
 import {
   DISCOVER_GUIDELINES_TOOL_DEFINITION,
   MAX_GUIDELINE_FILES,
   MAX_GUIDELINE_PREFIX_BYTES,
   MAX_GUIDELINE_READ_WORKERS,
-} from './definitions/discover-guidelines.definition.js';
-import { textErrorResult } from './results.js';
-import type { MCPTool, ToolCallResult } from './types.js';
+} from './discover-guidelines.definition.js';
+import { textErrorResult } from '../../results.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
 
 const CANCELLED_MESSAGE = 'The discover_guidelines tool call was cancelled.';
 const INTERNAL_ERROR_MESSAGE =

@@ -1,4 +1,4 @@
-import { ApplicationDiagnostics } from '../../src/runtime/application-diagnostics.js';
+import { ApplicationDiagnostics } from '../../src/runtime/application/application-diagnostics.js';
 import {
   assert,
   assertEqual,

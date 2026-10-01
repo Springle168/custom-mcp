@@ -1,5 +1,5 @@
-import type { ToolRuntimeContext } from '../../src/runtime/tool-context.js';
-import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
 import {
   createWorkspaceToolService,

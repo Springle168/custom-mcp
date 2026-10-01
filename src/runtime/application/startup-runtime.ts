@@ -2,23 +2,23 @@ import {
   loadRuntimeConfigWithIdentity,
   type LoadedRuntimeConfig,
   type LoadRuntimeConfigOptions,
-} from '../config.js';
+} from '../../config.js';
 import {
   compileWorkspaceToolCatalog,
   type CompiledWorkspaceToolCatalog,
-} from '../tools/catalog.js';
+} from '../../tools/catalog.js';
 import {
   loadCustomToolConfig,
   type LoadedCustomToolConfig,
-} from '../tools/custom-tool-config.js';
-import type { CompiledExternalRoutingConfig } from '../tools/external-routing/config.js';
+} from '../../tools/custom-tool-config.js';
+import type { CompiledExternalRoutingConfig } from '../../tools/external-routing/config.js';
 import {
   createExternalRoutingExecutor,
   type CreatedExternalRoutingExecutor,
-} from '../tools/external-routing/executor.js';
-import type { ExternalRoutingProcessorDrainDiagnostic } from '../tools/external-routing/strategy-adapter.js';
-import type { McpConnectionDiagnostic } from '../tools/external-routing/mcp-connection-manager.js';
-import { getCompiledBuiltInTools } from '../tools/index.js';
+} from '../../tools/external-routing/executor.js';
+import type { ExternalRoutingProcessorDrainDiagnostic } from '../../tools/external-routing/strategy-adapter.js';
+import type { McpConnectionDiagnostic } from '../../tools/external-routing/mcp-connection-manager.js';
+import { getCompiledBuiltInTools } from '../../tools/index.js';
 
 const CLOSED_APPLICATION_RUNTIME = Promise.resolve();
 

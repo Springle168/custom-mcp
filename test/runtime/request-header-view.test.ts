@@ -1,4 +1,4 @@
-import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
   assert,
   assertEqual,

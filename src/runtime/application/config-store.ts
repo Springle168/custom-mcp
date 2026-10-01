@@ -1,8 +1,8 @@
 import type {
   LoadedRuntimeConfig,
   RuntimeConfigSnapshot,
-} from '../config.js';
-import type { RuntimeConfigIdentity } from '../config/workspace-selection.js';
+} from '../../config.js';
+import type { RuntimeConfigIdentity } from '../../config/workspace-selection.js';
 
 export type ConfigStoreStatus =
   | { readonly state: 'ok' };

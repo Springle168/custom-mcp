@@ -3,8 +3,8 @@ import type {
   ImageContent,
   TextContent,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { ToolInvocationContext } from '../runtime/tool-invocation-context.js';
+import type { ToolRuntimeContext } from '../runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../runtime/invocation/tool-invocation-context.js';
 import type { ToolName } from './names.js';
 
 export type ToolResultContent = TextContent | ImageContent;

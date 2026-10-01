@@ -2,9 +2,9 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigError } from '../../src/config.js';
-import { loadApplicationRuntime } from '../../src/runtime/startup-runtime.js';
-import { createToolRuntimeContext } from '../../src/runtime/tool-context.js';
-import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
+import { loadApplicationRuntime } from '../../src/runtime/application/startup-runtime.js';
+import { createToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
+import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import { createWorkspaceToolService } from '../../src/tools/index.js';
 import {
   assert,

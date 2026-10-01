@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
 import {
   calculateMatchedSpan,
   calculateRegexReplacement,
@@ -8,22 +8,22 @@ import {
   type MatchedSpan,
   type ReplaceParams,
   type ReplacementResult,
-} from '../engine/replacement.js';
+} from '../../../engine/replacement.js';
 import {
   detectLineEnding,
   resolveLineEnding,
   detectOmissionPlaceholders,
-} from '../engine/text-utils.js';
-import { MAX_FILE_SIZE_MB, isBinaryFile } from '../utils/file-read.js';
+} from '../../../engine/text-utils.js';
+import { MAX_FILE_SIZE_MB, isBinaryFile } from '../../../utils/file-read.js';
 import {
   resolveFileAccessPath,
   validateFileAccessWriteTarget,
-} from '../utils/file-access-policy.js';
-import { withFileLock } from '../utils/file-lock.js';
-import type { SafePath } from '../utils/paths.js';
-import { REPLACE_TOOL_DEFINITION } from './definitions/replace-text.definition.js';
-import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult } from './results.js';
+} from '../../../utils/file-access-policy.js';
+import { withFileLock } from '../../../utils/file-lock.js';
+import type { SafePath } from '../../../utils/paths.js';
+import { REPLACE_TOOL_DEFINITION } from './replace-text.definition.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
+import { textErrorResult } from '../../results.js';
 
 type MatchMode = 'default' | 'regex';
 

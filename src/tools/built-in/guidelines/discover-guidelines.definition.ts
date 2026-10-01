@@ -1,4 +1,4 @@
-import type { MCPTool } from '../types.js';
+import type { MCPTool } from '../../types.js';
 
 export const MAX_GUIDELINE_FILES = 100;
 export const MAX_GUIDELINE_PREFIX_BYTES = 64 * 1024;

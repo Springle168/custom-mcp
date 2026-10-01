@@ -1,5 +1,5 @@
-import { MAX_LINES_PER_FILE } from '../../utils/file-read.js';
-import type { MCPTool } from '../types.js';
+import { MAX_LINES_PER_FILE } from '../../../utils/file-read.js';
+import type { MCPTool } from '../../types.js';
 
 /** Recommended maximum original file size for a content-returning shallow read. */
 export const SHALLOW_READ_BATCH_SIZE_BYTES = 50 * 1024;

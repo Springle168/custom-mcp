@@ -11,14 +11,14 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
-import { createConfigStore } from '../../src/runtime/config-store.js';
-import { createMCPServer } from '../../src/runtime/mcp-server.js';
-import { runWithRequestHeaderContext } from '../../src/runtime/request-context.js';
-import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+import { createConfigStore } from '../../src/runtime/application/config-store.js';
+import { createMCPServer } from '../../src/runtime/mcp/mcp-server.js';
+import { runWithRequestHeaderContext } from '../../src/runtime/request/request-context.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
   loadApplicationRuntime,
   type LoadedApplicationRuntime,
-} from '../../src/runtime/startup-runtime.js';
+} from '../../src/runtime/application/startup-runtime.js';
 import {
   parseCanonicalRequestDocument,
   type CanonicalContentBlock,

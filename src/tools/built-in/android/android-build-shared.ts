@@ -1,15 +1,15 @@
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
 import {
   parseAndroidTestReports,
   type TestReportSummary,
-} from '../engine/android-test-report.js';
-import type { ToolCallResult } from './types.js';
-import { textErrorResult } from './results.js';
+} from '../../../engine/android-test-report.js';
+import type { ToolCallResult } from '../../types.js';
+import { textErrorResult } from '../../results.js';
 import {
   readChangedAndroidTestReportFiles,
   snapshotAndroidTestReportFiles,
   type AndroidTestReportSnapshot,
-} from '../utils/android-test-report-files.js';
+} from '../../../utils/android-test-report-files.js';
 import {
   getAndroidGradleDisplayCommand,
   startAndroidGradleExecution,
@@ -17,11 +17,11 @@ import {
   type AndroidGradleTask,
   type RunAndroidGradleOptions,
   type RunAndroidGradleResult,
-} from '../utils/android-gradle.js';
+} from '../../../utils/android-gradle.js';
 import {
   androidGradleGateRegistry,
   type AndroidGradleGateExecution,
-} from '../utils/android-gradle-gate.js';
+} from '../../../utils/android-gradle-gate.js';
 
 export interface AndroidGradleToolArgs {
   quiet?: boolean;

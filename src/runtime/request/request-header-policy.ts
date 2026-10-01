@@ -1,7 +1,7 @@
 import type {
   RuntimeRequestFeature,
   RuntimeRulesConfig,
-} from '../config.js';
+} from '../../config.js';
 import type { StrictRequestHeaderView } from './request-header-view.js';
 
 export interface RequestHeaderPolicy {

@@ -1,22 +1,22 @@
-import type { ToolRuntimeContext } from '../runtime/tool-context.js';
-import type { MCPTool, ToolCallResult } from './types.js';
-import { textErrorResult } from './results.js';
+import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
+import type { MCPTool, ToolCallResult } from '../../types.js';
+import { textErrorResult } from '../../results.js';
 import {
   selectReadableFiles,
   type SelectedReadableFile,
   type SkippedFileSelection,
-} from '../utils/file-selection.js';
+} from '../../../utils/file-selection.js';
 import {
   isBinaryFile,
   readTextFile,
   MAX_LINE_LENGTH,
   MAX_LINES_PER_FILE,
-} from '../utils/file-read.js';
+} from '../../../utils/file-read.js';
 import {
   READ_MANY_FILES_TOOL_DEFINITION,
   SHALLOW_READ_BATCH_SIZE_BYTES,
   SHALLOW_READ_BATCH_SIZE_LABEL,
-} from './definitions/read-many-files.definition.js';
+} from './read-many-files.definition.js';
 
 /** Maximum number of files to process in a single call. */
 const MAX_FILES = 100;

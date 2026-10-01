@@ -11,11 +11,11 @@ import {
 } from '../../src/config.js';
 import { createRuntimeConfigSnapshot } from '../../src/config/runtime-snapshot.js';
 import type { RuntimeConfigIdentity } from '../../src/config/workspace-selection.js';
-import { createConfigStore, type ConfigStore } from '../../src/runtime/config-store.js';
+import { createConfigStore, type ConfigStore } from '../../src/runtime/application/config-store.js';
 import {
   createToolRuntimeContext,
   type ToolRuntimeContext,
-} from '../../src/runtime/tool-context.js';
+} from '../../src/runtime/invocation/tool-context.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { runWithRequestHeaderContext } from './request-context.js';
-import { createStrictRequestHeaderView } from './request-header-view.js';
+import { runWithRequestHeaderContext } from '../request/request-context.js';
+import { createStrictRequestHeaderView } from '../request/request-header-view.js';
 
 export interface McpPostTransport {
   readonly sessionId?: string;

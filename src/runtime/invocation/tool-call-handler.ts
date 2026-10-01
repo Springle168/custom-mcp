@@ -1,9 +1,9 @@
-import { generateToolCallId } from './mcp-identifiers.js';
-import { getCurrentRequestHeaderView } from './request-context.js';
+import { generateToolCallId } from '../mcp/mcp-identifiers.js';
+import { getCurrentRequestHeaderView } from '../request/request-context.js';
 import {
   evaluateRequestHeaderPolicy,
   toRequestHeaderPolicyLogMetadata,
-} from './request-header-policy.js';
+} from '../request/request-header-policy.js';
 import { adaptToolCallResultForRequestPolicy } from './tool-result-adapter.js';
 import type {
   ToolInvocationContext,
@@ -15,9 +15,9 @@ import type {
 } from './tool-call-log-context.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
 import { isToolCallResult } from './tool-result-validation.js';
-import type { ConfigStore } from './config-store.js';
-import type { ToolCallResult } from '../tools/types.js';
-import { textErrorResult } from '../tools/results.js';
+import type { ConfigStore } from '../application/config-store.js';
+import type { ToolCallResult } from '../../tools/types.js';
+import { textErrorResult } from '../../tools/results.js';
 
 const ROUTER_FAILURE_MESSAGE =
   'The tool execution failed unexpectedly. Check server diagnostics and retry only if the operation is safe to run again.';

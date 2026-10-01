@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { isToolCallResult } from '../../runtime/tool-result-validation.js';
+import { isToolCallResult } from '../../runtime/invocation/tool-result-validation.js';
 import type { ToolCallResult } from '../types.js';
 import type { ExternalMcpServerConfig } from './config.js';
 import {

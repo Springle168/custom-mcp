@@ -92,7 +92,7 @@ return result;
 
 ## Runtime 结果校验
 
-`src/runtime/tool-call-handler.ts` 在 request policy adapter 和 result logger 之前校验工具结果。`src/runtime/tool-result-validation.ts` 先遍历整个结果，要求它是稳定的 JSON data graph：
+`src/runtime/invocation/tool-call-handler.ts` 在 request policy adapter 和 result logger 之前校验工具结果。`src/runtime/invocation/tool-result-validation.ts` 先遍历整个结果，要求它是稳定的 JSON data graph：
 
 - 值只包含 `null`、string、boolean、有限 number、稠密标准数组与普通 object。
 - object 的 prototype 只能是 `Object.prototype` 或 `null`，自有属性必须为可枚举 data property。

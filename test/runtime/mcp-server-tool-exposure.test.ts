@@ -2,15 +2,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { readFile } from 'node:fs/promises';
-import { createMCPServer } from '../../src/runtime/mcp-server.js';
+import { createMCPServer } from '../../src/runtime/mcp/mcp-server.js';
 import type { RuntimeRulesConfig } from '../../src/config.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
 import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
-import type { ToolInvocationContext } from '../../src/runtime/tool-invocation-context.js';
-import { runWithRequestHeaderContext } from '../../src/runtime/request-context.js';
-import { createStrictRequestHeaderView } from '../../src/runtime/request-header-view.js';
+import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
+import { runWithRequestHeaderContext } from '../../src/runtime/request/request-context.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import type { JsonObject } from '../../src/config/json-file.js';
 import {
   createWorkspaceToolService,
