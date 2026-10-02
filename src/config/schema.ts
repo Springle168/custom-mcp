@@ -56,7 +56,7 @@ export interface ParsedFileAccessConfig {
 }
 
 export interface ParsedWorkspaceConfig {
-  readonly version: 1;
+  readonly version: 2;
   readonly rootDir: string;
   readonly host: string;
   readonly port: number;
@@ -136,11 +136,11 @@ export function parseWorkspaceConfig(
   );
 
   assertKnownFields(context, rawWorkspace, WORKSPACE_FIELDS, fieldPath);
-  if (rawWorkspace.version !== 1) {
+  if (rawWorkspace.version !== 2) {
     fail(
       context,
       'version',
-      'version must be the number 1. The current server only supports workspace config schema version 1.',
+      'version must be the number 2. The current server only supports workspace config schema version 2.',
     );
   }
 
@@ -159,7 +159,7 @@ export function parseWorkspaceConfig(
   );
 
   return deepFreezeParsedConfig({
-    version: 1,
+    version: 2,
     rootDir,
     host: readOptionalHost(context, rawWorkspace.host, 'host'),
     port: readRequiredPositiveInteger(context, rawWorkspace, 'port', fieldPath, {

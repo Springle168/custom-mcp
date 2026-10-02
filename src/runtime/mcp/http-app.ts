@@ -1,17 +1,20 @@
 import express, { type Express, type Request } from 'express';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { ConfigStore } from '../application/config-store.js';
 import type { ToolCallDiagnosticSink, ToolCallLogger } from '../invocation/tool-call-handler.js';
 import type { WorkspaceToolService } from '../../tools/index.js';
 import { generateMcpSessionId } from './mcp-identifiers.js';
-import { handleMcpPostRequest, type McpPostLogger, type McpPostSession } from './mcp-post-handler.js';
+import { handleMcpPostRequest, safeInfo, type McpPostLogger, type McpPostSession } from './mcp-post-handler.js';
 import { createMCPServer } from './mcp-server.js';
+import { InitializationTrackingTransport } from './initialization-tracking-transport.js';
+import { createPendingSession, type McpPendingSession } from './pending-session.js';
+import { createSessionToolService } from './session-tool-service.js';
 
 export interface CreateMcpHttpAppOptions {
   readonly configStore: ConfigStore;
   readonly toolService: WorkspaceToolService;
   readonly logger: ToolCallLogger & McpPostLogger;
   readonly sessions: Map<string, McpPostSession>;
+  readonly pendingSessions: Set<McpPendingSession>;
   readonly isAcceptingNewSessions: () => boolean;
   readonly closeSession: (sessionId: string) => Promise<void>;
   readonly onToolCallDiagnostic?: ToolCallDiagnosticSink;
@@ -19,7 +22,7 @@ export interface CreateMcpHttpAppOptions {
 
 /** Wires HTTP transport sessions to the application-owned workspace service and lifecycle. */
 export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
-  const { configStore, toolService, logger, sessions } = options;
+  const { configStore, toolService, logger, sessions, pendingSessions } = options;
   const app = express();
   app.use(express.json());
 
@@ -28,31 +31,34 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
       req,
       res,
       sessions,
+      pendingSessions,
       logger,
+      rules: configStore.getSnapshot().rules,
       isAcceptingNewSessions: options.isAcceptingNewSessions,
-      createSession: async () => {
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: generateMcpSessionId,
-        });
-
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          if (sid) {
-            logger.info(`Session disconnected: ${sid}`);
-            sessions.delete(sid);
-          }
-        };
-
+      createSession: (settings, requestId) => {
         const server = createMCPServer({
           configStore,
           logger,
-          toolService,
+          toolService: requestId === undefined
+            ? toolService
+            : createSessionToolService(toolService, settings.requestedToolNames),
+          instructions: settings.instructions,
           ...(options.onToolCallDiagnostic === undefined
             ? {}
             : { onToolCallDiagnostic: options.onToolCallDiagnostic }),
         });
-        await server.connect(transport);
-        return { transport, server };
+        const transport = new InitializationTrackingTransport({
+          sessionIdGenerator: generateMcpSessionId,
+        }, requestId);
+        const session = createPendingSession(server, transport, () => {
+          const sid = transport.sessionId;
+          // Unpublished SDK ids stay out of logs and routing.
+          if (sid && sessions.get(sid) === session) {
+            sessions.delete(sid);
+            safeInfo(logger, `Session disconnected: ${sid}`);
+          }
+        });
+        return session;
       },
     });
   });
@@ -67,7 +73,7 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
     const session = sessions.get(sessionId);
     if (!session) {
       // A 404 prompts Streamable HTTP clients to reinitialize stale sessions.
-      logger.info(`Unknown MCP session on GET: ${sessionId}`);
+      safeInfo(logger, `Unknown MCP session on GET: ${sessionId}`);
       res.status(404).json({ error: 'Session not found or expired' });
       return;
     }
@@ -83,13 +89,13 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
 
     const session = sessions.get(sessionId);
     if (!session) {
-      logger.info(`Unknown MCP session on DELETE: ${sessionId}`);
+      safeInfo(logger, `Unknown MCP session on DELETE: ${sessionId}`);
       res.status(404).json({ error: 'Session not found or expired' });
       return;
     }
     await session.transport.handleRequest(req, res);
     await options.closeSession(sessionId);
-    logger.info(`Session closed: ${sessionId}`);
+    safeInfo(logger, `Session closed: ${sessionId}`);
   });
 
   return app;

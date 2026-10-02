@@ -1,4 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { InitializationTrackingTransport } from '../../src/runtime/mcp/initialization-tracking-transport.js';
+import { createPendingSession, type McpPendingSession } from '../../src/runtime/mcp/pending-session.js';
 import {
   ApplicationLifecycle,
   ApplicationLifecycleCloseError,
@@ -108,6 +111,7 @@ async function testClosesResourcesInApplicationShutdownOrder(): Promise<void> {
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events)),
     sessions,
+    pendingSessions: new Set(),
     androidRuntime: createClosable(events, 'android.close'),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
@@ -133,6 +137,7 @@ async function testCloseIsIdempotentAndStopsSessionAdmissionImmediately(): Promi
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(listener),
     sessions,
+    pendingSessions: new Set(),
     androidRuntime: createClosable(events, 'android.close'),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
@@ -175,6 +180,7 @@ async function testStartsAndroidCloseBeforeBlockedSessionDrain(): Promise<void> 
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events)),
     sessions,
+    pendingSessions: new Set(),
     androidRuntime: createClosable(events, 'android.close', () => androidDrain.promise),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
@@ -207,6 +213,7 @@ async function testSingleSessionCloseIsSeparateAndCleansTheSessionMap(): Promise
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events)),
     sessions,
+    pendingSessions: new Set(),
     androidRuntime: createClosable(events, 'android.close'),
     externalRuntime: createClosable(events, 'external.close'),
     logger: createClosable(events, 'logger.close'),
@@ -247,6 +254,7 @@ async function testContinuesClosingAfterFailuresAndReportsThemTogether(): Promis
   const lifecycle = new ApplicationLifecycle({
     listener: asHttpServer(createListener(events, { error: listenerFailure })),
     sessions,
+    pendingSessions: new Set(),
     androidRuntime: createClosable(events, 'android.close', () => {
       throw androidFailure;
     }),
@@ -282,6 +290,116 @@ async function testContinuesClosingAfterFailuresAndReportsThemTogether(): Promis
   throw new Error('Expected application close to report aggregate shutdown failure.');
 }
 
+function createPendingFixture(
+  events: string[],
+  name: string,
+  closeOperation: () => Promise<void> | void = () => {},
+): McpPendingSession {
+  const server = new Server({ name: 'application-lifecycle-test', version: '1.0.0' });
+  const transport = new InitializationTrackingTransport({}, 'initialize');
+  const closeTransport = transport.close.bind(transport);
+  transport.close = async () => {
+    events.push(`pending.${name}.close`);
+    await closeOperation();
+    await closeTransport();
+  };
+  return createPendingSession(server, transport, () => {
+    events.push(`pending.${name}.closed`);
+  });
+}
+
+async function testPendingCloseReleasesListenerDrain(): Promise<void> {
+  const events: string[] = [];
+  const listenerDrain = deferred<void>();
+  const pending = createPendingFixture(events, 'initializing', () => listenerDrain.resolve());
+  const pendingSessions = new Set([pending]);
+  const sessions = new Map<string, McpPostSession>([
+    ['published', createSession(events, 'published')],
+  ]);
+  const lifecycle = new ApplicationLifecycle({
+    listener: asHttpServer(createListener(events, { complete: listenerDrain })),
+    sessions,
+    pendingSessions,
+    androidRuntime: createClosable(events, 'android.close'),
+    externalRuntime: createClosable(events, 'external.close'),
+    logger: createClosable(events, 'logger.close'),
+  });
+  const closing = lifecycle.close();
+  try {
+    await Promise.resolve();
+    await Promise.resolve();
+    assert(!lifecycle.isAcceptingNewSessions, 'Shutdown must prohibit pending publication immediately');
+    assert(events.includes('pending.initializing.close'), 'Pending closure must start before waiting on listener drain');
+    await closing;
+  } finally {
+    // Keep a failed ordering assertion from leaving a blocked shutdown promise behind.
+    listenerDrain.resolve();
+    await closing;
+  }
+  assertEqual(pendingSessions.size, 0, 'Shutdown should remove pending resources after closing');
+  assertEqual(sessions.size, 0, 'Shutdown should also close published sessions');
+  assert(events.indexOf('pending.initializing.closed') < events.indexOf('external.close'), 'Shared runtime drain should follow pending resource closure');
+}
+
+async function testConcurrentPendingCleanupSharesCloseFact(): Promise<void> {
+  const events: string[] = [];
+  const pendingDrain = deferred<void>();
+  const pending = createPendingFixture(events, 'shared', () => pendingDrain.promise);
+  const pendingSessions = new Set([pending]);
+  const lifecycle = new ApplicationLifecycle({
+    listener: asHttpServer(createListener(events)),
+    sessions: new Map(),
+    pendingSessions,
+    androidRuntime: createClosable(events, 'android.close'),
+    externalRuntime: createClosable(events, 'external.close'),
+    logger: createClosable(events, 'logger.close'),
+  });
+  const entryCleanup = pending.close();
+  const applicationCleanup = lifecycle.close();
+  try {
+    await Promise.resolve();
+    await Promise.resolve();
+    assert(pending.close() === entryCleanup, 'Entry cleanup and shutdown should share pending close work');
+    assertEqual(events.filter((event) => event === 'pending.shared.close').length, 1, 'Transport cleanup should start once despite concurrent owners');
+    assertEqual(pendingSessions.size, 1, 'Ownership must stay tracked while physical cleanup is pending');
+    assert(!events.includes('external.close'), 'Shared runtimes must not close before pending cleanup completes');
+  } finally {
+    pendingDrain.resolve();
+    await Promise.all([entryCleanup, applicationCleanup]);
+  }
+  assertEqual(pendingSessions.size, 0, 'Completed pending cleanup should remove the ownership entry');
+  assertEqual(events.filter((event) => event === 'pending.shared.close').length, 1, 'Shutdown must not independently close the same transport again');
+}
+
+async function testPendingFailureDoesNotBlockOtherCleanup(): Promise<void> {
+  const events: string[] = [];
+  const failure = new Error('pending transport close failed');
+  const failed = createPendingFixture(events, 'failed', () => { throw failure; });
+  const healthy = createPendingFixture(events, 'healthy');
+  const pendingSessions = new Set([failed, healthy]);
+  const sessions = new Map<string, McpPostSession>([
+    ['published', createSession(events, 'published')],
+  ]);
+  const lifecycle = new ApplicationLifecycle({
+    listener: asHttpServer(createListener(events)),
+    sessions,
+    pendingSessions,
+    androidRuntime: createClosable(events, 'android.close'),
+    externalRuntime: createClosable(events, 'external.close'),
+    logger: createClosable(events, 'logger.close'),
+  });
+  const rejected = await lifecycle.close().then(() => undefined, (error: unknown) => error);
+  assert(rejected instanceof ApplicationLifecycleCloseError, 'Pending close failures should be aggregated');
+  assertEqual(rejected.failures.length, 1, 'The pending failure should be reported once');
+  assertEqual(rejected.failures[0]?.phase, 'mcp-session', 'Pending resources should retain the MCP session shutdown phase');
+  assertEqual(rejected.failures[0]?.sessionId, undefined, 'Unpublished resources must not be logged with a temporary session ID');
+  assert(rejected.failures[0]?.error === failure, 'The original cleanup failure should be preserved');
+  assertEqual(pendingSessions.size, 0, 'Failed and successful pending resources must both leave the ownership set');
+  assertEqual(sessions.size, 0, 'Pending failure must not prevent published session cleanup');
+  assert(events.includes('pending.healthy.closed'), 'Other pending resources must still close');
+  assert(events.includes('external.close') && events.includes('logger.close'), 'Pending failure must not prevent downstream runtime and logging cleanup');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing application lifecycle shutdown ownership',
@@ -291,6 +409,9 @@ async function main(): Promise<void> {
       { name: 'starts Android close before blocked session drain', run: testStartsAndroidCloseBeforeBlockedSessionDrain },
       { name: 'keeps single-session close separate and cleans session state', run: testSingleSessionCloseIsSeparateAndCleansTheSessionMap },
       { name: 'continues after failures and reports them together', run: testContinuesClosingAfterFailuresAndReportsThemTogether },
+      { name: 'pending close releases listener drain before shutdown waits', run: testPendingCloseReleasesListenerDrain },
+      { name: 'entry cleanup and shutdown share pending close facts', run: testConcurrentPendingCleanupSharesCloseFact },
+      { name: 'pending failures do not prevent other resource cleanup', run: testPendingFailureDoesNotBlockOtherCleanup },
     ],
   });
 }

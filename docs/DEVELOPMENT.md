@@ -14,6 +14,7 @@
 | 工具开发 | [docs/TOOLS.md](TOOLS.md) | 已实现工具索引、`src/tools/` 源码布局、添加新工具、schema 设计、返回值、并发模型 |
 | 自定义工具编写 | [docs/CUSTOM-TOOL-AUTHORING.md](CUSTOM-TOOL-AUTHORING.md) | 独立编写 custom-only Tool definition 与 Processor 时需要遵守的输入输出契约 |
 | 工具返回值 | [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) | `ToolCallResult` 返回壳、`isError` 语义、统一 helper |
+| 请求头策略 | [docs/REQUEST-HEADER-POLICY.md](REQUEST-HEADER-POLICY.md) | 两阶段规则、初始化参数、会话工具视图、结果 policy、发布与清理、隐私边界和测试索引 |
 | 路径安全 | [docs/PATH-SAFETY.md](PATH-SAFETY.md) | 文件类工具的路径分类、root 边界、glob、realpath 与 symlink 语义 |
 | 测试 | [docs/TESTING.md](TESTING.md) | 测试组织规则、统一 runner 与通用验证命令 |
 | 日志 | [docs/LOGGING.md](LOGGING.md) | 日志输出位置、格式、颜色高亮、扩展方式 |
@@ -47,7 +48,7 @@ custom-mcp/
 |-|-|-|-|
 | 入口层 | `src/index.ts` | 解析 CLI 输入、启动应用、注册进程退出信号与输出启动失败 | HTTP / MCP 接线和资源组装由运行时层负责 |
 | CLI 层 | `src/cli.ts` | 解析启动参数，如 `--workspace` | 只负责命令行输入，不承载配置 schema 细节 |
-| 配置层 | `src/config.ts`, `src/config/` | 读取 version 2 全局索引、显式选择 reference、按需读取 version 1 workspace 配置、应用集中 value/path policy、selected workspace env override allowlist 并构建 runtime snapshot | public facade 不承载 schema/value/path/selection/env/snapshot 细节；不在工具层读取配置文件 |
+| 配置层 | `src/config.ts`, `src/config/` | 读取 version 2 全局索引、显式选择 reference、按需读取 version 2 workspace 配置、应用集中 value/path policy、selected workspace env override allowlist 并构建 runtime snapshot | public facade 不承载 schema/value/path/selection/env/snapshot 细节；不在工具层读取配置文件 |
 | 运行时层 | `src/runtime/` | 持有 current snapshot 与 identity baseline，在每次工具调用开始时派生 `ToolRuntimeContext`，通过 MCP server factory 接入 workspace tool service | 工具只消费归一化后的运行时能力；`ConfigStore` 不暴露 snapshot mutation API |
 | 工具层 | `src/tools/` | built-in registry、custom definition 加载、Draft 2020-12 validator、effective/exposed catalog、executor 路由、业务编排与返回值 helper | definition、executor 和 exposure 分离；单工具细节优先写入 `docs/tools/` |
 | 引擎层 | `src/engine/` | 纯算法逻辑，如文本替换、行尾符处理和 Gradle 输出解析 | 无 I/O 副作用，可独立测试；按使用场景由对应工具文档承接细节 |
@@ -61,9 +62,9 @@ custom-mcp/
 |-|-|
 | `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts` 与 `runtime-snapshot.ts`；[自定义 Tool 配置](config/tool-config.md) 承接 `tool-exposure.ts`、Tool config v2 与 `externalRoutingConfigFile` 入口 |
 | `src/runtime/application/` | `start-application.ts` 组装资源并启动 listener；其他模块承载 ConfigStore、启动期配置与 catalog 组合、shutdown、诊断、启动日志和错误格式，见 [配置概览](CONFIG.md)、[工具开发](TOOLS.md)、[日志](LOGGING.md) 和 [外部路由](EXTERNAL-ROUTING.md) |
-| `src/runtime/request/` | HTTP request header view、异步请求上下文和 header rules policy，见 [workspace 配置](config/workspace-config.md) |
+| `src/runtime/request/` | strict header view、异步请求上下文、初始化参数与单次结果 policy，见 [请求头策略](REQUEST-HEADER-POLICY.md) |
 | `src/runtime/invocation/` | workspace / 单次调用 context、调用管线、日志 metadata、结果校验与适配，见 [工具开发](TOOLS.md) 和 [工具返回结果](TOOL-RESULTS.md) |
-| `src/runtime/mcp/` | `http-app.ts` 承载 Express 路由和 transport / session 接线；其他模块承载 MCP server factory、POST request context 和 session / call 标识生成，见 [工具开发](TOOLS.md) 和 [日志](LOGGING.md) |
+| `src/runtime/mcp/` | Express / transport 接线、MCP server factory、会话工具视图、初始化发布观测、pending 所有权及 session / call 标识，见 [请求头策略](REQUEST-HEADER-POLICY.md)、[工具开发](TOOLS.md) 和 [日志](LOGGING.md) |
 | `src/tools/*.ts` | canonical registry、workspace service、公共契约、Tool config / definition 加载、schema validator 与 effective/exposed catalog，见 [工具开发](TOOLS.md) 和 [自定义 Tool 配置](config/tool-config.md) |
 | `src/tools/built-in/` | files、guidelines、android 功能组内的 definition、handler 与共享编排，见 [工具开发](TOOLS.md) 和 [单工具文档](tools/) |
 | `src/tools/external-routing/` | custom-only definitionId binding、External routing config、Processor registry、route-specific endpoint / stage、canonical protocol、共享容量和 lifecycle 见 [外部路由](EXTERNAL-ROUTING.md) |
@@ -84,6 +85,7 @@ custom-mcp/
 ## 故障排查入口
 
 - 配置和 workspace 选择相关问题见 [docs/CONFIG.md](CONFIG.md)。
+- 初始化参数拒绝、会话工具集合、instructions 和按调用结果适配问题见 [docs/REQUEST-HEADER-POLICY.md](REQUEST-HEADER-POLICY.md)。
 - 文件路径边界、allowed roots、glob 和 symlink 行为见 [docs/PATH-SAFETY.md](PATH-SAFETY.md)。
 - 工具替换、读取、写入等行为优先查看 [docs/tools/](tools/) 下对应工具文档。
 - Android 构建工具问题见 [docs/tools/android-build.md](tools/android-build.md)。

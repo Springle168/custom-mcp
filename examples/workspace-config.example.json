@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "rootDir": "E:/ExistingWorkspaces/YourProject",
   "otherRootDirs": [
     "E:/ExistingWorkspaces/AnotherProject"
@@ -26,16 +26,28 @@
     }
   },
   "rules": {
-    "requestHeaders": [
-      {
-        "match": {
-          "x-custom-mcp-client": "android-studio"
+    "requestHeaders": {
+      "onInitialize": [
+        {
+          "readHeader": "x-custom-tool-list",
+          "apply": "setToolList"
         },
-        "enable": [
-          "structuredContentDup"
-        ]
-      }
-    ]
+        {
+          "readHeader": "x-custom-instructions",
+          "apply": "setInstructions"
+        }
+      ],
+      "onCallToolResult": [
+        {
+          "match": {
+            "x-custom-mcp-client": "android-studio"
+          },
+          "enable": [
+            "structuredContentDup"
+          ]
+        }
+      ]
+    }
   },
   "tools": {
     "toolConfigFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/tool-config.json",

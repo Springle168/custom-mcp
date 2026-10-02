@@ -13,6 +13,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { createConfigStore } from '../../src/runtime/application/config-store.js';
 import { createMCPServer } from '../../src/runtime/mcp/mcp-server.js';
+import { createSessionToolService } from '../../src/runtime/mcp/session-tool-service.js';
 import { runWithRequestHeaderContext } from '../../src/runtime/request/request-context.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
@@ -24,7 +25,7 @@ import {
   type CanonicalContentBlock,
   type CanonicalRequest,
 } from '../../src/tools/external-routing/canonical-protocol.js';
-import { createWorkspaceToolService } from '../../src/tools/index.js';
+import { createWorkspaceToolService, type WorkspaceToolService } from '../../src/tools/index.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import {
   assert,
@@ -193,10 +194,12 @@ async function writeExternalRoutingFixture(
       logsDir: LOGS_DIR,
       ...(structuredContentDup ? {
         rules: {
-          requestHeaders: [{
-            match: { 'x-client': 'canonical-content-test' },
-            enable: ['structuredContentDup'],
-          }],
+          requestHeaders: {
+            onCallToolResult: [{
+              match: { 'x-client': 'canonical-content-test' },
+              enable: ['structuredContentDup'],
+            }],
+          },
         },
       } : {}),
       tools: {
@@ -382,6 +385,7 @@ async function connectMcpServer(
   options: {
     readonly rawHeaders?: readonly string[];
     readonly onResult?: (result: ToolCallResult) => void;
+    readonly toolService?: WorkspaceToolService;
   } = {},
 ): Promise<ConnectedMcpPair> {
   const server = createMCPServer({
@@ -390,7 +394,7 @@ async function connectMcpServer(
       logToolCall() {},
       logToolResult(_name, result) { options.onResult?.(result); },
     },
-    toolService: createWorkspaceToolService(runtime.toolCatalog),
+    toolService: options.toolService ?? createWorkspaceToolService(runtime.toolCatalog),
   });
   const client = new Client({ name: 'external-routing-integration-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -615,8 +619,8 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
       workspaceId: 'selected',
       env: {},
     });
-    pair = await connectMcpServer(runtime);
-
+    const sharedService = createWorkspaceToolService(runtime.toolCatalog);
+    pair = await connectMcpServer(runtime, { toolService: sharedService });
     const listed = await pair.client.listTools();
     assertEqual(listed.tools.length, 2, 'tools/list should expose both routed custom-only tools.');
     assertEqual(listed.tools[0]?.name, FIRST_TOOL_NAME, 'The first Tool should retain definition order.');
@@ -676,6 +680,29 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
         'Canonical request should use the MCP runtime generated call ID.',
       );
     }
+
+    const restricted = await connectMcpServer(runtime, {
+      toolService: createSessionToolService(sharedService, [FIRST_TOOL_NAME]),
+    });
+    try {
+      const limitedList = await restricted.client.listTools();
+      assertEqual(limitedList.tools.map((tool) => tool.name).join(','), FIRST_TOOL_NAME, 'Restricted view should preserve the custom-only tool call name and binding.');
+      const hidden = await restricted.client.callTool({ name: SECOND_TOOL_NAME, arguments: {} });
+      assertIncludes(getTextContent(hidden), `Unknown tool: ${SECOND_TOOL_NAME}`, 'Hidden tool should fail admission before schema validation or routing.');
+      assertEqual(secondEndpoint.requestCount(), 1, 'Hidden custom-only tool must not contact its endpoint.');
+      const invalidVisible = await restricted.client.callTool({ name: FIRST_TOOL_NAME, arguments: {} });
+      assertIncludes(getTextContent(invalidVisible), 'configured input schema', 'Restricted custom-only view must retain workspace validation.');
+      assertEqual(firstEndpoint.requestCount(), 1, 'Visible invalid arguments must not reach external execution.');
+      const routed = await restricted.client.callTool({ name: FIRST_TOOL_NAME, arguments: { value: 'restricted session call' } });
+      assertEqual(getTextContent(routed), FIRST_COMPLETED_MESSAGE, 'Restricted view must keep the original external binding and shared runtime.');
+      assertEqual(firstEndpoint.requestCount(), 2, 'Restricted valid call should execute its existing external route once.');
+    } finally {
+      await restricted.client.close();
+      await restricted.server.close();
+    }
+    const afterRestrictedClose = await pair.client.callTool({ name: SECOND_TOOL_NAME, arguments: { value: 'after restricted close' } });
+    assertEqual(getTextContent(afterRestrictedClose), SECOND_COMPLETED_MESSAGE, 'Closing a restricted session must not close workspace-owned external resources.');
+    assertEqual(secondEndpoint.requestCount(), 2, 'Other sessions must continue to use the shared runtime.');
   } finally {
     await cleanupRuntimeResources({
       pair,

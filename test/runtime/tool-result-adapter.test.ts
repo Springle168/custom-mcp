@@ -33,11 +33,11 @@ function getStructuredContent(value: ToolCallResult): Record<string, unknown> {
 }
 
 function testNoMatchReturnsOriginalObject(): void {
-  const original = result(false);
+  const original = result(false, { structuredContent: { native: true } });
   const adapted = adaptToolCallResultForRequestPolicy(original, policy(false));
 
   assertEqual(adapted, original, 'No policy feature should return the original result object');
-  assert(!('structuredContent' in adapted), 'No policy feature should not add structuredContent');
+  assertEqual(adapted.structuredContent, original.structuredContent, 'No policy feature should retain native structuredContent unchanged');
 }
 
 function testMatchedSuccessAddsWrapper(): void {

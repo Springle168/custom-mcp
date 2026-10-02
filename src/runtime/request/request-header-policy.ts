@@ -20,7 +20,8 @@ export function evaluateRequestHeaderPolicy(
   rules: RuntimeRulesConfig,
   view: StrictRequestHeaderView | undefined,
 ): RequestHeaderPolicy {
-  const rulesConfigured = rules.requestHeaders.length > 0;
+  const resultRules = rules.requestHeaders.onCallToolResult;
+  const rulesConfigured = resultRules.length > 0;
   if (!rulesConfigured || view === undefined || view.kind === 'invalid') {
     return freezePolicy({
       rulesConfigured,
@@ -33,7 +34,7 @@ export function evaluateRequestHeaderPolicy(
   const enabledFeatures: RuntimeRequestFeature[] = [];
   const seenFeatures = new Set<RuntimeRequestFeature>();
 
-  rules.requestHeaders.forEach((rule, index) => {
+  resultRules.forEach((rule, index) => {
     const matched = rule.match.every((condition) => {
       const state = view.headers.get(condition.name);
       return state?.kind === 'single' && state.value === condition.value;
@@ -65,7 +66,7 @@ export function toRequestHeaderPolicyLogMetadata(
   policy: RequestHeaderPolicy,
 ): RequestHeaderPolicyLogMetadata {
   const matchedRuleLocations = policy.matchedRuleIndexes.map((index) => (
-    `rules.requestHeaders[${index}]`
+    `rules.requestHeaders.onCallToolResult[${index}]`
   ));
   const enabledFeatures = [...policy.enabledFeatures];
 

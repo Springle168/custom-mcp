@@ -32,12 +32,13 @@ interface ConnectedPair {
 
 function matchingRules(): RuntimeRulesConfig {
   return {
-    requestHeaders: [
-      {
+    requestHeaders: {
+      onInitialize: [],
+      onCallToolResult: [{
         match: [{ name: 'x-client', value: 'android-studio' }],
         enable: ['structuredContentDup'],
-      },
-    ],
+      }],
+    },
   };
 }
 
@@ -186,7 +187,7 @@ function createRichResultService(): WorkspaceToolService {
 
 async function connectServer(
   service: WorkspaceToolService,
-  rules: RuntimeRulesConfig = { requestHeaders: [] },
+  rules: RuntimeRulesConfig = { requestHeaders: { onInitialize: [], onCallToolResult: [] } },
 ): Promise<ConnectedPair> {
   const server = createMCPServer({
     configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),

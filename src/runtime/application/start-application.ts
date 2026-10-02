@@ -6,6 +6,7 @@ import { detachLingeringAndroidGradleExecutionsForShutdown } from '../../utils/a
 import { Logger } from '../../utils/logger.js';
 import { createMcpHttpApp } from '../mcp/http-app.js';
 import type { McpPostSession } from '../mcp/mcp-post-handler.js';
+import type { McpPendingSession } from '../mcp/pending-session.js';
 import { ApplicationDiagnostics } from './application-diagnostics.js';
 import { ApplicationLifecycle } from './application-lifecycle.js';
 import { createConfigStore } from './config-store.js';
@@ -34,6 +35,7 @@ export function startApplication(options: LoadRuntimeConfigOptions): RunningAppl
   diagnostics.bind(logger);
 
   const sessions = new Map<string, McpPostSession>();
+  const pendingSessions = new Set<McpPendingSession>();
   // Request callbacks run after synchronous listener/lifecycle assembly completes.
   let lifecycle: ApplicationLifecycle;
   const app = createMcpHttpApp({
@@ -41,6 +43,7 @@ export function startApplication(options: LoadRuntimeConfigOptions): RunningAppl
     toolService,
     logger,
     sessions,
+    pendingSessions,
     isAcceptingNewSessions: () => lifecycle.isAcceptingNewSessions,
     closeSession: (sessionId) => lifecycle.closeSession(sessionId),
     onToolCallDiagnostic: diagnostics.onToolCallDiagnostic,
@@ -61,6 +64,7 @@ export function startApplication(options: LoadRuntimeConfigOptions): RunningAppl
   lifecycle = new ApplicationLifecycle({
     listener,
     sessions,
+    pendingSessions,
     androidRuntime: {
       async close() {
         try {

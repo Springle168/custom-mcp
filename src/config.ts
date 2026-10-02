@@ -41,7 +41,10 @@ export {
   createEmptyRuntimeRulesConfig,
 } from './config/request-header-rules.js';
 export type {
+  RuntimeInitializeRequestFeature,
+  RuntimeInitializeRequestHeaderRule,
   RuntimeRequestFeature,
+  RuntimeRequestHeaderRules,
   RuntimeRequestHeaderMatchCondition,
   RuntimeRequestHeaderRule,
   RuntimeRulesConfig,

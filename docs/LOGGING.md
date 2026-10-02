@@ -57,7 +57,7 @@
 
 Logger 不解码图片来计算大小，不截断、摘要或脱敏 base64。顶层 `_meta` 和 `structuredContent` 不进入 RESULT 正文；即使命中 `structuredContentDup`，也只记录一次顶层 `content`。
 
-完整 base64 与工具参数、文本结果一样写入本机 stdout 和日志文件；输出图片的 Tool 应考虑日志体积和数据敏感性。结果契约与 request policy 覆盖语义见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)。
+完整 base64 与工具参数、文本结果一样写入本机 stdout 和日志文件；输出图片的 Tool 应考虑日志体积和数据敏感性。结果契约与字段覆盖语义见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)，两阶段策略与隐私边界见 [请求头策略](REQUEST-HEADER-POLICY.md)。
 
 ### 启动配置摘要
 
@@ -115,9 +115,31 @@ CALL 与 RESULT 都固定输出 `Session:` 和 `Call ID:`。若工具调用路�
 
 call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-RPC request ID。
 
-### Request Header Rules 响应元信息
+### 请求头策略日志
 
-当 selected workspace 的 `rules.requestHeaders` 非空时，每条工具响应日志都会在状态行之后、结果正文之前输出一行 `Rules:` 元信息。
+初始化策略使用独立会话摘要，不写入工具结果日志。工具结果的 `Rules:` 元信息只由 `rules.requestHeaders.onCallToolResult` 控制；仅配置初始化规则时，不给工具结果增加此行。跨层参数、生命周期与隐私契约见 [请求头策略](REQUEST-HEADER-POLICY.md)。
+
+#### 初始化会话摘要
+
+会话成功发布后，`mcp-post-handler.ts` 通过安全的 `info` 调用写入 `New session: <session-id>`。存在初始化绑定时，另写一条独立摘要：
+
+```text
+Session policy: session_13a09d50-0000-4000-8000-000000000000; rules.requestHeaders.onInitialize[0]: setToolList, rules.requestHeaders.onInitialize[1]: setInstructions
+```
+
+绑定存在但请求中对应 header 全缺失时，摘要末尾为 `none`。显式空 toolList 或 instructions 仍算应用功能；无初始化绑定时不写 `Session policy:`。规则顺序按配置保留，不输出请求名称集合或说明文本。
+
+客户端参数失败发生在会话资源构造之前，安全摘要例如：
+
+```text
+Initialize policy rejected: rules.requestHeaders.onInitialize[0]; invalid_json
+```
+
+失败摘要只包含规则位置与分类，不包含原始 JSON、异常、header name/value 或临时 SDK session ID。初始化日志失败与握手、发布和资源清理隔离，不能触发重复响应。
+
+#### 工具结果元信息
+
+当 selected workspace 的 `rules.requestHeaders.onCallToolResult` 非空时，每条成功记录的工具响应日志都会在状态行之后、结果正文之前输出一行 `Rules:` 元信息。
 
 命中规则时，文件日志格式为：
 
@@ -125,25 +147,25 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 [2026-07-05T10:20:30.000+08:00] → OK read_file (12ms)
   Session: session_13a09d50-0000-4000-8000-000000000000
   Call ID: call_7c2c62a1-0000-4000-8000-000000000000
-  Rules: matched rules.requestHeaders[0]; enabled structuredContentDup
+  Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup
   Succeeded.
 ```
 
 多条规则命中时，规则位置按 policy 输出顺序稳定列出，例如：
 
 ```text
-  Rules: matched rules.requestHeaders[0], rules.requestHeaders[1]; enabled structuredContentDup
+  Rules: matched rules.requestHeaders.onCallToolResult[0], rules.requestHeaders.onCallToolResult[1]; enabled structuredContentDup
 ```
 
-配置了 request header rules 但未命中时，输出：
+配置了结果阶段规则但未命中时，输出：
 
 ```text
   Rules: no match
 ```
 
-未配置 request header rules 时，不输出 `Rules:` 行。`Rules:` 行是响应日志元信息，不写入 `ToolCallResult.content` 或 `structuredContent`。
+结果阶段规则为空时，不输出 `Rules:` 行。`Rules:` 行是响应日志元信息，不写入 `ToolCallResult.content` 或 `structuredContent`。
 
-日志层只接收脱敏 metadata：是否配置规则、命中的 `rules.requestHeaders[n]` 相对位置和 enabled feature。响应日志不记录原始 header 列表、请求 header name/value、配置 header name/value、配置期望 value 或匹配字符串。
+日志层只接收结果阶段的脱敏 metadata：是否配置规则、命中的 `rules.requestHeaders.onCallToolResult[n]` 相对位置和 enabled feature。响应日志不记录请求或配置的 header name/value、原始 header 列表或匹配字符串。初始化参数也不经这一 metadata 进入日志。
 
 ---
 
@@ -171,7 +193,7 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 
 `test/logger/logger.manual.ts` 用于人工确认日志系统的终端颜色输出和日志文件；默认跳过超大 JSON 演示，避免产生大量噪音。需要验证 50KB 阈值下的大输出降级行为时，可传入 `--verbose`。
 
-`test/logger/request-header-rules-logging.test.ts` 覆盖 request header rules 的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界。
+`test/logger/request-header-rules-logging.test.ts` 覆盖结果阶段的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界。`test/runtime/mcp-post-request-context.test.ts` 与 `test/runtime/request-header-integration.test.ts` 覆盖初始化摘要、参数错误隐私与日志失败隔离；请求头专题提供 [完整测试索引](REQUEST-HEADER-POLICY.md#源码与测试索引)。
 
 `test/runtime/startup-logging.test.ts` 覆盖完整启动摘要的顺序与 IPv6 地址格式、文件访问策略摘要，以及 external routing disabled / configured / enabled 状态、route summary 和 endpoint identity 的安全格式。`test/runtime/start-application.test.ts` 验证 listener 启动与 signal shutdown 日志落盘。`test/runtime/application-diagnostics.test.ts` 覆盖 Processor drain 的 route / Tool 安全诊断格式。
 
