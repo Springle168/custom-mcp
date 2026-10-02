@@ -100,8 +100,13 @@ export async function handleMcpPostRequest(
     session = options.createSession(policy?.settings ?? {}, requestId);
     options.pendingSessions.add(session);
     // Ownership is registered before the first asynchronous connect. Close and
-    // HTTP interruption can terminate the entry even if an SDK operation stalls.
-    const stopped = Promise.race([http.interrupted, session.closed]).then(() => false);
+    // HTTP interruption or send rejection can terminate the entry even if the
+    // SDK leaves handleRequest or its HTTP stream pending.
+    const stopped = Promise.race([
+      http.interrupted,
+      session.closed,
+      session.transport.initializationSendRejected,
+    ]).then(() => false);
     if (!await Promise.race([session.connect().then(() => true), stopped])) {
       return;
     }

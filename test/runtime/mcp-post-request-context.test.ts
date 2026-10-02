@@ -50,6 +50,7 @@ function harness(options: {
   handle?: (req: Request, res: Response) => Promise<void> | void;
   connect?: () => Promise<void>;
   wait?: () => Promise<boolean>;
+  sendRejected?: Promise<void>;
   loggerThrows?: boolean;
 } = {}) {
   const req = request(options.body ?? initialize, options.rawHeaders);
@@ -67,6 +68,7 @@ function harness(options: {
   const session: McpPendingSession = {
     transport: {
       sessionId: 'new-session',
+      initializationSendRejected: options.sendRejected ?? new Promise<void>(() => {}),
       handleRequest: options.handle ?? ((_req, response) => { response.end(); }),
       waitForInitialization: options.wait ?? (async () => true),
       stopInitializationTracking() {},
@@ -189,6 +191,27 @@ async function testFailureAndAbortCleanup() {
   }
 }
 
+async function testSendRejectionTerminatesPendingHttp() {
+  for (const handlePending of [true, false]) {
+    const rejected = deferred<void>();
+    const h = harness({
+      sendRejected: rejected.promise,
+      handle: () => handlePending ? new Promise<void>(() => {}) : undefined,
+    });
+    const running = h.run();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assertEqual(h.pendingSessions.size, 1, 'Unfinished HTTP should retain pending ownership');
+    rejected.resolve();
+    await running;
+    assertEqual(h.sessions.size, 0, 'Rejected send must not publish');
+    assertEqual(h.pendingSessions.size, 0, 'Rejected send must release pending ownership');
+    assertEqual(h.closes(), 1, 'Rejected send must close pending resources once');
+    assertEqual(h.res.statusCode, 500, 'Unsent HTTP response should end as an internal failure');
+    assert(h.res.writableEnded, 'Rejected send must end HTTP without client interruption');
+    assertEqual(h.res.listenerCount('finish'), 0, 'Rejected send must release HTTP observers');
+  }
+}
+
 async function testShutdownAndFactoryExceptions() {
   const gate = deferred<void>();
   const h = harness({ connect: () => gate.promise });
@@ -229,6 +252,7 @@ await runTestSuite({
     { name: 'safe parameter errors before resources', run: testSafeParameterError },
     { name: 'both send and HTTP completion orders', run: testBothCompletionOrders },
     { name: 'send failure and interrupted waits', run: testFailureAndAbortCleanup },
+    { name: 'send rejection terminates pending handler and HTTP waits', run: testSendRejectionTerminatesPendingHttp },
     { name: 'shutdown and connect exceptions', run: testShutdownAndFactoryExceptions },
     { name: 'existing session and logger isolation', run: testExistingSessionSkipsInitialization },
   ],

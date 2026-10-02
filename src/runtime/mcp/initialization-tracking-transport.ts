@@ -10,11 +10,15 @@ export class InitializationTrackingTransport extends StreamableHTTPServerTranspo
   #state: 'idle' | 'sending' | 'succeeded' | 'failed' | 'stopped' = 'idle';
   readonly #settled: Promise<boolean>;
   #resolveSettled!: (succeeded: boolean) => void;
+  /** A rejected send need not finish HTTP, so the entry must observe it independently. */
+  readonly initializationSendRejected: Promise<void>;
+  #resolveSendRejected!: () => void;
 
   constructor(options: StreamableHTTPServerTransportOptions, requestId?: RequestId) {
     super(options);
     this.#requestId = requestId;
     this.#settled = new Promise((resolve) => { this.#resolveSettled = resolve; });
+    this.initializationSendRejected = new Promise((resolve) => { this.#resolveSendRejected = resolve; });
   }
 
   override async send(
@@ -39,6 +43,7 @@ export class InitializationTrackingTransport extends StreamableHTTPServerTranspo
       if (observed && this.#state === 'sending') {
         this.#state = 'failed';
         this.#resolveSettled(false);
+        this.#resolveSendRejected();
       }
       throw error;
     }

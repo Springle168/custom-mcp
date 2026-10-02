@@ -64,6 +64,8 @@ async function testErrorAndSendRejection(): Promise<void> {
     const sendDone = deferred<void>();
     await withPublicSend(async () => sendDone.promise, async () => {
       const transport = new InitializationTrackingTransport({}, 'initialize');
+      let sendRejected = false;
+      void transport.initializationSendRejected.then(() => { sendRejected = true; });
       const failure = new Error('public send failed');
       const sending = transport.send(message);
       const rejected = sending.then(() => undefined, (reason: unknown) => reason);
@@ -71,12 +73,15 @@ async function testErrorAndSendRejection(): Promise<void> {
       sendDone.reject(failure);
       assert((await rejected) === failure, 'Send rejection should propagate its original failure');
       assertEqual(await observed, false, 'A rejected result or error send must not publish a session');
+      assert(sendRejected, 'Rejected result and error sends must independently terminate HTTP waiting');
       transport.stopInitializationTracking();
     });
   }
   const sendDone = deferred<void>();
   await withPublicSend(async () => sendDone.promise, async () => {
     const transport = new InitializationTrackingTransport({}, 'initialize');
+    let sendRejected = false;
+    void transport.initializationSendRejected.then(() => { sendRejected = true; });
     const sending = transport.send(error);
     let settled = false;
     const observed = transport.waitForInitialization().then((value) => { settled = true; return value; });
@@ -85,6 +90,7 @@ async function testErrorAndSendRejection(): Promise<void> {
     sendDone.resolve();
     await sending;
     assertEqual(await observed, false, 'An HTTP-successful protocol error must not count as initialization success');
+    assert(!sendRejected, 'A fulfilled error send must allow its HTTP response to finish normally');
     transport.stopInitializationTracking();
   });
 }
@@ -144,12 +150,15 @@ async function testUnrelatedRejectionDoesNotPoisonTracking(): Promise<void> {
     }
   }, async () => {
     const transport = new InitializationTrackingTransport({}, 'initialize');
+    let sendRejected = false;
+    void transport.initializationSendRejected.then(() => { sendRejected = true; });
     const rejected = await transport.send({ jsonrpc: '2.0', id: 'other', result: {} })
       .then(() => undefined, (reason: unknown) => reason);
     assert(rejected === failure, 'Unrelated send rejection should still propagate');
     assertEqual(await transport.waitForInitialization(), false, 'An unrelated rejection must not start a tracked response');
     await transport.send(result);
     assertEqual(await transport.waitForInitialization(), true, 'An unrelated rejection must not poison the actual initialization result');
+    assert(!sendRejected, 'Unrelated rejection and successful initialization must not interrupt HTTP');
     transport.stopInitializationTracking();
   });
 }

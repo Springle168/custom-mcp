@@ -1,6 +1,7 @@
 import { once } from 'node:events';
 import { request } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolResultSchema,
   InitializeResultSchema,
@@ -378,6 +379,37 @@ async function testSdkInvalidInputsNeverPublish(): Promise<void> {
   }
 }
 
+async function testRejectedInitializeSendReleasesHttpAndPendingSession(): Promise<void> {
+  const harness = await createHarness();
+  const originalSend = StreamableHTTPServerTransport.prototype.send;
+  let sendCalls = 0;
+  let closeCalls = 0;
+  StreamableHTTPServerTransport.prototype.send = async function () {
+    sendCalls++;
+    const originalClose = this.close.bind(this);
+    this.close = async () => {
+      closeCalls++;
+      await originalClose();
+    };
+    // Reject before writing/closing the HTTP stream, as a failed SDK send can.
+    throw new Error('PRIVATE_SEND_FAILURE');
+  };
+  try {
+    const reply = await post(harness.url, initialize('send-failure'));
+    assertEqual(sendCalls, 1, 'Initialization should attempt its response send once');
+    const response = JSONRPCResponseSchema.safeParse(reply.message);
+    assert(!response.success || !('result' in response.data), 'Rejected send cannot return an initialization result');
+    assertEqual(harness.sessions.size, 0, 'Rejected send must never publish the session');
+    assertEqual(harness.pendingSessions.size, 0, 'Rejected send must release pending ownership without client abort');
+    assertEqual(closeCalls, 1, 'Rejected send must close the temporary transport exactly once');
+    assertNotIncludes(reply.text, 'PRIVATE_SEND_FAILURE', 'HTTP cleanup must not reflect send errors');
+    assertNotIncludes(harness.messages.join('\n'), 'PRIVATE_SEND_FAILURE', 'Diagnostics must not reflect send errors');
+  } finally {
+    StreamableHTTPServerTransport.prototype.send = originalSend;
+    await harness.close();
+  }
+}
+
 async function testShutdownOwnsPendingConnectAndPublishedSessions(): Promise<void> {
   const harness = await createHarness();
   await startSession(harness);
@@ -422,6 +454,7 @@ await runTestSuite({
     { name: 'unconfigured headers are not parsed or logged', run: testUnconfiguredHeadersAreNotParsedOrLogged },
     { name: 'policy logs stay private and logger failure does not alter protocol', run: testPolicyLoggingIsPrivateAndFailureIsolated },
     { name: 'SDK invalid inputs never publish provisional sessions', run: testSdkInvalidInputsNeverPublish },
+    { name: 'rejected initialize send releases HTTP and pending resources', run: testRejectedInitializeSendReleasesHttpAndPendingSession },
     { name: 'shutdown owns pending connect and published sessions', run: testShutdownOwnsPendingConnectAndPublishedSessions },
   ],
 });
