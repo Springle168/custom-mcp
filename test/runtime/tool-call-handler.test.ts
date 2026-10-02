@@ -35,12 +35,15 @@ const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 
 function matchingRules(): RuntimeRulesConfig {
   return {
-    requestHeaders: [
-      {
-        match: [{ name: 'x-client', value: 'android-studio' }],
-        enable: ['structuredContentDup'],
-      },
-    ],
+    requestHeaders: {
+      onInitialize: [],
+      onCallToolResult: [
+        {
+          match: [{ name: 'x-client', value: 'android-studio' }],
+          enable: ['structuredContentDup'],
+        },
+      ],
+    },
   };
 }
 
@@ -88,7 +91,7 @@ function assertContextHasNoRequestPolicyFields(context: ToolRuntimeContext): voi
 function assertMatchedMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
   assert(metadata !== undefined, 'Logger should receive request header rules metadata');
   assertEqual(metadata.rulesConfigured, true, 'Metadata should report configured request header rules');
-  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Metadata should include matched rule locations');
+  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders.onCallToolResult[0]', 'Metadata should include matched rule locations');
   assertEqual(metadata.enabledFeatures.join(','), 'structuredContentDup', 'Metadata should include enabled features');
 }
 

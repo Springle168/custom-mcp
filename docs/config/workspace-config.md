@@ -18,11 +18,11 @@ workspace 配置文件名和扩展名没有额外要求。被选中后，文件�
 
 ## 顶层 schema
 
-`version` 必须是 JSON number `1`。顶层未知字段会导致配置失败。
+`version` 必须是 JSON number `2`。顶层未知字段会导致配置失败。
 
 | 字段 | 类型 | 必填 | 说明 |
 |-|-|-|-|
-| `version` | `1` | 是 | workspace schema 版本。 |
+| `version` | `2` | 是 | workspace schema 版本，独立于全局索引和 referenced 文件版本。 |
 | `rootDir` | string | 是 | primary root；必须是已存在的本地绝对目录。 |
 | `host` | IPv4 / IPv6 string | 否 | HTTP bind IP；缺省为 `127.0.0.1`，不接受 hostname。 |
 | `port` | JSON number positive integer | 是 | 范围 `1..65535`。 |
@@ -32,7 +32,7 @@ workspace 配置文件名和扩展名没有额外要求。被选中后，文件�
 | `fileAccess` | object | 否 | primary / additional root 的 ignore 与 deny 策略文件。 |
 | `android` | object | 否 | Android 构建配置；出现时字段必须完整。 |
 | `envOverrides` | object | 否 | selected workspace 的字段级环境变量覆盖 allowlist。 |
-| `rules` | object | 否 | request header compatibility rules。 |
+| `rules` | object | 否 | 两阶段请求头策略：初始化设置与单次工具结果呈现。 |
 | `tools` | object | 否 | workspace custom Tool definition reference 与 effective tool exposure。 |
 
 不同 workspace 可以复用 `rootDir` 或 `port`。同一个 selected workspace 中的 `rootDir + otherRootDirs` 仍必须满足 allowed-root 的重复、嵌套与 realpath 安全约束。
@@ -109,17 +109,16 @@ Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny
 
 ## `rules.requestHeaders`
 
-`rules` 只允许 `requestHeaders`。`rules` 缺失、`rules: {}`、`requestHeaders` 缺失或空数组都会归一化为 `{ requestHeaders: [] }`。
+`rules` 只允许 `requestHeaders` object，后者只允许以下两个可选数组：
 
-每条 rule 只允许 `match` 与 `enable`，两者都必填：
+| 阶段 | 规则字段 | 功能 |
+|-|-|-|
+| `onInitialize` | 必填 `readHeader`、`apply` | 读取 JSON 参数，应用 `setToolList` 或 `setInstructions`，设置在会话内固定。 |
+| `onCallToolResult` | 必填非空 `match`、`enable` | 按本次工具调用 POST 的 header 精确匹配，启用 `structuredContentDup`。 |
 
-- `match` 是非空 object。header name 通过 HTTP token grammar 校验并按 lowercase 保存；同一 rule 中 lowercase 后重复的 header name 无效。
-- match value 是无首尾 whitespace 的合法 HTTP field value。配置错误不输出期望 header value。
-- `enable` 是非空数组；只允许精确的 `structuredContentDup`，同一 rule 内重复 feature 无效。
-- rule 间采用 OR，同一 rule 的条件采用 AND；请求中引用 header 缺失或重复时，对应条件不匹配。
-- 只有 selected workspace 的 rules 进入 runtime snapshot。
+缺失 object、空 object 或缺失阶段均归一化为两个数组，缺失数组为 `[]`。`null`、错误类型、未知字段和数组形式的 `requestHeaders` 无效。只有 selected workspace 的规则进入不可变 runtime snapshot，且 `rules*` 禁止环境变量覆盖。
 
-请求 header 的 strict view、命中后的 `structuredContent` 返回值适配和日志隐私边界分别见 [工具返回结果](../TOOL-RESULTS.md) 与 [日志](../LOGGING.md)。
+详细配置示例、字段校验、初始化参数契约、会话工具准入、HTTP 生命周期和隐私边界统一见 [请求头策略](../REQUEST-HEADER-POLICY.md)。
 
 ---
 
@@ -190,11 +189,11 @@ selected workspace 文件的读取、JSON、schema、path、env override 和 pol
 
 | 区域 | 职责 |
 |-|-|
-| `src/config/schema.ts` | `version: 1` workspace schema、path-like 字段、Android 与 env override allowlist。 |
+| `src/config/schema.ts` | `version: 2` workspace schema、path-like 字段、Android 与 env override allowlist。 |
 | `src/config/file-access-policy.ts` | selected workspace policy 文件的验证、读取、编译与只读 facade。 |
 | `src/config/env-overrides.ts` | selected workspace allowlist 与环境变量读取。 |
 | `src/config/runtime-snapshot.ts` | canonical roots、runtime snapshot 与 deep-freeze。 |
-| `src/config/request-header-rules.ts` | `rules.requestHeaders` schema 与 runtime rules。 |
+| `src/config/request-header-rules.ts` | 两阶段 `rules.requestHeaders` schema 与 runtime rules，跨层行为见 [请求头策略](../REQUEST-HEADER-POLICY.md)。 |
 | `src/config/tool-exposure.ts` | `tools` 外壳、tool config path 与未决 exposure selector。 |
 | `src/config/strict-utf8-file.ts` | 配置文本共享的同一 descriptor 普通文件检查、读取与 strict UTF-8 边界。 |
 | `src/config/json-file.ts` | 全局、workspace 与 referenced JSON 的解析和 JSON-oriented 诊断边界。 |

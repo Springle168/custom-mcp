@@ -5,7 +5,17 @@ import {
   type ValuePolicyResult,
 } from './value-policy.js';
 
-export type RuntimeRequestFeature = 'structuredContentDup';
+export const REQUEST_FEATURES = ['structuredContentDup'] as const;
+export type RuntimeRequestFeature = (typeof REQUEST_FEATURES)[number];
+
+export const INITIALIZE_REQUEST_FEATURES = ['setToolList', 'setInstructions'] as const;
+export type RuntimeInitializeRequestFeature = (typeof INITIALIZE_REQUEST_FEATURES)[number];
+
+/** A single initialization parameter source; each feature and header binds at most once. */
+export interface RuntimeInitializeRequestHeaderRule {
+  readonly readHeader: string;
+  readonly apply: RuntimeInitializeRequestFeature;
+}
 
 export interface RuntimeRequestHeaderMatchCondition {
   readonly name: string;
@@ -17,8 +27,13 @@ export interface RuntimeRequestHeaderRule {
   readonly enable: readonly RuntimeRequestFeature[];
 }
 
+export interface RuntimeRequestHeaderRules {
+  readonly onInitialize: readonly RuntimeInitializeRequestHeaderRule[];
+  readonly onCallToolResult: readonly RuntimeRequestHeaderRule[];
+}
+
 export interface RuntimeRulesConfig {
-  readonly requestHeaders: readonly RuntimeRequestHeaderRule[];
+  readonly requestHeaders: RuntimeRequestHeaderRules;
 }
 
 export interface RequestHeaderRulesParseContext {
@@ -26,12 +41,13 @@ export interface RequestHeaderRulesParseContext {
 }
 
 const RULES_FIELDS = new Set(['requestHeaders']);
+const REQUEST_HEADERS_FIELDS = new Set(['onInitialize', 'onCallToolResult']);
+const INITIALIZE_RULE_FIELDS = new Set(['readHeader', 'apply']);
 const REQUEST_HEADER_RULE_FIELDS = new Set(['match', 'enable']);
 const HTTP_HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const REQUEST_FEATURES = ['structuredContentDup'] as const satisfies readonly RuntimeRequestFeature[];
 
 export function createEmptyRuntimeRulesConfig(): RuntimeRulesConfig {
-  return { requestHeaders: [] };
+  return { requestHeaders: { onInitialize: [], onCallToolResult: [] } };
 }
 
 export function readOptionalRulesConfig(
@@ -55,13 +71,80 @@ export function readOptionalRulesConfig(
     return createEmptyRuntimeRulesConfig();
   }
 
+  const headersPath = `${fieldPath}.requestHeaders`;
+  const rawHeaders = readObject(
+    context,
+    rawRules.requestHeaders,
+    headersPath,
+    `${headersPath} must be a JSON object.`,
+  );
+  assertKnownFields(context, rawHeaders, REQUEST_HEADERS_FIELDS, headersPath);
+
   return {
-    requestHeaders: readRequestHeaderRules(
-      context,
-      rawRules.requestHeaders,
-      `${fieldPath}.requestHeaders`,
-    ),
+    requestHeaders: {
+      onInitialize: readInitializeRequestHeaderRules(
+        context,
+        rawHeaders.onInitialize,
+        `${headersPath}.onInitialize`,
+      ),
+      onCallToolResult: readRequestHeaderRules(
+        context,
+        rawHeaders.onCallToolResult,
+        `${headersPath}.onCallToolResult`,
+      ),
+    },
   };
+}
+
+function readInitializeRequestHeaderRules(
+  context: RequestHeaderRulesParseContext,
+  value: unknown,
+  fieldPath: string,
+): RuntimeInitializeRequestHeaderRule[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    fail(context, fieldPath, `${fieldPath} must be an array.`);
+  }
+
+  const seenHeaders = new Set<string>();
+  const seenFeatures = new Set<RuntimeInitializeRequestFeature>();
+  return value.map((item, index) => {
+    const itemPath = `${fieldPath}[${index}]`;
+    const rawRule = readObject(context, item, itemPath, `${itemPath} must be a JSON object.`);
+    assertKnownFields(context, rawRule, INITIALIZE_RULE_FIELDS, itemPath);
+    assertRequired(context, rawRule, 'readHeader', `${itemPath}.readHeader`);
+    assertRequired(context, rawRule, 'apply', `${itemPath}.apply`);
+
+    const readHeader = readHeaderName(context, rawRule.readHeader, `${itemPath}.readHeader`);
+    const apply = unwrapPolicy(
+      context,
+      readToken<RuntimeInitializeRequestFeature>(rawRule.apply, {
+        fieldPath: `${itemPath}.apply`,
+        allowedValues: INITIALIZE_REQUEST_FEATURES,
+        description: `one of: ${INITIALIZE_REQUEST_FEATURES.join(', ')}`,
+      }),
+    );
+
+    if (seenHeaders.has(readHeader)) {
+      fail(
+        context,
+        `${itemPath}.readHeader`,
+        `${itemPath}.readHeader duplicates header name after lowercase normalization. Initialization header names must be unique ignoring case.`,
+      );
+    }
+    if (seenFeatures.has(apply)) {
+      fail(
+        context,
+        `${itemPath}.apply`,
+        `${itemPath}.apply contains duplicate feature "${apply}". Each initialization feature may be configured only once.`,
+      );
+    }
+    seenHeaders.add(readHeader);
+    seenFeatures.add(apply);
+    return { readHeader, apply };
+  });
 }
 
 function readRequestHeaderRules(
@@ -69,6 +152,9 @@ function readRequestHeaderRules(
   value: unknown,
   fieldPath: string,
 ): RuntimeRequestHeaderRule[] {
+  if (value === undefined) {
+    return [];
+  }
   if (!Array.isArray(value)) {
     fail(context, fieldPath, `${fieldPath} must be an array.`);
   }
@@ -138,9 +224,12 @@ function readMatchConditions(
 
 function readHeaderName(
   context: RequestHeaderRulesParseContext,
-  value: string,
+  value: unknown,
   fieldPath: string,
 ): string {
+  if (typeof value !== 'string') {
+    fail(context, fieldPath, `${fieldPath} must be a string.`);
+  }
   if (!HTTP_HEADER_NAME_RE.test(value)) {
     fail(
       context,

@@ -48,7 +48,7 @@
 | `structuredContent` | Tool；命中 policy 时由 adapter 覆盖 | Tool 可以自行构造；`structuredContentDup` 有意覆盖该字段。 |
 | 其他顶层扩展字段 | Tool | 沿用 SDK `CallToolResult` 的扩展边界。 |
 
-Tool 不读取 request headers，也不判断 request policy；统一出口在工具执行后负责结果校验和适配。
+Tool 不读取 request headers，也不判断 request policy；统一出口在工具执行后负责结果校验和适配。策略分阶段配置、初始化会话准入与单次调用数据流见 [请求头策略](REQUEST-HEADER-POLICY.md)。
 
 ## 构造结果
 
@@ -109,6 +109,8 @@ return result;
 
 ## `structuredContent` 适配
 
+`rules.requestHeaders.onCallToolResult` 按本次工具调用 POST 的请求头决定是否启用 `structuredContentDup`；初始化参数不决定此字段。配置与匹配细节见 [请求头策略](REQUEST-HEADER-POLICY.md#oncalltoolresult)。
+
 Tool 可以自行返回 `structuredContent`。未命中 `structuredContentDup` 时，adapter 在项目 handler 边界直接返回原始 Tool result，不增加或覆盖字段；后续 SDK 仍会再次 parse 结果。命中时，adapter 创建新对象并有意覆盖 Tool 自有 `structuredContent`：
 
 ```typescript
@@ -125,15 +127,15 @@ wrapper 只包含原始 `content` 数组的引用（保留 text/image 字段与�
 
 ---
 
-## Catalog 与输入校验错误
+## 工具准入与输入校验错误
 
-workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `ToolCallResult`：
+会话工具视图与 workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `ToolCallResult`：
 
 - effective input schema validation failure；
 - built-in implementation contract validation failure；
 - 已通过输入与 implementation contract 校验、但在进入 built-in executor 前已经取消的调用；
 - custom-only tool 的 unavailable executor；
-- hidden 或 unknown tool。
+- workspace hidden、会话工具视图不允许或 unknown tool。
 
 这些结果通过 `textErrorResult()` 返回 `isError: true`，随后与 handler 结果经过同一个 request policy adapter 和 result logger。validation 文本区分 workspace configured contract 与 executor implementation contract，并只输出整理后的 instance location、message 和 keyword；不输出 Ajv 原始错误对象、schema path、tool config path 或 definition path。
 

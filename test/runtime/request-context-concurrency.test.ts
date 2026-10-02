@@ -30,12 +30,15 @@ interface LoggedResult {
 
 function matchingRules(): RuntimeRulesConfig {
   return {
-    requestHeaders: [
-      {
-        match: [{ name: 'x-client', value: 'android-studio' }],
-        enable: ['structuredContentDup'],
-      },
-    ],
+    requestHeaders: {
+      onInitialize: [],
+      onCallToolResult: [
+        {
+          match: [{ name: 'x-client', value: 'android-studio' }],
+          enable: ['structuredContentDup'],
+        },
+      ],
+    },
   };
 }
 
@@ -95,7 +98,7 @@ function hasStructuredContent(result: ToolCallResult): boolean {
 function assertMatchedMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
   assert(metadata !== undefined, 'Logger should receive metadata for matched request');
   assertEqual(metadata.rulesConfigured, true, 'Matched metadata should report configured rules');
-  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Matched metadata should include rule location');
+  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders.onCallToolResult[0]', 'Matched metadata should include rule location');
   assertEqual(metadata.enabledFeatures.join(','), 'structuredContentDup', 'Matched metadata should include enabled feature');
 }
 

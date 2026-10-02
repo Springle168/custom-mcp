@@ -5,12 +5,13 @@ import {
 } from '../../src/runtime/request/request-header-policy.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
+  assert,
   assertEqual,
   runTestSuite,
 } from '../test-utils.js';
 
-function rulesConfig(requestHeaders: RuntimeRulesConfig['requestHeaders']): RuntimeRulesConfig {
-  return { requestHeaders };
+function rulesConfig(onCallToolResult: RuntimeRulesConfig['requestHeaders']['onCallToolResult']): RuntimeRulesConfig {
+  return { requestHeaders: { onInitialize: [], onCallToolResult } };
 }
 
 function testRuleOrAndRuleInternalAnd(): void {
@@ -144,17 +145,33 @@ function testLogMetadataContainsOnlyRuleLocationsAndFeatures(): void {
   const serialized = JSON.stringify(metadata);
 
   assertEqual(metadata.rulesConfigured, true, 'Metadata should preserve rulesConfigured');
-  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders[0]', 'Metadata should expose relative rule locations');
+  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders.onCallToolResult[0]', 'Metadata should expose relative rule locations');
   assertEqual(metadata.enabledFeatures.join(','), 'structuredContentDup', 'Metadata should expose enabled features');
   assertEqual(serialized.includes('x-secret-client'), false, 'Metadata should not include config header names');
   assertEqual(serialized.includes('X-Secret-Client'), false, 'Metadata should not include request header names');
   assertEqual(serialized.includes('sensitive-request-value'), false, 'Metadata should not include header values');
 }
 
+function testInitializeBindingsDoNotConfigureResultPolicy(): void {
+  const policy = evaluateRequestHeaderPolicy({
+    requestHeaders: {
+      onInitialize: [{ readHeader: 'x-client', apply: 'setInstructions' }],
+      onCallToolResult: [],
+    },
+  }, createStrictRequestHeaderView(['x-client', '{broken-json']));
+  assertEqual(policy.rulesConfigured, false, 'Only result-stage rules should configure the result policy');
+  assertEqual(policy.enabledFeatures.length, 0, 'Initialization bindings should never enable result features');
+  assert(Object.isFrozen(policy) && Object.isFrozen(policy.matchedRuleIndexes) && Object.isFrozen(policy.enabledFeatures), 'Policies should remain immutable across asynchronous execution');
+  const metadata = toRequestHeaderPolicyLogMetadata(policy);
+  assertEqual(metadata.rulesConfigured, false, 'Initialization-only workspaces should suppress Rules result log lines');
+  assert(Object.isFrozen(metadata) && Object.isFrozen(metadata.matchedRuleLocations) && Object.isFrozen(metadata.enabledFeatures), 'Log metadata should remain immutable');
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing request header policy evaluation',
     tests: [
+      { name: 'initialization bindings do not configure result policy', run: testInitializeBindingsDoNotConfigureResultPolicy },
       { name: 'rule OR and rule-internal AND', run: testRuleOrAndRuleInternalAnd },
       { name: 'exact value match is case-sensitive and does not trim', run: testExactValueMatchIsCaseSensitiveAndDoesNotTrim },
       { name: 'duplicate, missing, invalid view, and missing context do not match', run: testDuplicateMissingInvalidAndMissingContextDoNotMatch },

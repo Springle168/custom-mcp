@@ -31,13 +31,17 @@ export interface CreateMCPServerOptions {
   readonly configStore: ConfigStore;
   readonly logger: ToolCallLogger;
   readonly toolService: WorkspaceToolService;
+  readonly instructions?: string;
   readonly onToolCallDiagnostic?: ToolCallDiagnosticSink;
 }
 
 export function createMCPServer(options: CreateMCPServerOptions): Server {
   const server = new Server(
     { name: 'custom-mcp', version: MCP_SERVER_VERSION },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: { tools: {} },
+      ...(options.instructions ? { instructions: options.instructions } : {}),
+    },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

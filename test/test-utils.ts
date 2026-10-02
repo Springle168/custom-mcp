@@ -105,7 +105,7 @@ export async function writeSplitConfigFixture(
     return {
       id,
       configFile: workspaceConfigFile,
-      workspaceConfig: { version: 1, ...workspaceConfig },
+      workspaceConfig: { version: 2, ...workspaceConfig },
     };
   });
 

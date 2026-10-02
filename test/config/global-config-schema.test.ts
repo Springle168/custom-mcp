@@ -39,7 +39,7 @@ async function writeJson(filePath: string, value: unknown): Promise<void> {
 
 function workspaceConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    version: 1,
+    version: 2,
     rootDir: ROOT_DIR,
     port: 4100,
     lineEnding: 'auto',
@@ -167,11 +167,11 @@ function testWorkspaceSchemaHasIndependentVersionAndNoId(): void {
   const parsed = parseWorkspaceConfig(workspaceConfig(), {
     configFilePath: WORKSPACE_CONFIG_A,
   });
-  assertEqual(parsed.version, 1, 'Workspace config should use its own version 1 schema');
+  assertEqual(parsed.version, 2, 'Workspace config should use its independent version 2 schema');
   assertEqual(parsed.rootDir, ROOT_DIR, 'Workspace schema should parse runtime fields');
 
   const versionError = captureConfigError(() =>
-    parseWorkspaceConfig(workspaceConfig({ version: 2 }), {
+    parseWorkspaceConfig(workspaceConfig({ version: 1 }), {
       configFilePath: WORKSPACE_CONFIG_A,
     })
   );

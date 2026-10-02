@@ -5,12 +5,14 @@ import { ApplicationLifecycle } from '../../src/runtime/application/application-
 import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import { createMcpHttpApp } from '../../src/runtime/mcp/http-app.js';
 import type { McpPostSession } from '../../src/runtime/mcp/mcp-post-handler.js';
+import type { McpPendingSession } from '../../src/runtime/mcp/pending-session.js';
 import type { WorkspaceToolService } from '../../src/tools/index.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
 import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 async function createHarness() {
   const sessions = new Map<string, McpPostSession>();
+  const pendingSessions = new Set<McpPendingSession>();
   const invocations: ToolInvocationContext[] = [];
   const messages: string[] = [];
   const closedSessions: string[] = [];
@@ -38,14 +40,18 @@ async function createHarness() {
     configStore: createTestConfigStore({
       rootDir: process.cwd(),
       rules: {
-        requestHeaders: [{
-          match: [{ name: 'x-client', value: 'http-test' }],
-          enable: ['structuredContentDup'],
-        }],
+        requestHeaders: {
+          onInitialize: [],
+          onCallToolResult: [{
+            match: [{ name: 'x-client', value: 'http-test' }],
+            enable: ['structuredContentDup'],
+          }],
+        },
       },
     }),
     toolService: service,
     sessions,
+    pendingSessions,
     logger: {
       info: (message) => messages.push(message),
       logToolCall() {},
@@ -61,6 +67,7 @@ async function createHarness() {
   lifecycle = new ApplicationLifecycle({
     listener,
     sessions,
+    pendingSessions,
     androidRuntime: { close() {} },
     externalRuntime: { close() {} },
     logger: { close() {} },

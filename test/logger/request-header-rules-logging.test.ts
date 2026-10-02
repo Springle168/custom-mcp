@@ -1,7 +1,12 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import {
+  evaluateRequestHeaderPolicy,
+  toRequestHeaderPolicyLogMetadata,
+  type RequestHeaderPolicyLogMetadata,
+} from '../../src/runtime/request/request-header-policy.js';
+import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import type { ToolCallResultLogContext } from '../../src/runtime/invocation/tool-call-log-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { Logger } from '../../src/utils/logger.js';
@@ -107,7 +112,7 @@ async function testMatchedRulesLineIsWritten(): Promise<void> {
       12,
       resultLogContext(metadata({
         rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
         enabledFeatures: ['structuredContentDup'],
       })),
     );
@@ -115,7 +120,7 @@ async function testMatchedRulesLineIsWritten(): Promise<void> {
 
   assertIncludes(
     logText,
-    'Rules: matched rules.requestHeaders[0]; enabled structuredContentDup',
+    'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup',
     'Matched request header rules should be logged with relative rule location and enabled feature',
   );
 }
@@ -131,6 +136,18 @@ async function testNoMatchRulesLineIsWritten(): Promise<void> {
   });
 
   assertIncludes(logText, 'Rules: no match', 'Configured request header rules should log no match when no rule matches');
+}
+
+async function testInitializeOnlyRulesDoNotWriteRulesLine(): Promise<void> {
+  const policy = evaluateRequestHeaderPolicy({ requestHeaders: {
+    onInitialize: [{ readHeader: 'x-private-instructions', apply: 'setInstructions' }],
+    onCallToolResult: [],
+  } }, createStrictRequestHeaderView(['x-private-instructions', '{"instructions":"client-secret"}']));
+  const logText = await writeAndReadLog('rules-initialize-only', (logger) => {
+    logger.logToolResult('read_file', successResult(), 12, resultLogContext(toRequestHeaderPolicyLogMetadata(policy)));
+  });
+  assertNotIncludes(logText, 'Rules:', 'Initialization-only bindings must not produce result Rules metadata');
+  assertNotIncludes(logText, 'client-secret', 'Initialization settings must not enter result logs');
 }
 
 async function testUnconfiguredRulesDoNotWriteRulesLine(): Promise<void> {
@@ -177,7 +194,7 @@ async function testFileLogDoesNotContainAnsiEscapeCodes(): Promise<void> {
       12,
       resultLogContext(metadata({
         rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
         enabledFeatures: ['structuredContentDup'],
       })),
     );
@@ -199,13 +216,13 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
       12,
       resultLogContext(metadata({
         rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
         enabledFeatures: ['structuredContentDup'],
       })),
     );
   });
 
-  assertIncludes(logText, 'Rules: matched rules.requestHeaders[0]; enabled structuredContentDup', 'Privacy test should exercise matched rules logging');
+  assertIncludes(logText, 'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup', 'Privacy test should exercise matched rules logging');
   assertNotIncludes(logText, requestHeaderName, 'Rules log should not contain request header names');
   assertNotIncludes(logText, configHeaderName, 'Rules log should not contain config header names');
   assertNotIncludes(logText, requestHeaderValue, 'Rules log should not contain request header values');
@@ -226,14 +243,14 @@ async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
       12,
       resultLogContext(metadata({
         rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
         enabledFeatures: ['structuredContentDup'],
       })),
     );
   });
 
   assertIncludes(logText, 'safe result text', 'Logger should keep standard content text');
-  assertIncludes(logText, 'Rules: matched rules.requestHeaders[0]; enabled structuredContentDup', 'Logger should keep Rules metadata');
+  assertIncludes(logText, 'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup', 'Logger should keep Rules metadata');
   assertNotIncludes(logText, '"structuredContent"', 'Logger should not serialize the protocol structuredContent field');
   assertNotIncludes(logText, 'payload-secret', 'Logger should not log object structuredContent payload values');
   assertNotIncludes(logText, 'stale-protocol-field', 'Logger should not log stale handler structuredContent values');
@@ -261,7 +278,7 @@ async function testMixedImageContentIsLoggedInOrder(): Promise<void> {
       12,
       resultLogContext(metadata({
         rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders[0]'],
+        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
         enabledFeatures: ['structuredContentDup'],
       })),
     );
@@ -347,6 +364,7 @@ async function main(): Promise<void> {
     tests: [
       { name: 'matched rules line is written', run: testMatchedRulesLineIsWritten },
       { name: 'no-match rules line is written', run: testNoMatchRulesLineIsWritten },
+      { name: 'initialization-only bindings do not write Rules line', run: testInitializeOnlyRulesDoNotWriteRulesLine },
       { name: 'unconfigured rules do not write Rules line', run: testUnconfiguredRulesDoNotWriteRulesLine },
       { name: 'success and failure both write Rules line', run: testSuccessAndFailureBothWriteRulesLine },
       { name: 'file log does not contain ANSI escape codes', run: testFileLogDoesNotContainAnsiEscapeCodes },

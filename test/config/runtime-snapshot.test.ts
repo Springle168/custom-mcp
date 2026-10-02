@@ -439,12 +439,15 @@ async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
   await resetFixtures();
   await writeGlobalConfig(globalConfig({
     rules: {
-      requestHeaders: [
-        {
-          match: { 'X-Client': 'android-studio' },
-          enable: ['structuredContentDup'],
-        },
-      ],
+      requestHeaders: {
+        onInitialize: [{ readHeader: 'X-Tools', apply: 'setToolList' }],
+        onCallToolResult: [
+          {
+            match: { 'X-Client': 'android-studio' },
+            enable: ['structuredContentDup'],
+          },
+        ],
+      },
     },
   }));
 
@@ -454,9 +457,9 @@ async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
     env: {},
   });
 
-  assertEqual(snapshot.rules.requestHeaders.length, 1, 'Snapshot should hold selected workspace request header rules');
-  assertEqual(snapshot.rules.requestHeaders[0]?.match[0]?.name, 'x-client', 'Snapshot rules should contain normalized header names');
-  assertEqual(snapshot.rules.requestHeaders[0]?.enable[0], 'structuredContentDup', 'Snapshot rules should preserve enabled features');
+  assertEqual(snapshot.rules.requestHeaders.onCallToolResult.length, 1, 'Snapshot should hold selected workspace request header rules');
+  assertEqual(snapshot.rules.requestHeaders.onCallToolResult[0]?.match[0]?.name, 'x-client', 'Snapshot rules should contain normalized header names');
+  assertEqual(snapshot.rules.requestHeaders.onCallToolResult[0]?.enable[0], 'structuredContentDup', 'Snapshot rules should preserve enabled features');
 }
 
 async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
@@ -464,12 +467,15 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   await writeGlobalConfig(globalConfig({
     otherRootDirs: [ADDITIONAL_A_DIR],
     rules: {
-      requestHeaders: [
-        {
-          match: { 'X-Client': 'android-studio' },
-          enable: ['structuredContentDup'],
-        },
-      ],
+      requestHeaders: {
+        onInitialize: [{ readHeader: 'X-Tools', apply: 'setToolList' }],
+        onCallToolResult: [
+          {
+            match: { 'X-Client': 'android-studio' },
+            enable: ['structuredContentDup'],
+          },
+        ],
+      },
     },
   }));
 
@@ -495,8 +501,11 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
     assert(Object.isFrozen(root.denyFiles), 'Each deny file metadata array should be frozen');
   }
   assert(Object.isFrozen(snapshot.rules), 'Snapshot rules object should be frozen');
-  assert(Object.isFrozen(snapshot.rules.requestHeaders), 'Snapshot requestHeaders array should be frozen');
-  const firstRule = snapshot.rules.requestHeaders[0];
+  assert(Object.isFrozen(snapshot.rules.requestHeaders), 'Snapshot requestHeaders object should be frozen');
+  assert(Object.isFrozen(snapshot.rules.requestHeaders.onInitialize), 'Initialization array should be frozen');
+  assert(Object.isFrozen(snapshot.rules.requestHeaders.onInitialize[0]), 'Initialization binding should be frozen');
+  assert(Object.isFrozen(snapshot.rules.requestHeaders.onCallToolResult), 'Result rules array should be frozen');
+  const firstRule = snapshot.rules.requestHeaders.onCallToolResult[0];
   assert(firstRule !== undefined, 'Fixture should include a request header rule');
   assert(Object.isFrozen(firstRule), 'Each request header rule should be frozen');
   assert(Object.isFrozen(firstRule.match), 'Rule match array should be frozen');

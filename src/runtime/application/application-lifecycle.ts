@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import type { McpPostSession } from '../mcp/mcp-post-handler.js';
+import type { McpPendingSession } from '../mcp/pending-session.js';
 
 export interface ApplicationLifecycleClosable {
   close(): Promise<void> | void;
@@ -12,6 +13,7 @@ export interface ApplicationLifecycleOptions {
    */
   readonly listener: HttpServer;
   readonly sessions: Map<string, McpPostSession>;
+  readonly pendingSessions: Set<McpPendingSession>;
   readonly androidRuntime: ApplicationLifecycleClosable;
   readonly externalRuntime: ApplicationLifecycleClosable;
   readonly logger: ApplicationLifecycleClosable;
@@ -60,6 +62,7 @@ const CLOSED_SESSION = Promise.resolve();
 export class ApplicationLifecycle {
   readonly #listener: HttpServer;
   readonly #sessions: Map<string, McpPostSession>;
+  readonly #pendingSessions: Set<McpPendingSession>;
   readonly #androidRuntime: ApplicationLifecycleClosable;
   readonly #externalRuntime: ApplicationLifecycleClosable;
   readonly #logger: ApplicationLifecycleClosable;
@@ -69,6 +72,7 @@ export class ApplicationLifecycle {
   constructor(options: ApplicationLifecycleOptions) {
     this.#listener = options.listener;
     this.#sessions = options.sessions;
+    this.#pendingSessions = options.pendingSessions;
     this.#androidRuntime = options.androidRuntime;
     this.#externalRuntime = options.externalRuntime;
     this.#logger = options.logger;
@@ -121,7 +125,7 @@ export class ApplicationLifecycle {
       // The MCP SDK Server closes its connected Streamable HTTP transport,
       // which aborts in-flight protocol work without calling transport.close()
       // a second time.
-      await session.server.close();
+      await (session.close === undefined ? session.server.close() : session.close());
     } finally {
       // A transport onclose handler may already have removed this mapping. Do
       // not delete a replacement session should an implementation reuse an id.
@@ -175,11 +179,23 @@ export class ApplicationLifecycle {
     failures: ApplicationShutdownFailure[],
   ): Promise<void> {
     const sessionIds = [...this.#sessions.keys()];
-    await Promise.all(sessionIds.map((sessionId) => this.#attempt(
+    const publishedClosures = sessionIds.map((sessionId) => this.#attempt(
       failures,
       { phase: 'mcp-session', sessionId },
       () => this.closeSession(sessionId),
-    )));
+    ));
+    const pendingClosures = [...this.#pendingSessions].map((session) => this.#attempt(
+      failures,
+      { phase: 'mcp-session' },
+      async () => {
+        try {
+          await session.close();
+        } finally {
+          this.#pendingSessions.delete(session);
+        }
+      },
+    ));
+    await Promise.all([...publishedClosures, ...pendingClosures]);
   }
 
   async #attempt(

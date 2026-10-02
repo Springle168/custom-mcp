@@ -10,8 +10,9 @@
 |-|-|-|
 | 配置概览 | 本文 | 两层模型、启动方式、加载边界与错误来源。 |
 | 全局索引 | [全局 workspace 索引](config/global-index.md) | `~/.custom-mcp/config.json`、`version: 2` reference schema、workspace 选择。 |
-| Workspace 配置 | [workspace 配置](config/workspace-config.md) | `version: 1` schema、文件访问策略、env override、runtime snapshot。 |
+| Workspace 配置 | [workspace 配置](config/workspace-config.md) | `version: 2` schema、文件访问策略、env override、runtime snapshot。 |
 | 自定义 Tool 配置 | [自定义 Tool 配置](config/tool-config.md) | `tools.toolConfigFile`、Tool config v2、Tool definition、`externalRoutingConfigFile` 入口、definitionId binding、schema 编译与 catalog 合并。 |
+| 请求头策略 | [请求头策略](REQUEST-HEADER-POLICY.md) | `rules.requestHeaders` 两阶段配置、初始化功能参数与运行时边界。 |
 | External routing | [external routing](EXTERNAL-ROUTING.md) | External routing config v2、HTTP/MCP route、Processor registry、下游会话、共享容量、取消、shutdown 与安全边界。 |
 
 ---
@@ -35,6 +36,8 @@ Windows 上通常展开为 `%USERPROFILE%\.custom-mcp\config.json`。全局索�
 ```
 
 全局索引只保存 identity 与配置文件定位；workspace 文件不包含 `id`，其 runtime id 始终来自被选中的全局 reference。两类完整模板分别见 [全局索引示例](../examples/config.example.json) 与 [workspace 配置示例](../examples/workspace-config.example.json)。
+
+workspace 只接受 JSON number `version: 2`；其版本与全局索引、Tool config 和 External routing config 的版本分别校验。`rules.requestHeaders` 使用两个可选阶段数组：初始化阶段绑定参数 header，结果阶段按本次调用 header 精确匹配，详见 [请求头策略](REQUEST-HEADER-POLICY.md)。
 
 ---
 
@@ -99,7 +102,7 @@ workspace `tools` 先解析 tool config path 与未决 exposure selector。selec
 |-|-|
 | CLI 参数形式或 workspace id lexical grammar 无效 | `CliError`；发生在配置读取之前。 |
 | 全局文件不存在、全局版本、reference schema、重复 id、非法 `configFile`、已解析 id 的选择失败 | 全局 `config.json`。 |
-| selected workspace 文件读取、JSON、schema、path、env override、file access policy | selected workspace 配置文件。 |
+| selected workspace 文件读取、JSON、schema（含版本与请求头规则）、path、env override、file access policy | selected workspace 配置文件。 |
 | Tool config / definition / External routing / Processor / endpoint 文件读取、JSON、严格外壳或 schema 编译 | 实际出错的 referenced 文件；definition 诊断关联 reference id，route binding 与 Processor reference 错误归属 External routing config，Processor / endpoint 字段错误归属各自文件。 |
 | exposure selector 不存在于 effective catalog | selected workspace 配置的 `tools.enabled[i]` / `tools.disabled[i]`。 |
 

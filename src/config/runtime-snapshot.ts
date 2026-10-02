@@ -236,10 +236,13 @@ function resolveRuntimeAndroidConfig(
 
 function cloneRuntimeRulesConfig(rules: RuntimeRulesConfig): RuntimeRulesConfig {
   return {
-    requestHeaders: rules.requestHeaders.map((rule) => ({
-      match: rule.match.map((condition) => ({ ...condition })),
-      enable: [...rule.enable],
-    })),
+    requestHeaders: {
+      onInitialize: rules.requestHeaders.onInitialize.map((rule) => ({ ...rule })),
+      onCallToolResult: rules.requestHeaders.onCallToolResult.map((rule) => ({
+        match: rule.match.map((condition) => ({ ...condition })),
+        enable: [...rule.enable],
+      })),
+    },
   };
 }
 

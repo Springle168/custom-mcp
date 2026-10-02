@@ -1,0 +1,427 @@
+import { once } from 'node:events';
+import { request } from 'node:http';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+  CallToolResultSchema,
+  InitializeResultSchema,
+  JSONRPCErrorSchema,
+  JSONRPCResponseSchema,
+  ListToolsResultSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import type { RuntimeRulesConfig } from '../../src/config.js';
+import { ApplicationLifecycle } from '../../src/runtime/application/application-lifecycle.js';
+import { createMcpHttpApp } from '../../src/runtime/mcp/http-app.js';
+import type { McpPostSession } from '../../src/runtime/mcp/mcp-post-handler.js';
+import type { McpPendingSession } from '../../src/runtime/mcp/pending-session.js';
+import type { WorkspaceToolService } from '../../src/tools/index.js';
+import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import { createTestConfigStore } from '../helpers/runtime-config.js';
+import { assert, assertEqual, assertIncludes, assertNotIncludes, runTestSuite } from '../test-utils.js';
+
+const TOOL_HEADER = 'x-session-tools';
+const INSTRUCTIONS_HEADER = 'x-session-instructions';
+const RULES: RuntimeRulesConfig = {
+  requestHeaders: {
+    onInitialize: [
+      { readHeader: TOOL_HEADER, apply: 'setToolList' },
+      { readHeader: INSTRUCTIONS_HEADER, apply: 'setInstructions' },
+    ],
+    onCallToolResult: [{
+      match: [{ name: 'x-result-client', value: 'duplicate' }],
+      enable: ['structuredContentDup'],
+    }],
+  },
+};
+
+function initialize(id: string | number = 1) {
+  return {
+    jsonrpc: '2.0', id, method: 'initialize',
+    params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'header-integration', version: '1.0.0' } },
+  };
+}
+
+interface HttpReply {
+  readonly status: number;
+  readonly sessionId: string | undefined;
+  readonly text: string;
+  readonly message: unknown;
+}
+
+// Raw headers retain duplicate field lines instead of fetch/Headers coalescing them.
+async function post(url: string, body: unknown, headers: readonly string[] = []): Promise<HttpReply> {
+  const serializedBody = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = request(url, {
+      method: 'POST',
+      headers: [
+        'Host', new URL(url).host,
+        'Content-Type', 'application/json',
+        'Content-Length', String(Buffer.byteLength(serializedBody)),
+        'Accept', 'application/json, text/event-stream',
+        ...headers,
+      ],
+    }, (res) => {
+      res.setEncoding('utf8');
+      let text = '';
+      res.on('data', (chunk: string) => { text += chunk; });
+      res.on('error', reject);
+      res.on('end', () => {
+        try {
+          const data = text.split('\n').find((line) => line.startsWith('data: '));
+          const serialized = data === undefined ? text : data.slice(6);
+          const sid = res.headers['mcp-session-id'];
+          resolve({
+            status: res.statusCode ?? 0,
+            sessionId: typeof sid === 'string' ? sid : undefined,
+            text,
+            message: serialized.trim() === '' ? undefined : JSON.parse(serialized),
+          });
+        } catch (error: unknown) {
+          reject(error);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(5_000, () => req.destroy(new Error('HTTP integration request did not settle')));
+    req.end(serializedBody);
+  });
+}
+
+async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging = false) {
+  const sessions = new Map<string, McpPostSession>();
+  const pendingSessions = new Set<McpPendingSession>();
+  const messages: string[] = [];
+  const resultPolicies: RequestHeaderPolicyLogMetadata[] = [];
+  const calls: string[] = [];
+  const definitions = ['alpha_tool', 'custom_only_tool'].map((name) => ({
+    name, description: `Tests ${name}`, inputSchema: { type: 'object' },
+  }));
+  const service: WorkspaceToolService = {
+    getDefinitions: () => definitions,
+    async routeToolCall(name) {
+      calls.push(name);
+      return { content: [{ type: 'text', text: `Executed ${name}` }], isError: false };
+    },
+  };
+  let lifecycle: ApplicationLifecycle;
+  const app = createMcpHttpApp({
+    configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),
+    toolService: service,
+    sessions,
+    pendingSessions,
+    logger: {
+      info(message) {
+        messages.push(message);
+        if (failInfoLogging) {
+          throw new Error('Policy logger unavailable');
+        }
+      },
+      logToolCall() {},
+      logToolResult(_name, _result, _duration, context) {
+        resultPolicies.push(context.requestHeaderPolicy);
+      },
+    },
+    isAcceptingNewSessions: () => lifecycle.isAcceptingNewSessions,
+    closeSession: (id) => lifecycle.closeSession(id),
+  });
+  const listener = app.listen(0, '127.0.0.1');
+  lifecycle = new ApplicationLifecycle({
+    listener, sessions, pendingSessions,
+    androidRuntime: { close() {} },
+    externalRuntime: { close() {} },
+    logger: { close() {} },
+  });
+  await once(listener, 'listening');
+  const address = listener.address();
+  assert(address !== null && typeof address !== 'string', 'Harness must listen on loopback');
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    sessions, pendingSessions, messages, calls, resultPolicies,
+    close: () => lifecycle.close(),
+  };
+}
+
+type Harness = Awaited<ReturnType<typeof createHarness>>;
+
+async function startSession(harness: Harness, headers: readonly string[] = [], batch = false) {
+  const reply = await post(harness.url, batch ? [initialize('batch-id')] : initialize('init-id'), headers);
+  assertEqual(reply.status, 200, `Valid initialization should succeed; response: ${reply.text}`);
+  const response = JSONRPCResponseSchema.parse(reply.message);
+  assertEqual(response.id, batch ? 'batch-id' : 'init-id', 'Initialization must retain request ID');
+  assert('result' in response, 'Initialization must return a result, not a protocol error');
+  const result = InitializeResultSchema.parse(response.result);
+  assert(reply.sessionId !== undefined, 'Successful initialization must return a session ID');
+  // Publication must not wait for notifications/initialized from the client.
+  assert(harness.sessions.has(reply.sessionId), 'Completed initialize must publish before initialized notification');
+  assertEqual(harness.pendingSessions.size, 0, 'Published session must leave pending ownership');
+  return { sessionId: reply.sessionId, result };
+}
+
+async function list(harness: Harness, sessionId: string, headers: readonly string[] = []) {
+  const reply = await post(harness.url, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, ['mcp-session-id', sessionId, ...headers]);
+  assertEqual(reply.status, 200, 'tools/list should succeed');
+  const response = JSONRPCResponseSchema.parse(reply.message);
+  assert('result' in response, 'tools/list must return a result');
+  return ListToolsResultSchema.parse(response.result).tools.map((tool) => tool.name);
+}
+
+async function call(harness: Harness, sessionId: string, name: string, headers: readonly string[] = []) {
+  const reply = await post(harness.url, {
+    jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: {} },
+  }, ['mcp-session-id', sessionId, ...headers]);
+  assertEqual(reply.status, 200, 'tools/call should return an MCP result');
+  const response = JSONRPCResponseSchema.parse(reply.message);
+  assert('result' in response, 'tools/call must return a result');
+  return CallToolResultSchema.parse(response.result);
+}
+
+async function testSessionSettingsAndSingleElementBatch(): Promise<void> {
+  const harness = await createHarness();
+  const instructions = '  Session A\n\u8bf4\u660e ${do_not_execute}  ';
+  try {
+    for (const batch of [false, true]) {
+      const selected = await startSession(harness, [
+        'X-Session-Tools', JSON.stringify({ toolList: ['custom_only_tool', 'disabled_tool', 'alpha_tool'] }),
+        INSTRUCTIONS_HEADER, JSON.stringify({ instructions }).replace(/[\u0080-\uffff]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`),
+      ], batch);
+      assertEqual((await list(harness, selected.sessionId)).join(','), 'alpha_tool,custom_only_tool', 'Selection must intersect workspace exposure and retain workspace order');
+      assertEqual(selected.result.instructions, instructions, 'Instructions must retain whitespace, Unicode, and escaped newline');
+      const hidden = await call(harness, selected.sessionId, 'disabled_tool');
+      assertEqual(hidden.isError, true, 'Unexposed tool must remain inaccessible');
+      assertEqual(harness.calls.length, 0, 'Hidden tools must not enter the executor');
+    }
+    const first = await startSession(harness, [TOOL_HEADER, '{"toolList":["custom_only_tool"]}', INSTRUCTIONS_HEADER, '{"instructions":"first session"}']);
+    const second = await startSession(harness);
+    assertEqual((await list(harness, first.sessionId)).join(','), 'custom_only_tool', 'Session A should have a smaller tool list');
+    assertEqual((await list(harness, second.sessionId)).join(','), 'alpha_tool,custom_only_tool', 'Missing header must use workspace defaults, independently of session A');
+    assertEqual(first.result.instructions, 'first session', 'First session should retain its instructions');
+    assert(!('instructions' in second.result), 'Instructions should not leak into a default session');
+    const denied = await call(harness, first.sessionId, 'alpha_tool');
+    assertIncludes(JSON.stringify(denied.content), 'Unknown tool: alpha_tool', 'Session-hidden tool must return standard Unknown tool result');
+    assertEqual(harness.calls.length, 0, 'Denied session call must not invoke workspace service');
+    await call(harness, second.sessionId, 'alpha_tool');
+    assertEqual(harness.calls.join(','), 'alpha_tool', 'Default session must still route the same tool');
+    assertNotIncludes(harness.messages.join('\n'), instructions, 'Successful policy logs must not contain instructions');
+    assertNotIncludes(harness.messages.join('\n'), 'first session', 'Session-specific instructions must not enter diagnostics');
+    assertNotIncludes(harness.messages.join('\n'), 'disabled_tool', 'Requested tool names must not enter policy diagnostics');
+    assertNotIncludes(harness.messages.join('\n'), TOOL_HEADER, 'Policy diagnostics must not expose bound header names');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testEmptyListsAndInstructions(): Promise<void> {
+  const harness = await createHarness();
+  try {
+    for (const toolList of [[], ['not_in_workspace']]) {
+      const selected = await startSession(harness, [TOOL_HEADER, JSON.stringify({ toolList }), INSTRUCTIONS_HEADER, '{"instructions":""}']);
+      assertEqual((await list(harness, selected.sessionId)).length, 0, 'Empty or wholly filtered selection should expose no tools');
+      assert(selected.result.capabilities.tools !== undefined, 'Empty tool list must retain tools capability');
+      assert(!('instructions' in selected.result), 'Explicit empty instructions should not be sent');
+      const denied = await call(harness, selected.sessionId, 'alpha_tool', ['x-result-client', 'duplicate']);
+      assertEqual(denied.isError, true, 'Empty view must deny guessed tool names');
+      assert(denied.structuredContent !== undefined, 'Denied calls must still pass through current result adaptation');
+    }
+    assertEqual(harness.calls.length, 0, 'Empty views must never enter workspace execution');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testSafeInvalidParametersAndAtomicInitialization(): Promise<void> {
+  const harness = await createHarness();
+  const secret = 'PRIVATE_HEADER_SENTINEL_98765';
+  const invalidHeaders: readonly (readonly string[])[] = [
+    [TOOL_HEADER, `{"toolList":["${secret}`],
+    [TOOL_HEADER, ''],
+    [TOOL_HEADER, 'null'],
+    [TOOL_HEADER, '[]'],
+    [TOOL_HEADER, '{}'],
+    [TOOL_HEADER, `{"toolList":[],"${secret}":"\\n\\u001b[31m"}`],
+    [TOOL_HEADER, `{"toolList":"${secret}"}`],
+    [TOOL_HEADER, `{"toolList":["${secret} /invalid"]}`],
+    [TOOL_HEADER, '{"toolList":["alpha_tool","alpha_tool"]}'],
+    [TOOL_HEADER, '{"toolList":[]}', 'X-Session-Tools', '{"toolList":[]}'],
+    [INSTRUCTIONS_HEADER, `{"instructions":{"${secret}":true}}`],
+    [INSTRUCTIONS_HEADER, `{"instructions":"${secret}","extra":true}`],
+    [INSTRUCTIONS_HEADER, '{"instructions":"first"}', INSTRUCTIONS_HEADER, '{"instructions":"first"}'],
+    [TOOL_HEADER, '{"toolList":[]}', INSTRUCTIONS_HEADER, `{"instructions":${secret}}`],
+  ];
+  try {
+    for (const [index, headers] of invalidHeaders.entries()) {
+      const id = index % 2 === 0 ? `safe-id-${index}` : index;
+      const reply = await post(harness.url, index % 2 === 0 ? initialize(id) : [initialize(id)], headers);
+      assertEqual(reply.status, 400, 'Invalid configured initialization payload must fail with HTTP 400');
+      const error = JSONRPCErrorSchema.parse(reply.message);
+      assertEqual(error.id, id, 'Feature parameter error must correlate legal request ID');
+      assertEqual(error.error.code, -32602, 'Feature parameter error must use Invalid params');
+      assert(reply.sessionId === undefined, 'Parameter errors must not advertise a session ID');
+      assertNotIncludes(reply.text, secret, 'Error response must not reflect client parameters or JSON.parse fragments');
+      assertEqual(harness.sessions.size, 0, 'Invalid parameters must not publish a default or partially configured session');
+      assertEqual(harness.pendingSessions.size, 0, 'Invalid parameters must not leave pending resources');
+    }
+    assertNotIncludes(harness.messages.join('\n'), secret, 'Policy diagnostics must not leak header payloads');
+    const recovered = await startSession(harness);
+    assertEqual((await list(harness, recovered.sessionId)).length, 2, 'Bad requests must not poison later initialization');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testLaterHeadersAndPerRequestResultPolicy(): Promise<void> {
+  const harness = await createHarness();
+  try {
+    const selected = await startSession(harness, [
+      TOOL_HEADER, '{"toolList":["custom_only_tool"]}',
+      INSTRUCTIONS_HEADER, '{"instructions":"fixed"}',
+      'x-result-client', 'duplicate',
+    ]);
+    const ordinary = await call(harness, selected.sessionId, 'custom_only_tool');
+    assert(ordinary.structuredContent === undefined, 'Initialize result header must not be cached as call policy');
+    const damagedInitializeHeaders = [
+      TOOL_HEADER, 'not JSON', TOOL_HEADER, '{"toolList":[]}',
+      INSTRUCTIONS_HEADER, 'also not JSON', INSTRUCTIONS_HEADER, '{}',
+    ];
+    const adapted = await call(harness, selected.sessionId, 'custom_only_tool', [...damagedInitializeHeaders, 'x-result-client', 'duplicate']);
+    assert(adapted.structuredContent !== undefined, 'Later damaged initialization headers must not block a matching call');
+    assertEqual((await list(harness, selected.sessionId, damagedInitializeHeaders)).join(','), 'custom_only_tool', 'Later initialization headers must not mutate the session view');
+    const concurrent = await Promise.all([
+      call(harness, selected.sessionId, 'custom_only_tool', ['x-result-client', 'duplicate']),
+      call(harness, selected.sessionId, 'custom_only_tool', ['x-result-client', 'Duplicate']),
+    ]);
+    assert(concurrent[0]?.structuredContent !== undefined, 'Matching concurrent POST should adapt');
+    assert(concurrent[1]?.structuredContent === undefined, 'Concurrent nonmatching POST must keep its own header context');
+    const duplicateResultHeader = await call(harness, selected.sessionId, 'custom_only_tool', ['x-result-client', 'duplicate', 'X-Result-Client', 'duplicate']);
+    assert(duplicateResultHeader.structuredContent === undefined, 'Repeated result condition must not match');
+    const hidden = await call(harness, selected.sessionId, 'alpha_tool', ['x-result-client', 'duplicate']);
+    assertEqual(hidden.isError, true, 'Restricted view must still deny hidden tool');
+    assertEqual(JSON.stringify(hidden.structuredContent), JSON.stringify({ content: hidden.content, isError: true }), 'Unknown tool results must use the same per-request adaptation');
+    assert(!harness.calls.includes('alpha_tool'), 'Hidden call must not enter workspace routing');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testUnconfiguredHeadersAreNotParsedOrLogged(): Promise<void> {
+  const harness = await createHarness({ requestHeaders: { onInitialize: [], onCallToolResult: [] } });
+  const secret = 'PRIVATE_INSTRUCTIONS_45678';
+  try {
+    const selected = await startSession(harness, [
+      TOOL_HEADER, 'malformed', TOOL_HEADER, 'also malformed',
+      INSTRUCTIONS_HEADER, JSON.stringify({ instructions: secret }),
+    ]);
+    assertEqual((await list(harness, selected.sessionId)).length, 2, 'Unconfigured bindings must not parse or restrict tools');
+    assert(!('instructions' in selected.result), 'Unconfigured instructions header must not affect response');
+    assertNotIncludes(harness.messages.join('\n'), secret, 'Raw unconfigured header data must not enter diagnostics');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testPolicyLoggingIsPrivateAndFailureIsolated(): Promise<void> {
+  const rules: RuntimeRulesConfig = {
+    requestHeaders: { onInitialize: RULES.requestHeaders.onInitialize, onCallToolResult: [] },
+  };
+  const harness = await createHarness(rules, true);
+  const secret = 'PRIVATE_LOGGING_SENTINEL_54321';
+  try {
+    const selected = await startSession(harness, [
+      TOOL_HEADER, '{"toolList":["alpha_tool"]}',
+      INSTRUCTIONS_HEADER, JSON.stringify({ instructions: `${secret}\n\u001b[31mprivate` }),
+    ]);
+    assertIncludes(selected.result.instructions ?? '', secret, 'Logger failure must not change successful instructions');
+    await call(harness, selected.sessionId, 'alpha_tool');
+    assertEqual(harness.resultPolicies[0]?.rulesConfigured, false, 'Initialization-only rules must not cause result Rules metadata to be configured');
+    assertNotIncludes(harness.messages.join('\n'), secret, 'Successful policy diagnostics must not log client-provided text');
+    const failed = await post(harness.url, initialize('logging-error-id'), [INSTRUCTIONS_HEADER, secret]);
+    assertEqual(failed.status, 400, 'Logger failure must not rewrite invalid initialization response');
+    assertEqual(JSONRPCErrorSchema.parse(failed.message).id, 'logging-error-id', 'Safe parameter error must retain its ID even if logging fails');
+    assertEqual(harness.sessions.size, 1, 'Failed initialization must not affect the prior successful session');
+    assertNotIncludes(harness.messages.join('\n'), secret, 'Failure diagnostics must not leak raw JSON.parse input');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testSdkInvalidInputsNeverPublish(): Promise<void> {
+  const harness = await createHarness();
+  const legal = initialize();
+  const { jsonrpc: _jsonrpc, ...noJsonrpc } = legal;
+  const { id: _id, ...noId } = legal;
+  const invalid = [
+    noJsonrpc, noId, { ...legal, id: null },
+    { ...legal, params: {} },
+    { ...legal, params: { ...legal.params, clientInfo: { name: 123, version: '1.0.0' } } },
+    [initialize(1), initialize(2)],
+    { jsonrpc: '2.0', id: 3, method: 'tools/list' },
+  ];
+  try {
+    for (const body of invalid) {
+      const reply = await post(harness.url, body, [TOOL_HEADER, 'not JSON']);
+      const response = JSONRPCResponseSchema.safeParse(reply.message);
+      assert(!response.success || !('result' in response.data), 'Malformed SDK input must not produce successful initialize');
+      assertEqual(harness.sessions.size, 0, 'SDK rejection must not publish even if transport allocated a session ID');
+      assertEqual(harness.pendingSessions.size, 0, 'SDK rejection must release provisional resources');
+      const error = JSONRPCErrorSchema.safeParse(reply.message);
+      if (error.success) {
+        assertNotIncludes(error.data.error.message, 'rules.requestHeaders', 'Invalid protocol input must not be reclassified as feature parameter validation');
+      }
+      if (reply.sessionId !== undefined) {
+        const reuse = await post(harness.url, { jsonrpc: '2.0', id: 4, method: 'tools/list' }, ['mcp-session-id', reply.sessionId]);
+        assertEqual(reuse.status, 404, 'Any session ID on SDK rejection must be unusable');
+      }
+    }
+    const recovered = await startSession(harness);
+    assertEqual((await list(harness, recovered.sessionId)).length, 2, 'SDK errors must not prevent later normal initialization');
+  } finally {
+    await harness.close();
+  }
+}
+
+async function testShutdownOwnsPendingConnectAndPublishedSessions(): Promise<void> {
+  const harness = await createHarness();
+  await startSession(harness);
+  let releaseConnect!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseConnect = resolve; });
+  let enteredConnect!: () => void;
+  const entered = new Promise<void>((resolve) => { enteredConnect = resolve; });
+  const originalConnect = Server.prototype.connect;
+  Server.prototype.connect = async function (...args: Parameters<Server['connect']>) {
+    enteredConnect();
+    await gate;
+    return originalConnect.apply(this, args);
+  };
+  // Always handle either transport shutdown outcome; response delivery is not a success guarantee.
+  const initializing = post(harness.url, initialize('shutdown-id')).catch(() => undefined);
+  try {
+    await Promise.race([
+      entered,
+      initializing.then(() => { throw new Error('Initialization settled before entering connect'); }),
+    ]);
+    assertEqual(harness.pendingSessions.size, 1, 'Factory must register pending ownership before awaiting connect');
+    const closing = harness.close();
+    releaseConnect();
+    await Promise.all([closing, initializing]);
+    assertEqual(harness.sessions.size, 0, 'Shutdown must close published sessions and prevent late publication');
+    assertEqual(harness.pendingSessions.size, 0, 'Shutdown must release pending resources');
+  } finally {
+    releaseConnect();
+    Server.prototype.connect = originalConnect;
+    await initializing;
+    await harness.close();
+  }
+}
+
+await runTestSuite({
+  title: 'Testing real HTTP initialization and per-call request header policy',
+  tests: [
+    { name: 'object and single-element batch settings isolate sessions', run: testSessionSettingsAndSingleElementBatch },
+    { name: 'empty and filtered tool lists retain capability without execution', run: testEmptyListsAndInstructions },
+    { name: 'invalid parameters are safe, correlated, and atomic', run: testSafeInvalidParametersAndAtomicInitialization },
+    { name: 'later initialization headers do not change per-request result policy', run: testLaterHeadersAndPerRequestResultPolicy },
+    { name: 'unconfigured headers are not parsed or logged', run: testUnconfiguredHeadersAreNotParsedOrLogged },
+    { name: 'policy logs stay private and logger failure does not alter protocol', run: testPolicyLoggingIsPrivateAndFailureIsolated },
+    { name: 'SDK invalid inputs never publish provisional sessions', run: testSdkInvalidInputsNeverPublish },
+    { name: 'shutdown owns pending connect and published sessions', run: testShutdownOwnsPendingConnectAndPublishedSessions },
+  ],
+});
