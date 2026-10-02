@@ -3,6 +3,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { readFile } from 'node:fs/promises';
 import { createMCPServer } from '../../src/runtime/mcp/mcp-server.js';
+import { prepareRequestHeaderToolResult } from '../../src/runtime/request/tool-result-header-extension.js';
 import type { RuntimeRulesConfig } from '../../src/config.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
 import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
@@ -191,6 +192,7 @@ async function connectServer(
 ): Promise<ConnectedPair> {
   const server = createMCPServer({
     configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),
+    ...(rules.requestHeaders.onCallToolResult.length === 0 ? {} : { prepareToolResult: prepareRequestHeaderToolResult }),
     logger: createLogger(),
     toolService: service,
   });

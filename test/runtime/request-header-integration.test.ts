@@ -15,7 +15,9 @@ import { createMcpHttpApp } from '../../src/runtime/mcp/http-app.js';
 import type { McpPostSession } from '../../src/runtime/mcp/mcp-post-handler.js';
 import type { McpPendingSession } from '../../src/runtime/mcp/pending-session.js';
 import type { WorkspaceToolService } from '../../src/tools/index.js';
-import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import type { ToolCallResultLogContext, ToolResultLogSummary } from '../../src/runtime/invocation/tool-call-log-context.js';
+import type { ToolCallResult } from '../../src/tools/types.js';
+import { createRequestHeaderExtensions } from '../../src/runtime/request/request-header-extensions.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
 import { assert, assertEqual, assertIncludes, assertNotIncludes, runTestSuite } from '../test-utils.js';
 
@@ -92,7 +94,7 @@ async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging 
   const sessions = new Map<string, McpPostSession>();
   const pendingSessions = new Set<McpPendingSession>();
   const messages: string[] = [];
-  const resultPolicies: RequestHeaderPolicyLogMetadata[] = [];
+  const resultPolicies: (ToolResultLogSummary | undefined)[] = [];
   const calls: string[] = [];
   const definitions = ['alpha_tool', 'custom_only_tool'].map((name) => ({
     name, description: `Tests ${name}`, inputSchema: { type: 'object' },
@@ -105,23 +107,25 @@ async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging 
     },
   };
   let lifecycle: ApplicationLifecycle;
+  const logger = {
+    info(message: string) {
+      messages.push(message);
+      if (failInfoLogging) {
+        throw new Error('Policy logger unavailable');
+      }
+    },
+    logToolCall() {},
+    logToolResult(_name: string, _result: ToolCallResult, _duration: number, context: ToolCallResultLogContext) {
+      resultPolicies.push(context.resultSummary);
+    },
+  };
   const app = createMcpHttpApp({
     configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),
+    extensions: createRequestHeaderExtensions(rules, logger),
     toolService: service,
     sessions,
     pendingSessions,
-    logger: {
-      info(message) {
-        messages.push(message);
-        if (failInfoLogging) {
-          throw new Error('Policy logger unavailable');
-        }
-      },
-      logToolCall() {},
-      logToolResult(_name, _result, _duration, context) {
-        resultPolicies.push(context.requestHeaderPolicy);
-      },
-    },
+    logger,
     isAcceptingNewSessions: () => lifecycle.isAcceptingNewSessions,
     closeSession: (id) => lifecycle.closeSession(id),
   });
@@ -332,7 +336,7 @@ async function testPolicyLoggingIsPrivateAndFailureIsolated(): Promise<void> {
     ]);
     assertIncludes(selected.result.instructions ?? '', secret, 'Logger failure must not change successful instructions');
     await call(harness, selected.sessionId, 'alpha_tool');
-    assertEqual(harness.resultPolicies[0]?.rulesConfigured, false, 'Initialization-only rules must not cause result Rules metadata to be configured');
+    assertEqual(harness.resultPolicies[0], undefined, 'Initialization-only rules must not cause a result Rules summary');
     assertNotIncludes(harness.messages.join('\n'), secret, 'Successful policy diagnostics must not log client-provided text');
     const failed = await post(harness.url, initialize('logging-error-id'), [INSTRUCTIONS_HEADER, secret]);
     assertEqual(failed.status, 400, 'Logger failure must not rewrite invalid initialization response');

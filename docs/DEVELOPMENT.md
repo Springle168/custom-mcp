@@ -62,7 +62,7 @@ custom-mcp/
 |-|-|
 | `src/config.ts`, `src/config/` | [配置概览](CONFIG.md) 说明加载边界；[全局索引](config/global-index.md) 承接 `global-config-path.ts`、`global-config-schema.ts` 与 `workspace-selection.ts`；[workspace 配置](config/workspace-config.md) 承接 `schema.ts`、`value-policy.ts`、`path-policy.ts`、`file-access-policy.ts`、`env-overrides.ts`、`request-header-rules.ts` 与 `runtime-snapshot.ts`；[自定义 Tool 配置](config/tool-config.md) 承接 `tool-exposure.ts`、Tool config v2 与 `externalRoutingConfigFile` 入口 |
 | `src/runtime/application/` | `start-application.ts` 组装资源并启动 listener；其他模块承载 ConfigStore、启动期配置与 catalog 组合、shutdown、诊断、启动日志和错误格式，见 [配置概览](CONFIG.md)、[工具开发](TOOLS.md)、[日志](LOGGING.md) 和 [外部路由](EXTERNAL-ROUTING.md) |
-| `src/runtime/request/` | strict header view、异步请求上下文、初始化参数与单次结果 policy，见 [请求头策略](REQUEST-HEADER-POLICY.md) |
+| `src/runtime/runtime-extensions.ts`、`src/runtime/request/` | 内部阶段契约、请求头扩展组装、strict header view、异步请求上下文、会话选项准备、单次结果适配和安全策略摘要，见 [请求头策略](REQUEST-HEADER-POLICY.md) |
 | `src/runtime/invocation/` | workspace / 单次调用 context、调用管线、日志 metadata、结果校验与适配，见 [工具开发](TOOLS.md) 和 [工具返回结果](TOOL-RESULTS.md) |
 | `src/runtime/mcp/` | Express / transport 接线、MCP server factory、会话工具视图、初始化发布观测、pending 所有权及 session / call 标识，见 [请求头策略](REQUEST-HEADER-POLICY.md)、[工具开发](TOOLS.md) 和 [日志](LOGGING.md) |
 | `src/tools/*.ts` | canonical registry、workspace service、公共契约、Tool config / definition 加载、schema validator 与 effective/exposed catalog，见 [工具开发](TOOLS.md) 和 [自定义 Tool 配置](config/tool-config.md) |

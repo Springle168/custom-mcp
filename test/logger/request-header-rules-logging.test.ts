@@ -1,4 +1,6 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
+import chalk from 'chalk';
+import { formatRequestHeaderPolicyLogSummary } from '../../src/runtime/request/request-header-policy-logging.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -55,7 +57,7 @@ function resultLogContext(
   return {
     sessionId: 'session_logger_test',
     callId,
-    requestHeaderPolicy,
+    resultSummary: formatRequestHeaderPolicyLogSummary(requestHeaderPolicy),
   };
 }
 
@@ -208,17 +210,26 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
   const configHeaderName = 'x-secret-client';
   const requestHeaderValue = 'request-secret-value';
   const configExpectedValue = 'config-secret-value';
+  const policy = evaluateRequestHeaderPolicy({
+    requestHeaders: {
+      onInitialize: [{ readHeader: 'x-private-instructions', apply: 'setInstructions' }],
+      onCallToolResult: [
+        { match: [{ name: configHeaderName, value: requestHeaderValue }], enable: ['structuredContentDup'] },
+        { match: [{ name: 'x-other-secret', value: configExpectedValue }], enable: ['structuredContentDup'] },
+      ],
+    },
+  }, createStrictRequestHeaderView([
+    requestHeaderName, requestHeaderValue,
+    'x-other-secret', 'non-matching-private-value',
+    'x-private-instructions', '{"instructions":"private-instructions-text"}',
+  ]));
 
   const logText = await writeAndReadLog('rules-privacy', (logger) => {
     logger.logToolResult(
       'read_file',
       successResult('safe result'),
       12,
-      resultLogContext(metadata({
-        rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
-        enabledFeatures: ['structuredContentDup'],
-      })),
+      resultLogContext(toRequestHeaderPolicyLogMetadata(policy)),
     );
   });
 
@@ -227,6 +238,80 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
   assertNotIncludes(logText, configHeaderName, 'Rules log should not contain config header names');
   assertNotIncludes(logText, requestHeaderValue, 'Rules log should not contain request header values');
   assertNotIncludes(logText, configExpectedValue, 'Rules log should not contain config expected header values');
+  assertNotIncludes(logText, 'private-instructions-text', 'Result logs should not contain initialization instructions');
+}
+
+async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
+  const previousLevel = chalk.level;
+  const originalWrite = process.stdout.write;
+  try {
+    for (const level of [0, 1] as const) {
+      chalk.level = level;
+      const policy = evaluateRequestHeaderPolicy({
+        requestHeaders: {
+          onInitialize: [],
+          onCallToolResult: [
+            { match: [{ name: 'x-private-client', value: 'private-value' }], enable: ['structuredContentDup'] },
+            { match: [{ name: 'x-private-client', value: 'private-value' }], enable: ['structuredContentDup'] },
+          ],
+        },
+      }, createStrictRequestHeaderView(['X-Private-Client', 'private-value']));
+      const summary = formatRequestHeaderPolicyLogSummary(toRequestHeaderPolicyLogMetadata(policy));
+      assert(summary !== undefined, 'Matched policy should provide a summary');
+      const plainRules = 'Rules: matched rules.requestHeaders.onCallToolResult[0], rules.requestHeaders.onCallToolResult[1]; enabled structuredContentDup';
+      const coloredRules = '\x1b[36mRules:\x1b[39m \x1b[32mmatched\x1b[39m rules.requestHeaders.onCallToolResult[0]\x1b[2m, \x1b[22mrules.requestHeaders.onCallToolResult[1]; \x1b[36menabled\x1b[39m \x1b[35mstructuredContentDup\x1b[39m';
+      assertEqual(summary.fileText, plainRules, 'File formatter golden must preserve rule order and deduplicate features');
+      assertEqual(summary.consoleText, level === 0 ? plainRules : coloredRules, 'Console formatter golden must preserve exact ANSI coloring');
+      assertEqual(formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })), undefined, 'Unconfigured policy should omit summary');
+      const noMatch = formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: true }));
+      assertEqual(noMatch?.fileText, 'Rules: no match', 'No-match file golden');
+      assertEqual(noMatch?.consoleText, level === 0 ? 'Rules: no match' : '\x1b[36mRules:\x1b[39m \x1b[2mno match\x1b[22m', 'No-match console golden');
+
+      let stdout = '';
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+        return true;
+      }) as typeof process.stdout.write;
+      const logger = new Logger(TEST_LOGS_DIR, { workspaceId: `rules-golden-${level}` });
+      try {
+        logger.logToolResult('read_file', successResult(), 12, {
+          sessionId: 'session_golden',
+          callId: 'call_golden',
+          resultSummary: summary,
+        });
+      } finally {
+        await logger.close();
+      }
+      const fileText = await readFile(logger.logFile, 'utf8');
+      const normalizeTimestamp = (text: string) => text.replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]/gu, '[timestamp]');
+      const plainLog = [
+        '[timestamp] → OK read_file (12ms)',
+        '  Session: session_golden',
+        '  Call ID: call_golden',
+        `  ${plainRules}`,
+        '  Succeeded.',
+        '',
+      ].join('\n');
+      const coloredLog = [
+        '\x1b[90m[timestamp]\x1b[39m \x1b[32m→ OK\x1b[39m \x1b[33mread_file\x1b[39m\x1b[90m (12ms)\x1b[39m',
+        '  \x1b[36mSession:\x1b[39m \x1b[35msession_golden\x1b[39m',
+        '  \x1b[36mCall ID:\x1b[39m \x1b[35mcall_golden\x1b[39m',
+        `  ${coloredRules}`,
+        '\x1b[2m  Succeeded.\x1b[22m',
+        '',
+      ].join('\n');
+      assertEqual(normalizeTimestamp(fileText), plainLog, 'File log golden must preserve status/context/summary/body order and indentation');
+      assertEqual(normalizeTimestamp(stdout), level === 0 ? plainLog : coloredLog, 'Console log golden must preserve exact output positions and ANSI colors');
+      for (const secret of ['x-private-client', 'X-Private-Client', 'private-value']) {
+        assertNotIncludes(fileText, secret, 'File summary must not leak actual configuration or raw header input');
+        assertNotIncludes(stdout, secret, 'Console summary must not leak actual configuration or raw header input');
+      }
+      assert(!ANSI_ESCAPE_RE.test(fileText), 'Forced console coloring must not add ANSI to file logs');
+    }
+  } finally {
+    process.stdout.write = originalWrite;
+    chalk.level = previousLevel;
+  }
 }
 
 async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
@@ -319,7 +404,7 @@ async function testToolCallIdentityIsWrittenForCallAndResult(): Promise<void> {
   const context: ToolCallResultLogContext = {
     sessionId: 'session_identity_test',
     callId: 'call_identity_test',
-    requestHeaderPolicy: metadata({ rulesConfigured: false }),
+    resultSummary: formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })),
   };
   const logText = await writeAndReadLog('tool-call-identity', (logger) => {
     logger.logToolCall('read_file', { file_path: 'src/index.ts' }, context);
@@ -342,7 +427,7 @@ async function testMissingSessionIsExplicitlyWritten(): Promise<void> {
   const context: ToolCallResultLogContext = {
     sessionId: undefined,
     callId: 'call_missing_session_test',
-    requestHeaderPolicy: metadata({ rulesConfigured: false }),
+    resultSummary: formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })),
   };
   const logText = await writeAndReadLog('missing-session', (logger) => {
     logger.logToolCall('read_file', {}, context);
@@ -369,6 +454,7 @@ async function main(): Promise<void> {
       { name: 'success and failure both write Rules line', run: testSuccessAndFailureBothWriteRulesLine },
       { name: 'file log does not contain ANSI escape codes', run: testFileLogDoesNotContainAnsiEscapeCodes },
       { name: 'rules log does not contain header names or values', run: testRulesLogDoesNotContainHeaderNamesOrValues },
+      { name: 'formatter and logger plain/forced-color golden channels', run: testFormatterAndLoggerGoldenChannels },
       { name: 'structuredContent protocol field is not logged', run: testStructuredContentProtocolFieldIsNotLogged },
       { name: 'mixed image content is logged in order', run: testMixedImageContentIsLoggedInOrder },
       { name: 'image-only result has a log body', run: testImageOnlyResultHasBody },

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { RuntimeRulesConfig } from '../../src/config.js';
 import type { ConfigStore } from '../../src/runtime/application/config-store.js';
 import { runWithRequestHeaderContext } from '../../src/runtime/request/request-context.js';
-import type { RequestHeaderPolicyLogMetadata } from '../../src/runtime/request/request-header-policy.js';
+import type { ToolResultLogSummary } from '../../src/runtime/invocation/tool-call-log-context.js';
+import { prepareRequestHeaderToolResult } from '../../src/runtime/request/tool-result-header-extension.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import { createToolCallRequestHandler } from '../../src/runtime/invocation/tool-call-handler.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
@@ -25,7 +26,7 @@ const PRIMARY_DIR = path.join(FIXTURES_DIR, 'primary');
 
 interface LoggedResult {
   readonly result: ToolCallResult;
-  readonly metadata: RequestHeaderPolicyLogMetadata | undefined;
+  readonly metadata: ToolResultLogSummary | undefined;
 }
 
 function matchingRules(): RuntimeRulesConfig {
@@ -95,18 +96,14 @@ function hasStructuredContent(result: ToolCallResult): boolean {
   return 'structuredContent' in result;
 }
 
-function assertMatchedMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
-  assert(metadata !== undefined, 'Logger should receive metadata for matched request');
-  assertEqual(metadata.rulesConfigured, true, 'Matched metadata should report configured rules');
-  assertEqual(metadata.matchedRuleLocations.join(','), 'rules.requestHeaders.onCallToolResult[0]', 'Matched metadata should include rule location');
-  assertEqual(metadata.enabledFeatures.join(','), 'structuredContentDup', 'Matched metadata should include enabled feature');
+function assertMatchedMetadata(metadata: ToolResultLogSummary | undefined): void {
+  assert(metadata !== undefined, 'Logger should receive summary for matched request');
+  assertEqual(metadata.fileText, 'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup', 'Matched summary should retain safe rule and feature');
 }
 
-function assertNoMatchMetadata(metadata: RequestHeaderPolicyLogMetadata | undefined): void {
-  assert(metadata !== undefined, 'Logger should receive metadata for unmatched request');
-  assertEqual(metadata.rulesConfigured, true, 'No-match metadata should report configured rules');
-  assertEqual(metadata.matchedRuleLocations.length, 0, 'No-match metadata should not include matched rules');
-  assertEqual(metadata.enabledFeatures.length, 0, 'No-match metadata should not include enabled features');
+function assertNoMatchMetadata(metadata: ToolResultLogSummary | undefined): void {
+  assert(metadata !== undefined, 'Logger should receive summary for unmatched request');
+  assertEqual(metadata.fileText, 'Rules: no match', 'Unmatched summary must not include rules or features');
 }
 
 async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
@@ -114,12 +111,13 @@ async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
   const loggedResults = new Map<string, LoggedResult>();
   const handler = createToolCallRequestHandler({
     configStore: store,
+    prepareToolResult: prepareRequestHeaderToolResult,
     logger: {
       logToolCall() {},
       logToolResult(toolName, result, _durationMs, context) {
         loggedResults.set(toolName, {
           result,
-          metadata: context.requestHeaderPolicy,
+          metadata: context.resultSummary,
         });
       },
     },
@@ -152,6 +150,7 @@ async function testSameContextSharesViewAndReadsSnapshotPerCall(): Promise<void>
   const { store, getCount } = createCountingStore(matchingRules());
   const handler = createToolCallRequestHandler({
     configStore: store,
+    prepareToolResult: prepareRequestHeaderToolResult,
     logger: {
       logToolCall() {},
       logToolResult() {},

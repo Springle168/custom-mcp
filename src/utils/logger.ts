@@ -13,7 +13,6 @@ import type {
   ToolCallLogContext,
   ToolCallResultLogContext,
 } from '../runtime/invocation/tool-call-log-context.js';
-import type { RequestHeaderPolicyLogMetadata } from '../runtime/request/request-header-policy.js';
 import type { ToolCallResult } from '../tools/types.js';
 
 function pad(value: number, length = 2): string {
@@ -173,8 +172,6 @@ export class Logger {
     const isError = result.isError === true;
     const status = isError ? 'FAIL' : 'OK';
     const duration = durationMs !== undefined ? ` (${durationMs}ms)` : '';
-    const rulesFileLine = this.formatRulesFileLine(context.requestHeaderPolicy);
-    const rulesConsoleLine = this.formatRulesConsoleLine(context.requestHeaderPolicy);
     const text = result.content
       .map((content) => content.type === 'text'
         ? content.text
@@ -197,10 +194,10 @@ export class Logger {
     const statusColor = isError ? chalk.red : chalk.green;
     const consoleContext = this.formatToolCallConsoleContext(context);
     const fileContext = this.formatToolCallFileContext(context);
-    const consoleRules = rulesConsoleLine === undefined ? '' : `  ${rulesConsoleLine}\n`;
-    const fileRules = rulesFileLine === undefined ? '' : `  ${rulesFileLine}\n`;
-    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleContext}${consoleRules}${consoleBody}\n`;
-    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileContext}${fileRules}${fileBody}\n`;
+    const consoleSummary = context.resultSummary === undefined ? '' : `  ${context.resultSummary.consoleText}\n`;
+    const fileSummary = context.resultSummary === undefined ? '' : `  ${context.resultSummary.fileText}\n`;
+    const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleContext}${consoleSummary}${consoleBody}\n`;
+    const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileContext}${fileSummary}${fileBody}\n`;
 
     this.write(consoleText, fileText);
   }
@@ -217,39 +214,6 @@ export class Logger {
   ): string {
     const sessionId = context.sessionId ?? 'unavailable (session ID missing)';
     return `  ${chalk.cyan('Session:')} ${chalk.magenta(sessionId)}\n  ${chalk.cyan('Call ID:')} ${chalk.magenta(context.callId)}\n`;
-  }
-
-  private formatRulesFileLine(
-    metadata: RequestHeaderPolicyLogMetadata | undefined,
-  ): string | undefined {
-    if (metadata?.rulesConfigured !== true) {
-      return undefined;
-    }
-
-    if (metadata.matchedRuleLocations.length === 0) {
-      return 'Rules: no match';
-    }
-
-    return `Rules: matched ${metadata.matchedRuleLocations.join(', ')}; enabled ${metadata.enabledFeatures.join(', ')}`;
-  }
-
-  private formatRulesConsoleLine(
-    metadata: RequestHeaderPolicyLogMetadata | undefined,
-  ): string | undefined {
-    if (metadata?.rulesConfigured !== true) {
-      return undefined;
-    }
-
-    if (metadata.matchedRuleLocations.length === 0) {
-      return `${chalk.cyan('Rules:')} ${chalk.dim('no match')}`;
-    }
-
-    const matchedLocations = metadata.matchedRuleLocations.join(chalk.dim(', '));
-    const enabledFeatures = metadata.enabledFeatures
-      .map((feature) => chalk.magenta(feature))
-      .join(chalk.dim(', '));
-
-    return `${chalk.cyan('Rules:')} ${chalk.green('matched')} ${matchedLocations}; ${chalk.cyan('enabled')} ${enabledFeatures}`;
   }
 
   close(): Promise<void> {

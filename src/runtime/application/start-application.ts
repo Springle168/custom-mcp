@@ -7,6 +7,7 @@ import { Logger } from '../../utils/logger.js';
 import { createMcpHttpApp } from '../mcp/http-app.js';
 import type { McpPostSession } from '../mcp/mcp-post-handler.js';
 import type { McpPendingSession } from '../mcp/pending-session.js';
+import { createRequestHeaderExtensions } from '../request/request-header-extensions.js';
 import { ApplicationDiagnostics } from './application-diagnostics.js';
 import { ApplicationLifecycle } from './application-lifecycle.js';
 import { createConfigStore } from './config-store.js';
@@ -44,6 +45,7 @@ export function startApplication(options: LoadRuntimeConfigOptions): RunningAppl
     logger,
     sessions,
     pendingSessions,
+    extensions: createRequestHeaderExtensions(snapshot.rules, logger),
     isAcceptingNewSessions: () => lifecycle.isAcceptingNewSessions,
     closeSession: (sessionId) => lifecycle.closeSession(sessionId),
     onToolCallDiagnostic: diagnostics.onToolCallDiagnostic,

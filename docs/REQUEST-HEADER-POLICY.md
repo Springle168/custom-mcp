@@ -99,16 +99,27 @@ instructions 是本会话的说明数据，不是服务端命令或权限指令�
 
 ## 数据流与会话生命周期
 
+### 内部阶段扩展点
+
+`src/runtime/runtime-extensions.ts` 定义轻量的内部阶段契约，应用组装层通过 `createRequestHeaderExtensions()` 按已配置规则接入请求头策略。没有规则的阶段不安装 hook；没有结果规则时不安装 POST context 桥接。核心 HTTP、MCP Server、工具调用管线和通用 Logger 只消费阶段结果，不解释 header 规则或 feature。
+
+- `prepareSession` 在合法新 initialize 的资源构造前同步准备最终 `toolService` 和 `instructions`，或返回安全的参数拒绝信息。核心负责发送拒绝响应，策略负责参数分类和安全失败摘要。
+- `runWithPostContext` 从本次 POST 的 rawHeaders 建立 strict view，并在 AsyncLocalStorage 中运行 SDK dispatch。桥接只传播输入，不计算或缓存会话结果 policy。
+- `prepareToolResult` 使用本次调用已捕获的 snapshot 和当前 strict view，一次性生成结果适配闭包和日志摘要 supplier。核心在结果校验后适配，再在受保护的日志路径中求摘要。
+
+这些 hook 是可信同步内部实现，不是动态插件 API，也没有通用插件异常吞噬或 fail-open 行为。策略不持有 session 目录、transport、Response 或资源生命周期控制权。发布观察回调只接收已发布 session ID，核心不等待回调并隔离同步异常及异步 rejection。
+
 ### 启动与调用
 
 ```text
 selected workspace v2 → 静态规则校验 / 归一化 → immutable snapshot
 workspace definitions / exposure / bindings → compiled catalog → shared tool service
 
-POST rawHeaders → strict view → AsyncLocalStorage
-  → tools/call 开始时捕获 snapshot 与结果 policy
+startApplication → 按阶段规则组装请求头扩展
+POST rawHeaders → context 桥接 / strict view / AsyncLocalStorage
+  → tools/call 开始时捕获 snapshot → prepareToolResult
   → 会话工具准入 → workspace 校验与 executor
-  → 结果校验 → adapter → result logger → SDK / transport
+  → 结果校验 → 捕获的适配闭包 → 摘要 supplier / result logger → SDK / transport
 ```
 
 `AsyncLocalStorage` 只传播单次 POST 的 strict header view，不保存会话 policy。调用开始时计算一次结果 policy，跨异步执行保留局部值，结束时不重算。并发请求上下文隔离，会话工具视图隔离，workspace 运行资源共享。
@@ -117,7 +128,7 @@ POST rawHeaders → strict view → AsyncLocalStorage
 
 ### 初始化入口与发布
 
-新会话初始化先解析参数，再构造受限工具视图与独立 Server，因为 instructions 属于 Server 构造选项。后续带 session ID 的 POST 不读取初始化参数；即使这些参数头损坏或重复，也不重设会话或拒绝普通工具调用。重复 initialize 由 SDK 处理。
+新会话初始化通过 `prepareSession` 先解析参数并准备受限工具视图，再构造独立 Server，因为 instructions 属于 Server 构造选项。后续带 session ID 的 POST 不读取初始化参数；即使这些参数头损坏或重复，也不重设会话或拒绝普通工具调用。重复 initialize 由 SDK 处理。
 
 策略入口接受合法 request object 或单元素 `[initializeRequest]`。候选同时通过 SDK 导出的 `JSONRPCRequestSchema` 与 `InitializeRequestSchema`，关联 ID 来自合法 envelope。其他数组和非法输入不触发参数功能，继续由 SDK 负责协议校验。
 
@@ -172,25 +183,31 @@ shutdown 先停止新准入和 listener 的新连接准入，并启动 Android r
 | `src/config/request-header-rules.ts` | 两阶段静态 schema、功能名称和 runtime rules。 |
 | `src/config/schema.ts`、`runtime-snapshot.ts` | workspace v2 接入、snapshot 复制与冻结。 |
 | `src/runtime/request/request-header-view.ts` | raw 输入与 duplicate 状态。 |
+| `src/runtime/runtime-extensions.ts` | 会话准备、POST context 桥接与本次结果方案的内部契约。 |
+| `src/runtime/request/request-header-extensions.ts` | 按配置安装阶段实现；由应用启动组装层接入。 |
 | `src/runtime/request/request-context.ts` | 本次 POST 的 AsyncLocalStorage 生命周期。 |
 | `src/runtime/request/initialize-header-policy.ts` | 初始化 JSON 参数、不可变设置、安全错误与 metadata。 |
+| `src/runtime/request/initialize-header-extension.ts` | 最终会话选项、安全拒绝和发布后策略摘要。 |
 | `src/runtime/request/request-header-policy.ts` | 工具结果匹配、feature 并集与脱敏 metadata。 |
 | `src/runtime/mcp/session-tool-service.ts` | 会话列表与准入共用的受限工具视图。 |
-| `src/runtime/mcp/mcp-post-handler.ts`、`http-app.ts` | 策略入口、HTTP 响应、session 工厂与发布。 |
+| `src/runtime/mcp/mcp-post-handler.ts`、`http-app.ts` | 核心阶段接线、HTTP 响应、session 工厂与发布；不解释策略规则。 |
 | `src/runtime/mcp/initialization-tracking-transport.ts` | 公开 send 的初始化 result 成功观测。 |
 | `src/runtime/mcp/initialization-http-completion.ts` | HTTP 正常完成与提前中断的公共事件观测。 |
 | `src/runtime/mcp/pending-session.ts` | connect 前资源所有权、幂等关闭与关闭信号。 |
 | `src/runtime/mcp/mcp-server.ts` | Server options、tools/list 与 tools/call 接线。 |
-| `src/runtime/invocation/tool-call-handler.ts`、`tool-result-adapter.ts` | 单次 policy 捕获、结果校验后适配与日志。 |
+| `src/runtime/invocation/tool-call-handler.ts` | 本次结果方案捕获、结果校验后应用和日志错误隔离。 |
+| `src/runtime/request/tool-result-header-extension.ts`、`tool-result-adapter.ts` | 本次规则求值、结果适配闭包与字段覆盖。 |
+| `src/runtime/request/request-header-policy-logging.ts` | 安全的文件/终端结果摘要格式化。 |
 | `src/runtime/application/`、`src/utils/logger.ts` | pending / published 生命周期与日志输出。 |
 
 | 测试 | 关注点 |
 |-|-|
 | `test/config/request-header-rules.test.ts` | workspace 版本、两阶段 schema、绑定唯一性、selected-only snapshot 与冻结、env 禁止覆盖。 |
 | `test/runtime/initialize-header-policy.test.ts` | 参数 grammar、缺失与显式空值、原样说明、安全错误与 metadata、整体失败。 |
+| `test/runtime/initialize-header-extension.test.ts` | 默认会话选项、交集 service、说明和安全策略摘要。 |
 | `test/runtime/request-header-view.test.ts` | rawHeaders 输入、重复状态与名称大小写。 |
 | `test/runtime/request-header-policy.test.ts` | 精确匹配、AND / 并集、重复 header 和上下文缺失。 |
-| `test/runtime/session-tool-service.test.ts` | 工具交集、顺序、列表与准入一致、独立会话、共享 validator / binding 和错误结果适配。 |
+| `test/runtime/session-tool-service.test.ts` | 工具交集、顺序、列表与准入一致、独立会话、共享 validator / binding，以及 catalog 校验、取消、业务错误和准入失败的结果适配。 |
 | `test/runtime/initialization-tracking-transport.test.ts` | 公开 send 的对应 request ID、fulfilled result / error / rejection 与停止等待。 |
 | `test/runtime/pending-session.test.ts` | connect 前、期间及失败时的资源所有权与幂等 close。 |
 | `test/runtime/mcp-post-request-context.test.ts` | POST 上下文、合法 envelope、双完成条件、提前中断、connect / shutdown 与日志失败隔离。 |
@@ -198,7 +215,9 @@ shutdown 先停止新准入和 listener 的新连接准入，并启动 Android r
 | `test/runtime/http-app.test.ts` | 真实 HTTP 接线、会话隔离与 session 路由。 |
 | `test/runtime/application-lifecycle.test.ts` | shutdown 顺序、即时停止准入、幂等关闭与多资源失败隔离。 |
 | `test/runtime/mcp-server-tool-exposure.test.ts` | SDK list / call 接线、共享 service 与结果往返。 |
-| `test/runtime/tool-call-handler.test.ts` | 调用 policy 捕获、返回管线与失败隔离。 |
+| `test/runtime/tool-call-handler.test.ts` | 阶段顺序、调用方案捕获、默认/替代 hook、返回管线与日志失败隔离。 |
+| `test/runtime/runtime-extensions.test.ts` | 配置阶段组合、POST bridge、捕获方案与核心依赖边界。 |
+| `test/runtime/request-header-start-application.test.ts` | 真实启动组装、初始化参数、成功/错误适配和生产日志隐私。 |
 | `test/runtime/tool-result-adapter.test.ts` | 条件覆盖、不修改原对象、扩展字段与 wrapper。 |
 | `test/logger/request-header-rules-logging.test.ts` | Rules 行、纯文本日志、结果正文与隐私边界。 |
 
