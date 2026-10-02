@@ -4,14 +4,7 @@ import {
   JSONRPCRequestSchema,
   type RequestId,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { RuntimeRulesConfig } from '../../config.js';
-import {
-  evaluateInitializeHeaderPolicy,
-  InitializeHeaderPolicyError,
-  type InitializeHeaderSettings,
-} from '../request/initialize-header-policy.js';
-import { runWithRequestHeaderContext } from '../request/request-context.js';
-import { createStrictRequestHeaderView } from '../request/request-header-view.js';
+import type { McpSessionOptions, RuntimeExtensions, SessionPreparation } from '../runtime-extensions.js';
 import { observeInitializationHttpCompletion } from './initialization-http-completion.js';
 import type { McpPendingSession } from './pending-session.js';
 
@@ -40,24 +33,27 @@ export interface HandleMcpPostRequestOptions {
   readonly sessions: Map<string, McpPostSession>;
   readonly pendingSessions: Set<McpPendingSession>;
   readonly logger: McpPostLogger;
-  readonly rules: RuntimeRulesConfig;
+  readonly defaultSessionOptions: McpSessionOptions;
+  readonly extensions?: RuntimeExtensions;
   readonly createSession: (
-    settings: InitializeHeaderSettings,
+    settings: McpSessionOptions,
     requestId?: RequestId,
   ) => McpPendingSession;
   readonly isAcceptingNewSessions?: () => boolean;
 }
 
-/** SDK owns protocol validation; this entry owns policy selection and publication. */
+/** SDK owns protocol validation; this entry owns session preparation and publication. */
 export async function handleMcpPostRequest(
   options: HandleMcpPostRequestOptions,
 ): Promise<void> {
   const { req, res, sessions, logger } = options;
   const sessionId = getMcpSessionId(req);
-  const view = createStrictRequestHeaderView(req.rawHeaders);
-  const handle = (transport: McpPostTransport) => runWithRequestHeaderContext(
-    view, () => transport.handleRequest(req, res, req.body),
-  );
+  const handle = (transport: McpPostTransport) => {
+    const action = () => transport.handleRequest(req, res, req.body);
+    return options.extensions?.runWithPostContext
+      ? options.extensions.runWithPostContext(req.rawHeaders, action)
+      : action();
+  };
 
   if (sessionId) {
     const session = sessions.get(sessionId);
@@ -75,20 +71,22 @@ export async function handleMcpPostRequest(
   }
 
   const requestId = getInitializeRequestId(req.body);
-  let policy: ReturnType<typeof evaluateInitializeHeaderPolicy> | undefined;
-  if (requestId !== undefined) {
+  let preparation: Extract<SessionPreparation, { accepted: true }> = {
+    accepted: true, options: options.defaultSessionOptions,
+  };
+  if (requestId !== undefined && options.extensions?.prepareSession) {
     try {
-      policy = evaluateInitializeHeaderPolicy(options.rules, view);
-    } catch (error: unknown) {
-      if (!(error instanceof InitializeHeaderPolicyError)) {
-        sendInternalError(res, requestId);
+      const result = options.extensions.prepareSession(req.rawHeaders, options.defaultSessionOptions);
+      if (!result.accepted) {
+        res.status(400).json({
+          jsonrpc: '2.0', id: requestId,
+          error: { code: -32602, message: result.message },
+        });
         return;
       }
-      safeInfo(logger, `Initialize policy rejected: ${error.ruleLocation}; ${error.category}`);
-      res.status(400).json({
-        jsonrpc: '2.0', id: requestId,
-        error: { code: -32602, message: error.message },
-      });
+      preparation = result;
+    } catch {
+      sendInternalError(res, requestId);
       return;
     }
   }
@@ -97,7 +95,7 @@ export async function handleMcpPostRequest(
   let session: McpPendingSession | undefined;
   let published = false;
   try {
-    session = options.createSession(policy?.settings ?? {}, requestId);
+    session = options.createSession(preparation.options, requestId);
     options.pendingSessions.add(session);
     // Ownership is registered before the first asynchronous connect. Close and
     // HTTP interruption or send rejection can terminate the entry even if the
@@ -129,12 +127,12 @@ export async function handleMcpPostRequest(
     published = true;
     session.transport.stopInitializationTracking();
     safeInfo(logger, `New session: ${sid}`);
-    if (policy?.metadata.rulesConfigured) {
-      const applied = policy.metadata.appliedRules;
-      const summary = applied.length === 0
-        ? 'none'
-        : applied.map((rule) => `${rule.ruleLocation}: ${rule.feature}`).join(', ');
-      safeInfo(logger, `Session policy: ${sid}; ${summary}`);
+    if (preparation.onPublished) {
+      try {
+        void Promise.resolve(preparation.onPublished(sid)).catch(() => {});
+      } catch {
+        // Observation cannot block the handshake or undo published ownership.
+      }
     }
   } catch {
     // SDK exceptions and logger failures never reflect arbitrary objects or

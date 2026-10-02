@@ -121,7 +121,7 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 
 #### 初始化会话摘要
 
-会话成功发布后，`mcp-post-handler.ts` 通过安全的 `info` 调用写入 `New session: <session-id>`。存在初始化绑定时，另写一条独立摘要：
+会话成功发布后，`mcp-post-handler.ts` 通过安全的 `info` 调用写入 `New session: <session-id>`，随后触发初始化准备阶段提供的发布观察。请求头策略观察在存在初始化绑定时写入独立摘要：
 
 ```text
 Session policy: session_13a09d50-0000-4000-8000-000000000000; rules.requestHeaders.onInitialize[0]: setToolList, rules.requestHeaders.onInitialize[1]: setInstructions
@@ -165,7 +165,9 @@ Initialize policy rejected: rules.requestHeaders.onInitialize[0]; invalid_json
 
 结果阶段规则为空时，不输出 `Rules:` 行。`Rules:` 行是响应日志元信息，不写入 `ToolCallResult.content` 或 `structuredContent`。
 
-日志层只接收结果阶段的脱敏 metadata：是否配置规则、命中的 `rules.requestHeaders.onCallToolResult[n]` 相对位置和 enabled feature。响应日志不记录请求或配置的 header name/value、原始 header 列表或匹配字符串。初始化参数也不经这一 metadata 进入日志。
+请求头策略根据结果阶段脱敏 metadata 格式化 `fileText` / `consoleText` 摘要，Logger 只负责在固定位置缩进并输出，不解释规则或 feature。摘要 supplier 在受保护的 RESULT 日志路径中求值，格式化或写入失败不影响有效适配和返回结果。
+
+响应摘要不记录请求或配置的 header name/value、原始 header 列表或匹配字符串。初始化参数不进入结果摘要。阶段契约和捕获时序见 [请求头策略](REQUEST-HEADER-POLICY.md#内部阶段扩展点)。
 
 ---
 

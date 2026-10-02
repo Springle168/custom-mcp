@@ -37,11 +37,6 @@ function demoLogContext(callId: string): ToolCallResultLogContext {
   return {
     sessionId: 'session_logger_demo',
     callId,
-    requestHeaderPolicy: {
-      rulesConfigured: false,
-      matchedRuleLocations: [],
-      enabledFeatures: [],
-    },
   };
 }
 

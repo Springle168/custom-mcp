@@ -1,10 +1,5 @@
 import { generateToolCallId } from '../mcp/mcp-identifiers.js';
-import { getCurrentRequestHeaderView } from '../request/request-context.js';
-import {
-  evaluateRequestHeaderPolicy,
-  toRequestHeaderPolicyLogMetadata,
-} from '../request/request-header-policy.js';
-import { adaptToolCallResultForRequestPolicy } from './tool-result-adapter.js';
+import type { PreparedToolResult, RuntimeExtensions } from '../runtime-extensions.js';
 import type {
   ToolInvocationContext,
   ToolRequestId,
@@ -83,6 +78,7 @@ export interface CreateToolCallRequestHandlerOptions {
   readonly generateCallId?: () => string;
   readonly now?: () => number;
   readonly onDiagnostic?: ToolCallDiagnosticSink;
+  readonly prepareToolResult?: RuntimeExtensions['prepareToolResult'];
 }
 
 export type ToolCallRequestHandler = (
@@ -112,8 +108,7 @@ export function createToolCallRequestHandler(
       callId: invocation.callId,
     };
     const snapshot = options.configStore.getSnapshot();
-    const requestHeaderView = getCurrentRequestHeaderView();
-    const requestPolicy = evaluateRequestHeaderPolicy(snapshot.rules, requestHeaderView);
+    const preparedResult = options.prepareToolResult?.(snapshot);
     const toolContext = createToolRuntimeContext(snapshot);
 
     const callLogged = await tryLogToolCall(
@@ -148,11 +143,7 @@ export function createToolCallRequestHandler(
       result = textErrorResult(MALFORMED_RESULT_MESSAGE);
     }
 
-    const adaptedResult = adaptToolCallResultForRequestPolicy(result, requestPolicy);
-    const resultLogContext: ToolCallResultLogContext = {
-      ...logContext,
-      requestHeaderPolicy: toRequestHeaderPolicyLogMetadata(requestPolicy),
-    };
+    const adaptedResult = preparedResult === undefined ? result : preparedResult.adaptResult(result);
 
     if (callLogged) {
       await tryLogToolResult(
@@ -160,7 +151,8 @@ export function createToolCallRequestHandler(
         name,
         adaptedResult,
         now() - startTime,
-        resultLogContext,
+        logContext,
+        preparedResult,
         options.onDiagnostic,
       );
     }
@@ -193,11 +185,16 @@ async function tryLogToolResult(
   toolName: string,
   result: ToolCallResult,
   durationMs: number,
-  context: ToolCallResultLogContext,
+  context: ToolCallLogContext,
+  preparedResult: PreparedToolResult | undefined,
   diagnosticSink: ToolCallDiagnosticSink | undefined,
 ): Promise<void> {
   try {
-    await logger.logToolResult(toolName, result, durationMs, context);
+    const resultSummary = preparedResult?.getLogSummary?.();
+    await logger.logToolResult(toolName, result, durationMs, {
+      ...context,
+      ...(resultSummary === undefined ? {} : { resultSummary }),
+    });
   } catch {
     emitToolCallDiagnostic(diagnosticSink, {
       kind: 'result_log_failed',

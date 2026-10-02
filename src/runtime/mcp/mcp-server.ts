@@ -10,7 +10,7 @@ import {
   type ToolCallDiagnosticSink,
   type ToolCallLogger,
 } from '../invocation/tool-call-handler.js';
-import type { WorkspaceToolService } from '../../tools/index.js';
+import type { McpSessionOptions, RuntimeExtensions } from '../runtime-extensions.js';
 
 function loadPackageVersion(): string {
   // Package metadata is the release-version source, so runtime code does not duplicate it.
@@ -27,11 +27,10 @@ function loadPackageVersion(): string {
 
 const MCP_SERVER_VERSION = loadPackageVersion();
 
-export interface CreateMCPServerOptions {
+export interface CreateMCPServerOptions extends McpSessionOptions {
   readonly configStore: ConfigStore;
   readonly logger: ToolCallLogger;
-  readonly toolService: WorkspaceToolService;
-  readonly instructions?: string;
+  readonly prepareToolResult?: RuntimeExtensions['prepareToolResult'];
   readonly onToolCallDiagnostic?: ToolCallDiagnosticSink;
 }
 
@@ -52,6 +51,9 @@ export function createMCPServer(options: CreateMCPServerOptions): Server {
     configStore: options.configStore,
     logger: options.logger,
     routeToolCall: options.toolService.routeToolCall,
+    ...(options.prepareToolResult === undefined
+      ? {}
+      : { prepareToolResult: options.prepareToolResult }),
     ...(options.onToolCallDiagnostic === undefined
       ? {}
       : { onDiagnostic: options.onToolCallDiagnostic }),

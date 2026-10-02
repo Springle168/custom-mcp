@@ -1,4 +1,5 @@
 import { once } from 'node:events';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ApplicationLifecycle } from '../../src/runtime/application/application-lifecycle.js';
@@ -7,10 +8,11 @@ import { createMcpHttpApp } from '../../src/runtime/mcp/http-app.js';
 import type { McpPostSession } from '../../src/runtime/mcp/mcp-post-handler.js';
 import type { McpPendingSession } from '../../src/runtime/mcp/pending-session.js';
 import type { WorkspaceToolService } from '../../src/tools/index.js';
+import type { RuntimeExtensions } from '../../src/runtime/runtime-extensions.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
 import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
-async function createHarness() {
+async function createHarness(extensions?: RuntimeExtensions) {
   const sessions = new Map<string, McpPostSession>();
   const pendingSessions = new Set<McpPendingSession>();
   const invocations: ToolInvocationContext[] = [];
@@ -50,6 +52,7 @@ async function createHarness() {
       },
     }),
     toolService: service,
+    ...(extensions === undefined ? {} : { extensions }),
     sessions,
     pendingSessions,
     logger: {
@@ -88,7 +91,7 @@ async function createHarness() {
   };
 }
 
-async function testSessionsShareServiceAndKeepRequestPolicyIsolated(): Promise<void> {
+async function testSessionsShareServiceWithoutExtensions(): Promise<void> {
   const harness = await createHarness();
   const first = new Client({ name: 'first-http-client', version: '1.0.0' });
   const second = new Client({ name: 'second-http-client', version: '1.0.0' });
@@ -111,8 +114,8 @@ async function testSessionsShareServiceAndKeepRequestPolicyIsolated(): Promise<v
 
     const firstResult = await first.callTool({ name: 'probe_tool', arguments: {} });
     const secondResult = await second.callTool({ name: 'probe_tool', arguments: {} });
-    assert(firstResult.structuredContent !== undefined, 'Matching HTTP headers should enable result adaptation');
-    assert(secondResult.structuredContent === undefined, 'Request policy must not leak across sessions');
+    assert(firstResult.structuredContent === undefined, 'Configured rules and matching headers must be inert without injected hooks');
+    assert(secondResult.structuredContent === undefined, 'No-hook calls should preserve results');
     assertEqual(harness.invocations.length, 2, 'Both tools/call requests should reach the supplied service');
     assertEqual(harness.invocations[0]?.sessionId, firstTransport.sessionId, 'Invocation should carry the first session ID');
     assertEqual(harness.invocations[1]?.sessionId, secondTransport.sessionId, 'Invocation should carry the second session ID');
@@ -125,6 +128,68 @@ async function testSessionsShareServiceAndKeepRequestPolicyIsolated(): Promise<v
     assert(!harness.sessions.has(firstSessionId), 'Deleted session should be removed');
     assertEqual(harness.sessions.size, 1, 'Deleting one session should leave the other session alive');
     await second.listTools();
+  } finally {
+    await Promise.all([first.close(), second.close()]);
+    await harness.close();
+  }
+}
+
+async function testAlternativeExtensionsReachServerAndKeepPostContextIsolated(): Promise<void> {
+  const context = new AsyncLocalStorage<readonly string[]>();
+  const published: string[] = [];
+  let preparedSessions = 0;
+  let preparedResults = 0;
+  const harness = await createHarness({
+    runWithPostContext: (rawHeaders, action) => context.run(rawHeaders, action),
+    prepareSession(_rawHeaders, defaults) {
+      preparedSessions++;
+      return {
+        accepted: true,
+        options: {
+          toolService: {
+            getDefinitions: () => [{
+              name: 'extension_tool',
+              description: 'Alternative session service.',
+              inputSchema: { type: 'object' },
+            }],
+            routeToolCall: defaults.toolService.routeToolCall,
+          },
+          instructions: 'Alternative session instructions',
+        },
+        onPublished(sessionId) { published.push(sessionId); },
+      };
+    },
+    prepareToolResult() {
+      preparedResults++;
+      const enabled = context.getStore()?.includes('http-test') === true;
+      return {
+        adaptResult: (result) => enabled
+          ? { ...result, structuredContent: { extension: 'alternative' } }
+          : result,
+      };
+    },
+  });
+  const first = new Client({ name: 'extension-first', version: '1' });
+  const second = new Client({ name: 'extension-second', version: '1' });
+  const firstTransport = new StreamableHTTPClientTransport(new URL(harness.url), {
+    requestInit: { headers: { 'X-Client': 'http-test' } },
+  });
+  const secondTransport = new StreamableHTTPClientTransport(new URL(harness.url));
+  try {
+    await first.connect(firstTransport);
+    await second.connect(secondTransport);
+    assertEqual(preparedSessions, 2, 'Each initialization should prepare one final set of options');
+    assertEqual(published.length, 2, 'Each successful HTTP initialization should notify once');
+    assert(published.every((sessionId) => harness.sessions.has(sessionId)), 'Observers should correspond to published sessions');
+    assertEqual(first.getInstructions(), 'Alternative session instructions', 'HTTP factory should pass final instructions to Server');
+    assertEqual((await first.listTools()).tools[0]?.name, 'extension_tool', 'HTTP factory should use the final tool service');
+    const firstResult = await first.callTool({ name: 'extension_tool', arguments: {} });
+    const secondResult = await second.callTool({ name: 'extension_tool', arguments: {} });
+    assertEqual((firstResult.structuredContent as { extension: string }).extension, 'alternative', 'Injected result hook should reach MCP server');
+    assert(secondResult.structuredContent === undefined, 'POST bridge context must not leak across sessions');
+    assertEqual(preparedResults, 2, 'Result hook should run once per tools/call');
+    assertEqual(preparedSessions, 2, 'Existing-session requests should bypass session preparation');
+    assertEqual(context.getStore(), undefined, 'POST context should not leak into the caller');
   } finally {
     await Promise.all([first.close(), second.close()]);
     await harness.close();
@@ -203,7 +268,8 @@ async function testGetDelegatesToRegisteredTransport(): Promise<void> {
 await runTestSuite({
   title: 'Testing MCP HTTP application wiring',
   tests: [
-    { name: 'sessions share service and isolate request policy', run: testSessionsShareServiceAndKeepRequestPolicyIsolated },
+    { name: 'sessions share service without extensions', run: testSessionsShareServiceWithoutExtensions },
+    { name: 'alternative extensions reach server and isolate POST context', run: testAlternativeExtensionsReachServerAndKeepPostContextIsolated },
     { name: 'missing and stale session responses', run: testMissingAndStaleSessionResponses },
     { name: 'admission callback rejects initialization', run: testAdmissionCallbackRejectsInitialization },
     { name: 'GET delegates to registered transport', run: testGetDelegatesToRegisteredTransport },

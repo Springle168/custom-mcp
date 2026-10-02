@@ -71,7 +71,7 @@ src/tools/
 | `src/runtime/application/start-application.ts` | 应用资源组装；创建一个 workspace tool service，并将其传入 HTTP 接线 |
 | `src/runtime/mcp/http-app.ts` | `/mcp` POST / GET / DELETE 路由、transport 创建与 session 接线；session admission 和关闭委托应用 lifecycle |
 | `src/runtime/mcp/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
-| `src/runtime/invocation/tool-call-handler.ts`、`src/runtime/invocation/tool-result-validation.ts`、`src/runtime/invocation/tool-result-adapter.ts` | 统一工具调用出口、结果校验与 request policy 适配，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md) |
+| `src/runtime/invocation/tool-call-handler.ts`、`src/runtime/invocation/tool-result-validation.ts` | 统一工具调用出口、结果校验与内部结果阶段接线，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)；请求头适配实现见 [请求头策略](REQUEST-HEADER-POLICY.md) |
 | `src/runtime/invocation/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
 | `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
 | `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |

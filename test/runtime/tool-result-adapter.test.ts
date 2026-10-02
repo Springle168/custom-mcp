@@ -1,5 +1,5 @@
 import type { ToolCallResult } from '../../src/tools/types.js';
-import { adaptToolCallResultForRequestPolicy } from '../../src/runtime/invocation/tool-result-adapter.js';
+import { adaptToolCallResultForRequestPolicy } from '../../src/runtime/request/tool-result-adapter.js';
 import type { RequestHeaderPolicy } from '../../src/runtime/request/request-header-policy.js';
 import {
   assert,

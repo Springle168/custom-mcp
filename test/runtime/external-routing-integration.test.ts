@@ -15,6 +15,7 @@ import { createConfigStore } from '../../src/runtime/application/config-store.js
 import { createMCPServer } from '../../src/runtime/mcp/mcp-server.js';
 import { createSessionToolService } from '../../src/runtime/mcp/session-tool-service.js';
 import { runWithRequestHeaderContext } from '../../src/runtime/request/request-context.js';
+import { prepareRequestHeaderToolResult } from '../../src/runtime/request/tool-result-header-extension.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import {
   loadApplicationRuntime,
@@ -395,6 +396,7 @@ async function connectMcpServer(
       logToolResult(_name, result) { options.onResult?.(result); },
     },
     toolService: options.toolService ?? createWorkspaceToolService(runtime.toolCatalog),
+    prepareToolResult: prepareRequestHeaderToolResult,
   });
   const client = new Client({ name: 'external-routing-integration-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -459,6 +461,19 @@ async function testCanonicalContentThroughMcpAndPolicy(): Promise<void> {
         rawHeaders: ['X-Client', duplicate ? 'canonical-content-test' : 'unmatched-client'],
         onResult: (result) => logged.push(result),
       });
+      const invalid = await pair.client.callTool({ name: FIRST_TOOL_NAME, arguments: {} });
+      assertEqual(invalid.isError, true, 'External effective-schema rejection should remain a controlled tool error');
+      assertIncludes(JSON.stringify(invalid.content), 'configured input schema', 'External validation must precede execution');
+      assertEqual(endpoint.requestCount(), 0, 'Rejected input must not reach the endpoint');
+      const loggedInvalid = logged.at(-1);
+      assert(loggedInvalid !== undefined, 'External validation error should use the result logger');
+      if (duplicate) {
+        const wrapper = { content: invalid.content, isError: true };
+        assertEqual(JSON.stringify(invalid.structuredContent), JSON.stringify(wrapper), 'External validation error must use captured adaptation');
+        assertEqual(JSON.stringify(loggedInvalid.structuredContent), JSON.stringify(wrapper), 'External validation error logging must use the adapted wrapper');
+      } else {
+        assert(!('structuredContent' in invalid) && !('structuredContent' in loggedInvalid), 'Unmatched external validation error must remain unadapted');
+      }
       for (const status of ['completed', 'failed', 'cancelled'] as const) {
         for (const empty of [false, true]) {
           const result = await pair.client.callTool({

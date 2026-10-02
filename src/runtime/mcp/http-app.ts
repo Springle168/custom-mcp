@@ -7,7 +7,7 @@ import { handleMcpPostRequest, safeInfo, type McpPostLogger, type McpPostSession
 import { createMCPServer } from './mcp-server.js';
 import { InitializationTrackingTransport } from './initialization-tracking-transport.js';
 import { createPendingSession, type McpPendingSession } from './pending-session.js';
-import { createSessionToolService } from './session-tool-service.js';
+import type { RuntimeExtensions } from '../runtime-extensions.js';
 
 export interface CreateMcpHttpAppOptions {
   readonly configStore: ConfigStore;
@@ -18,6 +18,7 @@ export interface CreateMcpHttpAppOptions {
   readonly isAcceptingNewSessions: () => boolean;
   readonly closeSession: (sessionId: string) => Promise<void>;
   readonly onToolCallDiagnostic?: ToolCallDiagnosticSink;
+  readonly extensions?: RuntimeExtensions;
 }
 
 /** Wires HTTP transport sessions to the application-owned workspace service and lifecycle. */
@@ -33,16 +34,18 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
       sessions,
       pendingSessions,
       logger,
-      rules: configStore.getSnapshot().rules,
+      defaultSessionOptions: { toolService },
+      ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
       isAcceptingNewSessions: options.isAcceptingNewSessions,
       createSession: (settings, requestId) => {
         const server = createMCPServer({
           configStore,
           logger,
-          toolService: requestId === undefined
-            ? toolService
-            : createSessionToolService(toolService, settings.requestedToolNames),
+          toolService: settings.toolService,
           instructions: settings.instructions,
+          ...(options.extensions?.prepareToolResult === undefined
+            ? {}
+            : { prepareToolResult: options.extensions.prepareToolResult }),
           ...(options.onToolCallDiagnostic === undefined
             ? {}
             : { onToolCallDiagnostic: options.onToolCallDiagnostic }),
