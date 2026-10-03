@@ -6,11 +6,7 @@ import {
   readStrictUtf8RegularFile,
   StrictUtf8FileError,
 } from '../../src/config/strict-utf8-file.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,9 +58,8 @@ async function testClassifiesBoundaryFailures(): Promise<void> {
   await resetFixtures();
 
   assertEqual(
-    captureStrictFileError(() =>
-      readStrictUtf8RegularFile(path.join(FIXTURES_DIR, 'missing.txt'))
-    ).reason,
+    captureStrictFileError(() => readStrictUtf8RegularFile(path.join(FIXTURES_DIR, 'missing.txt')))
+      .reason,
     'not_found',
     'Missing targets should have a stable reason',
   );

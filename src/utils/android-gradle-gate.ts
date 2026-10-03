@@ -6,21 +6,19 @@ import path from 'node:path';
  */
 export type AndroidGradleGateResult<T> =
   | {
-    status: 'completed';
-    value: T;
-  }
+      status: 'completed';
+      value: T;
+    }
   | {
-    status: 'cancelled';
-    reason: AndroidGradleGateCancellationReason;
-  }
+      status: 'cancelled';
+      reason: AndroidGradleGateCancellationReason;
+    }
   | {
-    status: 'failed';
-    error: unknown;
-  };
+      status: 'failed';
+      error: unknown;
+    };
 
-export type AndroidGradleGateCancellationReason =
-  | 'caller-aborted'
-  | 'registry-closed';
+export type AndroidGradleGateCancellationReason = 'caller-aborted' | 'registry-closed';
 
 /**
  * The two execution milestones the gate needs to coordinate.
@@ -355,10 +353,7 @@ class WorkspaceGate {
     this.notifyIfIdle();
   }
 
-  private cancelWaiter(
-    waiter: GateWaiter,
-    reason: AndroidGradleGateCancellationReason,
-  ): void {
+  private cancelWaiter(waiter: GateWaiter, reason: AndroidGradleGateCancellationReason): void {
     if (waiter.state !== 'queued') {
       return;
     }

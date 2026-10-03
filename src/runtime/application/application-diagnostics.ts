@@ -27,9 +27,7 @@ export class ApplicationDiagnostics {
     this.#report(formatProcessorDrainDiagnostic(diagnostic));
   };
 
-  readonly onMcpConnectionDiagnostic = (
-    diagnostic: McpConnectionDiagnostic,
-  ): void => {
+  readonly onMcpConnectionDiagnostic = (diagnostic: McpConnectionDiagnostic): void => {
     this.#report(formatMcpConnectionDiagnostic(diagnostic));
   };
 
@@ -78,11 +76,12 @@ function formatMcpConnectionDiagnostic(diagnostic: McpConnectionDiagnostic): str
   if (diagnostic.outcome === 'connected') {
     return `Downstream MCP connected: server=${diagnostic.server} durationMs=${diagnostic.durationMs}`;
   }
-  const label = diagnostic.phase === 'call'
-    ? 'Downstream MCP call failed:'
-    : diagnostic.phase === 'shutdown'
-      ? 'Downstream MCP shutdown failed:'
-      : 'Downstream MCP connection failed:';
+  const label =
+    diagnostic.phase === 'call'
+      ? 'Downstream MCP call failed:'
+      : diagnostic.phase === 'shutdown'
+        ? 'Downstream MCP shutdown failed:'
+        : 'Downstream MCP connection failed:';
   return [
     label,
     `server=${diagnostic.server}`,

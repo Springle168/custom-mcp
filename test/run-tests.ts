@@ -70,16 +70,15 @@ export function parseTestRunnerArgs(args: readonly string[]): TestRunnerCliOptio
   return { selectors, verbose };
 }
 
-export async function discoverAutomatedTests(
-  projectRoot = PROJECT_ROOT,
-): Promise<string[]> {
+export async function discoverAutomatedTests(projectRoot = PROJECT_ROOT): Promise<string[]> {
   const matches = await glob(AUTOMATED_TEST_PATTERN, {
     cwd: projectRoot,
     nodir: true,
   });
 
-  return [...new Set(matches.map(normalizeTestPath))]
-    .sort((left, right) => left.localeCompare(right, 'en'));
+  return [...new Set(matches.map(normalizeTestPath))].sort((left, right) =>
+    left.localeCompare(right, 'en'),
+  );
 }
 
 export function selectAutomatedTests(
@@ -96,9 +95,7 @@ export function selectAutomatedTests(
   );
 
   if (unmatchedSelectors.length > 0) {
-    throw new Error(
-      `No automated tests matched selector(s): ${unmatchedSelectors.join(', ')}`,
-    );
+    throw new Error(`No automated tests matched selector(s): ${unmatchedSelectors.join(', ')}`);
   }
 
   return tests.filter((testPath) =>
@@ -150,9 +147,7 @@ export async function runTestScripts(
   };
 }
 
-export function summarizeTestTopics(
-  results: readonly TestScriptResult[],
-): TestTopicSummary[] {
+export function summarizeTestTopics(results: readonly TestScriptResult[]): TestTopicSummary[] {
   const summaries = new Map<string, TestTopicSummary>();
 
   for (const result of results) {

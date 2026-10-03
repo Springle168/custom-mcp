@@ -2,11 +2,7 @@
  * 安全的字面文本替换，避免 String.replace() 中 $ 符号被当作替换模式。
  * 替换所有出现的 search。
  */
-export function safeLiteralReplace(
-  content: string,
-  search: string,
-  replace: string,
-): string {
+export function safeLiteralReplace(content: string, search: string, replace: string): string {
   return content.split(search).join(replace);
 }
 
@@ -33,10 +29,7 @@ export function resolveLineEnding(
 /**
  * 保持修改后的内容与原始内容在尾部换行符上一致。
  */
-export function restoreTrailingNewline(
-  originalContent: string,
-  modifiedContent: string,
-): string {
+export function restoreTrailingNewline(originalContent: string, modifiedContent: string): string {
   const hadTrailingNewline = originalContent.endsWith('\n');
   if (hadTrailingNewline && !modifiedContent.endsWith('\n')) {
     return modifiedContent + '\n';

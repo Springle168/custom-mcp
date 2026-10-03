@@ -40,8 +40,7 @@ export function selectWorkspaceReference(
       configFilePath: options.globalConfigFilePath,
       fieldPath: 'workspace',
       message: `Workspace "${result.value}" was not found in the global config.`,
-      suggestion:
-        `Choose one of the configured workspace ids: ${options.workspaces.map((candidate) => candidate.id).join(', ')}.`,
+      suggestion: `Choose one of the configured workspace ids: ${options.workspaces.map((candidate) => candidate.id).join(', ')}.`,
     });
   }
 

@@ -1,9 +1,6 @@
 import { statSync, type Stats } from 'node:fs';
 import * as path from 'node:path';
-import {
-  readTypedString,
-  type ValuePolicyResult,
-} from './value-policy.js';
+import { readTypedString, type ValuePolicyResult } from './value-policy.js';
 
 type PathApi = typeof path.win32 | typeof path.posix;
 

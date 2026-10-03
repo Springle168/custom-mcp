@@ -13,11 +13,7 @@ import {
   createTestRuntimeConfigIdentity,
   createTestRuntimeConfigSnapshot,
 } from '../helpers/runtime-config.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,12 +94,20 @@ function hasStructuredContent(result: ToolCallResult): boolean {
 
 function assertMatchedMetadata(metadata: ToolResultLogSummary | undefined): void {
   assert(metadata !== undefined, 'Logger should receive summary for matched request');
-  assertEqual(metadata.fileText, 'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup', 'Matched summary should retain safe rule and feature');
+  assertEqual(
+    metadata.fileText,
+    'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup',
+    'Matched summary should retain safe rule and feature',
+  );
 }
 
 function assertNoMatchMetadata(metadata: ToolResultLogSummary | undefined): void {
   assert(metadata !== undefined, 'Logger should receive summary for unmatched request');
-  assertEqual(metadata.fileText, 'Rules: no match', 'Unmatched summary must not include rules or features');
+  assertEqual(
+    metadata.fileText,
+    'Rules: no match',
+    'Unmatched summary must not include rules or features',
+  );
 }
 
 async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
@@ -128,22 +132,34 @@ async function testConcurrentContextsDoNotCrossTalk(): Promise<void> {
   });
 
   const [matchedResult, unmatchedResult] = await Promise.all([
-    runWithRequestHeaderContext(
-      createStrictRequestHeaderView(['X-Client', 'android-studio']),
-      () => handler({ params: { name: 'matching_tool', arguments: {} } }),
+    runWithRequestHeaderContext(createStrictRequestHeaderView(['X-Client', 'android-studio']), () =>
+      handler({ params: { name: 'matching_tool', arguments: {} } }),
     ),
-    runWithRequestHeaderContext(
-      createStrictRequestHeaderView(['X-Client', 'other-client']),
-      () => handler({ params: { name: 'unmatched_tool', arguments: {} } }),
+    runWithRequestHeaderContext(createStrictRequestHeaderView(['X-Client', 'other-client']), () =>
+      handler({ params: { name: 'unmatched_tool', arguments: {} } }),
     ),
   ]);
 
-  assert(hasStructuredContent(matchedResult), 'Matched concurrent request should receive structuredContent');
-  assert(!hasStructuredContent(unmatchedResult), 'Unmatched concurrent request should not receive structuredContent');
+  assert(
+    hasStructuredContent(matchedResult),
+    'Matched concurrent request should receive structuredContent',
+  );
+  assert(
+    !hasStructuredContent(unmatchedResult),
+    'Unmatched concurrent request should not receive structuredContent',
+  );
   assertMatchedMetadata(loggedResults.get('matching_tool')?.metadata);
   assertNoMatchMetadata(loggedResults.get('unmatched_tool')?.metadata);
-  assertEqual(loggedResults.get('matching_tool')?.result, matchedResult, 'Matched logger result should equal returned result');
-  assertEqual(loggedResults.get('unmatched_tool')?.result, unmatchedResult, 'Unmatched logger result should equal returned result');
+  assertEqual(
+    loggedResults.get('matching_tool')?.result,
+    matchedResult,
+    'Matched logger result should equal returned result',
+  );
+  assertEqual(
+    loggedResults.get('unmatched_tool')?.result,
+    unmatchedResult,
+    'Unmatched logger result should equal returned result',
+  );
 }
 
 async function testSameContextSharesViewAndReadsSnapshotPerCall(): Promise<void> {
@@ -165,8 +181,14 @@ async function testSameContextSharesViewAndReadsSnapshotPerCall(): Promise<void>
     return [first, second] as const;
   });
 
-  assert(hasStructuredContent(firstResult), 'First call in the same request context should match shared strict view');
-  assert(hasStructuredContent(secondResult), 'Second call in the same request context should match shared strict view');
+  assert(
+    hasStructuredContent(firstResult),
+    'First call in the same request context should match shared strict view',
+  );
+  assert(
+    hasStructuredContent(secondResult),
+    'Second call in the same request context should match shared strict view',
+  );
   assertEqual(getCount(), 2, 'Each tools/call should read the snapshot at call start');
 }
 
@@ -176,8 +198,14 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'concurrent request contexts do not cross-talk', run: testConcurrentContextsDoNotCrossTalk },
-      { name: 'same context shares view and reads snapshot per call', run: testSameContextSharesViewAndReadsSnapshotPerCall },
+      {
+        name: 'concurrent request contexts do not cross-talk',
+        run: testConcurrentContextsDoNotCrossTalk,
+      },
+      {
+        name: 'same context shares view and reads snapshot per call',
+        run: testSameContextSharesViewAndReadsSnapshotPerCall,
+      },
     ],
   });
 }

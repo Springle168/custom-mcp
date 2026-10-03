@@ -1,9 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import {
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assertEqual, runTestSuite } from '../test-utils.js';
 import {
   assertErrorResult,
   assertJsonDefaults,
@@ -30,10 +27,7 @@ const OUTSIDE_CREATE_RELATIVE_PATH = path.join(
   '..',
   `${path.basename(FIXTURES_DIR)}-created-outside.txt`,
 );
-const OUTSIDE_CREATE_FILE = path.resolve(
-  FIXTURES_DIR,
-  OUTSIDE_CREATE_RELATIVE_PATH,
-);
+const OUTSIDE_CREATE_FILE = path.resolve(FIXTURES_DIR, OUTSIDE_CREATE_RELATIVE_PATH);
 
 async function cleanupAll(): Promise<void> {
   await cleanupFixtures();
@@ -56,11 +50,7 @@ async function assertBinaryFileUnchanged(
   message: string,
 ): Promise<void> {
   const actual = await fs.readFile(absolutePath);
-  assertEqual(
-    JSON.stringify([...actual]),
-    JSON.stringify([...expected]),
-    message,
-  );
+  assertEqual(JSON.stringify([...actual]), JSON.stringify([...expected]), message);
 }
 
 async function testRelativeRootPathSucceeds(): Promise<void> {
@@ -202,10 +192,7 @@ async function testBinaryContentRejectedWithoutWriting(): Promise<void> {
 async function testOversizeFileRejectedWithoutWriting(): Promise<void> {
   await resetFixtures();
   const sizeLimitPlusOne = 20 * 1024 * 1024 + 1;
-  const absolutePath = await writeFixture(
-    'oversize.txt',
-    Buffer.alloc(sizeLimitPlusOne, 0x61),
-  );
+  const absolutePath = await writeFixture('oversize.txt', Buffer.alloc(sizeLimitPlusOne, 0x61));
 
   const result = await callReplace({
     file_path: 'oversize.txt',
@@ -259,7 +246,8 @@ async function testFailureScenariosReturnJsonAndDoNotCreateMissingFiles(): Promi
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 output and file safety tests',
-    details: 'Covers JSON failure shape, root sandboxing, directory/binary/oversize safety, and path echoing.',
+    details:
+      'Covers JSON failure shape, root sandboxing, directory/binary/oversize safety, and path echoing.',
     afterAll: cleanupAll,
     tests: [
       { name: 'Relative root path succeeds', run: testRelativeRootPathSucceeds },
@@ -272,14 +260,26 @@ async function main(): Promise<void> {
         run: testRootOutsidePathRejectedWithoutModifying,
       },
       { name: 'Parent traversal create rejected', run: testParentTraversalCreateRejected },
-      { name: 'Directory path rejected without writing', run: testDirectoryPathRejectedWithoutWriting },
+      {
+        name: 'Directory path rejected without writing',
+        run: testDirectoryPathRejectedWithoutWriting,
+      },
       {
         name: 'Known binary extension rejected without writing',
         run: testKnownBinaryExtensionRejectedWithoutWriting,
       },
-      { name: 'Binary content rejected without writing', run: testBinaryContentRejectedWithoutWriting },
-      { name: 'Oversize file rejected without writing', run: testOversizeFileRejectedWithoutWriting },
-      { name: 'Unknown extension text file can be replaced', run: testUnknownExtensionTextFileCanBeReplaced },
+      {
+        name: 'Binary content rejected without writing',
+        run: testBinaryContentRejectedWithoutWriting,
+      },
+      {
+        name: 'Oversize file rejected without writing',
+        run: testOversizeFileRejectedWithoutWriting,
+      },
+      {
+        name: 'Unknown extension text file can be replaced',
+        run: testUnknownExtensionTextFileCanBeReplaced,
+      },
       {
         name: 'Failure JSON does not create missing files',
         run: testFailureScenariosReturnJsonAndDoNotCreateMissingFiles,

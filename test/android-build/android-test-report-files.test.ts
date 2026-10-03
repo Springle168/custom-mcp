@@ -5,10 +5,7 @@ import {
   readChangedAndroidTestReportFiles,
   snapshotAndroidTestReportFiles,
 } from '../../src/utils/android-test-report-files.js';
-import {
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assertEqual, runTestSuite } from '../test-utils.js';
 
 async function writeReport(
   workspaceRoot: string,
@@ -28,32 +25,17 @@ async function writeReport(
 }
 
 async function testDetectsNewAndChangedReports() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-test-reports-'),
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-test-reports-'));
 
   try {
     await writeReport(workspaceRoot, 'app', 'TEST-existing.xml', '<testsuite/>');
     await writeReport(workspaceRoot, 'feature', 'TEST-unchanged.xml', '<testsuite/>');
     const before = await snapshotAndroidTestReportFiles(workspaceRoot);
 
-    await writeReport(
-      workspaceRoot,
-      'app',
-      'TEST-existing.xml',
-      '<testsuite tests="1"/>',
-    );
-    await writeReport(
-      workspaceRoot,
-      'library',
-      'TEST-new.xml',
-      '<testsuite tests="2"/>',
-    );
+    await writeReport(workspaceRoot, 'app', 'TEST-existing.xml', '<testsuite tests="1"/>');
+    await writeReport(workspaceRoot, 'library', 'TEST-new.xml', '<testsuite tests="2"/>');
 
-    const changed = await readChangedAndroidTestReportFiles(
-      workspaceRoot,
-      before,
-    );
+    const changed = await readChangedAndroidTestReportFiles(workspaceRoot, before);
 
     assertEqual(changed.changedFileCount, 2, 'Should detect new and updated reports');
     assertEqual(changed.unreadableFileCount, 0, 'Should read changed reports');
@@ -74,9 +56,7 @@ async function testDetectsNewAndChangedReports() {
 }
 
 async function testIgnoresUnchangedAndExcludedReports() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-test-reports-'),
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-test-reports-'));
 
   try {
     await writeReport(workspaceRoot, 'app', 'TEST-existing.xml', '<testsuite/>');
@@ -91,10 +71,7 @@ async function testIgnoresUnchangedAndExcludedReports() {
     await writeFile(path.join(excludedDir, 'TEST-excluded.xml'), '<testsuite/>');
 
     const before = await snapshotAndroidTestReportFiles(workspaceRoot);
-    const changed = await readChangedAndroidTestReportFiles(
-      workspaceRoot,
-      before,
-    );
+    const changed = await readChangedAndroidTestReportFiles(workspaceRoot, before);
 
     assertEqual(changed.changedFileCount, 0, 'Should ignore unchanged reports');
     assertEqual(changed.files.length, 0, 'Should not return old report contents');
@@ -104,16 +81,8 @@ async function testIgnoresUnchangedAndExcludedReports() {
 }
 
 async function testRejectsExcessiveReportCandidates() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-test-reports-'),
-  );
-  const reportDir = path.join(
-    workspaceRoot,
-    'app',
-    'build',
-    'test-results',
-    'testDebugUnitTest',
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-test-reports-'));
+  const reportDir = path.join(workspaceRoot, 'app', 'build', 'test-results', 'testDebugUnitTest');
 
   try {
     await mkdir(reportDir, { recursive: true });

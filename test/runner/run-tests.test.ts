@@ -19,11 +19,7 @@ import {
   runTestSuite,
 } from '../test-utils.js';
 
-const PROJECT_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-);
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SAMPLE_TESTS = [
   'test/config/value-policy.test.ts',
   'test/config/workspace-selection.test.ts',
@@ -46,18 +42,9 @@ async function testDiscoversOnlyAutomatedScripts(): Promise<void> {
     tests.includes('test/runner/run-tests.test.ts'),
     'Should discover the runner regression test',
   );
-  assert(
-    !tests.includes('test/logger/logger.manual.ts'),
-    'Should exclude manual scripts',
-  );
-  assert(
-    !tests.includes('test/tools/inspect-tools.ts'),
-    'Should exclude inspection scripts',
-  );
-  assert(
-    !tests.includes('test/replace-text/helpers.ts'),
-    'Should exclude helper modules',
-  );
+  assert(!tests.includes('test/logger/logger.manual.ts'), 'Should exclude manual scripts');
+  assert(!tests.includes('test/tools/inspect-tools.ts'), 'Should exclude inspection scripts');
+  assert(!tests.includes('test/replace-text/helpers.ts'), 'Should exclude helper modules');
   assert(
     !tests.includes('test/runner/fixtures/failing-script.ts'),
     'Should exclude runner fixture scripts',
@@ -68,18 +55,11 @@ function testParsesSelectorsAndVerbose(): void {
   const options = parseTestRunnerArgs(['config', '--verbose', 'runtime']);
 
   assertEqual(options.verbose, true, 'Should enable verbose output');
-  assertEqual(
-    options.selectors.join(','),
-    'config,runtime',
-    'Should retain selector order',
-  );
+  assertEqual(options.selectors.join(','), 'config,runtime', 'Should retain selector order');
 }
 
 function testRejectsUnknownOptions(): void {
-  assertThrows(
-    () => parseTestRunnerArgs(['--parallel']),
-    'Unknown option: --parallel',
-  );
+  assertThrows(() => parseTestRunnerArgs(['--parallel']), 'Unknown option: --parallel');
 }
 
 function testSelectsTopic(): void {
@@ -93,14 +73,10 @@ function testSelectsTopic(): void {
 }
 
 function testSelectsRelativePathWithEitherSeparator(): void {
-  const posixSelected = selectAutomatedTests(
-    SAMPLE_TESTS,
-    ['test/config/value-policy.test.ts'],
-  );
-  const windowsSelected = selectAutomatedTests(
-    SAMPLE_TESTS,
-    ['test\\config\\value-policy.test.ts'],
-  );
+  const posixSelected = selectAutomatedTests(SAMPLE_TESTS, ['test/config/value-policy.test.ts']);
+  const windowsSelected = selectAutomatedTests(SAMPLE_TESTS, [
+    'test\\config\\value-policy.test.ts',
+  ]);
 
   assertEqual(
     posixSelected.join(','),
@@ -224,29 +200,15 @@ function testSummarizesResultsByTopic(): void {
 }
 
 async function testCapturesFailedScriptOutput(): Promise<void> {
-  const result = await executeTestScript(
-    'test/runner/fixtures/failing-script.ts',
-    false,
-  );
+  const result = await executeTestScript('test/runner/fixtures/failing-script.ts', false);
 
   assertEqual(result.exitCode, 1, 'Fixture script should fail');
-  assertIncludes(
-    result.output,
-    'captured stdout marker',
-    'Should capture failed script stdout',
-  );
-  assertIncludes(
-    result.output,
-    'captured stderr marker',
-    'Should capture failed script stderr',
-  );
+  assertIncludes(result.output, 'captured stdout marker', 'Should capture failed script stdout');
+  assertIncludes(result.output, 'captured stderr marker', 'Should capture failed script stderr');
 }
 
 async function testTruncatesExcessiveCapturedOutput(): Promise<void> {
-  const result = await executeTestScript(
-    'test/runner/fixtures/large-output-script.ts',
-    false,
-  );
+  const result = await executeTestScript('test/runner/fixtures/large-output-script.ts', false);
 
   assertEqual(result.exitCode, 1, 'Large-output fixture script should fail');
   assertIncludes(
@@ -264,21 +226,9 @@ function testDefaultCliUsesCompactOutput(): void {
   const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts']);
 
   assertEqual(result.status, 0, 'Compact runner invocation should pass');
-  assertIncludes(
-    result.stdout,
-    'Test module summary',
-    'Should print the module summary',
-  );
-  assertIncludes(
-    result.stdout,
-    'PASS runtime',
-    'Should summarize the selected topic',
-  );
-  assertIncludes(
-    result.stdout,
-    'PASS 1/1 test scripts',
-    'Should print the aggregate result',
-  );
+  assertIncludes(result.stdout, 'Test module summary', 'Should print the module summary');
+  assertIncludes(result.stdout, 'PASS runtime', 'Should summarize the selected topic');
+  assertIncludes(result.stdout, 'PASS 1/1 test scripts', 'Should print the aggregate result');
   assertNotIncludes(
     result.stdout,
     'Testing MCP identifier generation',
@@ -287,10 +237,7 @@ function testDefaultCliUsesCompactOutput(): void {
 }
 
 function testVerboseCliStreamsChildOutput(): void {
-  const result = runRunnerCli([
-    'test/runtime/mcp-identifiers.test.ts',
-    '--verbose',
-  ]);
+  const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts', '--verbose']);
 
   assertEqual(result.status, 0, 'Verbose runner invocation should pass');
   assertIncludes(
@@ -305,11 +252,7 @@ function testVerboseCliStreamsChildOutput(): void {
   );
 }
 
-function scriptResult(
-  testPath: string,
-  passed: boolean,
-  durationMs: number,
-): TestScriptResult {
+function scriptResult(testPath: string, passed: boolean, durationMs: number): TestScriptResult {
   return {
     testPath,
     passed,
@@ -324,14 +267,10 @@ function runRunnerCli(args: string[]): {
   stdout: string;
   stderr: string;
 } {
-  const result = spawnSync(
-    process.execPath,
-    ['--import', 'tsx', 'test/run-tests.ts', ...args],
-    {
-      cwd: PROJECT_ROOT,
-      encoding: 'utf-8',
-    },
-  );
+  const result = spawnSync(process.execPath, ['--import', 'tsx', 'test/run-tests.ts', ...args], {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf-8',
+  });
 
   if (result.error) {
     throw result.error;

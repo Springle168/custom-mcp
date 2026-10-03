@@ -20,7 +20,10 @@ export function createInitializeHeaderExtension(
       if (!(error instanceof InitializeHeaderPolicyError)) {
         throw error;
       }
-      safeInfo(logger, () => `Initialize policy rejected: ${error.ruleLocation}; ${error.category}`);
+      safeInfo(
+        logger,
+        () => `Initialize policy rejected: ${error.ruleLocation}; ${error.category}`,
+      );
       return { accepted: false, message: error.message };
     }
 
@@ -34,17 +37,20 @@ export function createInitializeHeaderExtension(
           : { toolService: createSessionToolService(defaults.toolService, requestedToolNames) }),
         ...(instructions === undefined ? {} : { instructions }),
       },
-      ...(policy.metadata.rulesConfigured ? {
-        onPublished: (sessionId: string) => {
-          safeInfo(logger, () => {
-            const applied = policy.metadata.appliedRules;
-            const summary = applied.length === 0
-              ? 'none'
-              : applied.map((rule) => `${rule.ruleLocation}: ${rule.feature}`).join(', ');
-            return `Session policy: ${sessionId}; ${summary}`;
-          });
-        },
-      } : {}),
+      ...(policy.metadata.rulesConfigured
+        ? {
+            onPublished: (sessionId: string) => {
+              safeInfo(logger, () => {
+                const applied = policy.metadata.appliedRules;
+                const summary =
+                  applied.length === 0
+                    ? 'none'
+                    : applied.map((rule) => `${rule.ruleLocation}: ${rule.feature}`).join(', ');
+                return `Session policy: ${sessionId}; ${summary}`;
+              });
+            },
+          }
+        : {}),
     };
   };
 }

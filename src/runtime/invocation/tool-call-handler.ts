@@ -1,13 +1,7 @@
 import { generateToolCallId } from '../mcp/mcp-identifiers.js';
 import type { PreparedToolResult, RuntimeExtensions } from '../runtime-extensions.js';
-import type {
-  ToolInvocationContext,
-  ToolRequestId,
-} from './tool-invocation-context.js';
-import type {
-  ToolCallLogContext,
-  ToolCallResultLogContext,
-} from './tool-call-log-context.js';
+import type { ToolInvocationContext, ToolRequestId } from './tool-invocation-context.js';
+import type { ToolCallLogContext, ToolCallResultLogContext } from './tool-call-log-context.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
 import { isToolCallResult } from './tool-result-validation.js';
 import type { ConfigStore } from '../application/config-store.js';
@@ -34,11 +28,7 @@ export interface ToolCallRequestMetadata {
 }
 
 export interface ToolCallLogger {
-  logToolCall(
-    toolName: string,
-    args: unknown,
-    context: ToolCallLogContext,
-  ): void;
+  logToolCall(toolName: string, args: unknown, context: ToolCallLogContext): void;
   logToolResult(
     toolName: string,
     result: ToolCallResult,
@@ -59,11 +49,7 @@ export type ToolCallRouter = (
  * tool results stay out of this sink because they can contain user data.
  */
 export interface ToolCallPipelineDiagnostic {
-  readonly kind:
-    | 'router_exception'
-    | 'malformed_result'
-    | 'call_log_failed'
-    | 'result_log_failed';
+  readonly kind: 'router_exception' | 'malformed_result' | 'call_log_failed' | 'result_log_failed';
   readonly callId: string;
 }
 
@@ -121,12 +107,7 @@ export function createToolCallRequestHandler(
     let result: ToolCallResult;
 
     try {
-      result = await options.routeToolCall(
-        name,
-        normalizedArgs,
-        toolContext,
-        invocation,
-      );
+      result = await options.routeToolCall(name, normalizedArgs, toolContext, invocation);
     } catch {
       emitToolCallDiagnostic(options.onDiagnostic, {
         kind: 'router_exception',
@@ -143,7 +124,8 @@ export function createToolCallRequestHandler(
       result = textErrorResult(MALFORMED_RESULT_MESSAGE);
     }
 
-    const adaptedResult = preparedResult === undefined ? result : preparedResult.adaptResult(result);
+    const adaptedResult =
+      preparedResult === undefined ? result : preparedResult.adaptResult(result);
 
     if (callLogged) {
       await tryLogToolResult(

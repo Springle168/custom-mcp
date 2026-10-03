@@ -25,10 +25,7 @@ export function formatApplicationStartupLines(
     `  Primary root: ${primaryRoot}`,
     ...(additionalRoots.length === 0
       ? ['  Additional roots: none']
-      : [
-          '  Additional roots:',
-          ...additionalRoots.map((rootDir) => `    - ${rootDir}`),
-        ]),
+      : ['  Additional roots:', ...additionalRoots.map((rootDir) => `    - ${rootDir}`)]),
     ...formatFileAccessPolicyStartupLines(snapshot.fileAccessPolicyFiles),
     ...formatExternalRoutingStartupLines(externalRoutingConfig),
     `  Line ending: ${snapshot.lineEnding}`,
@@ -49,16 +46,10 @@ export function formatExternalRoutingStartupLines(
 
   const routes = config.routes;
   if (routes.length === 0) {
-    return [
-      '  External routing: configured',
-      '    Routes: 0',
-    ];
+    return ['  External routing: configured', '    Routes: 0'];
   }
 
-  const lines = [
-    '  External routing: enabled',
-    `    Routes: ${routes.length}`,
-  ];
+  const lines = ['  External routing: enabled', `    Routes: ${routes.length}`];
   for (const route of routes) {
     lines.push(
       `    Route: ${route.definitionId}`,

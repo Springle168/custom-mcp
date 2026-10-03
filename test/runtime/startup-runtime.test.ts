@@ -61,11 +61,7 @@ async function cleanupFixtures(): Promise<void> {
   await fs.rm(FIXTURES_DIR, { recursive: true, force: true });
 }
 
-function workspace(
-  id: string,
-  rootDir: string,
-  tools?: unknown,
-): Record<string, unknown> {
+function workspace(id: string, rootDir: string, tools?: unknown): Record<string, unknown> {
   return {
     id,
     rootDir,
@@ -75,77 +71,105 @@ function workspace(
   };
 }
 
-async function writeCustomToolFiles(options: {
-  definitions?: readonly CustomToolFixtureDefinition[];
-  externalRoutingConfigFile?: string;
-} = {}): Promise<void> {
-  const definitions = options.definitions ?? [{
-    id: 'custom-tool',
-    toolDefinitionFile: DEFINITION_FILE,
-    name: 'custom_tool',
-  }];
+async function writeCustomToolFiles(
+  options: {
+    definitions?: readonly CustomToolFixtureDefinition[];
+    externalRoutingConfigFile?: string;
+  } = {},
+): Promise<void> {
+  const definitions = options.definitions ?? [
+    {
+      id: 'custom-tool',
+      toolDefinitionFile: DEFINITION_FILE,
+      name: 'custom_tool',
+    },
+  ];
   for (const definition of definitions) {
-    await fs.writeFile(definition.toolDefinitionFile, JSON.stringify({
-      name: definition.name,
-      description: `A workspace-only tool named ${definition.name}.`,
-      inputSchema: definition.inputSchema ?? {
-        type: 'object',
-        properties: { value: { type: 'string' } },
-        required: ['value'],
-        additionalProperties: false,
-      },
-    }), 'utf-8');
+    await fs.writeFile(
+      definition.toolDefinitionFile,
+      JSON.stringify({
+        name: definition.name,
+        description: `A workspace-only tool named ${definition.name}.`,
+        inputSchema: definition.inputSchema ?? {
+          type: 'object',
+          properties: { value: { type: 'string' } },
+          required: ['value'],
+          additionalProperties: false,
+        },
+      }),
+      'utf-8',
+    );
   }
-  await fs.writeFile(TOOL_CONFIG_FILE, JSON.stringify({
-    version: 2,
-    definitions: definitions.map((definition) => ({
-      id: definition.id,
-      toolDefinitionFile: definition.toolDefinitionFile,
-    })),
-    ...(options.externalRoutingConfigFile === undefined
-      ? {}
-      : { externalRoutingConfigFile: options.externalRoutingConfigFile }),
-  }), 'utf-8');
+  await fs.writeFile(
+    TOOL_CONFIG_FILE,
+    JSON.stringify({
+      version: 2,
+      definitions: definitions.map((definition) => ({
+        id: definition.id,
+        toolDefinitionFile: definition.toolDefinitionFile,
+      })),
+      ...(options.externalRoutingConfigFile === undefined
+        ? {}
+        : { externalRoutingConfigFile: options.externalRoutingConfigFile }),
+    }),
+    'utf-8',
+  );
 }
 
-async function writeExternalRoutingFiles(options: {
-  routes?: readonly ExternalRouteFixture[];
-  processorConfigFile?: string;
-  processors?: readonly unknown[];
-} = {}): Promise<void> {
-  const routes = options.routes ?? [{
-    definitionId: 'custom-tool',
-    endpointConfigFile: ENDPOINT_CONFIG_FILE,
-  }];
+async function writeExternalRoutingFiles(
+  options: {
+    routes?: readonly ExternalRouteFixture[];
+    processorConfigFile?: string;
+    processors?: readonly unknown[];
+  } = {},
+): Promise<void> {
+  const routes = options.routes ?? [
+    {
+      definitionId: 'custom-tool',
+      endpointConfigFile: ENDPOINT_CONFIG_FILE,
+    },
+  ];
   for (const route of routes) {
-    await fs.writeFile(route.endpointConfigFile, JSON.stringify({
-      version: 1,
-      url: route.endpointUrl ?? 'http://127.0.0.1:1/unreachable',
-      timeoutMs: 1_000,
-      headers: {},
-    }), 'utf-8');
+    await fs.writeFile(
+      route.endpointConfigFile,
+      JSON.stringify({
+        version: 1,
+        url: route.endpointUrl ?? 'http://127.0.0.1:1/unreachable',
+        timeoutMs: 1_000,
+        headers: {},
+      }),
+      'utf-8',
+    );
   }
   if (options.processorConfigFile !== undefined) {
-    await fs.writeFile(options.processorConfigFile, JSON.stringify({
-      version: 2,
-      processors: options.processors ?? [],
-    }), 'utf-8');
+    await fs.writeFile(
+      options.processorConfigFile,
+      JSON.stringify({
+        version: 2,
+        processors: options.processors ?? [],
+      }),
+      'utf-8',
+    );
   }
-  await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
-    version: 2,
-    ...(options.processorConfigFile === undefined
-      ? {}
-      : { processorConfigFile: options.processorConfigFile }),
-    routes: routes.map((route) => ({
-      definitionId: route.definitionId,
-      routingMode: 'http',
-      httpEndpointConfigFile: route.endpointConfigFile,
-      routingStrategy: {
-        'request-to-external': [route.requestStage ?? { mode: 'direct' }],
-        'response-from-external': [route.responseStage ?? { mode: 'direct' }],
-      },
-    })),
-  }), 'utf-8');
+  await fs.writeFile(
+    EXTERNAL_ROUTING_CONFIG_FILE,
+    JSON.stringify({
+      version: 2,
+      ...(options.processorConfigFile === undefined
+        ? {}
+        : { processorConfigFile: options.processorConfigFile }),
+      routes: routes.map((route) => ({
+        definitionId: route.definitionId,
+        routingMode: 'http',
+        httpEndpointConfigFile: route.endpointConfigFile,
+        routingStrategy: {
+          'request-to-external': [route.requestStage ?? { mode: 'direct' }],
+          'response-from-external': [route.responseStage ?? { mode: 'direct' }],
+        },
+      })),
+    }),
+    'utf-8',
+  );
 }
 
 function loadSelected() {
@@ -168,10 +192,12 @@ function createToolInvocationContext(): ToolInvocationContext {
 async function testStartupCompilesCustomCatalogAndExposure(): Promise<void> {
   await writeCustomToolFiles();
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: ['read_file', 'custom_tool'],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: ['read_file', 'custom_tool'],
+      }),
+    ],
   });
 
   const runtime = loadSelected();
@@ -182,17 +208,22 @@ async function testStartupCompilesCustomCatalogAndExposure(): Promise<void> {
   );
   assert(!('toolExposure' in runtime.snapshot), 'Runtime snapshot should not own exposure');
   assert(!('toolCatalog' in runtime.snapshot), 'Runtime snapshot should not own the catalog');
-  assert(!('externalRoutingConfig' in runtime), 'No routing config should leave external routing disabled');
+  assert(
+    !('externalRoutingConfig' in runtime),
+    'No routing config should leave external routing disabled',
+  );
   await runtime.close();
 }
 
 async function testSelectorMembershipUsesEffectiveCatalog(): Promise<void> {
   await writeCustomToolFiles();
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: ['missing_tool'],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: ['missing_tool'],
+      }),
+    ],
   });
 
   try {
@@ -200,19 +231,31 @@ async function testSelectorMembershipUsesEffectiveCatalog(): Promise<void> {
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Unknown effective selector should be a ConfigError');
     assertEqual(error.fieldPath, 'tools.enabled[0]', 'Error should identify the selector item');
-    assertIncludes(error.message, 'Unknown effective tool name', 'Error should explain catalog membership');
-    assertIncludes(error.configFilePath ?? '', 'workspace-0.json', 'Error should belong to the workspace config');
+    assertIncludes(
+      error.message,
+      'Unknown effective tool name',
+      'Error should explain catalog membership',
+    );
+    assertIncludes(
+      error.configFilePath ?? '',
+      'workspace-0.json',
+      'Error should belong to the workspace config',
+    );
     return;
   }
   throw new Error('Expected unknown effective selector to fail startup.');
 }
 
 async function testUnselectedWorkspaceToolFilesAreNotRead(): Promise<void> {
-  await fs.writeFile(UNSELECTED_TOOL_CONFIG_FILE, JSON.stringify({
-    version: 2,
-    definitions: [],
-    externalRoutingConfigFile: UNSELECTED_EXTERNAL_ROUTING_CONFIG_FILE,
-  }), 'utf-8');
+  await fs.writeFile(
+    UNSELECTED_TOOL_CONFIG_FILE,
+    JSON.stringify({
+      version: 2,
+      definitions: [],
+      externalRoutingConfigFile: UNSELECTED_EXTERNAL_ROUTING_CONFIG_FILE,
+    }),
+    'utf-8',
+  );
   await writeSplitConfigFixture(CONFIG_FILE, {
     workspaces: [
       workspace('selected', ROOT_DIR),
@@ -224,7 +267,11 @@ async function testUnselectedWorkspaceToolFilesAreNotRead(): Promise<void> {
 
   const runtime = loadSelected();
   try {
-    assertEqual(runtime.toolCatalog.definitions.length > 0, true, 'Selected workspace should start with built-in tools');
+    assertEqual(
+      runtime.toolCatalog.definitions.length > 0,
+      true,
+      'Selected workspace should start with built-in tools',
+    );
   } finally {
     await runtime.close();
   }
@@ -234,10 +281,12 @@ async function testCustomOnlyDefinitionBindsExternalRouteByReferenceId(): Promis
   await writeExternalRoutingFiles();
   await writeCustomToolFiles({ externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE });
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: ['custom_tool'],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: ['custom_tool'],
+      }),
+    ],
   });
 
   const runtime = loadSelected();
@@ -245,15 +294,25 @@ async function testCustomOnlyDefinitionBindsExternalRouteByReferenceId(): Promis
     const externalEntry = runtime.toolCatalog.effectiveEntries.find(
       (entry) => entry.definition.name === 'custom_tool',
     );
-    assert(runtime.externalRoutingConfig !== undefined, 'Configured routes should expose the compiled routing config');
-    assert(runtime.externalRouting !== undefined, 'Configured routes should create an external routing runtime');
+    assert(
+      runtime.externalRoutingConfig !== undefined,
+      'Configured routes should expose the compiled routing config',
+    );
+    assert(
+      runtime.externalRouting !== undefined,
+      'Configured routes should create an external routing runtime',
+    );
     assertEqual(
       runtime.externalRoutingConfig.routesByDefinitionId.get('custom-tool')?.toolName,
       'custom_tool',
       'The configured route should resolve the definition reference id to the Tool name',
     );
     assert(externalEntry !== undefined, 'Custom-only tool should remain in the effective catalog');
-    assertEqual(externalEntry.binding, 'external', 'The configured definition id should bind the external executor');
+    assertEqual(
+      externalEntry.binding,
+      'external',
+      'The configured definition id should bind the external executor',
+    );
     if (externalEntry.binding !== 'external') {
       throw new Error('Expected custom-only entry to bind the route-bound external executor.');
     }
@@ -278,17 +337,21 @@ async function testCustomOnlyDefinitionBindsExternalRouteByReferenceId(): Promis
 async function testConfiguredExternalRouteRejectsBuiltInOverride(): Promise<void> {
   await writeExternalRoutingFiles();
   await writeCustomToolFiles({
-    definitions: [{
-      id: 'custom-tool',
-      toolDefinitionFile: DEFINITION_FILE,
-      name: 'read_file',
-    }],
+    definitions: [
+      {
+        id: 'custom-tool',
+        toolDefinitionFile: DEFINITION_FILE,
+        name: 'read_file',
+      },
+    ],
     externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
   });
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+      }),
+    ],
   });
 
   try {
@@ -305,7 +368,11 @@ async function testConfiguredExternalRouteRejectsBuiltInOverride(): Promise<void
       'routes[0].definitionId',
       'Route binding errors should identify the referenced definition id',
     );
-    assertIncludes(error.message, 'custom-only Tool definition', 'Error should explain the external routing requirement');
+    assertIncludes(
+      error.message,
+      'custom-only Tool definition',
+      'Error should explain the external routing requirement',
+    );
     return;
   }
   throw new Error('Expected a built-in override route to fail startup.');
@@ -315,10 +382,12 @@ async function testHiddenCustomOnlyToolStillLoadsExternalRouteButCannotBeCalled(
   await writeExternalRoutingFiles();
   await writeCustomToolFiles({ externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE });
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: [],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: [],
+      }),
+    ],
   });
 
   const runtime = loadSelected();
@@ -326,11 +395,28 @@ async function testHiddenCustomOnlyToolStillLoadsExternalRouteButCannotBeCalled(
     const externalEntry = runtime.toolCatalog.effectiveEntries.find(
       (entry) => entry.definition.name === 'custom_tool',
     );
-    assert(runtime.externalRoutingConfig !== undefined, 'Hidden custom-only routes must still be compiled');
-    assert(runtime.externalRouting !== undefined, 'Hidden custom-only routes must still create required resources');
-    assert(externalEntry !== undefined, 'Hidden custom-only tool should remain in the effective catalog');
-    assertEqual(externalEntry.binding, 'external', 'Hidden custom-only tool should retain its external binding');
-    assertEqual(runtime.toolCatalog.definitions.length, 0, 'Hidden custom-only tool should not be exposed');
+    assert(
+      runtime.externalRoutingConfig !== undefined,
+      'Hidden custom-only routes must still be compiled',
+    );
+    assert(
+      runtime.externalRouting !== undefined,
+      'Hidden custom-only routes must still create required resources',
+    );
+    assert(
+      externalEntry !== undefined,
+      'Hidden custom-only tool should remain in the effective catalog',
+    );
+    assertEqual(
+      externalEntry.binding,
+      'external',
+      'Hidden custom-only tool should retain its external binding',
+    );
+    assertEqual(
+      runtime.toolCatalog.definitions.length,
+      0,
+      'Hidden custom-only tool should not be exposed',
+    );
 
     const service = createWorkspaceToolService(runtime.toolCatalog);
     const result = await service.routeToolCall(
@@ -339,7 +425,11 @@ async function testHiddenCustomOnlyToolStillLoadsExternalRouteButCannotBeCalled(
       createToolRuntimeContext(runtime.snapshot),
       createToolInvocationContext(),
     );
-    assertIncludes(getResultText(result), 'Unknown tool', 'Hidden custom-only tool calls should be unreachable');
+    assertIncludes(
+      getResultText(result),
+      'Unknown tool',
+      'Hidden custom-only tool calls should be unreachable',
+    );
   } finally {
     await runtime.close();
   }
@@ -349,25 +439,37 @@ async function testEmptyRoutesExposeConfiguredConfigWithoutResources(): Promise<
   await writeExternalRoutingFiles({ routes: [] });
   await writeCustomToolFiles({ externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE });
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: ['custom_tool'],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: ['custom_tool'],
+      }),
+    ],
   });
 
   const runtime = loadSelected();
   try {
-    assert(runtime.externalRoutingConfig !== undefined, 'An empty routing file should still expose compiled configuration');
+    assert(
+      runtime.externalRoutingConfig !== undefined,
+      'An empty routing file should still expose compiled configuration',
+    );
     assertEqual(
       runtime.externalRoutingConfig.routesByDefinitionId.size,
       0,
       'An empty routing file should preserve its zero-route compiled state',
     );
-    assert(!('externalRouting' in runtime), 'Empty routes must not create external routing resources');
+    assert(
+      !('externalRouting' in runtime),
+      'Empty routes must not create external routing resources',
+    );
     const entry = runtime.toolCatalog.effectiveEntries.find(
       (candidate) => candidate.definition.name === 'custom_tool',
     );
-    assertEqual(entry?.binding, 'unavailable', 'Custom-only definitions without routes should remain unavailable');
+    assertEqual(
+      entry?.binding,
+      'unavailable',
+      'Custom-only definitions without routes should remain unavailable',
+    );
 
     const service = createWorkspaceToolService(runtime.toolCatalog);
     const result = await service.routeToolCall(
@@ -391,14 +493,19 @@ async function testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors(): Promi
   await writeExternalRoutingFiles();
   await writeCustomToolFiles({ externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE });
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+      }),
+    ],
   });
 
   const directRuntime = loadSelected();
   try {
-    assert(directRuntime.externalRouting !== undefined, 'A direct route should create the shared external runtime');
+    assert(
+      directRuntime.externalRouting !== undefined,
+      'A direct route should create the shared external runtime',
+    );
     assert(
       !('processorRunner' in directRuntime.externalRouting),
       'Direct-only routes must not create a Processor runner',
@@ -409,23 +516,30 @@ async function testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors(): Promi
 
   await writeExternalRoutingFiles({
     processorConfigFile: PROCESSOR_CONFIG_FILE,
-    processors: [{
-      name: 'request-codec',
-      executable: { resolution: 'path-search', command: 'node' },
-      arguments: [],
-      workingDirectory: ROOT_DIR,
-      timeoutMs: 1_000,
-    }],
-    routes: [{
-      definitionId: 'custom-tool',
-      endpointConfigFile: ENDPOINT_CONFIG_FILE,
-      requestStage: { mode: 'canonical-filter', processor: 'request-codec' },
-    }],
+    processors: [
+      {
+        name: 'request-codec',
+        executable: { resolution: 'path-search', command: 'node' },
+        arguments: [],
+        workingDirectory: ROOT_DIR,
+        timeoutMs: 1_000,
+      },
+    ],
+    routes: [
+      {
+        definitionId: 'custom-tool',
+        endpointConfigFile: ENDPOINT_CONFIG_FILE,
+        requestStage: { mode: 'canonical-filter', processor: 'request-codec' },
+      },
+    ],
   });
 
   const processorRuntime = loadSelected();
   try {
-    assert(processorRuntime.externalRouting !== undefined, 'A Processor route should create the shared external runtime');
+    assert(
+      processorRuntime.externalRouting !== undefined,
+      'A Processor route should create the shared external runtime',
+    );
     assert(
       'processorRunner' in processorRuntime.externalRouting,
       'A route with a Processor stage should create the shared Processor runner',
@@ -437,26 +551,38 @@ async function testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors(): Promi
 
 async function testHiddenInvalidDefinitionStillFailsStartup(): Promise<void> {
   await writeCustomToolFiles({
-    definitions: [{
-      id: 'custom-tool',
-      toolDefinitionFile: DEFINITION_FILE,
-      name: 'custom_tool',
-      inputSchema: { type: 'string' },
-    }],
+    definitions: [
+      {
+        id: 'custom-tool',
+        toolDefinitionFile: DEFINITION_FILE,
+        name: 'custom_tool',
+        inputSchema: { type: 'string' },
+      },
+    ],
   });
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: [],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: [],
+      }),
+    ],
   });
 
   try {
     loadSelected();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Invalid hidden definition should be a ConfigError');
-    assertEqual(error.configFilePath, DEFINITION_FILE, 'Error should belong to the definition file');
-    assertEqual(error.fieldPath, 'inputSchema.type', 'Error should identify the invalid schema field');
+    assertEqual(
+      error.configFilePath,
+      DEFINITION_FILE,
+      'Error should belong to the definition file',
+    );
+    assertEqual(
+      error.fieldPath,
+      'inputSchema.type',
+      'Error should identify the invalid schema field',
+    );
     return;
   }
   throw new Error('Expected hidden invalid definition to fail startup.');
@@ -465,10 +591,12 @@ async function testHiddenInvalidDefinitionStillFailsStartup(): Promise<void> {
 async function testCompiledCatalogDoesNotRereadFiles(): Promise<void> {
   await writeCustomToolFiles();
   await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [workspace('selected', ROOT_DIR, {
-      toolConfigFile: TOOL_CONFIG_FILE,
-      enabled: ['custom_tool'],
-    })],
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: ['custom_tool'],
+      }),
+    ],
   });
   const runtime = loadSelected();
   try {
@@ -477,14 +605,22 @@ async function testCompiledCatalogDoesNotRereadFiles(): Promise<void> {
     await fs.rm(TOOL_CONFIG_FILE);
     await fs.rm(DEFINITION_FILE);
 
-    assertEqual(service.getDefinitions()[0]?.name, 'custom_tool', 'Compiled definitions should remain available');
+    assertEqual(
+      service.getDefinitions()[0]?.name,
+      'custom_tool',
+      'Compiled definitions should remain available',
+    );
     const result = await service.routeToolCall(
       'custom_tool',
       { value: 'ok' },
       createToolRuntimeContext(runtime.snapshot),
       createToolInvocationContext(),
     );
-    assertIncludes(getResultText(result), 'no execution route is configured', 'Routing should use the compiled unavailable executor');
+    assertIncludes(
+      getResultText(result),
+      'no execution route is configured',
+      'Routing should use the compiled unavailable executor',
+    );
   } finally {
     await runtime.close();
   }
@@ -496,16 +632,46 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'startup compiles custom catalog and exposure', run: testStartupCompilesCustomCatalogAndExposure },
-      { name: 'selector membership uses effective catalog', run: testSelectorMembershipUsesEffectiveCatalog },
-      { name: 'unselected workspace external artifacts are not read', run: testUnselectedWorkspaceToolFilesAreNotRead },
-      { name: 'custom-only definition binds external route by reference id', run: testCustomOnlyDefinitionBindsExternalRouteByReferenceId },
-      { name: 'configured external route rejects a built-in override', run: testConfiguredExternalRouteRejectsBuiltInOverride },
-      { name: 'hidden custom-only tool still loads external route but cannot be called', run: testHiddenCustomOnlyToolStillLoadsExternalRouteButCannotBeCalled },
-      { name: 'empty routes expose configuration without resources', run: testEmptyRoutesExposeConfiguredConfigWithoutResources },
-      { name: 'Processor runner is created only when a route uses Processors', run: testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors },
-      { name: 'hidden invalid definition still fails startup', run: testHiddenInvalidDefinitionStillFailsStartup },
-      { name: 'compiled catalog does not reread files', run: testCompiledCatalogDoesNotRereadFiles },
+      {
+        name: 'startup compiles custom catalog and exposure',
+        run: testStartupCompilesCustomCatalogAndExposure,
+      },
+      {
+        name: 'selector membership uses effective catalog',
+        run: testSelectorMembershipUsesEffectiveCatalog,
+      },
+      {
+        name: 'unselected workspace external artifacts are not read',
+        run: testUnselectedWorkspaceToolFilesAreNotRead,
+      },
+      {
+        name: 'custom-only definition binds external route by reference id',
+        run: testCustomOnlyDefinitionBindsExternalRouteByReferenceId,
+      },
+      {
+        name: 'configured external route rejects a built-in override',
+        run: testConfiguredExternalRouteRejectsBuiltInOverride,
+      },
+      {
+        name: 'hidden custom-only tool still loads external route but cannot be called',
+        run: testHiddenCustomOnlyToolStillLoadsExternalRouteButCannotBeCalled,
+      },
+      {
+        name: 'empty routes expose configuration without resources',
+        run: testEmptyRoutesExposeConfiguredConfigWithoutResources,
+      },
+      {
+        name: 'Processor runner is created only when a route uses Processors',
+        run: testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors,
+      },
+      {
+        name: 'hidden invalid definition still fails startup',
+        run: testHiddenInvalidDefinitionStillFailsStartup,
+      },
+      {
+        name: 'compiled catalog does not reread files',
+        run: testCompiledCatalogDoesNotRereadFiles,
+      },
     ],
   });
 }

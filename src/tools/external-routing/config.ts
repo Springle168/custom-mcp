@@ -3,15 +3,8 @@ import { validateHeaderName, validateHeaderValue } from 'node:http';
 import * as path from 'node:path';
 import { MIMEType } from 'node:util';
 import { ConfigError } from '../../config/errors.js';
-import {
-  readJsonFile,
-  type JsonObject,
-  type JsonValue,
-} from '../../config/json-file.js';
-import {
-  readExistingDirectoryPath,
-  readLocalAbsolutePath,
-} from '../../config/path-policy.js';
+import { readJsonFile, type JsonObject, type JsonValue } from '../../config/json-file.js';
+import { readExistingDirectoryPath, readLocalAbsolutePath } from '../../config/path-policy.js';
 import {
   readJsonPositiveInteger,
   readTypedString,
@@ -126,10 +119,7 @@ const HTTP_ROUTE_FIELDS = new Set([
   'routingStrategy',
 ]);
 const MCP_ROUTE_FIELDS = new Set(['definitionId', 'routingMode', 'mcpServerConfigFile']);
-const ROUTING_STRATEGY_FIELDS = new Set([
-  'request-to-external',
-  'response-from-external',
-]);
+const ROUTING_STRATEGY_FIELDS = new Set(['request-to-external', 'response-from-external']);
 const PROCESSOR_CONFIG_FIELDS = new Set(['version', 'processors']);
 const ENDPOINT_CONFIG_FIELDS = new Set(['version', 'url', 'timeoutMs', 'headers']);
 const MCP_SERVER_CONFIG_FIELDS = new Set(['version', 'url', 'timeoutMs', 'headers']);
@@ -191,14 +181,14 @@ export function loadExternalRoutingConfig(
     label: 'External routing config file',
   });
   const parsedConfig = parseExternalRoutingConfig(rawConfig, validatedConfigFilePath);
-  const processors = parsedConfig.processorConfigFilePath === undefined
-    ? []
-    : loadProcessorConfig(parsedConfig.processorConfigFilePath);
+  const processors =
+    parsedConfig.processorConfigFilePath === undefined
+      ? []
+      : loadProcessorConfig(parsedConfig.processorConfigFilePath);
   const processorsByName = new Map(processors.map((processor) => [processor.name, processor]));
-  const definitionsById = new Map(definitions.map((definition) => [
-    definition.definitionId,
-    definition,
-  ]));
+  const definitionsById = new Map(
+    definitions.map((definition) => [definition.definitionId, definition]),
+  );
   const endpointsByPath = new Map<string, ExternalHttpEndpointConfig>();
   const serversByRealPath = new Map<string, ExternalMcpServerConfig>();
   const serversByDeclaredPath = new Map<string, ExternalMcpServerConfig>();
@@ -272,7 +262,8 @@ export function loadExternalRoutingConfig(
             code: 'config_file_read_failed',
             configFilePath: route.serverConfigFilePath,
             message: `Failed to resolve MCP server config file at ${route.serverConfigFilePath}.`,
-            suggestion: 'Check the referenced file and its symlink target, then restart the server.',
+            suggestion:
+              'Check the referenced file and its symlink target, then restart the server.',
             cause,
           });
         }
@@ -310,21 +301,23 @@ function parseExternalRoutingConfig(
   value: JsonValue,
   configFilePath: string,
 ): ParsedExternalRoutingConfig {
-  const rawConfig = readObject(value, () => failConfig(
-    configFilePath,
-    undefined,
-    'External routing config file must contain a JSON object.',
-  ));
-  assertKnownFields(rawConfig, EXTERNAL_ROUTING_CONFIG_FIELDS, (fieldPath) => failConfig(
-    configFilePath,
-    fieldPath,
-    `Unknown external routing config field ${fieldPath}. Remove it.`,
-  ));
-  assertRequiredFields(rawConfig, new Set(['version', 'routes']), (fieldPath) => failConfig(
-    configFilePath,
-    fieldPath,
-    `${fieldPath} is required.`,
-  ));
+  const rawConfig = readObject(value, () =>
+    failConfig(
+      configFilePath,
+      undefined,
+      'External routing config file must contain a JSON object.',
+    ),
+  );
+  assertKnownFields(rawConfig, EXTERNAL_ROUTING_CONFIG_FIELDS, (fieldPath) =>
+    failConfig(
+      configFilePath,
+      fieldPath,
+      `Unknown external routing config field ${fieldPath}. Remove it.`,
+    ),
+  );
+  assertRequiredFields(rawConfig, new Set(['version', 'routes']), (fieldPath) =>
+    failConfig(configFilePath, fieldPath, `${fieldPath} is required.`),
+  );
   if (rawConfig.version !== 2) {
     failConfig(
       configFilePath,
@@ -341,11 +334,11 @@ function parseExternalRoutingConfig(
     'processorConfigFile',
   )
     ? unwrapValuePolicy(
-      configFilePath,
-      readLocalAbsolutePath(rawConfig.processorConfigFile, {
-        fieldPath: 'processorConfigFile',
-      }),
-    )
+        configFilePath,
+        readLocalAbsolutePath(rawConfig.processorConfigFile, {
+          fieldPath: 'processorConfigFile',
+        }),
+      )
     : undefined;
   const seenDefinitionIds = new Set<string>();
   const routes = rawConfig.routes.map((route, index) => {
@@ -373,11 +366,9 @@ function parseExternalRoute(
   configFilePath: string,
 ): ParsedExternalRoute {
   const fieldPath = `routes[${index}]`;
-  const rawRoute = readObject(value, () => failConfig(
-    configFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
+  const rawRoute = readObject(value, () =>
+    failConfig(configFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
+  );
   if (rawRoute.routingMode !== 'http' && rawRoute.routingMode !== 'mcp') {
     failConfig(
       configFilePath,
@@ -386,16 +377,16 @@ function parseExternalRoute(
     );
   }
   const fields = rawRoute.routingMode === 'http' ? HTTP_ROUTE_FIELDS : MCP_ROUTE_FIELDS;
-  assertKnownFields(rawRoute, fields, (field) => failConfig(
-    configFilePath,
-    `${fieldPath}.${field}`,
-    `Unknown route field ${fieldPath}.${field}. Remove it.`,
-  ));
-  assertRequiredFields(rawRoute, fields, (field) => failConfig(
-    configFilePath,
-    `${fieldPath}.${field}`,
-    `${fieldPath}.${field} is required.`,
-  ));
+  assertKnownFields(rawRoute, fields, (field) =>
+    failConfig(
+      configFilePath,
+      `${fieldPath}.${field}`,
+      `Unknown route field ${fieldPath}.${field}. Remove it.`,
+    ),
+  );
+  assertRequiredFields(rawRoute, fields, (field) =>
+    failConfig(configFilePath, `${fieldPath}.${field}`, `${fieldPath}.${field} is required.`),
+  );
   const definitionId = readConfigIdentity(
     rawRoute.definitionId,
     `${fieldPath}.definitionId`,
@@ -439,26 +430,32 @@ function parseRouteRoutingStrategy(
   readonly request: ExternalRequestRoutingStage;
   readonly response: ExternalResponseRoutingStage;
 } {
-  const rawRouting = readObject(value, () => failConfig(
-    configFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
-  assertKnownFields(rawRouting, ROUTING_STRATEGY_FIELDS, (field) => failConfig(
-    configFilePath,
-    `${fieldPath}.${field}`,
-    `Unknown routing strategy field ${fieldPath}.${field}. Remove it.`,
-  ));
-  assertRequiredFields(rawRouting, ROUTING_STRATEGY_FIELDS, (field) => failConfig(
-    configFilePath,
-    `${fieldPath}.${field}`,
-    `${fieldPath}.${field} is required.`,
-  ));
+  const rawRouting = readObject(value, () =>
+    failConfig(configFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
+  );
+  assertKnownFields(rawRouting, ROUTING_STRATEGY_FIELDS, (field) =>
+    failConfig(
+      configFilePath,
+      `${fieldPath}.${field}`,
+      `Unknown routing strategy field ${fieldPath}.${field}. Remove it.`,
+    ),
+  );
+  assertRequiredFields(rawRouting, ROUTING_STRATEGY_FIELDS, (field) =>
+    failConfig(configFilePath, `${fieldPath}.${field}`, `${fieldPath}.${field} is required.`),
+  );
 
   const requestPath = `${fieldPath}.request-to-external`;
   const responsePath = `${fieldPath}.response-from-external`;
-  const requestStages = readSingleStageArray(rawRouting['request-to-external'], requestPath, configFilePath);
-  const responseStages = readSingleStageArray(rawRouting['response-from-external'], responsePath, configFilePath);
+  const requestStages = readSingleStageArray(
+    rawRouting['request-to-external'],
+    requestPath,
+    configFilePath,
+  );
+  const responseStages = readSingleStageArray(
+    rawRouting['response-from-external'],
+    responsePath,
+    configFilePath,
+  );
   return deepFreeze({
     request: parseRequestStage(requestStages[0], `${requestPath}[0]`, configFilePath),
     response: parseResponseStage(responseStages[0], `${responsePath}[0]`, configFilePath),
@@ -488,11 +485,9 @@ function parseRequestStage(
   fieldPath: string,
   configFilePath: string,
 ): ExternalRequestRoutingStage {
-  const rawStage = readObject(value, () => failConfig(
-    configFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
+  const rawStage = readObject(value, () =>
+    failConfig(configFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
+  );
   if (rawStage.mode === 'direct') {
     assertExactStageFields(rawStage, DIRECT_STAGE_FIELDS, fieldPath, configFilePath);
     return Object.freeze({ mode: 'direct' as const });
@@ -524,11 +519,9 @@ function parseResponseStage(
   fieldPath: string,
   configFilePath: string,
 ): ExternalResponseRoutingStage {
-  const rawStage = readObject(value, () => failConfig(
-    configFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
+  const rawStage = readObject(value, () =>
+    failConfig(configFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
+  );
   if (rawStage.mode === 'direct') {
     assertExactStageFields(rawStage, DIRECT_STAGE_FIELDS, fieldPath, configFilePath);
     return Object.freeze({ mode: 'direct' as const });
@@ -553,16 +546,16 @@ function assertExactStageFields(
   fieldPath: string,
   configFilePath: string,
 ): void {
-  assertKnownFields(value, fields, (field) => failConfig(
-    configFilePath,
-    `${fieldPath}.${field}`,
-    `Unknown routing stage field ${fieldPath}.${field}. Remove it.`,
-  ));
-  assertRequiredFields(value, fields, (field) => failConfig(
-    configFilePath,
-    `${fieldPath}.${field}`,
-    `${fieldPath}.${field} is required.`,
-  ));
+  assertKnownFields(value, fields, (field) =>
+    failConfig(
+      configFilePath,
+      `${fieldPath}.${field}`,
+      `Unknown routing stage field ${fieldPath}.${field}. Remove it.`,
+    ),
+  );
+  assertRequiredFields(value, fields, (field) =>
+    failConfig(configFilePath, `${fieldPath}.${field}`, `${fieldPath}.${field} is required.`),
+  );
 }
 
 function loadProcessorConfig(
@@ -571,21 +564,23 @@ function loadProcessorConfig(
   const rawConfig = readJsonFile(processorConfigFilePath, {
     label: 'External routing Processor config file',
   });
-  const rawObject = readObject(rawConfig, () => failConfig(
-    processorConfigFilePath,
-    undefined,
-    'External routing Processor config file must contain a JSON object.',
-  ));
-  assertKnownFields(rawObject, PROCESSOR_CONFIG_FIELDS, (fieldPath) => failConfig(
-    processorConfigFilePath,
-    fieldPath,
-    `Unknown Processor config field ${fieldPath}. Remove it.`,
-  ));
-  assertRequiredFields(rawObject, PROCESSOR_CONFIG_FIELDS, (fieldPath) => failConfig(
-    processorConfigFilePath,
-    fieldPath,
-    `${fieldPath} is required.`,
-  ));
+  const rawObject = readObject(rawConfig, () =>
+    failConfig(
+      processorConfigFilePath,
+      undefined,
+      'External routing Processor config file must contain a JSON object.',
+    ),
+  );
+  assertKnownFields(rawObject, PROCESSOR_CONFIG_FIELDS, (fieldPath) =>
+    failConfig(
+      processorConfigFilePath,
+      fieldPath,
+      `Unknown Processor config field ${fieldPath}. Remove it.`,
+    ),
+  );
+  assertRequiredFields(rawObject, PROCESSOR_CONFIG_FIELDS, (fieldPath) =>
+    failConfig(processorConfigFilePath, fieldPath, `${fieldPath} is required.`),
+  );
   if (rawObject.version !== 2) {
     failConfig(
       processorConfigFilePath,
@@ -597,7 +592,7 @@ function loadProcessorConfig(
     failConfig(processorConfigFilePath, 'processors', 'processors must be an array.');
   }
   const processors = rawObject.processors.map((processor, index) =>
-    parseProcessorDefinition(processor, index, processorConfigFilePath)
+    parseProcessorDefinition(processor, index, processorConfigFilePath),
   );
   assertUniqueProcessorNames(processors, processorConfigFilePath);
   return Object.freeze(processors);
@@ -609,21 +604,23 @@ function parseProcessorDefinition(
   processorConfigFilePath: string,
 ): ExternalProcessorDefinition {
   const fieldPath = `processors[${index}]`;
-  const rawProcessor = readObject(value, () => failConfig(
-    processorConfigFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
-  assertKnownFields(rawProcessor, PROCESSOR_FIELDS, (field) => failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.${field}`,
-    `Unknown Processor definition field ${fieldPath}.${field}. Remove it.`,
-  ));
-  assertRequiredFields(rawProcessor, PROCESSOR_FIELDS, (field) => failConfig(
-    processorConfigFilePath,
-    `${fieldPath}.${field}`,
-    `${fieldPath}.${field} is required.`,
-  ));
+  const rawProcessor = readObject(value, () =>
+    failConfig(processorConfigFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
+  );
+  assertKnownFields(rawProcessor, PROCESSOR_FIELDS, (field) =>
+    failConfig(
+      processorConfigFilePath,
+      `${fieldPath}.${field}`,
+      `Unknown Processor definition field ${fieldPath}.${field}. Remove it.`,
+    ),
+  );
+  assertRequiredFields(rawProcessor, PROCESSOR_FIELDS, (field) =>
+    failConfig(
+      processorConfigFilePath,
+      `${fieldPath}.${field}`,
+      `${fieldPath}.${field} is required.`,
+    ),
+  );
 
   const name = readConfigIdentity(rawProcessor.name, `${fieldPath}.name`, processorConfigFilePath);
   const executable = parseExecutable(
@@ -678,11 +675,9 @@ function parseExecutable(
   fieldPath: string,
   processorConfigFilePath: string,
 ): ExternalProcessorExecutable {
-  const rawExecutable = readObject(value, () => failConfig(
-    processorConfigFilePath,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  ));
+  const rawExecutable = readObject(value, () =>
+    failConfig(processorConfigFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
+  );
   if (!Object.prototype.hasOwnProperty.call(rawExecutable, 'resolution')) {
     failConfig(
       processorConfigFilePath,
@@ -692,16 +687,20 @@ function parseExecutable(
   }
 
   if (rawExecutable.resolution === 'absolute-path') {
-    assertKnownFields(rawExecutable, ABSOLUTE_EXECUTABLE_FIELDS, (field) => failConfig(
-      processorConfigFilePath,
-      `${fieldPath}.${field}`,
-      `Unknown absolute-path executable field ${fieldPath}.${field}. Remove it.`,
-    ));
-    assertRequiredFields(rawExecutable, ABSOLUTE_EXECUTABLE_FIELDS, (field) => failConfig(
-      processorConfigFilePath,
-      `${fieldPath}.${field}`,
-      `${fieldPath}.${field} is required.`,
-    ));
+    assertKnownFields(rawExecutable, ABSOLUTE_EXECUTABLE_FIELDS, (field) =>
+      failConfig(
+        processorConfigFilePath,
+        `${fieldPath}.${field}`,
+        `Unknown absolute-path executable field ${fieldPath}.${field}. Remove it.`,
+      ),
+    );
+    assertRequiredFields(rawExecutable, ABSOLUTE_EXECUTABLE_FIELDS, (field) =>
+      failConfig(
+        processorConfigFilePath,
+        `${fieldPath}.${field}`,
+        `${fieldPath}.${field} is required.`,
+      ),
+    );
     return deepFreeze({
       resolution: 'absolute-path' as const,
       path: readExistingRegularFilePath(
@@ -713,16 +712,20 @@ function parseExecutable(
   }
 
   if (rawExecutable.resolution === 'path-search') {
-    assertKnownFields(rawExecutable, PATH_SEARCH_EXECUTABLE_FIELDS, (field) => failConfig(
-      processorConfigFilePath,
-      `${fieldPath}.${field}`,
-      `Unknown path-search executable field ${fieldPath}.${field}. Remove it.`,
-    ));
-    assertRequiredFields(rawExecutable, PATH_SEARCH_EXECUTABLE_FIELDS, (field) => failConfig(
-      processorConfigFilePath,
-      `${fieldPath}.${field}`,
-      `${fieldPath}.${field} is required.`,
-    ));
+    assertKnownFields(rawExecutable, PATH_SEARCH_EXECUTABLE_FIELDS, (field) =>
+      failConfig(
+        processorConfigFilePath,
+        `${fieldPath}.${field}`,
+        `Unknown path-search executable field ${fieldPath}.${field}. Remove it.`,
+      ),
+    );
+    assertRequiredFields(rawExecutable, PATH_SEARCH_EXECUTABLE_FIELDS, (field) =>
+      failConfig(
+        processorConfigFilePath,
+        `${fieldPath}.${field}`,
+        `${fieldPath}.${field} is required.`,
+      ),
+    );
     const command = unwrapValuePolicy(
       processorConfigFilePath,
       readTypedString(rawExecutable.command, { fieldPath: `${fieldPath}.command` }),
@@ -794,18 +797,23 @@ function parseEndpointConfig(
   value: JsonValue,
   endpointConfigFilePath: string,
 ): ExternalHttpEndpointConfig {
-  const rawConfig = readObject(value, () => failConfig(
-    endpointConfigFilePath,
-    undefined,
-    'External routing HTTP endpoint config file must contain a JSON object.',
-  ));
-  assertKnownFields(rawConfig, ENDPOINT_CONFIG_FIELDS, (fieldPath) => failConfig(
-    endpointConfigFilePath,
-    fieldPath,
-    `Unknown HTTP endpoint config field ${fieldPath}. Remove it.`,
-  ));
+  const rawConfig = readObject(value, () =>
+    failConfig(
+      endpointConfigFilePath,
+      undefined,
+      'External routing HTTP endpoint config file must contain a JSON object.',
+    ),
+  );
+  assertKnownFields(rawConfig, ENDPOINT_CONFIG_FIELDS, (fieldPath) =>
+    failConfig(
+      endpointConfigFilePath,
+      fieldPath,
+      `Unknown HTTP endpoint config field ${fieldPath}. Remove it.`,
+    ),
+  );
   assertRequiredFields(rawConfig, new Set(['version', 'url', 'timeoutMs']), (fieldPath) =>
-    failConfig(endpointConfigFilePath, fieldPath, `${fieldPath} is required.`));
+    failConfig(endpointConfigFilePath, fieldPath, `${fieldPath} is required.`),
+  );
   if (rawConfig.version !== 1) {
     failConfig(
       endpointConfigFilePath,
@@ -835,18 +843,23 @@ function parseMcpServerConfig(
   serverConfigFilePath: string,
   identity: string,
 ): ExternalMcpServerConfig {
-  const rawConfig = readObject(value, () => failConfig(
-    serverConfigFilePath,
-    undefined,
-    'External routing MCP server config file must contain a JSON object.',
-  ));
-  assertKnownFields(rawConfig, MCP_SERVER_CONFIG_FIELDS, (fieldPath) => failConfig(
-    serverConfigFilePath,
-    fieldPath,
-    `Unknown MCP server config field ${fieldPath}. Remove it.`,
-  ));
+  const rawConfig = readObject(value, () =>
+    failConfig(
+      serverConfigFilePath,
+      undefined,
+      'External routing MCP server config file must contain a JSON object.',
+    ),
+  );
+  assertKnownFields(rawConfig, MCP_SERVER_CONFIG_FIELDS, (fieldPath) =>
+    failConfig(
+      serverConfigFilePath,
+      fieldPath,
+      `Unknown MCP server config field ${fieldPath}. Remove it.`,
+    ),
+  );
   assertRequiredFields(rawConfig, new Set(['version', 'url', 'timeoutMs']), (fieldPath) =>
-    failConfig(serverConfigFilePath, fieldPath, `${fieldPath} is required.`));
+    failConfig(serverConfigFilePath, fieldPath, `${fieldPath} is required.`),
+  );
   if (rawConfig.version !== 1) {
     failConfig(
       serverConfigFilePath,
@@ -885,11 +898,9 @@ function parseEndpointHeaders(
   forbiddenHeaders: ReadonlySet<string> = FORBIDDEN_ENDPOINT_HEADERS,
 ): Readonly<Record<string, string>> {
   if (value === undefined) return Object.freeze({});
-  const rawHeaders = readObject(value, () => failConfig(
-    endpointConfigFilePath,
-    'headers',
-    'headers must be a JSON object when present.',
-  ));
+  const rawHeaders = readObject(value, () =>
+    failConfig(endpointConfigFilePath, 'headers', 'headers must be a JSON object when present.'),
+  );
   const seenNames = new Set<string>();
   const headers: [string, string][] = [];
   for (const [name, headerValue] of Object.entries(rawHeaders)) {
@@ -981,10 +992,7 @@ function readMediaType(
   fieldPath: string,
   configFilePath: string,
 ): string {
-  const contentType = unwrapValuePolicy(
-    configFilePath,
-    readTypedString(value, { fieldPath }),
-  );
+  const contentType = unwrapValuePolicy(configFilePath, readTypedString(value, { fieldPath }));
   try {
     validateHeaderValue('Content-Type', contentType);
     new MIMEType(contentType);
@@ -1004,11 +1012,7 @@ function readConfigIdentity(
   configFilePath: string,
 ): string {
   if (typeof value !== 'string' || !CONFIG_IDENTITY_RE.test(value)) {
-    failConfig(
-      configFilePath,
-      fieldPath,
-      `${fieldPath} must match ^[A-Za-z0-9._-]{1,128}$.`,
-    );
+    failConfig(configFilePath, fieldPath, `${fieldPath} must match ^[A-Za-z0-9._-]{1,128}$.`);
   }
   return value;
 }
@@ -1070,10 +1074,7 @@ function assertRequiredFields(
   }
 }
 
-function unwrapValuePolicy<T>(
-  configFilePath: string,
-  result: ValuePolicyResult<T>,
-): T {
+function unwrapValuePolicy<T>(configFilePath: string, result: ValuePolicyResult<T>): T {
   if (!result.ok) {
     failConfig(configFilePath, result.error.fieldPath, result.error.message);
   }
@@ -1091,7 +1092,8 @@ function failConfig(
     configFilePath,
     ...(fieldPath === undefined ? {} : { fieldPath }),
     message,
-    suggestion: suggestion ??
+    suggestion:
+      suggestion ??
       `Fix ${fieldPath ?? 'the external routing configuration'} in ${configFilePath} and restart the server.`,
   });
 }

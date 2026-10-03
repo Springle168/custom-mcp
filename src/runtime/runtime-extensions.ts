@@ -11,16 +11,16 @@ export interface McpSessionOptions {
 
 export type SessionPreparation =
   | {
-    readonly accepted: true;
-    readonly options: McpSessionOptions;
-    /** Observational only; invoked after publication without awaiting completion. */
-    readonly onPublished?: (sessionId: string) => void | Promise<void>;
-  }
+      readonly accepted: true;
+      readonly options: McpSessionOptions;
+      /** Observational only; invoked after publication without awaiting completion. */
+      readonly onPublished?: (sessionId: string) => void | Promise<void>;
+    }
   | {
-    readonly accepted: false;
-    /** Safe client-facing parameter diagnostic, not an arbitrary exception. */
-    readonly message: string;
-  };
+      readonly accepted: false;
+      /** Safe client-facing parameter diagnostic, not an arbitrary exception. */
+      readonly message: string;
+    };
 
 /** Captured once at call start; adaptation follows core result validation. */
 export interface PreparedToolResult {

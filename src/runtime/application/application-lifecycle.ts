@@ -20,11 +20,7 @@ export interface ApplicationLifecycleOptions {
 }
 
 export type ApplicationShutdownPhase =
-  | 'http-listener'
-  | 'mcp-session'
-  | 'android-runtime'
-  | 'external-runtime'
-  | 'logger';
+  'http-listener' | 'mcp-session' | 'android-runtime' | 'external-runtime' | 'logger';
 
 export interface ApplicationShutdownFailure {
   readonly phase: ApplicationShutdownPhase;
@@ -99,8 +95,7 @@ export class ApplicationLifecycle {
 
     // Deferring execution records the promise before server.close() can
     // synchronously trigger a transport onclose callback that re-enters here.
-    const closePromise = Promise.resolve()
-      .then(() => this.#closeSession(sessionId, session));
+    const closePromise = Promise.resolve().then(() => this.#closeSession(sessionId, session));
     this.#sessionClosePromises.set(sessionId, closePromise);
     return closePromise;
   }
@@ -117,10 +112,7 @@ export class ApplicationLifecycle {
     return this.#applicationClosePromise;
   }
 
-  async #closeSession(
-    sessionId: string,
-    session: McpPostSession,
-  ): Promise<void> {
+  async #closeSession(sessionId: string, session: McpPostSession): Promise<void> {
     try {
       // The MCP SDK Server closes its connected Streamable HTTP transport,
       // which aborts in-flight protocol work without calling transport.close()
@@ -144,57 +136,38 @@ export class ApplicationLifecycle {
     // HTTP streams.
     const listenerClose = this.#closeListener();
     void listenerClose.catch(() => {});
-    const androidRuntimeClose = Promise.resolve()
-      .then(() => this.#androidRuntime.close());
+    const androidRuntimeClose = Promise.resolve().then(() => this.#androidRuntime.close());
     void androidRuntimeClose.catch(() => {});
 
     await this.#closeAllSessions(failures);
-    await this.#attempt(
-      failures,
-      { phase: 'http-listener' },
-      () => listenerClose,
+    await this.#attempt(failures, { phase: 'http-listener' }, () => listenerClose);
+    await this.#attempt(failures, { phase: 'android-runtime' }, () => androidRuntimeClose);
+    await this.#attempt(failures, { phase: 'external-runtime' }, () =>
+      this.#externalRuntime.close(),
     );
-    await this.#attempt(
-      failures,
-      { phase: 'android-runtime' },
-      () => androidRuntimeClose,
-    );
-    await this.#attempt(
-      failures,
-      { phase: 'external-runtime' },
-      () => this.#externalRuntime.close(),
-    );
-    await this.#attempt(
-      failures,
-      { phase: 'logger' },
-      () => this.#logger.close(),
-    );
+    await this.#attempt(failures, { phase: 'logger' }, () => this.#logger.close());
 
     if (failures.length > 0) {
       throw new ApplicationLifecycleCloseError(failures);
     }
   }
 
-  async #closeAllSessions(
-    failures: ApplicationShutdownFailure[],
-  ): Promise<void> {
+  async #closeAllSessions(failures: ApplicationShutdownFailure[]): Promise<void> {
     const sessionIds = [...this.#sessions.keys()];
-    const publishedClosures = sessionIds.map((sessionId) => this.#attempt(
-      failures,
-      { phase: 'mcp-session', sessionId },
-      () => this.closeSession(sessionId),
-    ));
-    const pendingClosures = [...this.#pendingSessions].map((session) => this.#attempt(
-      failures,
-      { phase: 'mcp-session' },
-      async () => {
+    const publishedClosures = sessionIds.map((sessionId) =>
+      this.#attempt(failures, { phase: 'mcp-session', sessionId }, () =>
+        this.closeSession(sessionId),
+      ),
+    );
+    const pendingClosures = [...this.#pendingSessions].map((session) =>
+      this.#attempt(failures, { phase: 'mcp-session' }, async () => {
         try {
           await session.close();
         } finally {
           this.#pendingSessions.delete(session);
         }
-      },
-    ));
+      }),
+    );
     await Promise.all([...publishedClosures, ...pendingClosures]);
   }
 

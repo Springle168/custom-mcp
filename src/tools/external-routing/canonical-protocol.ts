@@ -7,10 +7,7 @@ import { types } from 'node:util';
 
 export type JsonPrimitive = null | boolean | number | string;
 
-export type JsonValue =
-  | JsonPrimitive
-  | readonly JsonValue[]
-  | JsonObject;
+export type JsonValue = JsonPrimitive | readonly JsonValue[] | JsonObject;
 
 export interface JsonObject {
   readonly [key: string]: JsonValue;
@@ -68,9 +65,7 @@ export interface CanonicalErrorResponse {
   readonly extensions?: CanonicalExtensions;
 }
 
-export type CanonicalResponse =
-  | CanonicalSuccessResponse
-  | CanonicalErrorResponse;
+export type CanonicalResponse = CanonicalSuccessResponse | CanonicalErrorResponse;
 
 export type CanonicalProtocolValidationErrorCode =
   | 'invalid_utf8'
@@ -90,11 +85,7 @@ export class CanonicalProtocolValidationError extends Error {
   readonly code: CanonicalProtocolValidationErrorCode;
   readonly path: string | undefined;
 
-  constructor(
-    code: CanonicalProtocolValidationErrorCode,
-    message: string,
-    path?: string,
-  ) {
+  constructor(code: CanonicalProtocolValidationErrorCode, message: string, path?: string) {
     super(message);
     this.name = 'CanonicalProtocolValidationError';
     this.code = code;
@@ -119,15 +110,15 @@ const ERROR_FIELDS = new Set(['code', 'message']);
  * Values are copied before freezing, so subsequent caller mutations cannot
  * alter the bytes eventually sent to an external endpoint.
  */
-export function createCanonicalRequest(
-  options: CreateCanonicalRequestOptions,
-): CanonicalRequest {
+export function createCanonicalRequest(options: CreateCanonicalRequestOptions): CanonicalRequest {
   const value: Record<string, unknown> = {
-    calls: [{
-      id: options.id,
-      name: options.name,
-      arguments: options.arguments,
-    }],
+    calls: [
+      {
+        id: options.id,
+        name: options.name,
+        arguments: options.arguments,
+      },
+    ],
   };
   if (options.extensions !== undefined) {
     value.extensions = options.extensions;
@@ -140,10 +131,8 @@ export function createCanonicalRequest(
  * deeply-frozen representation.
  */
 export function validateCanonicalRequest(value: unknown): CanonicalRequest {
-  return captureValidationFailure(
-    'invalid_request',
-    'The canonical request is invalid.',
-    () => validateCanonicalRequestInternal(value, 'invalid_request'),
+  return captureValidationFailure('invalid_request', 'The canonical request is invalid.', () =>
+    validateCanonicalRequestInternal(value, 'invalid_request'),
   );
 }
 
@@ -173,12 +162,13 @@ export function validateCanonicalSuccessResponse(
   return captureValidationFailure(
     'invalid_success_response',
     'The canonical success response is invalid.',
-    () => validateCanonicalSuccessResponseInternal(
-      value,
-      expectedCallId,
-      'invalid_success_response',
-      true,
-    ),
+    () =>
+      validateCanonicalSuccessResponseInternal(
+        value,
+        expectedCallId,
+        'invalid_success_response',
+        true,
+      ),
   );
 }
 
@@ -200,10 +190,8 @@ export function validateCanonicalResponse(
   value: unknown,
   expectedCallId: string,
 ): CanonicalResponse {
-  return captureValidationFailure(
-    'invalid_response',
-    'The canonical response is invalid.',
-    () => validateCanonicalResponseInternal(value, expectedCallId, 'invalid_response', true),
+  return captureValidationFailure('invalid_response', 'The canonical response is invalid.', () =>
+    validateCanonicalResponseInternal(value, expectedCallId, 'invalid_response', true),
   );
 }
 
@@ -285,12 +273,7 @@ export function validateCanonicalResponseFilterOutput(
  * protocol data rather than a configuration file.
  */
 export function parseStrictUtf8JsonDocument(bytes: Uint8Array): JsonValue {
-  if (
-    bytes.byteLength >= 3 &&
-    bytes[0] === 0xef &&
-    bytes[1] === 0xbb &&
-    bytes[2] === 0xbf
-  ) {
+  if (bytes.byteLength >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     throw protocolFailure(
       'invalid_utf8',
       'Canonical JSON must be strict UTF-8 without a byte order mark.',
@@ -349,12 +332,7 @@ function validateCanonicalRequestInternal(
     'request.calls[0].name',
     code,
   );
-  const argumentsValue = readRequiredField(
-    call,
-    'arguments',
-    'request.calls[0].arguments',
-    code,
-  );
+  const argumentsValue = readRequiredField(call, 'arguments', 'request.calls[0].arguments', code);
   const argumentsObject = cloneJsonObject(
     argumentsValue,
     'request.calls[0].arguments',
@@ -368,9 +346,7 @@ function validateCanonicalRequestInternal(
   const calls: readonly [CanonicalCall] = Object.freeze([
     Object.freeze({ id, name, arguments: argumentsObject }),
   ]) as readonly [CanonicalCall];
-  const result: CanonicalRequest = extensions === undefined
-    ? { calls }
-    : { calls, extensions };
+  const result: CanonicalRequest = extensions === undefined ? { calls } : { calls, extensions };
   return Object.freeze(result);
 }
 
@@ -389,12 +365,7 @@ function validateCanonicalResponseInternal(
   }
 
   if (hasResults) {
-    return validateCanonicalSuccessResponseInternal(
-      value,
-      expectedCallId,
-      code,
-      verifyResultId,
-    );
+    return validateCanonicalSuccessResponseInternal(value, expectedCallId, code, verifyResultId);
   }
 
   return validateCanonicalErrorResponseInternal(value, code);
@@ -437,9 +408,8 @@ function validateCanonicalSuccessResponseInternal(
   const results: readonly [CanonicalResult] = Object.freeze([
     Object.freeze({ id, status, content }),
   ]) as readonly [CanonicalResult];
-  const canonicalResponse: CanonicalSuccessResponse = extensions === undefined
-    ? { results }
-    : { results, extensions };
+  const canonicalResponse: CanonicalSuccessResponse =
+    extensions === undefined ? { results } : { results, extensions };
   return Object.freeze(canonicalResponse);
 }
 
@@ -469,9 +439,8 @@ function validateCanonicalErrorResponseInternal(
     : undefined;
 
   const canonicalError = Object.freeze({ code: errorCode, message });
-  const canonicalResponse: CanonicalErrorResponse = extensions === undefined
-    ? { error: canonicalError }
-    : { error: canonicalError, extensions };
+  const canonicalResponse: CanonicalErrorResponse =
+    extensions === undefined ? { error: canonicalError } : { error: canonicalError, extensions };
   return Object.freeze(canonicalResponse);
 }
 
@@ -481,11 +450,7 @@ function readResponseFields(
 ): ReadonlyMap<string, unknown> {
   const fields = readObjectFields(value, 'response', code);
   for (const key of fields.keys()) {
-    if (
-      key !== 'results' &&
-      key !== 'error' &&
-      key !== 'extensions'
-    ) {
+    if (key !== 'results' && key !== 'error' && key !== 'extensions') {
       throw protocolFailure(code, 'The canonical response is invalid.', 'response');
     }
   }
@@ -560,10 +525,14 @@ function cloneCanonicalContentBlock(
 ): CanonicalContentBlock {
   const fields = readObjectFields(value, path, code);
   const type = readRequiredField(fields, 'type', `${path}.type`, code);
-  const allowedFields = type === 'text' ? TEXT_FIELDS
-    : type === 'image' ? IMAGE_FIELDS
-      : type === 'unknown' ? UNKNOWN_FIELDS
-        : undefined;
+  const allowedFields =
+    type === 'text'
+      ? TEXT_FIELDS
+      : type === 'image'
+        ? IMAGE_FIELDS
+        : type === 'unknown'
+          ? UNKNOWN_FIELDS
+          : undefined;
   if (allowedFields === undefined) {
     throw protocolFailure(code, 'The canonical message is invalid.', `${path}.type`);
   }
@@ -575,7 +544,11 @@ function cloneCanonicalContentBlock(
   if (type === 'text') {
     return Object.freeze({
       type,
-      text: readString(readRequiredField(fields, 'text', `${path}.text`, code), `${path}.text`, code),
+      text: readString(
+        readRequiredField(fields, 'text', `${path}.text`, code),
+        `${path}.text`,
+        code,
+      ),
     });
   }
   if (type === 'image') {
@@ -618,12 +591,18 @@ function readCanonicalImageData(
   let lastSextet = 0;
   for (let index = 0; index < data.length - padding; index++) {
     const char = data.charCodeAt(index);
-    const sextet = char >= 65 && char <= 90 ? char - 65
-      : char >= 97 && char <= 122 ? char - 71
-        : char >= 48 && char <= 57 ? char + 4
-          : char === 43 ? 62
-            : char === 47 ? 63
-              : -1;
+    const sextet =
+      char >= 65 && char <= 90
+        ? char - 65
+        : char >= 97 && char <= 122
+          ? char - 71
+          : char >= 48 && char <= 57
+            ? char + 4
+            : char === 43
+              ? 62
+              : char === 47
+                ? 63
+                : -1;
     if (sextet === -1) {
       throw protocolFailure(code, 'The canonical message is invalid.', path);
     }
@@ -728,11 +707,7 @@ function cloneJsonObject(
   try {
     const copy: Record<string, JsonValue> = Object.create(null) as Record<string, JsonValue>;
     for (const [key, propertyValue] of entries) {
-      defineJsonProperty(
-        copy,
-        key,
-        cloneJsonValue(propertyValue, `${path}.*`, code, ancestors),
-      );
+      defineJsonProperty(copy, key, cloneJsonValue(propertyValue, `${path}.*`, code, ancestors));
     }
     return Object.freeze(copy);
   } finally {
@@ -747,11 +722,7 @@ function cloneJsonValue(
   ancestors: Set<object>,
 ): JsonValue {
   rejectProxy(value, path, code);
-  if (
-    value === null ||
-    typeof value === 'boolean' ||
-    typeof value === 'string'
-  ) {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
     return value;
   }
   if (typeof value === 'number') {

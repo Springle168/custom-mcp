@@ -1,10 +1,6 @@
 import { isIP } from 'node:net';
 
-export function buildHttpUrl(
-  bindHost: string,
-  port: number,
-  pathname: string,
-): string {
+export function buildHttpUrl(bindHost: string, port: number, pathname: string): string {
   const endpointHost = getEndpointHost(bindHost);
   return `http://${formatHostPort(endpointHost, port)}${pathname}`;
 }

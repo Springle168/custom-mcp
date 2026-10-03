@@ -65,6 +65,9 @@ custom-mcp/test/
 ## 常用验证命令
 
 ```bash
+# 检查预设范围的排版，不写入文件
+npm run format:check
+
 # 编译生产源码 src/**/*.ts 并生成 dist
 npm run build
 
@@ -88,6 +91,8 @@ npm test -- value-policy.test.ts
 # 查看逐用例与测试内部输出
 npm test -- config --verbose
 ```
+
+局部格式化使用 `npm exec -- prettier --write <文件路径...>`。`npm run format -- <文件路径...>` 会向脚本追加参数，不会将格式化范围缩小到指定文件。
 
 `npm run build` 使用 `tsconfig.json`，只覆盖生产源码。`npm run typecheck:test` 使用 `tsconfig.test.json`，在复用生产编译选项的同时检查生产源码与测试代码，并通过 `noEmit` 禁止生成文件。
 

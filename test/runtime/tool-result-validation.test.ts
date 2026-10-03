@@ -1,10 +1,6 @@
 import { isToolCallResult } from '../../src/runtime/invocation/tool-result-validation.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 const IMAGE_DATA = 'aW1hZ2UtZGF0YQ==';
 
@@ -83,11 +79,13 @@ function testRejectsMalformedProtocolFields(): void {
     {
       label: 'data URI image',
       value: {
-        content: [{
-          type: 'image',
-          data: 'data:image/png;base64,aW1hZ2U=',
-          mimeType: 'image/png',
-        }],
+        content: [
+          {
+            type: 'image',
+            data: 'data:image/png;base64,aW1hZ2U=',
+            mimeType: 'image/png',
+          },
+        ],
         isError: false,
       },
     },
@@ -169,7 +167,11 @@ function testRejectsUnstableJsonData(): void {
     },
     {
       label: 'custom toJSON',
-      extension: { toJSON() { return 'changed'; } },
+      extension: {
+        toJSON() {
+          return 'changed';
+        },
+      },
     },
     { label: 'symbol-keyed property', extension: objectWithSymbolKey },
     { label: 'non-enumerable property', extension: nonEnumerable },
@@ -179,10 +181,7 @@ function testRejectsUnstableJsonData(): void {
   ];
 
   for (const testCase of cases) {
-    assertMalformed(
-      { content: [], isError: false, extension: testCase.extension },
-      testCase.label,
-    );
+    assertMalformed({ content: [], isError: false, extension: testCase.extension }, testCase.label);
   }
 }
 
@@ -199,16 +198,16 @@ function testAllowsAcyclicSharedReferencesAndNullPrototypeObjects(): void {
 }
 
 function testContainsThrowingProxy(): void {
-  const throwingProxy = new Proxy({}, {
-    ownKeys() {
-      throw new Error('proxy trap failure');
+  const throwingProxy = new Proxy(
+    {},
+    {
+      ownKeys() {
+        throw new Error('proxy trap failure');
+      },
     },
-  });
-
-  assertMalformed(
-    { content: [], isError: false, extension: throwingProxy },
-    'throwing proxy',
   );
+
+  assertMalformed({ content: [], isError: false, extension: throwingProxy }, 'throwing proxy');
 }
 
 function testRejectsStatefulProxyBeforeSchemaEvaluation(): void {
@@ -230,10 +229,7 @@ function testRejectsStatefulProxyBeforeSchemaEvaluation(): void {
     },
   );
 
-  assertMalformed(
-    { content: [image], isError: false },
-    'stateful image proxy',
-  );
+  assertMalformed({ content: [image], isError: false }, 'stateful image proxy');
   assertEqual(dataReads, 0, 'Proxy results should be rejected before schema evaluation');
 }
 
@@ -271,9 +267,15 @@ async function main(): Promise<void> {
       { name: 'accepts supported text and image results', run: testAcceptsSupportedResults },
       { name: 'rejects malformed protocol fields', run: testRejectsMalformedProtocolFields },
       { name: 'rejects unstable JSON data', run: testRejectsUnstableJsonData },
-      { name: 'allows acyclic shared references and null prototypes', run: testAllowsAcyclicSharedReferencesAndNullPrototypeObjects },
+      {
+        name: 'allows acyclic shared references and null prototypes',
+        run: testAllowsAcyclicSharedReferencesAndNullPrototypeObjects,
+      },
       { name: 'contains throwing proxies', run: testContainsThrowingProxy },
-      { name: 'rejects stateful proxies before schema evaluation', run: testRejectsStatefulProxyBeforeSchemaEvaluation },
+      {
+        name: 'rejects stateful proxies before schema evaluation',
+        run: testRejectsStatefulProxyBeforeSchemaEvaluation,
+      },
     ],
   });
 }

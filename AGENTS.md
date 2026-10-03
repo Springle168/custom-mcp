@@ -36,7 +36,8 @@
 ## 代码与工具约定
 
 - 保持现有 TypeScript 风格：ESM / NodeNext、严格类型、相对导入使用 `.js` 后缀、避免不必要的 `any`。
-- 添加或调整工具后，同步维护 `docs/tools/` 中的工具文档；必要时更新 `docs/DEVELOPMENT.md` 的工具列表或开发说明。
+- 代码排版遵循仓库的 Prettier 配置。
+- 使用空行分隔不同逻辑阶段或独立验证场景，避免整段代码连续堆叠；不要在每条语句之间机械插入空行。
 
 ## 注释与文档
 
@@ -49,14 +50,17 @@
 
 ## 验证方式
 
+- 格式化本次修改的文件：`npm exec -- prettier --write <文件路径...>`。
+- 格式检查：`npm run format:check`。
+- 统一格式化预设范围：`npm run format`。
 - 生产源码编译：`npm run build`。
 - 生产源码与测试代码的静态类型检查：`npm run typecheck:test`。
 - 依次执行生产构建和测试类型检查：`npm run check`。
 - 全部自动化测试：`npm test`。
 - 主题测试：`npm test -- <topic>`。
 - 单个脚本测试：`npm test -- test/<file>.ts`。
+- 修改代码后，先格式化本次涉及的文件，再执行格式检查与相应验证。
 - 调整测试代码时，单个脚本运行与 `npm run typecheck:test` 分别验证运行行为和静态类型，不能相互替代。
-- 避免运行会改写源码、文档或快照的格式化/生成命令，除非用户明确要求或当前任务必须如此。
 
 ## 工具调用指导
 

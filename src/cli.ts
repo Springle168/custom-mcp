@@ -21,17 +21,11 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   for (const arg of args) {
     if (arg === '--workspace') {
       const value = args.next();
-      workspaceId = readWorkspaceIdValue(
-        value.done ? undefined : value.value,
-        workspaceId,
-      );
+      workspaceId = readWorkspaceIdValue(value.done ? undefined : value.value, workspaceId);
       continue;
     }
 
-    throw new CliError(
-      `Unknown argument: ${arg}`,
-      'Supported arguments: --workspace <id>.',
-    );
+    throw new CliError(`Unknown argument: ${arg}`, 'Supported arguments: --workspace <id>.');
   }
 
   if (workspaceId === undefined) {

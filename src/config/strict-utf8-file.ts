@@ -1,27 +1,12 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  openSync,
-  readFileSync,
-} from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 
 export type StrictUtf8FileErrorReason =
-  | 'not_found'
-  | 'not_regular'
-  | 'open_failed'
-  | 'inspect_failed'
-  | 'read_failed'
-  | 'invalid_utf8';
+  'not_found' | 'not_regular' | 'open_failed' | 'inspect_failed' | 'read_failed' | 'invalid_utf8';
 
 export class StrictUtf8FileError extends Error {
   readonly reason: StrictUtf8FileErrorReason;
 
-  constructor(
-    reason: StrictUtf8FileErrorReason,
-    filePath: string,
-    cause?: unknown,
-  ) {
+  constructor(reason: StrictUtf8FileErrorReason, filePath: string, cause?: unknown) {
     super(messageForReason(reason, filePath));
     this.name = 'StrictUtf8FileError';
     this.reason = reason;
@@ -57,10 +42,7 @@ export function readStrictUtf8RegularFile(filePath: string): string {
 function readRegularFile(filePath: string): Buffer {
   let fileDescriptor: number;
   try {
-    fileDescriptor = openSync(
-      filePath,
-      constants.O_RDONLY | constants.O_NONBLOCK,
-    );
+    fileDescriptor = openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error: unknown) {
     const fileError = error as NodeJS.ErrnoException;
     if (fileError.code === 'ENOENT') {
@@ -98,10 +80,7 @@ function readRegularFile(filePath: string): Buffer {
   }
 }
 
-function messageForReason(
-  reason: StrictUtf8FileErrorReason,
-  filePath: string,
-): string {
+function messageForReason(reason: StrictUtf8FileErrorReason, filePath: string): string {
   switch (reason) {
     case 'not_found':
       return `File does not exist: ${filePath}`;

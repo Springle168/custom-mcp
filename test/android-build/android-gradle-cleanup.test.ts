@@ -1,10 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import { androidGradleInternalForTests } from '../../src/utils/android-gradle.js';
-import {
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assertEqual, runTestSuite } from '../test-utils.js';
 
 interface FakeHelper {
   readonly process: ChildProcess;
@@ -113,9 +110,18 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing Android Gradle termination helper cleanup',
     tests: [
-      { name: 'attempt timeout detaches unreaped helper', run: testAttemptTimeoutDetachesUnreapedHelper },
-      { name: 'failed helper kill detaches immediately', run: testFailedHelperKillDetachesImmediately },
-      { name: 'cleanup abort does not wait for helper close', run: testCleanupAbortDoesNotWaitForHelperClose },
+      {
+        name: 'attempt timeout detaches unreaped helper',
+        run: testAttemptTimeoutDetachesUnreapedHelper,
+      },
+      {
+        name: 'failed helper kill detaches immediately',
+        run: testFailedHelperKillDetachesImmediately,
+      },
+      {
+        name: 'cleanup abort does not wait for helper close',
+        run: testCleanupAbortDoesNotWaitForHelperClose,
+      },
     ],
   });
 }

@@ -131,16 +131,13 @@ export class TrackedMcpTransport implements Transport {
     }
 
     const requestExchange = request === undefined ? undefined : this.#exchanges.get(request.id);
-    const finishRequestSend = requestExchange === undefined
-      ? undefined
-      : this.#attachLifecycle(requestExchange);
+    const finishRequestSend =
+      requestExchange === undefined ? undefined : this.#attachLifecycle(requestExchange);
     const cancellationId = getCancellationRequestId(message);
-    const cancellationExchange = cancellationId === undefined
-      ? undefined
-      : this.#exchanges.get(cancellationId);
-    const finishCancellationSend = cancellationExchange === undefined
-      ? undefined
-      : this.#attachLifecycle(cancellationExchange);
+    const cancellationExchange =
+      cancellationId === undefined ? undefined : this.#exchanges.get(cancellationId);
+    const finishCancellationSend =
+      cancellationExchange === undefined ? undefined : this.#attachLifecycle(cancellationExchange);
 
     let sent: Promise<void>;
     try {
@@ -205,9 +202,12 @@ export class TrackedMcpTransport implements Transport {
       const bodyMessage = parseOutboundBody(init?.body);
       const requestId = getToolCallRequestId(bodyMessage);
       const cancellationId = getCancellationRequestId(bodyMessage);
-      const exchange = requestId === undefined
-        ? (cancellationId === undefined ? undefined : this.#exchanges.get(cancellationId))
-        : this.#exchanges.get(requestId);
+      const exchange =
+        requestId === undefined
+          ? cancellationId === undefined
+            ? undefined
+            : this.#exchanges.get(cancellationId)
+          : this.#exchanges.get(requestId);
       const finishBody = exchange === undefined ? undefined : this.#attachLifecycle(exchange);
 
       let response: Response;
@@ -227,8 +227,10 @@ export class TrackedMcpTransport implements Transport {
         exchange.requestHttpResponseStarted = true;
       }
       if (init?.method === 'GET') {
-        const sharedSse = response.ok
-          && response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') === true;
+        const sharedSse =
+          response.ok &&
+          response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') ===
+            true;
         if (!sharedSse && response.status !== 405) {
           this.#hooks.onSharedStreamTerminated?.();
         }
@@ -242,7 +244,11 @@ export class TrackedMcpTransport implements Transport {
       return wrapResponseBody(response, () => {
         finishBody();
         if (requestId === undefined || exchange === undefined) return;
-        if (response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') !== true) return;
+        if (
+          response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') !==
+          true
+        )
+          return;
 
         // The SDK's decoder/parser pipeline may publish the final SSE event one
         // turn after the wrapped source observes EOF. Recheck after that turn
@@ -280,7 +286,10 @@ export class TrackedMcpTransport implements Transport {
     return exchange;
   }
 
-  #handleMessage<T extends JSONRPCMessage>(message: T, extra?: Parameters<NonNullable<Transport['onmessage']>>[1]): void {
+  #handleMessage<T extends JSONRPCMessage>(
+    message: T,
+    extra?: Parameters<NonNullable<Transport['onmessage']>>[1],
+  ): void {
     if (isResponse(message) && message.id !== undefined) {
       const exchange = this.#exchanges.get(message.id);
       if (exchange === undefined && this.#settledRequestIds.delete(message.id)) {
@@ -374,17 +383,15 @@ function getToolCallRequestId(message: JSONRPCMessage | undefined): RequestId | 
 
 function getCancellationRequestId(message: JSONRPCMessage | undefined): RequestId | undefined {
   if (
-    message === undefined
-    || !('method' in message)
-    || message.method !== 'notifications/cancelled'
+    message === undefined ||
+    !('method' in message) ||
+    message.method !== 'notifications/cancelled'
   ) {
     return undefined;
   }
   const params = (message as JSONRPCNotification).params as Record<string, unknown> | undefined;
   const requestId = params?.requestId;
-  return typeof requestId === 'string' || typeof requestId === 'number'
-    ? requestId
-    : undefined;
+  return typeof requestId === 'string' || typeof requestId === 'number' ? requestId : undefined;
 }
 
 function isResponse(message: JSONRPCMessage): message is JSONRPCResponse {
@@ -395,8 +402,10 @@ function hasOwnResultContent(message: JSONRPCResponse): boolean {
   if (!('result' in message) || typeof message.result !== 'object' || message.result === null) {
     return false;
   }
-  return Object.hasOwn(message.result, 'content')
-    && Array.isArray((message.result as Record<string, unknown>).content);
+  return (
+    Object.hasOwn(message.result, 'content') &&
+    Array.isArray((message.result as Record<string, unknown>).content)
+  );
 }
 
 function wrapResponseBody(response: Response, onFinished: () => void): Response {

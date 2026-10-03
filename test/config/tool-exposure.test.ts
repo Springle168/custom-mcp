@@ -3,12 +3,7 @@ import {
   readOptionalWorkspaceToolsConfig,
   type ParsedWorkspaceToolsConfig,
 } from '../../src/config/tool-exposure.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 const CONFIG_FILE = 'E:/config/workspace.json';
 
@@ -45,7 +40,11 @@ function testToolConfigAndSelectorsCanCoexist(): void {
     toolConfigFile: 'E:/config/tool-config.json',
     enabled: ['read_file', 'workspace.custom-tool'],
   });
-  assertEqual(enabled.toolConfigFile, 'E:/config/tool-config.json', 'toolConfigFile should be preserved');
+  assertEqual(
+    enabled.toolConfigFile,
+    'E:/config/tool-config.json',
+    'toolConfigFile should be preserved',
+  );
   assertEqual(enabled.exposure.mode, 'enable', 'enabled should select enable mode');
   assertEqual(
     enabled.exposure.mode === 'all' ? '' : enabled.exposure.names.join(','),
@@ -65,7 +64,11 @@ function testToolConfigAndSelectorsCanCoexist(): void {
 function testSelectorsAreOptionalButMutuallyExclusive(): void {
   const error = captureError({ enabled: [], disabled: [] });
   assertEqual(error.fieldPath, 'tools', 'Mutual-exclusion failure should belong to tools');
-  assertIncludes(error.message, 'cannot configure enabled and disabled', 'Error should explain mutual exclusion');
+  assertIncludes(
+    error.message,
+    'cannot configure enabled and disabled',
+    'Error should explain mutual exclusion',
+  );
 }
 
 function testUnknownFieldAndInvalidPathFailPrecisely(): void {
@@ -73,8 +76,16 @@ function testUnknownFieldAndInvalidPathFailPrecisely(): void {
   assertEqual(unknown.fieldPath, 'tools.custom', 'Unknown field should identify its path');
 
   const relative = captureError({ toolConfigFile: './tools.json' });
-  assertEqual(relative.fieldPath, 'tools.toolConfigFile', 'Invalid path should identify toolConfigFile');
-  assertIncludes(relative.message, 'absolute local path', 'Invalid path should explain the local absolute requirement');
+  assertEqual(
+    relative.fieldPath,
+    'tools.toolConfigFile',
+    'Invalid path should identify toolConfigFile',
+  );
+  assertIncludes(
+    relative.message,
+    'absolute local path',
+    'Invalid path should explain the local absolute requirement',
+  );
 }
 
 function testSelectorGrammarAndDuplicates(): void {
@@ -87,13 +98,29 @@ function testSelectorGrammarAndDuplicates(): void {
 
   for (const testCase of cases) {
     const error = captureError({ enabled: [testCase.value] });
-    assertEqual(error.fieldPath, 'tools.enabled[0]', 'Invalid selector should identify its array item');
-    assertIncludes(error.message, testCase.expected, 'Invalid selector should explain its grammar failure');
+    assertEqual(
+      error.fieldPath,
+      'tools.enabled[0]',
+      'Invalid selector should identify its array item',
+    );
+    assertIncludes(
+      error.message,
+      testCase.expected,
+      'Invalid selector should explain its grammar failure',
+    );
   }
 
   const duplicate = captureError({ disabled: ['custom_tool', 'custom_tool'] });
-  assertEqual(duplicate.fieldPath, 'tools.disabled[1]', 'Duplicate should identify the repeated entry');
-  assertIncludes(duplicate.message, 'Duplicate tool name', 'Duplicate error should explain the conflict');
+  assertEqual(
+    duplicate.fieldPath,
+    'tools.disabled[1]',
+    'Duplicate should identify the repeated entry',
+  );
+  assertIncludes(
+    duplicate.message,
+    'Duplicate tool name',
+    'Duplicate error should explain the conflict',
+  );
 }
 
 function testContainerAndArrayTypesAreStrict(): void {
@@ -104,7 +131,11 @@ function testContainerAndArrayTypesAreStrict(): void {
 
   const error = captureError({ enabled: 'read_file' });
   assertEqual(error.fieldPath, 'tools.enabled', 'Non-array selector should identify enabled');
-  assertIncludes(error.message, 'must be an array', 'Non-array selector should explain the expected type');
+  assertIncludes(
+    error.message,
+    'must be an array',
+    'Non-array selector should explain the expected type',
+  );
 }
 
 async function main(): Promise<void> {
@@ -113,9 +144,18 @@ async function main(): Promise<void> {
     tests: [
       { name: 'missing and empty tools default to all', run: testMissingAndEmptyDefaultToAll },
       { name: 'tool config and selectors can coexist', run: testToolConfigAndSelectorsCanCoexist },
-      { name: 'selectors are optional but mutually exclusive', run: testSelectorsAreOptionalButMutuallyExclusive },
-      { name: 'unknown field and invalid path fail precisely', run: testUnknownFieldAndInvalidPathFailPrecisely },
-      { name: 'selector grammar and duplicates are validated', run: testSelectorGrammarAndDuplicates },
+      {
+        name: 'selectors are optional but mutually exclusive',
+        run: testSelectorsAreOptionalButMutuallyExclusive,
+      },
+      {
+        name: 'unknown field and invalid path fail precisely',
+        run: testUnknownFieldAndInvalidPathFailPrecisely,
+      },
+      {
+        name: 'selector grammar and duplicates are validated',
+        run: testSelectorGrammarAndDuplicates,
+      },
       { name: 'container and array types are strict', run: testContainerAndArrayTypesAreStrict },
     ],
   });

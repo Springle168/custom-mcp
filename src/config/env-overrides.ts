@@ -35,7 +35,8 @@ export function applyEnvOverridesToWorkspace(
   assertAndroidOverridesHaveBaseConfig(options, validatedFields);
 
   const env = options.env ?? process.env;
-  const lineEnding = readLineEndingOverride(options, env, validatedFields) ?? options.workspace.lineEnding;
+  const lineEnding =
+    readLineEndingOverride(options, env, validatedFields) ?? options.workspace.lineEnding;
   const logsDir = readPathOverride(options, env, validatedFields, 'logsDir');
   const android = applyAndroidOverrides(options, env, validatedFields);
 
@@ -100,11 +101,7 @@ function readLineEndingOverride(
     return undefined;
   }
 
-  return unwrapEnvPolicy(
-    options,
-    field,
-    readLineEndingToken(rawValue, { fieldPath: envVar }),
-  );
+  return unwrapEnvPolicy(options, field, readLineEndingToken(rawValue, { fieldPath: envVar }));
 }
 
 function applyAndroidOverrides(
@@ -119,15 +116,18 @@ function applyAndroidOverrides(
 
   return {
     workspaceRoot:
-      readPathOverride(options, env, allowedFields, 'android.workspaceRoot') ?? android.workspaceRoot,
-    javaHome:
-      readPathOverride(options, env, allowedFields, 'android.javaHome') ?? android.javaHome,
+      readPathOverride(options, env, allowedFields, 'android.workspaceRoot') ??
+      android.workspaceRoot,
+    javaHome: readPathOverride(options, env, allowedFields, 'android.javaHome') ?? android.javaHome,
     buildTimeoutMs:
-      readPositiveIntegerOverride(options, env, allowedFields, 'android.buildTimeoutMs') ?? android.buildTimeoutMs,
+      readPositiveIntegerOverride(options, env, allowedFields, 'android.buildTimeoutMs') ??
+      android.buildTimeoutMs,
     maxErrorBlockChars:
-      readPositiveIntegerOverride(options, env, allowedFields, 'android.maxErrorBlockChars') ?? android.maxErrorBlockChars,
+      readPositiveIntegerOverride(options, env, allowedFields, 'android.maxErrorBlockChars') ??
+      android.maxErrorBlockChars,
     maxLogTailChars:
-      readPositiveIntegerOverride(options, env, allowedFields, 'android.maxLogTailChars') ?? android.maxLogTailChars,
+      readPositiveIntegerOverride(options, env, allowedFields, 'android.maxLogTailChars') ??
+      android.maxLogTailChars,
   };
 }
 
@@ -205,11 +205,7 @@ function allowedFieldPath(_options: ApplyEnvOverridesOptions, index: number): st
   return `envOverrides.allowedFields[${index}]`;
 }
 
-function failConfig(
-  options: ApplyEnvOverridesOptions,
-  fieldPath: string,
-  message: string,
-): never {
+function failConfig(options: ApplyEnvOverridesOptions, fieldPath: string, message: string): never {
   throw new ConfigError({
     code: 'config_validation_failed',
     configFilePath: options.configFilePath,

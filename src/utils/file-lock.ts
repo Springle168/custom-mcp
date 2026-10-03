@@ -4,10 +4,7 @@
  */
 const locks = new Map<string, Promise<void>>();
 
-export async function withFileLock<T>(
-  filePath: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
   const key = filePath.toLowerCase();
 
   // 拿到当前文件上一个操作的 Promise（如果有的话）

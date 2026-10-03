@@ -8,10 +8,7 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { isToolCallResult } from '../../runtime/invocation/tool-result-validation.js';
 import type { ToolCallResult } from '../types.js';
 import type { ExternalMcpServerConfig } from './config.js';
-import {
-  TrackedMcpTransport,
-  type TrackedMcpExchange,
-} from './mcp-transport.js';
+import { TrackedMcpTransport, type TrackedMcpExchange } from './mcp-transport.js';
 
 const RECONNECTION_OPTIONS = Object.freeze({
   initialReconnectionDelay: 1_000,
@@ -114,15 +111,17 @@ export class McpConnectionManager {
 
         let captured: { readonly result: Promise<unknown>; readonly exchange: TrackedMcpExchange };
         try {
-          captured = connection.transport.captureCall(() => connection.client.callTool(
-            { name: options.name, arguments: options.arguments },
-            undefined,
-            {
-              signal: controller.signal,
-              timeout: this.#server.timeoutMs,
-              resetTimeoutOnProgress: false,
-            },
-          ));
+          captured = connection.transport.captureCall(() =>
+            connection.client.callTool(
+              { name: options.name, arguments: options.arguments },
+              undefined,
+              {
+                signal: controller.signal,
+                timeout: this.#server.timeoutMs,
+                resetTimeoutOnProgress: false,
+              },
+            ),
+          );
         } catch {
           options.signal?.removeEventListener('abort', relayAbort);
           return { kind: 'failure' as const, code: 'external_internal_failed' as const };
@@ -130,21 +129,21 @@ export class McpConnectionManager {
         trackedExchange = captured.exchange;
         connection.controllersByRequestId.set(captured.exchange.requestId, controller);
 
-        return captured.result.then(
-          (candidate: unknown) => this.#mapResult(candidate, captured.exchange),
-          (error: unknown) => this.#mapCallFailure(error, controller.signal, captured.exchange),
-        ).finally(() => {
-          options.signal?.removeEventListener('abort', relayAbort);
-          connection.controllersByRequestId.delete(captured.exchange.requestId);
-          captured.exchange.markCallerSettled();
-        });
+        return captured.result
+          .then(
+            (candidate: unknown) => this.#mapResult(candidate, captured.exchange),
+            (error: unknown) => this.#mapCallFailure(error, controller.signal, captured.exchange),
+          )
+          .finally(() => {
+            options.signal?.removeEventListener('abort', relayAbort);
+            connection.controllersByRequestId.delete(captured.exchange.requestId);
+            captured.exchange.markCallerSettled();
+          });
       })
       .then((outcome) => outcome)
       .catch((error: unknown): McpCallOutcome => ({
         kind: 'failure',
-        code: options.signal?.aborted === true
-          ? 'cancelled'
-          : classifyConnectionFailure(error),
+        code: options.signal?.aborted === true ? 'cancelled' : classifyConnectionFailure(error),
       }));
     const settled = operation.then((outcome) => {
       if (outcome.kind === 'failure') {
@@ -294,9 +293,13 @@ export class McpConnectionManager {
     }
     const content = (candidate as Record<string, unknown>).content;
     if (
-      Array.isArray(content)
-      && content.some((block) => typeof block === 'object' && block !== null
-        && !['text', 'image'].includes(String((block as Record<string, unknown>).type)))
+      Array.isArray(content) &&
+      content.some(
+        (block) =>
+          typeof block === 'object' &&
+          block !== null &&
+          !['text', 'image'].includes(String((block as Record<string, unknown>).type)),
+      )
     ) {
       return { kind: 'failure', code: 'mcp_result_unsupported' };
     }
@@ -314,12 +317,15 @@ export class McpConnectionManager {
         this.#invalidateReadyForProtocolFailure();
         return { kind: 'failure', code: 'mcp_protocol_failed' };
       }
-      return { kind: 'failure', code: exchange.transportFailed ? 'mcp_transport_failed' : 'cancelled' };
+      return {
+        kind: 'failure',
+        code: exchange.transportFailed ? 'mcp_transport_failed' : 'cancelled',
+      };
     }
     if (
-      error instanceof McpError
-      && error.code === ErrorCode.RequestTimeout
-      && !exchange.responseSeen
+      error instanceof McpError &&
+      error.code === ErrorCode.RequestTimeout &&
+      !exchange.responseSeen
     ) {
       return { kind: 'failure', code: 'mcp_timeout' };
     }

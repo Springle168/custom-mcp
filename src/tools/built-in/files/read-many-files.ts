@@ -23,13 +23,8 @@ const MAX_FILES = 100;
 
 const OUTPUT_SEPARATOR_FORMAT = '--- {filePath} ---';
 
-function validateShallowReadContentLimitDependency(
-  args: Record<string, unknown>,
-): string | null {
-  if (
-    args.shallow_read_content_limit_bytes !== undefined &&
-    args.shallow_read !== true
-  ) {
+function validateShallowReadContentLimitDependency(args: Record<string, unknown>): string | null {
+  if (args.shallow_read_content_limit_bytes !== undefined && args.shallow_read !== true) {
     return "The 'shallow_read_content_limit_bytes' parameter requires 'shallow_read' to be true.";
   }
 
@@ -52,13 +47,10 @@ async function handleReadManyFiles(
 
   const include = args.include as string[];
   const exclude = (args.exclude as string[] | undefined) ?? [];
-  const useIgnoreFiles =
-    (args.use_ignore_files as boolean | undefined) ?? true;
+  const useIgnoreFiles = (args.use_ignore_files as boolean | undefined) ?? true;
   const shallowRead = (args.shallow_read as boolean | undefined) ?? false;
-  const shallowReadContentLimitBytes =
-    args.shallow_read_content_limit_bytes as number | undefined;
-  const showLineNumbers =
-    (args.show_line_numbers as boolean | undefined) ?? false;
+  const shallowReadContentLimitBytes = args.shallow_read_content_limit_bytes as number | undefined;
+  const showLineNumbers = (args.show_line_numbers as boolean | undefined) ?? false;
 
   const fileAccessPolicyContext = context.fileAccessPolicyContext;
   const selectionResult = await selectReadableFiles({
@@ -106,8 +98,7 @@ async function handleReadManyFiles(
       }
       const result = await readTextFile(file.readPath, {
         showLineNumbers:
-          (!shallowRead || shallowReadContentLimitBytes !== undefined) &&
-          showLineNumbers,
+          (!shallowRead || shallowReadContentLimitBytes !== undefined) && showLineNumbers,
       });
       if (!result.ok) {
         return {
@@ -187,14 +178,8 @@ async function handleReadManyFiles(
       '.',
   );
 
-  const totalLineCount = processedFiles.reduce(
-    (sum, file) => sum + file.originalLineCount,
-    0,
-  );
-  const totalSizeBytes = processedFiles.reduce(
-    (sum, file) => sum + file.sizeBytes,
-    0,
-  );
+  const totalLineCount = processedFiles.reduce((sum, file) => sum + file.originalLineCount, 0);
+  const totalSizeBytes = processedFiles.reduce((sum, file) => sum + file.sizeBytes, 0);
   const includeShallowContent =
     shallowRead &&
     shallowReadContentLimitBytes !== undefined &&
@@ -215,10 +200,7 @@ async function handleReadManyFiles(
     }
     summaryParts.push(`Total lines: ${totalLineCount}.`);
     summaryParts.push(`Total size: ${formatFileSize(totalSizeBytes)}.`);
-    if (
-      includeShallowContent &&
-      totalSizeBytes > SHALLOW_READ_BATCH_SIZE_BYTES
-    ) {
+    if (includeShallowContent && totalSizeBytes > SHALLOW_READ_BATCH_SIZE_BYTES) {
       summaryParts.push(
         `WARNING: Included file contents exceed the recommended ${SHALLOW_READ_BATCH_SIZE_LABEL} batch size. The response may be truncated or otherwise limited by the receiving client or host.`,
       );
@@ -229,7 +211,9 @@ async function handleReadManyFiles(
         ? `yes (${[
             file.lineCountTruncated ? 'line count' : null,
             file.lineLengthTruncated ? 'long lines' : null,
-          ].filter(Boolean).join(', ')})`
+          ]
+            .filter(Boolean)
+            .join(', ')})`
         : 'no';
       summaryParts.push(
         `- ${file.displayPath}: ${file.originalLineCount} line(s), ${formatFileSize(file.sizeBytes)}, would be truncated: ${truncationStatus}.`,
@@ -242,25 +226,18 @@ async function handleReadManyFiles(
     if (!hasTruncatedContent) {
       summaryParts.push('No truncation: all returned file contents are complete.');
     } else {
-      summaryParts.push(
-        'Files without a truncation warning are returned completely.',
-      );
+      summaryParts.push('Files without a truncation warning are returned completely.');
     }
 
     for (const file of processedFiles) {
-      const separator = OUTPUT_SEPARATOR_FORMAT.replace(
-        '{filePath}',
-        file.displayPath,
-      );
+      const separator = OUTPUT_SEPARATOR_FORMAT.replace('{filePath}', file.displayPath);
       let block = '';
       if (file.isTruncated) {
         const truncationReasons = [
           file.lineCountTruncated
             ? `showing lines ${file.startLine}-${file.endLine} of ${file.originalLineCount}`
             : null,
-          file.lineLengthTruncated
-            ? `some lines shortened to ${MAX_LINE_LENGTH} characters`
-            : null,
+          file.lineLengthTruncated ? `some lines shortened to ${MAX_LINE_LENGTH} characters` : null,
         ].filter(Boolean);
         block += `[WARNING: Truncated. ${truncationReasons.join('; ')}. Use read_file or a similar file-reading tool for full content.]\n\n`;
       }
@@ -281,9 +258,7 @@ async function handleReadManyFiles(
   }
 
   if (processedFiles.length > 0 && blockedByDeny) {
-    summaryParts.push(
-      'NOTE: Some paths were blocked by the file access deny policy.',
-    );
+    summaryParts.push('NOTE: Some paths were blocked by the file access deny policy.');
   }
 
   if (processedFiles.length > 0 && ignoredByPolicy) {
@@ -304,10 +279,7 @@ async function handleReadManyFiles(
   }
 
   return {
-    content: [
-      { type: 'text', text: `${summaryParts.join('\n')}\n` },
-      ...fileContentBlocks,
-    ],
+    content: [{ type: 'text', text: `${summaryParts.join('\n')}\n` }, ...fileContentBlocks],
     isError: processedFiles.length === 0,
   };
 }

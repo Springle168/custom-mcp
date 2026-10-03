@@ -23,11 +23,11 @@ import type { PathSafetyContext } from './utils/paths.js';
 
 export { ConfigError, isConfigError } from './config/errors.js';
 export type { ConfigErrorCode } from './config/errors.js';
-export type {
-  ParsedToolExposure,
-  ParsedWorkspaceToolsConfig,
-} from './config/tool-exposure.js';
-export { getDefaultGlobalConfigPath, getDefaultGlobalLogsDir } from './config/global-config-path.js';
+export type { ParsedToolExposure, ParsedWorkspaceToolsConfig } from './config/tool-exposure.js';
+export {
+  getDefaultGlobalConfigPath,
+  getDefaultGlobalLogsDir,
+} from './config/global-config-path.js';
 export type {
   DefaultGlobalConfigPathOptions,
   GlobalConfigLocation,
@@ -37,9 +37,7 @@ export type {
   RuntimeAndroidConfig,
   RuntimeConfigSnapshot,
 } from './config/runtime-snapshot.js';
-export {
-  createEmptyRuntimeRulesConfig,
-} from './config/request-header-rules.js';
+export { createEmptyRuntimeRulesConfig } from './config/request-header-rules.js';
 export type {
   RuntimeInitializeRequestFeature,
   RuntimeInitializeRequestHeaderRule,
@@ -79,9 +77,7 @@ export function getPathSafetyContext(config: {
   return config.pathSafetyContext;
 }
 
-export function loadRuntimeConfig(
-  options: LoadRuntimeConfigOptions,
-): RuntimeConfigSnapshot {
+export function loadRuntimeConfig(options: LoadRuntimeConfigOptions): RuntimeConfigSnapshot {
   return loadRuntimeConfigWithIdentity(options).snapshot;
 }
 

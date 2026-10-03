@@ -3,7 +3,12 @@ import type { ConfigStore } from '../application/config-store.js';
 import type { ToolCallDiagnosticSink, ToolCallLogger } from '../invocation/tool-call-handler.js';
 import type { WorkspaceToolService } from '../../tools/index.js';
 import { generateMcpSessionId } from './mcp-identifiers.js';
-import { handleMcpPostRequest, safeInfo, type McpPostLogger, type McpPostSession } from './mcp-post-handler.js';
+import {
+  handleMcpPostRequest,
+  safeInfo,
+  type McpPostLogger,
+  type McpPostSession,
+} from './mcp-post-handler.js';
 import { createMCPServer } from './mcp-server.js';
 import { InitializationTrackingTransport } from './initialization-tracking-transport.js';
 import { createPendingSession, type McpPendingSession } from './pending-session.js';
@@ -50,9 +55,12 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
             ? {}
             : { onToolCallDiagnostic: options.onToolCallDiagnostic }),
         });
-        const transport = new InitializationTrackingTransport({
-          sessionIdGenerator: generateMcpSessionId,
-        }, requestId);
+        const transport = new InitializationTrackingTransport(
+          {
+            sessionIdGenerator: generateMcpSessionId,
+          },
+          requestId,
+        );
         const session = createPendingSession(server, transport, () => {
           const sid = transport.sessionId;
           // Unpublished SDK ids stay out of logs and routing.

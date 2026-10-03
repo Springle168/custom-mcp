@@ -1,13 +1,5 @@
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
-import {
-  assertSpan,
-  assertSuccessResult,
-  createReplaceTextFixtureHarness,
-} from './helpers.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
+import { assertSpan, assertSuccessResult, createReplaceTextFixtureHarness } from './helpers.js';
 
 const {
   assertFixtureContent,
@@ -240,7 +232,8 @@ async function testConcurrentDifferentFilesSucceedIndependently(): Promise<void>
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 line ending and concurrency tests',
-    details: 'Covers lineEnding auto/lf/crlf, normalized LF spans/counts, regex CRLF matching, and file lock regressions.',
+    details:
+      'Covers lineEnding auto/lf/crlf, normalized LF spans/counts, regex CRLF matching, and file lock regressions.',
     afterAll: cleanupFixtures,
     tests: [
       { name: 'auto preserves existing LF', run: testAutoPreservesExistingLf },

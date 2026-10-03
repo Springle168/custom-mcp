@@ -15,7 +15,11 @@ function testResolvesDotdirConfigUnderInjectedHome(): void {
   const location = getDefaultGlobalConfigPath({ homeDir: HOME_DIR });
   const expectedConfigDir = path.join(path.resolve(HOME_DIR), '.custom-mcp');
 
-  assertEqual(location.configDir, expectedConfigDir, 'Config dir should be under the injected home directory');
+  assertEqual(
+    location.configDir,
+    expectedConfigDir,
+    'Config dir should be under the injected home directory',
+  );
   assertEqual(location.configFileName, 'config.json', 'Config file name should be stable');
   assertEqual(
     location.configFilePath,
@@ -56,7 +60,11 @@ function testBlankHomeDirFailsWithConfigError(): void {
     getDefaultGlobalConfigPath({ homeDir: '   ' });
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Blank home directory should throw ConfigError');
-    assertEqual(error.code, 'home_dir_unavailable', 'Error code should identify missing home directory');
+    assertEqual(
+      error.code,
+      'home_dir_unavailable',
+      'Error code should identify missing home directory',
+    );
     configPathFailed = true;
   }
 
@@ -65,8 +73,15 @@ function testBlankHomeDirFailsWithConfigError(): void {
   try {
     getDefaultGlobalLogsDir({ homeDir: '   ' });
   } catch (error: unknown) {
-    assert(error instanceof ConfigError, 'Blank home directory should throw ConfigError for logs dir');
-    assertEqual(error.code, 'home_dir_unavailable', 'Logs dir helper should use the same missing home code');
+    assert(
+      error instanceof ConfigError,
+      'Blank home directory should throw ConfigError for logs dir',
+    );
+    assertEqual(
+      error.code,
+      'home_dir_unavailable',
+      'Logs dir helper should use the same missing home code',
+    );
     return;
   }
 
@@ -77,10 +92,22 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing global config path resolution',
     tests: [
-      { name: 'resolves dotdir config under injected home', run: testResolvesDotdirConfigUnderInjectedHome },
-      { name: 'resolves dotdir logs under injected home', run: testResolvesDotdirLogsUnderInjectedHome },
-      { name: 'resolves relative injected home to an absolute path', run: testResolvesRelativeInjectedHomeToAbsolutePath },
-      { name: 'blank home dir fails with structured error', run: testBlankHomeDirFailsWithConfigError },
+      {
+        name: 'resolves dotdir config under injected home',
+        run: testResolvesDotdirConfigUnderInjectedHome,
+      },
+      {
+        name: 'resolves dotdir logs under injected home',
+        run: testResolvesDotdirLogsUnderInjectedHome,
+      },
+      {
+        name: 'resolves relative injected home to an absolute path',
+        run: testResolvesRelativeInjectedHomeToAbsolutePath,
+      },
+      {
+        name: 'blank home dir fails with structured error',
+        run: testBlankHomeDirFailsWithConfigError,
+      },
     ],
   });
 }

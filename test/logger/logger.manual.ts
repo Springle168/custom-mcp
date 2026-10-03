@@ -109,9 +109,7 @@ async function withFixedNow<T>(fixedNow: Date, run: () => Promise<T>): Promise<T
     );
     constructor(
       ...args:
-        | []
-        | [string | number]
-        | [number, number, number?, number?, number?, number?, number?]
+        [] | [string | number] | [number, number, number?, number?, number?, number?, number?]
     ) {
       if (args.length === 0) {
         super(fixedNow.getTime());
@@ -171,7 +169,9 @@ async function assertLogFileOpenFailureSurfaces(): Promise<void> {
         throw error;
       }
 
-      throw new Error('Expected Logger construction to fail when the target log file cannot be opened');
+      throw new Error(
+        'Expected Logger construction to fail when the target log file cannot be opened',
+      );
     });
   } finally {
     await rm(blockedLogsDir, { recursive: true, force: true });
@@ -188,9 +188,7 @@ await withFixedNow(fixedNow, async () => {
   const expectedLogFile = expectedLogFilePath(testLogsDir, fixedNow, workspaceId);
 
   if (logger.logFile !== expectedLogFile) {
-    throw new Error(
-      `Expected logger.logFile to be ${expectedLogFile}, got ${logger.logFile}`,
-    );
+    throw new Error(`Expected logger.logFile to be ${expectedLogFile}, got ${logger.logFile}`);
   }
 
   console.log('Testing logger with colors...\n');
@@ -200,15 +198,23 @@ await withFixedNow(fixedNow, async () => {
 
   // 测试 2: 小 JSON 参数（各种数据类型）
   const replaceTextContext = demoLogContext('call_replace_text_demo');
-  logger.logToolCall('replace_text', {
-    files: [{
-      file_path: 'src/index.ts',
-      replacements: [{
-        target: 'const port = 3000;',
-        replacement: 'const port = 3100;',
-      }],
-    }],
-  }, replaceTextContext);
+  logger.logToolCall(
+    'replace_text',
+    {
+      files: [
+        {
+          file_path: 'src/index.ts',
+          replacements: [
+            {
+              target: 'const port = 3000;',
+              replacement: 'const port = 3100;',
+            },
+          ],
+        },
+      ],
+    },
+    replaceTextContext,
+  );
 
   logger.logToolResult(
     'replace_text',
@@ -227,10 +233,14 @@ await withFixedNow(fixedNow, async () => {
 
   // 测试 3: 失败结果
   const readManyFilesContext = demoLogContext('call_read_many_files_demo');
-  logger.logToolCall('read_many_files', {
-    include: ['src/**/*.ts', 'config.json'],
-    exclude: ['**/*.test.ts'],
-  }, readManyFilesContext);
+  logger.logToolCall(
+    'read_many_files',
+    {
+      include: ['src/**/*.ts', 'config.json'],
+      exclude: ['**/*.test.ts'],
+    },
+    readManyFilesContext,
+  );
 
   logger.logToolResult(
     'read_many_files',
@@ -249,22 +259,26 @@ await withFixedNow(fixedNow, async () => {
 
   // 测试 4: 嵌套 JSON
   const complexToolContext = demoLogContext('call_complex_tool_demo');
-  logger.logToolCall('complex_tool', {
-    config: {
-      nested: {
-        deep: {
-          value: 'test',
-          enabled: true,
-          count: 42,
+  logger.logToolCall(
+    'complex_tool',
+    {
+      config: {
+        nested: {
+          deep: {
+            value: 'test',
+            enabled: true,
+            count: 42,
+          },
         },
+        items: ['item1', 'item2', 'item3'],
       },
-      items: ['item1', 'item2', 'item3'],
+      flags: {
+        verbose: false,
+        dryRun: true,
+      },
     },
-    flags: {
-      verbose: false,
-      dryRun: true,
-    },
-  }, complexToolContext);
+    complexToolContext,
+  );
 
   logger.logToolResult(
     'complex_tool',

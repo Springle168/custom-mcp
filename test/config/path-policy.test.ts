@@ -1,14 +1,7 @@
 import * as path from 'node:path';
-import {
-  readExistingDirectoryPath,
-} from '../../src/config/path-policy.js';
+import { readExistingDirectoryPath } from '../../src/config/path-policy.js';
 import type { ValuePolicyResult } from '../../src/config/value-policy.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 type FakeEntry = 'dir' | 'file';
 
@@ -29,7 +22,9 @@ function expectError<T>(
   assertIncludes(result.error.message, expectedMessage, message);
 }
 
-function createFakeStat(entries: ReadonlyMap<string, FakeEntry>): (targetPath: string) => { isDirectory(): boolean } {
+function createFakeStat(
+  entries: ReadonlyMap<string, FakeEntry>,
+): (targetPath: string) => { isDirectory(): boolean } {
   return (targetPath: string) => {
     const entry = entries.get(targetPath);
     if (entry === undefined) {
@@ -124,10 +119,12 @@ function testExistingDirectoryProbe(): void {
   const platform: NodeJS.Platform = 'win32';
   const directory = 'C:/repo';
   const file = 'C:/repo.txt';
-  const stat = createFakeStat(fakeEntries(platform, [
-    [directory, 'dir'],
-    [file, 'file'],
-  ]));
+  const stat = createFakeStat(
+    fakeEntries(platform, [
+      [directory, 'dir'],
+      [file, 'file'],
+    ]),
+  );
 
   assertEqual(
     expectOk(
@@ -202,9 +199,18 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing config path policy',
     tests: [
-      { name: 'Windows drive-absolute directory is accepted', run: testWindowsDriveAbsoluteDirectoryIsAccepted },
-      { name: 'typed string whitespace is rejected before path shape', run: testTypedStringWhitespaceIsRejectedBeforePathShape },
-      { name: 'Windows unsupported path shapes are rejected', run: testWindowsUnsupportedPathShapesAreRejected },
+      {
+        name: 'Windows drive-absolute directory is accepted',
+        run: testWindowsDriveAbsoluteDirectoryIsAccepted,
+      },
+      {
+        name: 'typed string whitespace is rejected before path shape',
+        run: testTypedStringWhitespaceIsRejectedBeforePathShape,
+      },
+      {
+        name: 'Windows unsupported path shapes are rejected',
+        run: testWindowsUnsupportedPathShapesAreRejected,
+      },
       { name: 'tilde expansion is rejected', run: testTildeExpansionIsRejected },
       { name: 'existing directory probe', run: testExistingDirectoryProbe },
       { name: 'POSIX absolute path seam', run: testPosixAbsolutePathSeam },

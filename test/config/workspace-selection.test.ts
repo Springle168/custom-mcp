@@ -2,13 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CliError, parseCliArgs } from '../../src/cli.js';
-import {
-  ConfigError,
-  loadRuntimeConfigWithIdentity,
-} from '../../src/config.js';
-import {
-  selectWorkspaceReference,
-} from '../../src/config/workspace-selection.js';
+import { ConfigError, loadRuntimeConfigWithIdentity } from '../../src/config.js';
+import { selectWorkspaceReference } from '../../src/config/workspace-selection.js';
 import {
   assert,
   assertEqual,
@@ -93,12 +88,20 @@ function testCliRequiresSeparatedWorkspaceArgument(): void {
 
 function testCliRejectsMissingDuplicateAndInvalidValues(): void {
   const missingValue = captureCliError(() => parseCliArgs(['--workspace']));
-  assertIncludes(missingValue.message, 'requires a non-empty workspace id', 'Missing value should fail');
+  assertIncludes(
+    missingValue.message,
+    'requires a non-empty workspace id',
+    'Missing value should fail',
+  );
 
   const duplicate = captureCliError(() =>
-    parseCliArgs(['--workspace', 'workspace-a', '--workspace', 'workspace-b'])
+    parseCliArgs(['--workspace', 'workspace-a', '--workspace', 'workspace-b']),
   );
-  assertIncludes(duplicate.message, 'only be provided once', 'Duplicate workspace argument should fail');
+  assertIncludes(
+    duplicate.message,
+    'only be provided once',
+    'Duplicate workspace argument should fail',
+  );
 
   const invalid = captureCliError(() => parseCliArgs(['--workspace', 'Workspace-A']));
   assertIncludes(invalid.message, 'lowercase', 'Invalid workspace lexical token should fail');
@@ -122,7 +125,7 @@ function testSelectionRejectsUnknownAndInvalidIds(): void {
       globalConfigFilePath: CONFIG_FILE,
       workspaceId: 'missing',
       workspaces: [{ id: 'workspace-a', configFile: WORKSPACE_A_CONFIG }],
-    })
+    }),
   );
   assertEqual(unknown.configFilePath, CONFIG_FILE, 'Unknown id should point to the global index');
   assertIncludes(unknown.message, 'was not found', 'Unknown id should explain selection failure');
@@ -133,9 +136,13 @@ function testSelectionRejectsUnknownAndInvalidIds(): void {
       globalConfigFilePath: CONFIG_FILE,
       workspaceId: 'Workspace-A',
       workspaces: [{ id: 'workspace-a', configFile: WORKSPACE_A_CONFIG }],
-    })
+    }),
   );
-  assertEqual(invalid.fieldPath, 'workspace', 'Defensive selection validation should identify workspace');
+  assertEqual(
+    invalid.fieldPath,
+    'workspace',
+    'Defensive selection validation should identify workspace',
+  );
 }
 
 async function testLoaderBuildsIdentityFromIndexAndWorkspaceFile(): Promise<void> {
@@ -148,12 +155,31 @@ async function testLoaderBuildsIdentityFromIndexAndWorkspaceFile(): Promise<void
     env: {},
   });
 
-  assertEqual(loaded.identity.globalConfigFilePath, CONFIG_FILE, 'Identity should record the global index');
-  assertEqual(loaded.identity.workspaceConfigFilePath, WORKSPACE_A_CONFIG, 'Identity should record the selected workspace file');
-  assertEqual(loaded.identity.workspaceId, 'workspace-a', 'Identity id should come from the global index');
-  assertEqual(loaded.identity.rootDir, WORKSPACE_A_DIR, 'Identity root should come from the workspace file');
+  assertEqual(
+    loaded.identity.globalConfigFilePath,
+    CONFIG_FILE,
+    'Identity should record the global index',
+  );
+  assertEqual(
+    loaded.identity.workspaceConfigFilePath,
+    WORKSPACE_A_CONFIG,
+    'Identity should record the selected workspace file',
+  );
+  assertEqual(
+    loaded.identity.workspaceId,
+    'workspace-a',
+    'Identity id should come from the global index',
+  );
+  assertEqual(
+    loaded.identity.rootDir,
+    WORKSPACE_A_DIR,
+    'Identity root should come from the workspace file',
+  );
   assertEqual(loaded.identity.port, 4501, 'Identity port should come from the workspace file');
-  assert(!('selectionMode' in loaded.identity), 'Identity should not retain a meaningless selection mode');
+  assert(
+    !('selectionMode' in loaded.identity),
+    'Identity should not retain a meaningless selection mode',
+  );
 }
 
 async function testExplicitSelectionDoesNotDependOnCwd(): Promise<void> {
@@ -168,7 +194,11 @@ async function testExplicitSelectionDoesNotDependOnCwd(): Promise<void> {
       workspaceId: 'workspace-a',
       env: {},
     });
-    assertEqual(loaded.snapshot.workspaceId, 'workspace-a', 'Selection should depend only on the explicit id');
+    assertEqual(
+      loaded.snapshot.workspaceId,
+      'workspace-a',
+      'Selection should depend only on the explicit id',
+    );
   } finally {
     process.chdir(previousCwd);
   }
@@ -179,12 +209,27 @@ async function main(): Promise<void> {
     title: 'Testing explicit workspace selection',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'CLI requires separated workspace argument', run: testCliRequiresSeparatedWorkspaceArgument },
-      { name: 'CLI rejects missing duplicate and invalid values', run: testCliRejectsMissingDuplicateAndInvalidValues },
+      {
+        name: 'CLI requires separated workspace argument',
+        run: testCliRequiresSeparatedWorkspaceArgument,
+      },
+      {
+        name: 'CLI rejects missing duplicate and invalid values',
+        run: testCliRejectsMissingDuplicateAndInvalidValues,
+      },
       { name: 'selects reference by explicit id', run: testSelectsReferenceByExplicitId },
-      { name: 'selection rejects unknown and invalid ids', run: testSelectionRejectsUnknownAndInvalidIds },
-      { name: 'loader builds identity from index and workspace file', run: testLoaderBuildsIdentityFromIndexAndWorkspaceFile },
-      { name: 'explicit selection does not depend on cwd', run: testExplicitSelectionDoesNotDependOnCwd },
+      {
+        name: 'selection rejects unknown and invalid ids',
+        run: testSelectionRejectsUnknownAndInvalidIds,
+      },
+      {
+        name: 'loader builds identity from index and workspace file',
+        run: testLoaderBuildsIdentityFromIndexAndWorkspaceFile,
+      },
+      {
+        name: 'explicit selection does not depend on cwd',
+        run: testExplicitSelectionDoesNotDependOnCwd,
+      },
     ],
   });
 }

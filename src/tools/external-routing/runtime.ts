@@ -52,8 +52,7 @@ export interface ExternalRoutingRuntimeOperationOutcome<TOutcome> {
 }
 
 export type ExternalRoutingRuntimeOutcome<TOutcome> =
-  | ExternalRoutingRuntimeFailure
-  | ExternalRoutingRuntimeOperationOutcome<TOutcome>;
+  ExternalRoutingRuntimeFailure | ExternalRoutingRuntimeOperationOutcome<TOutcome>;
 
 type InvocationPhase = 'pending' | 'active' | 'drained';
 
@@ -150,10 +149,9 @@ export class ExternalRoutingRuntime<TInput, TOutcome> {
       this.#cancelActive(invocation);
     }
 
-    void Promise.all(active.map((invocation) => invocation.drainCompletion))
-      .then(() => {
-        resolveClose();
-      });
+    void Promise.all(active.map((invocation) => invocation.drainCompletion)).then(() => {
+      resolveClose();
+    });
     return closePromise;
   }
 

@@ -50,12 +50,14 @@ function fixedRoute(outcome: RouteOutcome): ExternalRouteOperation {
   };
 }
 
-function invocation(overrides: Partial<{
-  callId: string;
-  name: string;
-  arguments: Readonly<Record<string, unknown>>;
-  signal: AbortSignal;
-}> = {}) {
+function invocation(
+  overrides: Partial<{
+    callId: string;
+    name: string;
+    arguments: Readonly<Record<string, unknown>>;
+    signal: AbortSignal;
+  }> = {},
+) {
   return {
     callId: overrides.callId ?? 'call_test',
     name: overrides.name ?? 'external_tool',
@@ -103,7 +105,8 @@ async function withHttpExecutor(
   } finally {
     await executor.close();
     await new Promise<void>((resolve, reject) =>
-      server.close((error) => error ? reject(error) : resolve()));
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
   }
 }
 
@@ -112,10 +115,16 @@ async function testHttpCanonicalContentMapping(): Promise<void> {
   const content: readonly CanonicalContentBlock[] = [
     { type: 'text', text: 'Preview:' },
     { type: 'image', data: 'AQID', mime_type: 'image/webp' },
-    { type: 'unknown', value: { type: 'image', data: 'example', url: 'https://example.test/image' } },
+    {
+      type: 'unknown',
+      value: { type: 'image', data: 'example', url: 'https://example.test/image' },
+    },
     { type: 'text', text: '' },
     { type: 'text', text: 'adjacent text' },
-    ...[null, false, 0, '', 'hello', [1, null]].map((value) => ({ type: 'unknown' as const, value })),
+    ...[null, false, 0, '', 'hello', [1, null]].map((value) => ({
+      type: 'unknown' as const,
+      value,
+    })),
   ];
   const expectedContent = [
     { type: 'text', text: 'Preview:' },
@@ -125,82 +134,147 @@ async function testHttpCanonicalContentMapping(): Promise<void> {
     { type: 'text', text: 'adjacent text' },
     ...['null', 'false', '0', '""', '"hello"', '[1,null]'].map((text) => ({ type: 'text', text })),
   ];
-  await withHttpExecutor((request) => ({
-    results: [{
-      id: request.calls[0].id,
-      status: request.calls[0].arguments.status,
-      content: request.calls[0].arguments.empty ? [] : content,
-    }],
-    extensions: { fixture: { notMcpMetadata: true } },
-  }), async (executor) => {
-    for (const status of ['completed', 'failed', 'cancelled'] as const) {
-      for (const empty of [false, true]) {
-        const result = await executor.execute('test-route', invocation({ arguments: { status, empty } }));
-        assertEqual(result.isError, status !== 'completed', 'Only completed should map to successful MCP status');
-        assertEqual(
-          JSON.stringify(result.content),
-          JSON.stringify(empty ? [] : expectedContent),
-          'HTTP mapping must preserve every block, text boundary, JSON value and image byte',
-        );
-        assertEqual(Object.keys(result).sort().join(','), 'content,isError', 'Mapping must not add metadata or structuredContent');
-        assert(isToolCallResult(result), 'Mapped HTTP results must pass unified runtime validation');
+  await withHttpExecutor(
+    (request) => ({
+      results: [
+        {
+          id: request.calls[0].id,
+          status: request.calls[0].arguments.status,
+          content: request.calls[0].arguments.empty ? [] : content,
+        },
+      ],
+      extensions: { fixture: { notMcpMetadata: true } },
+    }),
+    async (executor) => {
+      for (const status of ['completed', 'failed', 'cancelled'] as const) {
+        for (const empty of [false, true]) {
+          const result = await executor.execute(
+            'test-route',
+            invocation({ arguments: { status, empty } }),
+          );
+          assertEqual(
+            result.isError,
+            status !== 'completed',
+            'Only completed should map to successful MCP status',
+          );
+          assertEqual(
+            JSON.stringify(result.content),
+            JSON.stringify(empty ? [] : expectedContent),
+            'HTTP mapping must preserve every block, text boundary, JSON value and image byte',
+          );
+          assertEqual(
+            Object.keys(result).sort().join(','),
+            'content,isError',
+            'Mapping must not add metadata or structuredContent',
+          );
+          assert(
+            isToolCallResult(result),
+            'Mapped HTTP results must pass unified runtime validation',
+          );
+        }
       }
-    }
-  });
+    },
+  );
 }
 
 async function testHttpRejectionsRemainControlled(): Promise<void> {
-  await withHttpExecutor(() => ({
-    error: { code: 'invalid_request', message: '' },
-  }), async (executor) => {
-    const result = await executor.execute('test-route', invocation());
-    assertEqual(result.isError, true, 'Top-level rejection should remain an error');
-    assertEqual(getResultText(result), 'External endpoint rejected the tool call (invalid_request): ', 'Endpoint error mapping should be unchanged');
-  });
+  await withHttpExecutor(
+    () => ({
+      error: { code: 'invalid_request', message: '' },
+    }),
+    async (executor) => {
+      const result = await executor.execute('test-route', invocation());
+      assertEqual(result.isError, true, 'Top-level rejection should remain an error');
+      assertEqual(
+        getResultText(result),
+        'External endpoint rejected the tool call (invalid_request): ',
+        'Endpoint error mapping should be unchanged',
+      );
+    },
+  );
 
   for (const invalidContent of [
-    [{ type: 'text', text: 'raw-business-secret' }, { type: 'image', data: 'bad-image-secret', mime_type: 'image/png' }],
+    [
+      { type: 'text', text: 'raw-business-secret' },
+      { type: 'image', data: 'bad-image-secret', mime_type: 'image/png' },
+    ],
     [{ type: 'unknown', value: null, extra: 'raw-business-secret' }],
   ]) {
-    await withHttpExecutor((request) => ({
-      results: [{ id: request.calls[0].id, status: 'completed', content: invalidContent }],
-    }), async (executor) => {
-      const result = await executor.execute('test-route', invocation());
-      assertEqual(result.isError, true, 'One invalid block should reject the whole response');
-      assertEqual(result.content.length, 1, 'Invalid response must produce only the local failure block');
-      assertIncludes(getResultText(result), 'invalid HTTP or canonical response', 'Protocol failure should use its stable local template');
-      assertNotIncludes(JSON.stringify(result), 'secret', 'Local rejection must not expose partial content or invalid data');
-    });
+    await withHttpExecutor(
+      (request) => ({
+        results: [{ id: request.calls[0].id, status: 'completed', content: invalidContent }],
+      }),
+      async (executor) => {
+        const result = await executor.execute('test-route', invocation());
+        assertEqual(result.isError, true, 'One invalid block should reject the whole response');
+        assertEqual(
+          result.content.length,
+          1,
+          'Invalid response must produce only the local failure block',
+        );
+        assertIncludes(
+          getResultText(result),
+          'invalid HTTP or canonical response',
+          'Protocol failure should use its stable local template',
+        );
+        assertNotIncludes(
+          JSON.stringify(result),
+          'secret',
+          'Local rejection must not expose partial content or invalid data',
+        );
+      },
+    );
   }
 }
 
 async function testHttpAdaptationExceptionIsControlled(): Promise<void> {
-  await withHttpExecutor((request) => ({
-    results: [{
-      id: request.calls[0].id,
-      status: 'completed',
-      content: [
-        { type: 'text', text: 'partial-business-secret' },
-        { type: 'unknown', value: 'adaptation-failure-fixture' },
+  await withHttpExecutor(
+    (request) => ({
+      results: [
+        {
+          id: request.calls[0].id,
+          status: 'completed',
+          content: [
+            { type: 'text', text: 'partial-business-secret' },
+            { type: 'unknown', value: 'adaptation-failure-fixture' },
+          ],
+        },
       ],
-    }],
-  }), async (executor) => {
-    const stringify = JSON.stringify;
-    try {
-      // Model an unanticipated serialization failure after wire validation.
-      JSON.stringify = (value: unknown) => {
-        if (value === 'adaptation-failure-fixture') throw new Error('raw-adaptation-secret');
-        return stringify(value);
-      };
-      const result = await executor.execute('test-route', invocation());
-      assertEqual(result.isError, true, 'Adaptation exceptions should be controlled local failures');
-      assertIncludes(getResultText(result), 'internal failure', 'Adaptation rejection should follow external_internal_failed');
-      assertEqual(result.content.length, 1, 'Adaptation failure must not return any partial business content');
-      assertNotIncludes(stringify(result), 'secret', 'Neither partial content nor thrown details may escape');
-    } finally {
-      JSON.stringify = stringify;
-    }
-  });
+    }),
+    async (executor) => {
+      const stringify = JSON.stringify;
+      try {
+        // Model an unanticipated serialization failure after wire validation.
+        JSON.stringify = (value: unknown) => {
+          if (value === 'adaptation-failure-fixture') throw new Error('raw-adaptation-secret');
+          return stringify(value);
+        };
+        const result = await executor.execute('test-route', invocation());
+        assertEqual(
+          result.isError,
+          true,
+          'Adaptation exceptions should be controlled local failures',
+        );
+        assertIncludes(
+          getResultText(result),
+          'internal failure',
+          'Adaptation rejection should follow external_internal_failed',
+        );
+        assertEqual(
+          result.content.length,
+          1,
+          'Adaptation failure must not return any partial business content',
+        );
+        assertNotIncludes(
+          stringify(result),
+          'secret',
+          'Neither partial content nor thrown details may escape',
+        );
+      } finally {
+        JSON.stringify = stringify;
+      }
+    },
+  );
 }
 
 async function testReturnsRouteResults(): Promise<void> {
@@ -208,7 +282,11 @@ async function testReturnsRouteResults(): Promise<void> {
     routes: fixedRoute(textOutcome('done')),
   });
   const completed = await completedExecutor.execute('test-route', invocation());
-  assertEqual(completed.isError, false, 'Completed external result should be a successful ToolCallResult');
+  assertEqual(
+    completed.isError,
+    false,
+    'Completed external result should be a successful ToolCallResult',
+  );
   assertEqual(getResultText(completed), 'done', 'Completed message should be returned unchanged');
   await completedExecutor.close();
 
@@ -217,7 +295,11 @@ async function testReturnsRouteResults(): Promise<void> {
   });
   const failed = await failedExecutor.execute('test-route', invocation());
   assertEqual(failed.isError, true, 'Route business errors should remain ToolCallResult errors');
-  assertEqual(getResultText(failed), 'business message', 'Route result content should remain unchanged');
+  assertEqual(
+    getResultText(failed),
+    'business message',
+    'Route result content should remain unchanged',
+  );
   await failedExecutor.close();
 }
 
@@ -292,9 +374,17 @@ async function testCancellationSettlesBeforeStrategyDrain(): Promise<void> {
   controller.abort();
   const result = await resultPromise;
   assertEqual(result.isError, true, 'Caller cancellation should settle as a ToolCallResult error');
-  assertIncludes(getResultText(result), 'cancelled locally', 'Local cancellation must remain distinct from domain cancellation');
+  assertIncludes(
+    getResultText(result),
+    'cancelled locally',
+    'Local cancellation must remain distinct from domain cancellation',
+  );
   assertEqual(operationSignal?.aborted, true, 'Runtime should abort its operation-owned signal');
-  assertEqual(executor.activeExchangeCount, 1, 'Settled cancellation should retain its slot until strategy drain');
+  assertEqual(
+    executor.activeExchangeCount,
+    1,
+    'Settled cancellation should retain its slot until strategy drain',
+  );
 
   settled.resolve({ kind: 'failure', code: 'cancelled' });
   drained.resolve();
@@ -319,15 +409,27 @@ async function testRouteBoundCallsShareOneAdmissionPool(): Promise<void> {
   });
 
   const activeCalls = Array.from({ length: 8 }, (_, index) =>
-    executor.execute(index % 2 === 0 ? 'route-a' : 'route-b', invocation())
+    executor.execute(index % 2 === 0 ? 'route-a' : 'route-b', invocation()),
   );
   await Promise.all(activeCalls);
   const pendingCall = executor.execute('route-b', invocation());
   await Promise.resolve();
 
-  assertEqual(executor.activeExchangeCount, 8, 'Both routes should consume the same eight active slots.');
-  assertEqual(executor.pendingExchangeCount, 1, 'A call from either route should enter the shared pending FIFO.');
-  assertEqual(startedDefinitionIds.length, 8, 'Pending route work must not start before a shared slot drains.');
+  assertEqual(
+    executor.activeExchangeCount,
+    8,
+    'Both routes should consume the same eight active slots.',
+  );
+  assertEqual(
+    executor.pendingExchangeCount,
+    1,
+    'A call from either route should enter the shared pending FIFO.',
+  );
+  assertEqual(
+    startedDefinitionIds.length,
+    8,
+    'Pending route work must not start before a shared slot drains.',
+  );
 
   drains[0]?.resolve();
   while (startedDefinitionIds.length < 9) {
@@ -395,26 +497,58 @@ async function testCloseStartsDrainingResourcesBeforeActiveDrain(): Promise<void
 
   void executor.execute('test-route', invocation());
   const closed = executor.close();
-  assertEqual(events.join(','), 'draining', 'MCP-owned resources must start closing before active drain completes');
+  assertEqual(
+    events.join(','),
+    'draining',
+    'MCP-owned resources must start closing before active drain completes',
+  );
   settled.resolve({ kind: 'failure', code: 'cancelled' });
   await closed;
-  assertEqual(events.join(','), 'draining,after-drain', 'HTTP resources close only after active drain');
+  assertEqual(
+    events.join(','),
+    'draining,after-drain',
+    'HTTP resources close only after active drain',
+  );
 }
 
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing executor mapping and ownership',
     tests: [
-      { name: 'maps actual HTTP canonical content for all statuses', run: testHttpCanonicalContentMapping },
-      { name: 'keeps actual HTTP rejections controlled and atomic', run: testHttpRejectionsRemainControlled },
-      { name: 'controls exceptions after HTTP wire validation', run: testHttpAdaptationExceptionIsControlled },
+      {
+        name: 'maps actual HTTP canonical content for all statuses',
+        run: testHttpCanonicalContentMapping,
+      },
+      {
+        name: 'keeps actual HTTP rejections controlled and atomic',
+        run: testHttpRejectionsRemainControlled,
+      },
+      {
+        name: 'controls exceptions after HTTP wire validation',
+        run: testHttpAdaptationExceptionIsControlled,
+      },
       { name: 'returns route results', run: testReturnsRouteResults },
-      { name: 'maps controlled local failures without raw data', run: testMapsControlledLocalFailuresWithoutRawData },
+      {
+        name: 'maps controlled local failures without raw data',
+        run: testMapsControlledLocalFailuresWithoutRawData,
+      },
       { name: 'passes route identity and invocation', run: testPassesRouteIdentityAndInvocation },
-      { name: 'settles cancellation before strategy drain', run: testCancellationSettlesBeforeStrategyDrain },
-      { name: 'shares one admission pool across route-bound calls', run: testRouteBoundCallsShareOneAdmissionPool },
-      { name: 'closes resources only after runtime drain', run: testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent },
-      { name: 'starts draining resource close before active drain', run: testCloseStartsDrainingResourcesBeforeActiveDrain },
+      {
+        name: 'settles cancellation before strategy drain',
+        run: testCancellationSettlesBeforeStrategyDrain,
+      },
+      {
+        name: 'shares one admission pool across route-bound calls',
+        run: testRouteBoundCallsShareOneAdmissionPool,
+      },
+      {
+        name: 'closes resources only after runtime drain',
+        run: testCloseWaitsForDrainBeforeClosingResourcesAndIsIdempotent,
+      },
+      {
+        name: 'starts draining resource close before active drain',
+        run: testCloseStartsDrainingResourcesBeforeActiveDrain,
+      },
     ],
   });
 }

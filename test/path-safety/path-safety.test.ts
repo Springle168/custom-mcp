@@ -57,13 +57,41 @@ async function prepareFixtures(): Promise<void> {
   await fs.writeFile(path.join(FIXTURES_DIR, '.env'), 'SECRET=hidden\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, '.ENV'), 'SECRET=uppercase\n', 'utf-8');
   await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'Foo.ts'), 'export const foo = 1;\n', 'utf-8');
-  await fs.writeFile(path.join(FIXTURES_DIR, 'src', 'nested', 'Bar.ts'), 'export const bar = 2;\n', 'utf-8');
-  await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file[test].ts'), 'export const bracket = true;\n', 'utf-8');
-  await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file{brace}.ts'), 'export const brace = true;\n', 'utf-8');
-  await fs.writeFile(path.join(FIXTURES_DIR, 'special', 'file{a,b}.ts'), 'export const braceComma = true;\n', 'utf-8');
-  await fs.writeFile(path.join(OUTSIDE_DIR, 'outside.ts'), 'export const outside = true;\n', 'utf-8');
-  await fs.writeFile(path.join(OUTSIDE_DIR, 'docs', 'visible.txt'), 'visible additional text\n', 'utf-8');
-  await fs.writeFile(path.join(OUTSIDE_DIR, 'node_modules', 'excluded.txt'), 'excluded additional text\n', 'utf-8');
+  await fs.writeFile(
+    path.join(FIXTURES_DIR, 'src', 'nested', 'Bar.ts'),
+    'export const bar = 2;\n',
+    'utf-8',
+  );
+  await fs.writeFile(
+    path.join(FIXTURES_DIR, 'special', 'file[test].ts'),
+    'export const bracket = true;\n',
+    'utf-8',
+  );
+  await fs.writeFile(
+    path.join(FIXTURES_DIR, 'special', 'file{brace}.ts'),
+    'export const brace = true;\n',
+    'utf-8',
+  );
+  await fs.writeFile(
+    path.join(FIXTURES_DIR, 'special', 'file{a,b}.ts'),
+    'export const braceComma = true;\n',
+    'utf-8',
+  );
+  await fs.writeFile(
+    path.join(OUTSIDE_DIR, 'outside.ts'),
+    'export const outside = true;\n',
+    'utf-8',
+  );
+  await fs.writeFile(
+    path.join(OUTSIDE_DIR, 'docs', 'visible.txt'),
+    'visible additional text\n',
+    'utf-8',
+  );
+  await fs.writeFile(
+    path.join(OUTSIDE_DIR, 'node_modules', 'excluded.txt'),
+    'excluded additional text\n',
+    'utf-8',
+  );
 }
 
 async function cleanupFixtures(): Promise<void> {
@@ -91,10 +119,25 @@ async function testSingleRootWrappersAttachPrimaryMatchedRoot(): Promise<void> {
   const normalizedRoot = path.resolve(FIXTURES_DIR);
   const safePathResult = resolveSafePath('src/Foo.ts', FIXTURES_DIR);
 
-  assert(safePathResult.ok === true, 'Single-root path wrapper should still resolve relative paths');
-  assertEqual(safePathResult.path.rootDir, normalizedRoot, 'SafePath.rootDir should remain the normalized root');
-  assertEqual(safePathResult.path.matchedRoot.kind, 'primary', 'SafePath should carry the primary matched root');
-  assertEqual(safePathResult.path.matchedRoot.rootDir, normalizedRoot, 'Matched root should use the normalized root');
+  assert(
+    safePathResult.ok === true,
+    'Single-root path wrapper should still resolve relative paths',
+  );
+  assertEqual(
+    safePathResult.path.rootDir,
+    normalizedRoot,
+    'SafePath.rootDir should remain the normalized root',
+  );
+  assertEqual(
+    safePathResult.path.matchedRoot.kind,
+    'primary',
+    'SafePath should carry the primary matched root',
+  );
+  assertEqual(
+    safePathResult.path.matchedRoot.rootDir,
+    normalizedRoot,
+    'Matched root should use the normalized root',
+  );
   assert(
     safePathResult.path.matchedRoot.permissions.read &&
       safePathResult.path.matchedRoot.permissions.write,
@@ -103,15 +146,27 @@ async function testSingleRootWrappersAttachPrimaryMatchedRoot(): Promise<void> {
 
   const globResult = resolveSafeGlobPattern('src/**/*.ts', FIXTURES_DIR);
   assert(globResult.ok === true, 'Single-root glob wrapper should still resolve relative globs');
-  assertEqual(globResult.glob.rootDir, normalizedRoot, 'SafeGlobPattern.rootDir should remain the normalized root');
-  assertEqual(globResult.glob.matchedRoot.kind, 'primary', 'SafeGlobPattern should carry the primary matched root');
+  assertEqual(
+    globResult.glob.rootDir,
+    normalizedRoot,
+    'SafeGlobPattern.rootDir should remain the normalized root',
+  );
+  assertEqual(
+    globResult.glob.matchedRoot.kind,
+    'primary',
+    'SafeGlobPattern should carry the primary matched root',
+  );
 
   const entryResult = resolveSafeGlobEntry(
     path.join(FIXTURES_DIR, 'src', 'Foo.ts'),
     globResult.glob,
   );
   assert(entryResult.ok === true, 'Glob entry should resolve against the glob matched root');
-  assertEqual(entryResult.path.matchedRoot.rootDir, normalizedRoot, 'Glob entry should preserve matched root metadata');
+  assertEqual(
+    entryResult.path.matchedRoot.rootDir,
+    normalizedRoot,
+    'Glob entry should preserve matched root metadata',
+  );
 }
 
 async function testContextMatchesAdditionalRootOnlyForAbsoluteInput(): Promise<void> {
@@ -119,28 +174,70 @@ async function testContextMatchesAdditionalRootOnlyForAbsoluteInput(): Promise<v
   const additionalFile = path.join(OUTSIDE_DIR, 'outside.ts');
   const absoluteResult = resolveSafePathInContext(additionalFile, context);
 
-  assert(absoluteResult.ok === true, 'Context API should resolve drive-absolute paths in additional roots');
-  assertEqual(absoluteResult.path.matchedRoot.kind, 'additional', 'Drive-absolute additional root path should match additional root');
-  assertEqual(absoluteResult.path.rootDir, path.resolve(OUTSIDE_DIR), 'SafePath.rootDir should point at the matched additional root');
-  assertEqual(absoluteResult.path.displayKind, 'absolute', 'Additional root paths should keep absolute display');
-  assertEqual(absoluteResult.path.displayPath, path.resolve(additionalFile), 'Additional root display should be absolute');
+  assert(
+    absoluteResult.ok === true,
+    'Context API should resolve drive-absolute paths in additional roots',
+  );
+  assertEqual(
+    absoluteResult.path.matchedRoot.kind,
+    'additional',
+    'Drive-absolute additional root path should match additional root',
+  );
+  assertEqual(
+    absoluteResult.path.rootDir,
+    path.resolve(OUTSIDE_DIR),
+    'SafePath.rootDir should point at the matched additional root',
+  );
+  assertEqual(
+    absoluteResult.path.displayKind,
+    'absolute',
+    'Additional root paths should keep absolute display',
+  );
+  assertEqual(
+    absoluteResult.path.displayPath,
+    path.resolve(additionalFile),
+    'Additional root display should be absolute',
+  );
 
   const relativeEscape = resolveSafePathInContext(
     path.join('..', 'path-safety-outside', 'outside.ts'),
     context,
   );
-  assert(relativeEscape.ok === false, 'Relative paths must not escape primary root into an additional root');
-  assertEqual(relativeEscape.error.code, 'outside_root_dir', 'Relative escape into additional root should fail closed');
-
-  const globResult = resolveSafeGlobPatternInContext(
-    path.join(OUTSIDE_DIR, '**', '*.ts'),
-    context,
+  assert(
+    relativeEscape.ok === false,
+    'Relative paths must not escape primary root into an additional root',
   );
-  assert(globResult.ok === true, 'Context API should resolve drive-absolute globs in additional roots');
-  assertEqual(globResult.glob.matchedRoot.kind, 'additional', 'Drive-absolute glob should match additional root');
-  assertEqual(globResult.glob.rootDir, path.resolve(OUTSIDE_DIR), 'SafeGlobPattern.rootDir should point at the matched additional root');
-  assertEqual(globResult.glob.pattern, '**/*.ts', 'Additional root glob should expand relative to the matched root');
-  assertEqual(globResult.glob.displayKind, 'absolute', 'Additional root glob results should display as absolute paths');
+  assertEqual(
+    relativeEscape.error.code,
+    'outside_root_dir',
+    'Relative escape into additional root should fail closed',
+  );
+
+  const globResult = resolveSafeGlobPatternInContext(path.join(OUTSIDE_DIR, '**', '*.ts'), context);
+  assert(
+    globResult.ok === true,
+    'Context API should resolve drive-absolute globs in additional roots',
+  );
+  assertEqual(
+    globResult.glob.matchedRoot.kind,
+    'additional',
+    'Drive-absolute glob should match additional root',
+  );
+  assertEqual(
+    globResult.glob.rootDir,
+    path.resolve(OUTSIDE_DIR),
+    'SafeGlobPattern.rootDir should point at the matched additional root',
+  );
+  assertEqual(
+    globResult.glob.pattern,
+    '**/*.ts',
+    'Additional root glob should expand relative to the matched root',
+  );
+  assertEqual(
+    globResult.glob.displayKind,
+    'absolute',
+    'Additional root glob results should display as absolute paths',
+  );
 }
 
 async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise<void> {
@@ -149,7 +246,8 @@ async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise
 
   const readResult = await readFileTool.handler(
     { file_path: additionalFile },
-    multiRootContext, createTestToolInvocationContext(),
+    multiRootContext,
+    createTestToolInvocationContext(),
   );
 
   assert(readResult.isError !== true, 'read_file should read absolute paths in additional roots');
@@ -166,7 +264,8 @@ async function testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths(): Promise
 
   const relativeEscapeResult = await readFileTool.handler(
     { file_path: path.join('..', 'path-safety-outside', 'outside.ts') },
-    multiRootContext, createTestToolInvocationContext(),
+    multiRootContext,
+    createTestToolInvocationContext(),
   );
 
   assert(
@@ -185,10 +284,14 @@ async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
   const writeTarget = path.join(OUTSIDE_DIR, 'written-from-tool.txt');
   const writeResult = await writeFileTool.handler(
     { file_path: writeTarget, content: 'alpha\nbeta' },
-    multiRootContext, createTestToolInvocationContext(),
+    multiRootContext,
+    createTestToolInvocationContext(),
   );
 
-  assert(writeResult.isError !== true, 'write_file should write absolute paths in additional roots');
+  assert(
+    writeResult.isError !== true,
+    'write_file should write absolute paths in additional roots',
+  );
   assertIncludes(
     getResultText(writeResult),
     `Success: wrote ${writeTarget}.`,
@@ -204,15 +307,21 @@ async function testWriteAndReplaceUseAdditionalMatchedRoot(): Promise<void> {
   await fs.writeFile(replaceTarget, 'export const flag = true;\n', 'utf-8');
   const replaceResult = await replaceTool.handler(
     {
-      files: [{
-        file_path: replaceTarget,
-        replacements: [{ target: 'true', replacement: 'false' }],
-      }],
+      files: [
+        {
+          file_path: replaceTarget,
+          replacements: [{ target: 'true', replacement: 'false' }],
+        },
+      ],
     },
-    multiRootContext, createTestToolInvocationContext(),
+    multiRootContext,
+    createTestToolInvocationContext(),
   );
 
-  assert(replaceResult.isError !== true, 'replace_text should modify absolute paths in additional roots');
+  assert(
+    replaceResult.isError !== true,
+    'replace_text should modify absolute paths in additional roots',
+  );
   assertEqual(
     await fs.readFile(replaceTarget, 'utf-8'),
     'export const flag = false;\n',
@@ -227,7 +336,8 @@ async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise
 
   const literalResult = await readManyFilesTool.handler(
     { include: [excludedPath] },
-    multiRootContext, createTestToolInvocationContext(),
+    multiRootContext,
+    createTestToolInvocationContext(),
   );
 
   assert(
@@ -245,7 +355,8 @@ async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise
       include: [path.join(OUTSIDE_DIR, '**', '*.txt')],
       exclude: ['node_modules/**'],
     },
-    multiRootContext, createTestToolInvocationContext(),
+    multiRootContext,
+    createTestToolInvocationContext(),
   );
 
   assert(
@@ -253,10 +364,26 @@ async function testReadManyFilesAdditionalRootGlobAndExcludeSemantics(): Promise
     'Drive-absolute glob in additional roots should expand from its matched root',
   );
   const text = getResultText(globResult);
-  assertIncludes(text, `--- ${visiblePath} ---`, 'Additional root glob should display absolute file paths');
-  assertIncludes(text, 'visible additional text', 'Additional root glob should include non-excluded files');
-  assertNotIncludes(text, 'excluded additional text', 'Additional root glob should honor caller excludes');
-  assertNotIncludes(text, 'node_modules', 'Additional root glob should not list excluded node_modules files');
+  assertIncludes(
+    text,
+    `--- ${visiblePath} ---`,
+    'Additional root glob should display absolute file paths',
+  );
+  assertIncludes(
+    text,
+    'visible additional text',
+    'Additional root glob should include non-excluded files',
+  );
+  assertNotIncludes(
+    text,
+    'excluded additional text',
+    'Additional root glob should honor caller excludes',
+  );
+  assertNotIncludes(
+    text,
+    'node_modules',
+    'Additional root glob should not list excluded node_modules files',
+  );
 }
 
 async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): Promise<void> {
@@ -265,11 +392,7 @@ async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): P
 
   try {
     try {
-      await fs.symlink(
-        OUTSIDE_DIR,
-        linkPath,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
+      await fs.symlink(OUTSIDE_DIR, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       symlinkResults.push(`primary to additional symlink skipped: ${error.message}`);
@@ -278,7 +401,8 @@ async function testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck(): P
 
     const result = await readFileTool.handler(
       { file_path: path.join('link-to-additional', 'outside.ts') },
-      createMultiRootContext(), createTestToolInvocationContext(),
+      createMultiRootContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(
@@ -302,11 +426,7 @@ async function testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck(): P
 
   try {
     try {
-      await fs.symlink(
-        FIXTURES_DIR,
-        linkPath,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
+      await fs.symlink(FIXTURES_DIR, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       symlinkResults.push(`additional to primary symlink skipped: ${error.message}`);
@@ -315,7 +435,8 @@ async function testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck(): P
 
     const result = await readFileTool.handler(
       { file_path: path.join(linkPath, 'src', 'Foo.ts') },
-      createMultiRootContext(), createTestToolInvocationContext(),
+      createMultiRootContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(
@@ -341,11 +462,7 @@ async function testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootChec
 
   try {
     try {
-      await fs.symlink(
-        FIXTURES_DIR,
-        linkPath,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
+      await fs.symlink(FIXTURES_DIR, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       symlinkResults.push(`additional write parent symlink skipped: ${error.message}`);
@@ -357,7 +474,8 @@ async function testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootChec
         file_path: path.join(linkPath, 'escaped-from-additional.txt'),
         content: 'nope',
       },
-      createMultiRootContext(), createTestToolInvocationContext(),
+      createMultiRootContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(
@@ -404,7 +522,8 @@ async function testPrefixSiblingIsOutsideRoot(): Promise<void> {
   try {
     const result = await readFileTool.handler(
       { file_path: siblingFile },
-      createToolContext(), createTestToolInvocationContext(),
+      createToolContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError === true, 'Sibling prefix path should fail');
@@ -422,19 +541,35 @@ async function testDriveAbsoluteGlobStaticBaseAndDisplay(): Promise<void> {
   const pattern = path.join(FIXTURES_DIR, 'src', '**', '*.ts');
   const globSafety = resolveSafeGlobPattern(pattern, FIXTURES_DIR);
 
-  assert(globSafety.ok === true, 'Drive-absolute glob inside root should pass static base validation');
-  assertEqual(globSafety.glob.pattern, 'src/**/*.ts', 'Drive-absolute glob should be normalized to a root-relative expansion pattern');
-  assertEqual(globSafety.glob.displayKind, 'absolute', 'Drive-absolute glob results should display as absolute paths');
+  assert(
+    globSafety.ok === true,
+    'Drive-absolute glob inside root should pass static base validation',
+  );
+  assertEqual(
+    globSafety.glob.pattern,
+    'src/**/*.ts',
+    'Drive-absolute glob should be normalized to a root-relative expansion pattern',
+  );
+  assertEqual(
+    globSafety.glob.displayKind,
+    'absolute',
+    'Drive-absolute glob results should display as absolute paths',
+  );
 
   const result = await readManyFilesTool.handler(
     { include: [pattern] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Drive-absolute glob should read files');
   const text = getResultText(result);
   assertIncludes(text, 'Read 2 file(s)', 'Should read both TypeScript files');
-  assertIncludes(text, `--- ${path.join(FIXTURES_DIR, 'src', 'Foo.ts')} ---`, 'Drive-absolute glob should display absolute separators');
+  assertIncludes(
+    text,
+    `--- ${path.join(FIXTURES_DIR, 'src', 'Foo.ts')} ---`,
+    'Drive-absolute glob should display absolute separators',
+  );
   assertIncludes(text, 'export const foo = 1;', 'Should include Foo content');
   assertIncludes(text, 'export const bar = 2;', 'Should include nested Bar content');
 }
@@ -442,19 +577,29 @@ async function testDriveAbsoluteGlobStaticBaseAndDisplay(): Promise<void> {
 async function testSlashLeadingGlobIsRelativeButPlainRootedPathFails(): Promise<void> {
   const globSafety = resolveSafeGlobPattern('/**/Foo.ts', FIXTURES_DIR);
   assert(globSafety.ok === true, 'Slash-leading glob with metacharacters should be accepted');
-  assertEqual(globSafety.glob.pattern, '**/Foo.ts', 'Slash-leading glob should strip the leading slash and expand relative to root');
+  assertEqual(
+    globSafety.glob.pattern,
+    '**/Foo.ts',
+    'Slash-leading glob should strip the leading slash and expand relative to root',
+  );
 
   const globResult = await readManyFilesTool.handler(
     { include: ['/**/Foo.ts'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(globResult.isError !== true, 'Slash-leading glob should read within root');
-  assertIncludes(getResultText(globResult), 'src\\Foo.ts', 'Slash-leading glob should display root-relative result');
+  assertIncludes(
+    getResultText(globResult),
+    'src\\Foo.ts',
+    'Slash-leading glob should display root-relative result',
+  );
 
   const plainRootedResult = await readManyFilesTool.handler(
     { include: ['/src/Foo.ts'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(plainRootedResult.isError === true, 'Plain slash-leading non-glob path should fail');
@@ -468,7 +613,8 @@ async function testSlashLeadingGlobIsRelativeButPlainRootedPathFails(): Promise<
 async function testGlobStaticBaseOutsideRootFailsBeforeReading(): Promise<void> {
   const result = await readManyFilesTool.handler(
     { include: ['../path-safety-outside/**/*.ts'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Outside glob static base should fail');
@@ -483,17 +629,29 @@ async function testGlobStaticBaseOutsideRootFailsBeforeReading(): Promise<void> 
 
 async function testBraceExpandedParentTraversalFailsBeforeGlob(): Promise<void> {
   const globSafety = resolveSafeGlobPattern('{..,src}/**/*.ts', FIXTURES_DIR);
-  assert(globSafety.ok === false, 'Brace-expanded parent traversal should be rejected before glob expansion');
-  assertEqual(globSafety.error.code, 'invalid_glob', 'Brace-expanded parent traversal should be an invalid glob');
+  assert(
+    globSafety.ok === false,
+    'Brace-expanded parent traversal should be rejected before glob expansion',
+  );
+  assertEqual(
+    globSafety.error.code,
+    'invalid_glob',
+    'Brace-expanded parent traversal should be an invalid glob',
+  );
 
   const result = await readManyFilesTool.handler(
     { include: ['{..,src}/**/*.ts'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Brace-expanded parent traversal should fail');
   const text = getResultText(result);
-  assertIncludes(text, "contains '..'", 'Failure should explain parent traversal in glob remainder');
+  assertIncludes(
+    text,
+    "contains '..'",
+    'Failure should explain parent traversal in glob remainder',
+  );
   assertNotIncludes(text, 'export const outside = true;', 'Outside file content must not be read');
 }
 
@@ -503,8 +661,15 @@ async function testLongBraceExpandedParentTraversalFailsClosed(): Promise<void> 
   const pattern = `.{${alternatives.join(',')}}/**/*.ts`;
   const globSafety = resolveSafeGlobPattern(pattern, FIXTURES_DIR);
 
-  assert(globSafety.ok === false, 'Traversal branch after many alternatives should still be rejected');
-  assertEqual(globSafety.error.code, 'invalid_glob', 'Long brace traversal should be an invalid glob');
+  assert(
+    globSafety.ok === false,
+    'Traversal branch after many alternatives should still be rejected',
+  );
+  assertEqual(
+    globSafety.error.code,
+    'invalid_glob',
+    'Long brace traversal should be an invalid glob',
+  );
 }
 
 async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
@@ -513,7 +678,8 @@ async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
 
   const result = await readManyFilesTool.handler(
     { include: ['src/@(Foo).ts'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Extglob-only pattern should be expanded');
@@ -526,7 +692,8 @@ async function testExtglobOnlyPatternIsExpanded(): Promise<void> {
 async function testRelativeLiteralPathBypassesSoftFilters(): Promise<void> {
   const result = await readManyFilesTool.handler(
     { include: ['.env'], exclude: ['.env'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Relative literal .env should bypass exclude');
@@ -539,37 +706,57 @@ async function testRelativeLiteralPathBypassesCaseInsensitiveExcludesOnWindows()
 
   const defaultResult = await readManyFilesTool.handler(
     { include: ['.ENV'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(defaultResult.isError !== true, 'Uppercase .ENV literal should be read on Windows');
-  assertIncludes(getResultText(defaultResult), 'SECRET=uppercase', 'Uppercase literal content should be read');
+  assertIncludes(
+    getResultText(defaultResult),
+    'SECRET=uppercase',
+    'Uppercase literal content should be read',
+  );
 
   const customResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['SRC/*.TS'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(customResult.isError !== true, 'Case-different exclude should not filter a literal');
-  assertIncludes(getResultText(customResult), 'export const foo = 1;', 'Literal content should be read');
+  assertIncludes(
+    getResultText(customResult),
+    'export const foo = 1;',
+    'Literal content should be read',
+  );
 }
 
 async function testRelativeLiteralPathBypassesBraceAndExtglobExcludes(): Promise<void> {
   const braceResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['src/*.{ts,tsx}'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(braceResult.isError !== true, 'Brace exclude should not filter a literal path');
-  assertIncludes(getResultText(braceResult), 'export const foo = 1;', 'Literal content should be read');
+  assertIncludes(
+    getResultText(braceResult),
+    'export const foo = 1;',
+    'Literal content should be read',
+  );
 
   const extglobResult = await readManyFilesTool.handler(
     { include: ['src/Foo.ts'], exclude: ['src/@(Foo).ts'] },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(extglobResult.isError !== true, 'Extglob exclude should not filter a literal path');
-  assertIncludes(getResultText(extglobResult), 'export const foo = 1;', 'Literal content should be read');
+  assertIncludes(
+    getResultText(extglobResult),
+    'export const foo = 1;',
+    'Literal content should be read',
+  );
 }
 
 async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
@@ -577,7 +764,8 @@ async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
     {
       include: ['special/file[test].ts', 'special/file{brace}.ts', 'special/file{a,b}.ts'],
     },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Literal files containing glob metacharacters should be read');
@@ -588,7 +776,11 @@ async function testLiteralFilenamesWithGlobMetacharacters(): Promise<void> {
   assertIncludes(text, 'file{a,b}.ts', 'Brace-comma filename should appear literally');
   assertIncludes(text, 'export const bracket = true;', 'Bracket file content should be returned');
   assertIncludes(text, 'export const brace = true;', 'Brace file content should be returned');
-  assertIncludes(text, 'export const braceComma = true;', 'Brace-comma file content should be returned');
+  assertIncludes(
+    text,
+    'export const braceComma = true;',
+    'Brace-comma file content should be returned',
+  );
 }
 
 async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
@@ -597,11 +789,7 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
 
   try {
     try {
-      await fs.symlink(
-        OUTSIDE_DIR,
-        linkPath,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
+      await fs.symlink(OUTSIDE_DIR, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       symlinkResults.push(`read symlink escape skipped: ${error.message}`);
@@ -610,7 +798,8 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
 
     const result = await readFileTool.handler(
       { file_path: path.join('outside-link', 'outside.ts') },
-      createToolContext(), createTestToolInvocationContext(),
+      createToolContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError === true, 'read_file should reject symlink escapes');
@@ -624,13 +813,11 @@ async function testReadRejectsSymlinkEscapeWhenAvailable(): Promise<void> {
       {
         include: [path.join('outside-link', 'outside.ts')],
       },
-      createToolContext(), createTestToolInvocationContext(),
+      createToolContext(),
+      createTestToolInvocationContext(),
     );
 
-    assert(
-      readManyResult.isError === true,
-      'read_many_files should reject symlink escapes',
-    );
+    assert(readManyResult.isError === true, 'read_many_files should reject symlink escapes');
     assertIncludes(
       getResultText(readManyResult),
       'matched workspace root',
@@ -659,7 +846,8 @@ async function testWriteRejectsSymlinkTargetWhenAvailable(): Promise<void> {
 
     const result = await writeFileTool.handler(
       { file_path: 'write-link.txt', content: 'changed\n' },
-      createToolContext(), createTestToolInvocationContext(),
+      createToolContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError === true, 'write_file should reject symlink targets');
@@ -684,28 +872,88 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'Single-root wrappers attach primary matched root metadata', run: testSingleRootWrappersAttachPrimaryMatchedRoot },
-      { name: 'Context API matches additional root only for absolute input', run: testContextMatchesAdditionalRootOnlyForAbsoluteInput },
-      { name: 'File tools access additional root only with absolute paths', run: testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths },
-      { name: 'write_file and replace_text use additional matched root', run: testWriteAndReplaceUseAdditionalMatchedRoot },
-      { name: 'read_many_files handles additional root glob and exclude semantics', run: testReadManyFilesAdditionalRootGlobAndExcludeSemantics },
-      { name: 'Primary symlink to additional root still fails matched-root check', run: testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck },
-      { name: 'Additional symlink to primary root still fails matched-root check', run: testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck },
-      { name: 'Additional write parent symlink to primary root fails matched-root check', run: testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootCheck },
-      { name: 'Reject unsupported path shapes before resolve', run: testRejectsUnsupportedPathShapes },
+      {
+        name: 'Single-root wrappers attach primary matched root metadata',
+        run: testSingleRootWrappersAttachPrimaryMatchedRoot,
+      },
+      {
+        name: 'Context API matches additional root only for absolute input',
+        run: testContextMatchesAdditionalRootOnlyForAbsoluteInput,
+      },
+      {
+        name: 'File tools access additional root only with absolute paths',
+        run: testFileToolsAccessAdditionalRootOnlyWithAbsolutePaths,
+      },
+      {
+        name: 'write_file and replace_text use additional matched root',
+        run: testWriteAndReplaceUseAdditionalMatchedRoot,
+      },
+      {
+        name: 'read_many_files handles additional root glob and exclude semantics',
+        run: testReadManyFilesAdditionalRootGlobAndExcludeSemantics,
+      },
+      {
+        name: 'Primary symlink to additional root still fails matched-root check',
+        run: testPrimarySymlinkToAdditionalRootStillFailsMatchedRootCheck,
+      },
+      {
+        name: 'Additional symlink to primary root still fails matched-root check',
+        run: testAdditionalSymlinkToPrimaryRootStillFailsMatchedRootCheck,
+      },
+      {
+        name: 'Additional write parent symlink to primary root fails matched-root check',
+        run: testAdditionalWriteParentSymlinkToPrimaryRootFailsMatchedRootCheck,
+      },
+      {
+        name: 'Reject unsupported path shapes before resolve',
+        run: testRejectsUnsupportedPathShapes,
+      },
       { name: 'Reject prefix-sibling path outside root', run: testPrefixSiblingIsOutsideRoot },
-      { name: 'Drive-absolute glob validates static base and preserves display kind', run: testDriveAbsoluteGlobStaticBaseAndDisplay },
-      { name: 'Slash-leading glob is relative while plain rooted path fails', run: testSlashLeadingGlobIsRelativeButPlainRootedPathFails },
-      { name: 'Glob static base outside root fails before reading', run: testGlobStaticBaseOutsideRootFailsBeforeReading },
-      { name: 'Brace-expanded parent traversal fails before glob', run: testBraceExpandedParentTraversalFailsBeforeGlob },
-      { name: 'Long brace-expanded parent traversal fails closed', run: testLongBraceExpandedParentTraversalFailsClosed },
+      {
+        name: 'Drive-absolute glob validates static base and preserves display kind',
+        run: testDriveAbsoluteGlobStaticBaseAndDisplay,
+      },
+      {
+        name: 'Slash-leading glob is relative while plain rooted path fails',
+        run: testSlashLeadingGlobIsRelativeButPlainRootedPathFails,
+      },
+      {
+        name: 'Glob static base outside root fails before reading',
+        run: testGlobStaticBaseOutsideRootFailsBeforeReading,
+      },
+      {
+        name: 'Brace-expanded parent traversal fails before glob',
+        run: testBraceExpandedParentTraversalFailsBeforeGlob,
+      },
+      {
+        name: 'Long brace-expanded parent traversal fails closed',
+        run: testLongBraceExpandedParentTraversalFailsClosed,
+      },
       { name: 'Extglob-only pattern is expanded', run: testExtglobOnlyPatternIsExpanded },
-      { name: 'Relative literal path bypasses soft filters', run: testRelativeLiteralPathBypassesSoftFilters },
-      { name: 'Relative literal path bypasses case-insensitive excludes on Windows', run: testRelativeLiteralPathBypassesCaseInsensitiveExcludesOnWindows },
-      { name: 'Relative literal path bypasses brace and extglob excludes', run: testRelativeLiteralPathBypassesBraceAndExtglobExcludes },
-      { name: 'Literal filenames with glob metacharacters are read safely', run: testLiteralFilenamesWithGlobMetacharacters },
-      { name: 'Read rejects symlink escape when available', run: testReadRejectsSymlinkEscapeWhenAvailable },
-      { name: 'Write rejects symlink target when available', run: testWriteRejectsSymlinkTargetWhenAvailable },
+      {
+        name: 'Relative literal path bypasses soft filters',
+        run: testRelativeLiteralPathBypassesSoftFilters,
+      },
+      {
+        name: 'Relative literal path bypasses case-insensitive excludes on Windows',
+        run: testRelativeLiteralPathBypassesCaseInsensitiveExcludesOnWindows,
+      },
+      {
+        name: 'Relative literal path bypasses brace and extglob excludes',
+        run: testRelativeLiteralPathBypassesBraceAndExtglobExcludes,
+      },
+      {
+        name: 'Literal filenames with glob metacharacters are read safely',
+        run: testLiteralFilenamesWithGlobMetacharacters,
+      },
+      {
+        name: 'Read rejects symlink escape when available',
+        run: testReadRejectsSymlinkEscapeWhenAvailable,
+      },
+      {
+        name: 'Write rejects symlink target when available',
+        run: testWriteRejectsSymlinkTargetWhenAvailable,
+      },
     ],
   });
 

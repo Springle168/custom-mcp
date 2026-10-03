@@ -23,10 +23,7 @@ export interface InitializeHeaderPolicyLogMetadata {
 }
 
 export type InitializeHeaderPolicyErrorCategory =
-  | 'invalid_header_view'
-  | 'duplicate_header'
-  | 'invalid_json'
-  | 'invalid_payload';
+  'invalid_header_view' | 'duplicate_header' | 'invalid_json' | 'invalid_payload';
 
 /** Safe to adapt to a protocol error: no request values or JSON.parse exception escape. */
 export class InitializeHeaderPolicyError extends Error {
@@ -41,7 +38,9 @@ export class InitializeHeaderPolicyError extends Error {
     feature: RuntimeInitializeRequestFeature,
     field?: 'toolList' | 'instructions',
   ) {
-    super(`Invalid initialization header parameter at ${ruleLocation}: ${code}${field === undefined ? '' : ` (${field})`}.`);
+    super(
+      `Invalid initialization header parameter at ${ruleLocation}: ${code}${field === undefined ? '' : ` (${field})`}.`,
+    );
     this.name = 'InitializeHeaderPolicyError';
     this.category = code;
     this.ruleLocation = ruleLocation;
@@ -63,7 +62,10 @@ export function evaluateInitializeHeaderPolicy(
 
   for (const [index, binding] of bindings.entries()) {
     const ruleLocation = `rules.requestHeaders.onInitialize[${index}]`;
-    function fail(code: InitializeHeaderPolicyErrorCategory, field?: 'toolList' | 'instructions'): never {
+    function fail(
+      code: InitializeHeaderPolicyErrorCategory,
+      field?: 'toolList' | 'instructions',
+    ): never {
       throw new InitializeHeaderPolicyError(code, ruleLocation, binding.apply, field);
     }
     if (view === undefined || view.kind === 'invalid') {
@@ -133,8 +135,9 @@ export function evaluateInitializeHeaderPolicy(
   });
 }
 
-export function toInitializeHeaderPolicyErrorLogMetadata(
-  error: InitializeHeaderPolicyError,
-): { readonly ruleLocation: string; readonly category: InitializeHeaderPolicyErrorCategory } {
+export function toInitializeHeaderPolicyErrorLogMetadata(error: InitializeHeaderPolicyError): {
+  readonly ruleLocation: string;
+  readonly category: InitializeHeaderPolicyErrorCategory;
+} {
   return Object.freeze({ ruleLocation: error.ruleLocation, category: error.category });
 }

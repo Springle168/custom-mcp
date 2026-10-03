@@ -42,10 +42,7 @@ function fileKey(filePath: string): string {
   return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
 }
 
-function addFile(
-  fileMap: Map<string, SelectedReadableFile>,
-  entry: SelectedReadableFile,
-): void {
+function addFile(fileMap: Map<string, SelectedReadableFile>, entry: SelectedReadableFile): void {
   const key = fileKey(entry.readPath);
   if (!fileMap.has(key)) {
     fileMap.set(key, entry);
@@ -72,10 +69,7 @@ async function tryAddLiteralFile(
   }
 
   const safePath = safePathResult.path;
-  const readTarget = await validateFileAccessReadTarget(
-    safePath,
-    fileAccessPolicyContext,
-  );
+  const readTarget = await validateFileAccessReadTarget(safePath, fileAccessPolicyContext);
   if (!readTarget.ok) {
     if (readTarget.code === 'not_found' && itemHasGlobMagic) {
       return { ok: true, decision: 'continue_to_glob' };
@@ -115,10 +109,7 @@ async function addGlobFiles(
     }
   | { readonly ok: false; readonly reason: string }
 > {
-  const result = await expandFileAccessGlob(
-    item,
-    request.fileAccessPolicyContext,
-  );
+  const result = await expandFileAccessGlob(item, request.fileAccessPolicyContext);
   if (!result.ok) {
     return { ok: false, reason: result.reason };
   }
@@ -128,20 +119,12 @@ async function addGlobFiles(
   for (const target of result.expansion.files) {
     if (
       request.respectIgnoreFiles &&
-      isIgnoredByFileAccessPolicy(
-        target.safePath,
-        request.fileAccessPolicyContext,
-      )
+      isIgnoredByFileAccessPolicy(target.safePath, request.fileAccessPolicyContext)
     ) {
       ignoredByPolicy = true;
       continue;
     }
-    if (
-      matchesExcludePattern(
-        target.safePath,
-        request.discoveryExcludePatterns,
-      )
-    ) {
+    if (matchesExcludePattern(target.safePath, request.discoveryExcludePatterns)) {
       continue;
     }
 
@@ -192,12 +175,7 @@ export async function selectReadableFiles(
     }
 
     if (itemHasGlobMagic) {
-      const globResult = await addGlobFiles(
-        item,
-        request,
-        fileMap,
-        skipped,
-      );
+      const globResult = await addGlobFiles(item, request, fileMap, skipped);
       if (!globResult.ok) return globResult;
       blockedByDeny ||= globResult.blockedByDeny;
       ignoredByPolicy ||= globResult.ignoredByPolicy;

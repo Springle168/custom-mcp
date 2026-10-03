@@ -9,13 +9,7 @@ import androidAssembleDebugTool from '../../src/tools/built-in/android/android-a
 import androidTestDebugUnitTestTool from '../../src/tools/built-in/android/android-test-debug-unit-test.js';
 import { formatAndroidGradleToolResult } from '../../src/tools/built-in/android/android-build-shared.js';
 import type { RunAndroidGradleResult } from '../../src/utils/android-gradle.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  getResultText,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, getResultText, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,7 +77,11 @@ async function testValidationErrorForNonBooleanLogTail() {
 }
 
 async function testMissingAndroidConfig() {
-  const result = await androidAssembleDebugTool.handler({}, baseContext, createTestToolInvocationContext());
+  const result = await androidAssembleDebugTool.handler(
+    {},
+    baseContext,
+    createTestToolInvocationContext(),
+  );
 
   assert(result.isError === true, 'Should fail when Android config is missing');
   assertIncludes(
@@ -107,7 +105,8 @@ async function testMissingGradleWrapper() {
 
   const result = await androidTestDebugUnitTestTool.handler(
     { quiet: true, offline: true },
-    context, createTestToolInvocationContext(),
+    context,
+    createTestToolInvocationContext(),
   );
   const failure = parseCompactJsonText(getResultText(result));
 
@@ -122,26 +121,10 @@ async function testMissingGradleWrapper() {
     'BUILD FAILED',
     'Should keep failure summary in JSON output',
   );
-  assertEqual(
-    failure.success,
-    false,
-    'Failure JSON should keep success=false',
-  );
-  assertIncludes(
-    String(failure.command),
-    '--offline',
-    'Should pass offline mode to Gradle',
-  );
-  assertIncludes(
-    String(failure.command),
-    '-q',
-    'Should use quiet mode by default',
-  );
-  assertIncludes(
-    String(failure.command),
-    '--console=plain',
-    'Should force plain console output',
-  );
+  assertEqual(failure.success, false, 'Failure JSON should keep success=false');
+  assertIncludes(String(failure.command), '--offline', 'Should pass offline mode to Gradle');
+  assertIncludes(String(failure.command), '-q', 'Should use quiet mode by default');
+  assertIncludes(String(failure.command), '--console=plain', 'Should force plain console output');
 }
 
 async function testPreAbortedAndroidCallUsesCancellationContract() {
@@ -217,9 +200,7 @@ function testFailureFormatterUsesCompactJson() {
 }
 
 async function testUnitTestFailureUsesGeneratedXmlReport() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-android-tool-'));
   const gradlewPath = path.join(workspaceRoot, 'gradlew.bat');
 
   await writeFile(
@@ -250,7 +231,11 @@ async function testUnitTestFailureUsesGeneratedXmlReport() {
         maxLogTailChars: 4000,
       },
     });
-    const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
+    const result = await androidTestDebugUnitTestTool.handler(
+      {},
+      context,
+      createTestToolInvocationContext(),
+    );
     const failure = parseCompactJsonText(getResultText(result));
     const testReport = failure.test_report as Record<string, unknown>;
 
@@ -271,11 +256,7 @@ async function testUnitTestFailureUsesGeneratedXmlReport() {
       'DemoTest.kt:12',
       'Should prefer the XML test diagnosis',
     );
-    assertEqual(
-      Object.hasOwn(failure, 'log_tail'),
-      false,
-      'Should omit log_tail by default',
-    );
+    assertEqual(Object.hasOwn(failure, 'log_tail'), false, 'Should omit log_tail by default');
     const failedTests = testReport.failed_tests as Array<Record<string, unknown>>;
     assertEqual(
       failedTests[0]?.class_name,
@@ -288,9 +269,7 @@ async function testUnitTestFailureUsesGeneratedXmlReport() {
 }
 
 async function testFailedTestTaskWithoutReportIsExplicit() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-android-tool-'));
   await writeFile(
     path.join(workspaceRoot, 'gradlew.bat'),
     [
@@ -315,7 +294,11 @@ async function testFailedTestTaskWithoutReportIsExplicit() {
         maxLogTailChars: 4000,
       },
     });
-    const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
+    const result = await androidTestDebugUnitTestTool.handler(
+      {},
+      context,
+      createTestToolInvocationContext(),
+    );
     const failure = parseCompactJsonText(getResultText(result));
     const testReport = failure.test_report as Record<string, unknown>;
 
@@ -330,16 +313,8 @@ async function testFailedTestTaskWithoutReportIsExplicit() {
 }
 
 async function testCompileFailureDoesNotUseOldTestReport() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
-  );
-  const reportDir = path.join(
-    workspaceRoot,
-    'app',
-    'build',
-    'test-results',
-    'testDebugUnitTest',
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-android-tool-'));
+  const reportDir = path.join(workspaceRoot, 'app', 'build', 'test-results', 'testDebugUnitTest');
   await mkdir(reportDir, { recursive: true });
   await writeFile(
     path.join(reportDir, 'TEST-OldFailure.xml'),
@@ -370,7 +345,11 @@ async function testCompileFailureDoesNotUseOldTestReport() {
         maxLogTailChars: 4000,
       },
     });
-    const result = await androidTestDebugUnitTestTool.handler({}, context, createTestToolInvocationContext());
+    const result = await androidTestDebugUnitTestTool.handler(
+      {},
+      context,
+      createTestToolInvocationContext(),
+    );
     const failure = parseCompactJsonText(getResultText(result));
 
     assertEqual(
@@ -389,9 +368,7 @@ async function testCompileFailureDoesNotUseOldTestReport() {
 }
 
 async function testConcurrentUnitTestCallsRunSeriallyAndKeepAttribution() {
-  const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), 'custom-mcp-android-tool-'),
-  );
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'custom-mcp-android-tool-'));
   await writeFile(
     path.join(workspaceRoot, 'gradlew.bat'),
     [
@@ -459,12 +436,24 @@ async function main(): Promise<void> {
       { name: 'non-boolean log tail validation', run: testValidationErrorForNonBooleanLogTail },
       { name: 'missing Android config', run: testMissingAndroidConfig },
       { name: 'missing gradle wrapper', run: testMissingGradleWrapper },
-      { name: 'pre-aborted call uses cancellation contract', run: testPreAbortedAndroidCallUsesCancellationContract },
+      {
+        name: 'pre-aborted call uses cancellation contract',
+        run: testPreAbortedAndroidCallUsesCancellationContract,
+      },
       { name: 'failure formatter uses compact JSON', run: testFailureFormatterUsesCompactJson },
-      { name: 'unit test failure uses generated XML report', run: testUnitTestFailureUsesGeneratedXmlReport },
+      {
+        name: 'unit test failure uses generated XML report',
+        run: testUnitTestFailureUsesGeneratedXmlReport,
+      },
       { name: 'failed test task without report', run: testFailedTestTaskWithoutReportIsExplicit },
-      { name: 'compile failure ignores old test report', run: testCompileFailureDoesNotUseOldTestReport },
-      { name: 'concurrent test calls run serially with report attribution', run: testConcurrentUnitTestCallsRunSeriallyAndKeepAttribution },
+      {
+        name: 'compile failure ignores old test report',
+        run: testCompileFailureDoesNotUseOldTestReport,
+      },
+      {
+        name: 'concurrent test calls run serially with report attribution',
+        run: testConcurrentUnitTestCallsRunSeriallyAndKeepAttribution,
+      },
     ],
   });
 }

@@ -99,22 +99,14 @@ async function testSameWorkspaceUsesFifoAdmission() {
   const secondExecution = createFakeExecution<string>();
   const starts: string[] = [];
 
-  const first = registry.run(
-    workspaceRoot,
-    new AbortController().signal,
-    () => {
-      starts.push('first');
-      return firstExecution.execution;
-    },
-  );
-  const second = registry.run(
-    path.join(workspaceRoot, '.'),
-    new AbortController().signal,
-    () => {
-      starts.push('second');
-      return secondExecution.execution;
-    },
-  );
+  const first = registry.run(workspaceRoot, new AbortController().signal, () => {
+    starts.push('first');
+    return firstExecution.execution;
+  });
+  const second = registry.run(path.join(workspaceRoot, '.'), new AbortController().signal, () => {
+    starts.push('second');
+    return secondExecution.execution;
+  });
 
   assertEqual(starts.join(','), 'first', 'Second same-workspace operation should wait');
 
@@ -169,7 +161,11 @@ async function testQueuedCancellationRemovesWaiterWithoutRunningOperation() {
   const queuedController = new AbortController();
   let queuedOperationStarted = false;
 
-  const first = registry.run(workspaceRoot, new AbortController().signal, () => firstExecution.execution);
+  const first = registry.run(
+    workspaceRoot,
+    new AbortController().signal,
+    () => firstExecution.execution,
+  );
   const queued = registry.run(workspaceRoot, queuedController.signal, () => {
     queuedOperationStarted = true;
     return createFakeExecution<void>().execution;
@@ -220,7 +216,10 @@ async function testSettledResultDoesNotReleaseBeforeDrain() {
 
   complete(secondExecution, 'second result');
   assertCompleted(await second, 'second result', 'Second operation should complete after handoff');
-  await waitFor(() => registry.workspaceCount === 0, 'Entry should be cleaned up after the final drain');
+  await waitFor(
+    () => registry.workspaceCount === 0,
+    'Entry should be cleaned up after the final drain',
+  );
 }
 
 async function testRejectedSettledDoesNotReleaseBeforeDrain() {
@@ -231,7 +230,11 @@ async function testRejectedSettledDoesNotReleaseBeforeDrain() {
   const failure = new Error('simulated Gradle failure');
   let secondOperationStarted = false;
 
-  const first = registry.run(workspaceRoot, new AbortController().signal, () => firstExecution.execution);
+  const first = registry.run(
+    workspaceRoot,
+    new AbortController().signal,
+    () => firstExecution.execution,
+  );
   const second = registry.run(workspaceRoot, new AbortController().signal, () => {
     secondOperationStarted = true;
     return secondExecution.execution;
@@ -257,7 +260,10 @@ async function testRejectedSettledDoesNotReleaseBeforeDrain() {
 
   complete(secondExecution, undefined);
   assertCompleted(await second, undefined, 'Second operation should complete after failed handoff');
-  await waitFor(() => registry.workspaceCount === 0, 'Failed lease should still clean up its entry');
+  await waitFor(
+    () => registry.workspaceCount === 0,
+    'Failed lease should still clean up its entry',
+  );
 }
 
 async function testAbortDuringHandoffDoesNotStartQueuedOperation() {
@@ -267,7 +273,11 @@ async function testAbortDuringHandoffDoesNotStartQueuedOperation() {
   const secondController = new AbortController();
   let secondOperationStarted = false;
 
-  const first = registry.run(workspaceRoot, new AbortController().signal, () => firstExecution.execution);
+  const first = registry.run(
+    workspaceRoot,
+    new AbortController().signal,
+    () => firstExecution.execution,
+  );
   const second = registry.run(workspaceRoot, secondController.signal, () => {
     secondOperationStarted = true;
     return createFakeExecution<void>().execution;
@@ -283,7 +293,10 @@ async function testAbortDuringHandoffDoesNotStartQueuedOperation() {
     'Abort concurrent with release should cancel the queued waiter',
   );
   assertEqual(secondOperationStarted, false, 'Handoff must re-check the waiter signal');
-  await waitFor(() => registry.workspaceCount === 0, 'Race-cancelled waiter should not retain entry state');
+  await waitFor(
+    () => registry.workspaceCount === 0,
+    'Race-cancelled waiter should not retain entry state',
+  );
 }
 
 async function testActiveAbortAndOldLeaseEventsAreIsolated() {
@@ -322,7 +335,11 @@ async function testActiveAbortAndOldLeaseEventsAreIsolated() {
   assertEqual(newLeaseSignal.aborted, false, 'Late old events must not abort the current lease');
 
   newCaller.abort();
-  assertEqual(newLeaseSignal.aborted, true, 'Active caller abort must reach the runtime-owned signal');
+  assertEqual(
+    newLeaseSignal.aborted,
+    true,
+    'Active caller abort must reach the runtime-owned signal',
+  );
 
   complete(newExecution, undefined);
   assertCompleted(await newRun, undefined, 'Active operation should retain its controlled result');
@@ -351,13 +368,9 @@ async function testCloseCancelsQueueAbortsActiveAndWaitsForDrain() {
   assertCancelled(await queued, 'registry-closed', 'Close should cancel queued callers');
   assertEqual(queuedOperationStarted, false, 'Close-cancelled queue must not start callbacks');
 
-  const afterClose = await registry.run(
-    workspaceRoot,
-    new AbortController().signal,
-    () => {
-      throw new Error('Closed registry must not run new operations');
-    },
-  );
+  const afterClose = await registry.run(workspaceRoot, new AbortController().signal, () => {
+    throw new Error('Closed registry must not run new operations');
+  });
   assertCancelled(afterClose, 'registry-closed', 'Closed registry should reject future admission');
 
   activeExecution.settled.resolve('active result');
@@ -396,11 +409,17 @@ async function main(): Promise<void> {
     tests: [
       { name: 'same workspace FIFO admission', run: testSameWorkspaceUsesFifoAdmission },
       { name: 'different workspace parallelism', run: testDifferentWorkspacesRunInParallel },
-      { name: 'queued cancellation', run: testQueuedCancellationRemovesWaiterWithoutRunningOperation },
+      {
+        name: 'queued cancellation',
+        run: testQueuedCancellationRemovesWaiterWithoutRunningOperation,
+      },
       { name: 'settled before drained', run: testSettledResultDoesNotReleaseBeforeDrain },
       { name: 'failed settled before drained', run: testRejectedSettledDoesNotReleaseBeforeDrain },
       { name: 'handoff and abort race', run: testAbortDuringHandoffDoesNotStartQueuedOperation },
-      { name: 'active abort and old lease isolation', run: testActiveAbortAndOldLeaseEventsAreIsolated },
+      {
+        name: 'active abort and old lease isolation',
+        run: testActiveAbortAndOldLeaseEventsAreIsolated,
+      },
       { name: 'close and active drain', run: testCloseCancelsQueueAbortsActiveAndWaitsForDrain },
       { name: 'idle entry cleanup', run: testIdleEntryCleanup },
     ],

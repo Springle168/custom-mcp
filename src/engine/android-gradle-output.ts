@@ -70,10 +70,7 @@ export function parseAndroidGradleOutput(
     summary: 'BUILD FAILED',
     cancelled: false,
     failedTask: extractFailedTask(merged),
-    firstErrorBlock: extractFirstErrorBlock(
-      merged,
-      options.maxErrorBlockChars,
-    ),
+    firstErrorBlock: extractFirstErrorBlock(merged, options.maxErrorBlockChars),
     ...(options.includeLogTail === true && merged
       ? { logTail: takeTail(merged, options.maxLogTailChars) }
       : {}),
@@ -81,21 +78,14 @@ export function parseAndroidGradleOutput(
 }
 
 function normalizeOutput(text: string): string {
-  return text
-    .replace(ANSI_ESCAPE_PATTERN, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
+  return text.replace(ANSI_ESCAPE_PATTERN, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
 }
 
 function extractFailedTask(text: string): string | null {
   return FAILED_TASK_PATTERN.exec(text)?.[1] ?? null;
 }
 
-function extractFirstErrorBlock(
-  text: string,
-  maxChars: number,
-): string | null {
+function extractFirstErrorBlock(text: string, maxChars: number): string | null {
   if (!text) {
     return null;
   }
@@ -104,21 +94,14 @@ function extractFirstErrorBlock(
 
   const compilerErrorIndex = lines.findIndex(
     (line) =>
-      /^e:\s/i.test(line) ||
-      /^error:\s/i.test(line) ||
-      /:\d+:\s(error|warning):/i.test(line),
+      /^e:\s/i.test(line) || /^error:\s/i.test(line) || /:\d+:\s(error|warning):/i.test(line),
   );
 
   if (compilerErrorIndex >= 0) {
-    return truncate(
-      captureFromLine(lines, compilerErrorIndex, 12),
-      maxChars,
-    );
+    return truncate(captureFromLine(lines, compilerErrorIndex, 12), maxChars);
   }
 
-  const whatWentWrongIndex = lines.findIndex(
-    (line) => line.trim() === '* What went wrong:',
-  );
+  const whatWentWrongIndex = lines.findIndex((line) => line.trim() === '* What went wrong:');
 
   if (whatWentWrongIndex >= 0) {
     const rootCause = captureWhatWentWrongRootCause(lines, whatWentWrongIndex);
@@ -137,10 +120,7 @@ function extractFirstErrorBlock(
   return fallback ? truncate(fallback, maxChars) : null;
 }
 
-function captureWhatWentWrongRootCause(
-  lines: string[],
-  startIndex: number,
-): string {
+function captureWhatWentWrongRootCause(lines: string[], startIndex: number): string {
   const collected: string[] = [];
 
   for (let i = startIndex + 1; i < lines.length; i += 1) {
@@ -208,18 +188,10 @@ function cleanFailureTemplate(lines: string[]): string {
   return trimBlankLines(collected).join('\n');
 }
 
-function captureFromLine(
-  lines: string[],
-  startIndex: number,
-  maxLines: number,
-): string {
+function captureFromLine(lines: string[], startIndex: number, maxLines: number): string {
   const collected: string[] = [];
 
-  for (
-    let i = startIndex;
-    i < lines.length && collected.length < maxLines;
-    i += 1
-  ) {
+  for (let i = startIndex; i < lines.length && collected.length < maxLines; i += 1) {
     const line = lines[i];
 
     if (line === undefined) {

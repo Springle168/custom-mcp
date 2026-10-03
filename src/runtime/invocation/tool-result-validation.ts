@@ -14,10 +14,10 @@ export function isToolCallResult(value: unknown): value is ToolCallResult {
 
     const result = value as Record<string, unknown>;
     if (
-      !Object.hasOwn(result, 'content')
-      || !Array.isArray(result.content)
-      || !Object.hasOwn(result, 'isError')
-      || typeof result.isError !== 'boolean'
+      !Object.hasOwn(result, 'content') ||
+      !Array.isArray(result.content) ||
+      !Object.hasOwn(result, 'isError') ||
+      typeof result.isError !== 'boolean'
     ) {
       return false;
     }
@@ -42,11 +42,7 @@ export function isToolCallResult(value: unknown): value is ToolCallResult {
 }
 
 function isStableJsonData(value: unknown, ancestors: Set<object>): boolean {
-  if (
-    value === null
-    || typeof value === 'string'
-    || typeof value === 'boolean'
-  ) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return true;
   }
 
@@ -76,27 +72,21 @@ function isStableJsonData(value: unknown, ancestors: Set<object>): boolean {
   }
 }
 
-function isStableJsonArray(
-  value: unknown[],
-  ancestors: Set<object>,
-): boolean {
+function isStableJsonArray(value: unknown[], ancestors: Set<object>): boolean {
   if (Object.getPrototypeOf(value) !== Array.prototype) {
     return false;
   }
 
   const ownKeys = Reflect.ownKeys(value);
-  if (
-    ownKeys.length !== value.length + 1
-    || !Object.hasOwn(value, 'length')
-  ) {
+  if (ownKeys.length !== value.length + 1 || !Object.hasOwn(value, 'length')) {
     return false;
   }
 
   const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
   if (
-    lengthDescriptor === undefined
-    || !('value' in lengthDescriptor)
-    || lengthDescriptor.enumerable
+    lengthDescriptor === undefined ||
+    !('value' in lengthDescriptor) ||
+    lengthDescriptor.enumerable
   ) {
     return false;
   }
@@ -104,10 +94,10 @@ function isStableJsonArray(
   for (let index = 0; index < value.length; index++) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
     if (
-      descriptor === undefined
-      || !descriptor.enumerable
-      || !('value' in descriptor)
-      || !isStableJsonData(descriptor.value, ancestors)
+      descriptor === undefined ||
+      !descriptor.enumerable ||
+      !('value' in descriptor) ||
+      !isStableJsonData(descriptor.value, ancestors)
     ) {
       return false;
     }
@@ -116,10 +106,7 @@ function isStableJsonArray(
   return true;
 }
 
-function isStableJsonObject(
-  value: object,
-  ancestors: Set<object>,
-): boolean {
+function isStableJsonObject(value: object, ancestors: Set<object>): boolean {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
     return false;
@@ -133,10 +120,10 @@ function isStableJsonObject(
 
     const descriptor = descriptors[key];
     if (
-      descriptor === undefined
-      || !descriptor.enumerable
-      || !('value' in descriptor)
-      || !isStableJsonData(descriptor.value, ancestors)
+      descriptor === undefined ||
+      !descriptor.enumerable ||
+      !('value' in descriptor) ||
+      !isStableJsonData(descriptor.value, ancestors)
     ) {
       return false;
     }

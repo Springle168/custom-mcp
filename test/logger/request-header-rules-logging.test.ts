@@ -73,7 +73,9 @@ async function cleanupLogsDir(): Promise<void> {
 async function withMutedStdout<T>(run: () => Promise<T>): Promise<T> {
   const originalWrite = process.stdout.write;
   process.stdout.write = ((...args: unknown[]) => {
-    const callback = args.find((arg): arg is (error?: Error | null) => void => typeof arg === 'function');
+    const callback = args.find(
+      (arg): arg is (error?: Error | null) => void => typeof arg === 'function',
+    );
     callback?.();
     return true;
   }) as typeof process.stdout.write;
@@ -112,11 +114,13 @@ async function testMatchedRulesLineIsWritten(): Promise<void> {
       'read_file',
       successResult(),
       12,
-      resultLogContext(metadata({
-        rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
-        enabledFeatures: ['structuredContentDup'],
-      })),
+      resultLogContext(
+        metadata({
+          rulesConfigured: true,
+          matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
+          enabledFeatures: ['structuredContentDup'],
+        }),
+      ),
     );
   });
 
@@ -137,18 +141,36 @@ async function testNoMatchRulesLineIsWritten(): Promise<void> {
     );
   });
 
-  assertIncludes(logText, 'Rules: no match', 'Configured request header rules should log no match when no rule matches');
+  assertIncludes(
+    logText,
+    'Rules: no match',
+    'Configured request header rules should log no match when no rule matches',
+  );
 }
 
 async function testInitializeOnlyRulesDoNotWriteRulesLine(): Promise<void> {
-  const policy = evaluateRequestHeaderPolicy({ requestHeaders: {
-    onInitialize: [{ readHeader: 'x-private-instructions', apply: 'setInstructions' }],
-    onCallToolResult: [],
-  } }, createStrictRequestHeaderView(['x-private-instructions', '{"instructions":"client-secret"}']));
+  const policy = evaluateRequestHeaderPolicy(
+    {
+      requestHeaders: {
+        onInitialize: [{ readHeader: 'x-private-instructions', apply: 'setInstructions' }],
+        onCallToolResult: [],
+      },
+    },
+    createStrictRequestHeaderView(['x-private-instructions', '{"instructions":"client-secret"}']),
+  );
   const logText = await writeAndReadLog('rules-initialize-only', (logger) => {
-    logger.logToolResult('read_file', successResult(), 12, resultLogContext(toRequestHeaderPolicyLogMetadata(policy)));
+    logger.logToolResult(
+      'read_file',
+      successResult(),
+      12,
+      resultLogContext(toRequestHeaderPolicyLogMetadata(policy)),
+    );
   });
-  assertNotIncludes(logText, 'Rules:', 'Initialization-only bindings must not produce result Rules metadata');
+  assertNotIncludes(
+    logText,
+    'Rules:',
+    'Initialization-only bindings must not produce result Rules metadata',
+  );
   assertNotIncludes(logText, 'client-secret', 'Initialization settings must not enter result logs');
 }
 
@@ -162,7 +184,11 @@ async function testUnconfiguredRulesDoNotWriteRulesLine(): Promise<void> {
     );
   });
 
-  assertNotIncludes(logText, 'Rules:', 'Unconfigured request header rules should not write a Rules line');
+  assertNotIncludes(
+    logText,
+    'Rules:',
+    'Unconfigured request header rules should not write a Rules line',
+  );
 }
 
 async function testSuccessAndFailureBothWriteRulesLine(): Promise<void> {
@@ -185,7 +211,11 @@ async function testSuccessAndFailureBothWriteRulesLine(): Promise<void> {
 
   assertIncludes(logText, '→ OK ok_tool (1ms)', 'Successful result should be logged');
   assertIncludes(logText, '→ FAIL fail_tool (2ms)', 'Failed result should be logged');
-  assertEqual(countOccurrences(logText, 'Rules: no match'), 2, 'Both success and failure results should include Rules metadata');
+  assertEqual(
+    countOccurrences(logText, 'Rules: no match'),
+    2,
+    'Both success and failure results should include Rules metadata',
+  );
 }
 
 async function testFileLogDoesNotContainAnsiEscapeCodes(): Promise<void> {
@@ -194,15 +224,20 @@ async function testFileLogDoesNotContainAnsiEscapeCodes(): Promise<void> {
       'read_file',
       successResult(),
       12,
-      resultLogContext(metadata({
-        rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
-        enabledFeatures: ['structuredContentDup'],
-      })),
+      resultLogContext(
+        metadata({
+          rulesConfigured: true,
+          matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
+          enabledFeatures: ['structuredContentDup'],
+        }),
+      ),
     );
   });
 
-  assert(!ANSI_ESCAPE_RE.test(logText), 'File log should remain plain text without ANSI escape codes');
+  assert(
+    !ANSI_ESCAPE_RE.test(logText),
+    'File log should remain plain text without ANSI escape codes',
+  );
 }
 
 async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
@@ -210,19 +245,31 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
   const configHeaderName = 'x-secret-client';
   const requestHeaderValue = 'request-secret-value';
   const configExpectedValue = 'config-secret-value';
-  const policy = evaluateRequestHeaderPolicy({
-    requestHeaders: {
-      onInitialize: [{ readHeader: 'x-private-instructions', apply: 'setInstructions' }],
-      onCallToolResult: [
-        { match: [{ name: configHeaderName, value: requestHeaderValue }], enable: ['structuredContentDup'] },
-        { match: [{ name: 'x-other-secret', value: configExpectedValue }], enable: ['structuredContentDup'] },
-      ],
+  const policy = evaluateRequestHeaderPolicy(
+    {
+      requestHeaders: {
+        onInitialize: [{ readHeader: 'x-private-instructions', apply: 'setInstructions' }],
+        onCallToolResult: [
+          {
+            match: [{ name: configHeaderName, value: requestHeaderValue }],
+            enable: ['structuredContentDup'],
+          },
+          {
+            match: [{ name: 'x-other-secret', value: configExpectedValue }],
+            enable: ['structuredContentDup'],
+          },
+        ],
+      },
     },
-  }, createStrictRequestHeaderView([
-    requestHeaderName, requestHeaderValue,
-    'x-other-secret', 'non-matching-private-value',
-    'x-private-instructions', '{"instructions":"private-instructions-text"}',
-  ]));
+    createStrictRequestHeaderView([
+      requestHeaderName,
+      requestHeaderValue,
+      'x-other-secret',
+      'non-matching-private-value',
+      'x-private-instructions',
+      '{"instructions":"private-instructions-text"}',
+    ]),
+  );
 
   const logText = await writeAndReadLog('rules-privacy', (logger) => {
     logger.logToolResult(
@@ -233,12 +280,32 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
     );
   });
 
-  assertIncludes(logText, 'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup', 'Privacy test should exercise matched rules logging');
-  assertNotIncludes(logText, requestHeaderName, 'Rules log should not contain request header names');
+  assertIncludes(
+    logText,
+    'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup',
+    'Privacy test should exercise matched rules logging',
+  );
+  assertNotIncludes(
+    logText,
+    requestHeaderName,
+    'Rules log should not contain request header names',
+  );
   assertNotIncludes(logText, configHeaderName, 'Rules log should not contain config header names');
-  assertNotIncludes(logText, requestHeaderValue, 'Rules log should not contain request header values');
-  assertNotIncludes(logText, configExpectedValue, 'Rules log should not contain config expected header values');
-  assertNotIncludes(logText, 'private-instructions-text', 'Result logs should not contain initialization instructions');
+  assertNotIncludes(
+    logText,
+    requestHeaderValue,
+    'Rules log should not contain request header values',
+  );
+  assertNotIncludes(
+    logText,
+    configExpectedValue,
+    'Rules log should not contain config expected header values',
+  );
+  assertNotIncludes(
+    logText,
+    'private-instructions-text',
+    'Result logs should not contain initialization instructions',
+  );
 }
 
 async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
@@ -247,25 +314,52 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
   try {
     for (const level of [0, 1] as const) {
       chalk.level = level;
-      const policy = evaluateRequestHeaderPolicy({
-        requestHeaders: {
-          onInitialize: [],
-          onCallToolResult: [
-            { match: [{ name: 'x-private-client', value: 'private-value' }], enable: ['structuredContentDup'] },
-            { match: [{ name: 'x-private-client', value: 'private-value' }], enable: ['structuredContentDup'] },
-          ],
+      const policy = evaluateRequestHeaderPolicy(
+        {
+          requestHeaders: {
+            onInitialize: [],
+            onCallToolResult: [
+              {
+                match: [{ name: 'x-private-client', value: 'private-value' }],
+                enable: ['structuredContentDup'],
+              },
+              {
+                match: [{ name: 'x-private-client', value: 'private-value' }],
+                enable: ['structuredContentDup'],
+              },
+            ],
+          },
         },
-      }, createStrictRequestHeaderView(['X-Private-Client', 'private-value']));
+        createStrictRequestHeaderView(['X-Private-Client', 'private-value']),
+      );
       const summary = formatRequestHeaderPolicyLogSummary(toRequestHeaderPolicyLogMetadata(policy));
       assert(summary !== undefined, 'Matched policy should provide a summary');
-      const plainRules = 'Rules: matched rules.requestHeaders.onCallToolResult[0], rules.requestHeaders.onCallToolResult[1]; enabled structuredContentDup';
-      const coloredRules = '\x1b[36mRules:\x1b[39m \x1b[32mmatched\x1b[39m rules.requestHeaders.onCallToolResult[0]\x1b[2m, \x1b[22mrules.requestHeaders.onCallToolResult[1]; \x1b[36menabled\x1b[39m \x1b[35mstructuredContentDup\x1b[39m';
-      assertEqual(summary.fileText, plainRules, 'File formatter golden must preserve rule order and deduplicate features');
-      assertEqual(summary.consoleText, level === 0 ? plainRules : coloredRules, 'Console formatter golden must preserve exact ANSI coloring');
-      assertEqual(formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })), undefined, 'Unconfigured policy should omit summary');
+      const plainRules =
+        'Rules: matched rules.requestHeaders.onCallToolResult[0], rules.requestHeaders.onCallToolResult[1]; enabled structuredContentDup';
+      const coloredRules =
+        '\x1b[36mRules:\x1b[39m \x1b[32mmatched\x1b[39m rules.requestHeaders.onCallToolResult[0]\x1b[2m, \x1b[22mrules.requestHeaders.onCallToolResult[1]; \x1b[36menabled\x1b[39m \x1b[35mstructuredContentDup\x1b[39m';
+      assertEqual(
+        summary.fileText,
+        plainRules,
+        'File formatter golden must preserve rule order and deduplicate features',
+      );
+      assertEqual(
+        summary.consoleText,
+        level === 0 ? plainRules : coloredRules,
+        'Console formatter golden must preserve exact ANSI coloring',
+      );
+      assertEqual(
+        formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })),
+        undefined,
+        'Unconfigured policy should omit summary',
+      );
       const noMatch = formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: true }));
       assertEqual(noMatch?.fileText, 'Rules: no match', 'No-match file golden');
-      assertEqual(noMatch?.consoleText, level === 0 ? 'Rules: no match' : '\x1b[36mRules:\x1b[39m \x1b[2mno match\x1b[22m', 'No-match console golden');
+      assertEqual(
+        noMatch?.consoleText,
+        level === 0 ? 'Rules: no match' : '\x1b[36mRules:\x1b[39m \x1b[2mno match\x1b[22m',
+        'No-match console golden',
+      );
 
       let stdout = '';
       process.stdout.write = ((chunk: string | Uint8Array) => {
@@ -283,7 +377,8 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
         await logger.close();
       }
       const fileText = await readFile(logger.logFile, 'utf8');
-      const normalizeTimestamp = (text: string) => text.replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]/gu, '[timestamp]');
+      const normalizeTimestamp = (text: string) =>
+        text.replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]/gu, '[timestamp]');
       const plainLog = [
         '[timestamp] → OK read_file (12ms)',
         '  Session: session_golden',
@@ -300,13 +395,32 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
         '\x1b[2m  Succeeded.\x1b[22m',
         '',
       ].join('\n');
-      assertEqual(normalizeTimestamp(fileText), plainLog, 'File log golden must preserve status/context/summary/body order and indentation');
-      assertEqual(normalizeTimestamp(stdout), level === 0 ? plainLog : coloredLog, 'Console log golden must preserve exact output positions and ANSI colors');
+      assertEqual(
+        normalizeTimestamp(fileText),
+        plainLog,
+        'File log golden must preserve status/context/summary/body order and indentation',
+      );
+      assertEqual(
+        normalizeTimestamp(stdout),
+        level === 0 ? plainLog : coloredLog,
+        'Console log golden must preserve exact output positions and ANSI colors',
+      );
       for (const secret of ['x-private-client', 'X-Private-Client', 'private-value']) {
-        assertNotIncludes(fileText, secret, 'File summary must not leak actual configuration or raw header input');
-        assertNotIncludes(stdout, secret, 'Console summary must not leak actual configuration or raw header input');
+        assertNotIncludes(
+          fileText,
+          secret,
+          'File summary must not leak actual configuration or raw header input',
+        );
+        assertNotIncludes(
+          stdout,
+          secret,
+          'Console summary must not leak actual configuration or raw header input',
+        );
       }
-      assert(!ANSI_ESCAPE_RE.test(fileText), 'Forced console coloring must not add ANSI to file logs');
+      assert(
+        !ANSI_ESCAPE_RE.test(fileText),
+        'Forced console coloring must not add ANSI to file logs',
+      );
     }
   } finally {
     process.stdout.write = originalWrite;
@@ -326,19 +440,37 @@ async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
         },
       },
       12,
-      resultLogContext(metadata({
-        rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
-        enabledFeatures: ['structuredContentDup'],
-      })),
+      resultLogContext(
+        metadata({
+          rulesConfigured: true,
+          matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
+          enabledFeatures: ['structuredContentDup'],
+        }),
+      ),
     );
   });
 
   assertIncludes(logText, 'safe result text', 'Logger should keep standard content text');
-  assertIncludes(logText, 'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup', 'Logger should keep Rules metadata');
-  assertNotIncludes(logText, '"structuredContent"', 'Logger should not serialize the protocol structuredContent field');
-  assertNotIncludes(logText, 'payload-secret', 'Logger should not log object structuredContent payload values');
-  assertNotIncludes(logText, 'stale-protocol-field', 'Logger should not log stale handler structuredContent values');
+  assertIncludes(
+    logText,
+    'Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup',
+    'Logger should keep Rules metadata',
+  );
+  assertNotIncludes(
+    logText,
+    '"structuredContent"',
+    'Logger should not serialize the protocol structuredContent field',
+  );
+  assertNotIncludes(
+    logText,
+    'payload-secret',
+    'Logger should not log object structuredContent payload values',
+  );
+  assertNotIncludes(
+    logText,
+    'stale-protocol-field',
+    'Logger should not log stale handler structuredContent values',
+  );
 }
 
 async function testMixedImageContentIsLoggedInOrder(): Promise<void> {
@@ -361,11 +493,13 @@ async function testMixedImageContentIsLoggedInOrder(): Promise<void> {
         isError: false,
       },
       12,
-      resultLogContext(metadata({
-        rulesConfigured: true,
-        matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
-        enabledFeatures: ['structuredContentDup'],
-      })),
+      resultLogContext(
+        metadata({
+          rulesConfigured: true,
+          matchedRuleLocations: ['rules.requestHeaders.onCallToolResult[0]'],
+          enabledFeatures: ['structuredContentDup'],
+        }),
+      ),
     );
   });
 
@@ -377,8 +511,16 @@ async function testMixedImageContentIsLoggedInOrder(): Promise<void> {
     `  ${secondImage}`,
     '  after images',
   ].join('\n');
-  assertIncludes(logText, expectedBody, 'Logger should preserve mixed content order and full image data');
-  assertEqual(countOccurrences(logText, firstImage), 1, 'structuredContentDup should not duplicate image data in RESULT logs');
+  assertIncludes(
+    logText,
+    expectedBody,
+    'Logger should preserve mixed content order and full image data',
+  );
+  assertEqual(
+    countOccurrences(logText, firstImage),
+    1,
+    'structuredContentDup should not duplicate image data in RESULT logs',
+  );
   assertNotIncludes(logText, 'metadata-secret', 'Logger should not serialize top-level metadata');
 }
 
@@ -396,8 +538,16 @@ async function testImageOnlyResultHasBody(): Promise<void> {
     );
   });
 
-  assertIncludes(logText, '→ FAIL image_tool (1ms)', 'Image-only errors should retain failure status');
-  assertIncludes(logText, `  [image image/jpeg]\n  ${imageData}`, 'Image-only results should have a non-empty log body');
+  assertIncludes(
+    logText,
+    '→ FAIL image_tool (1ms)',
+    'Image-only errors should retain failure status',
+  );
+  assertIncludes(
+    logText,
+    `  [image image/jpeg]\n  ${imageData}`,
+    'Image-only results should have a non-empty log body',
+  );
 }
 
 async function testToolCallIdentityIsWrittenForCallAndResult(): Promise<void> {
@@ -449,16 +599,40 @@ async function main(): Promise<void> {
     tests: [
       { name: 'matched rules line is written', run: testMatchedRulesLineIsWritten },
       { name: 'no-match rules line is written', run: testNoMatchRulesLineIsWritten },
-      { name: 'initialization-only bindings do not write Rules line', run: testInitializeOnlyRulesDoNotWriteRulesLine },
-      { name: 'unconfigured rules do not write Rules line', run: testUnconfiguredRulesDoNotWriteRulesLine },
-      { name: 'success and failure both write Rules line', run: testSuccessAndFailureBothWriteRulesLine },
-      { name: 'file log does not contain ANSI escape codes', run: testFileLogDoesNotContainAnsiEscapeCodes },
-      { name: 'rules log does not contain header names or values', run: testRulesLogDoesNotContainHeaderNamesOrValues },
-      { name: 'formatter and logger plain/forced-color golden channels', run: testFormatterAndLoggerGoldenChannels },
-      { name: 'structuredContent protocol field is not logged', run: testStructuredContentProtocolFieldIsNotLogged },
+      {
+        name: 'initialization-only bindings do not write Rules line',
+        run: testInitializeOnlyRulesDoNotWriteRulesLine,
+      },
+      {
+        name: 'unconfigured rules do not write Rules line',
+        run: testUnconfiguredRulesDoNotWriteRulesLine,
+      },
+      {
+        name: 'success and failure both write Rules line',
+        run: testSuccessAndFailureBothWriteRulesLine,
+      },
+      {
+        name: 'file log does not contain ANSI escape codes',
+        run: testFileLogDoesNotContainAnsiEscapeCodes,
+      },
+      {
+        name: 'rules log does not contain header names or values',
+        run: testRulesLogDoesNotContainHeaderNamesOrValues,
+      },
+      {
+        name: 'formatter and logger plain/forced-color golden channels',
+        run: testFormatterAndLoggerGoldenChannels,
+      },
+      {
+        name: 'structuredContent protocol field is not logged',
+        run: testStructuredContentProtocolFieldIsNotLogged,
+      },
       { name: 'mixed image content is logged in order', run: testMixedImageContentIsLoggedInOrder },
       { name: 'image-only result has a log body', run: testImageOnlyResultHasBody },
-      { name: 'tool call identity is written for call and result', run: testToolCallIdentityIsWrittenForCallAndResult },
+      {
+        name: 'tool call identity is written for call and result',
+        run: testToolCallIdentityIsWrittenForCallAndResult,
+      },
       { name: 'missing session is explicitly written', run: testMissingSessionIsExplicitlyWritten },
     ],
   });

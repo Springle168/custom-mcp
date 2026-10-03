@@ -16,10 +16,7 @@ import {
   type FileAccessPolicyContext,
   type RootFileAccessPolicy,
 } from '../utils/file-access-policy.js';
-import {
-  createValidatedPathSafetyContext,
-  type PathSafetyContext,
-} from '../utils/paths.js';
+import { createValidatedPathSafetyContext, type PathSafetyContext } from '../utils/paths.js';
 
 export type LineEnding = 'auto' | 'lf' | 'crlf';
 
@@ -80,23 +77,21 @@ export function buildRuntimeConfigSnapshot(
   const { workspace } = options;
   const logsDir = readRuntimeLogsDir(options);
 
-  return createRuntimeConfigSnapshot(
-    {
-      globalConfigFilePath: options.globalConfigFilePath,
-      workspaceConfigFilePath: options.workspaceConfigFilePath,
-      workspaceId: options.workspaceId,
-      rootDir: workspace.rootDir,
-      otherRootDirs: workspace.otherRootDirs,
-      host: workspace.host,
-      port: workspace.port,
-      lineEnding: workspace.lineEnding,
-      logsDir,
-      ...(workspace.android ? { android: workspace.android } : {}),
-      rules: workspace.rules,
-      compiledFileAccessPolicy: workspace.compiledFileAccessPolicy,
-      snapshotVersion: options.snapshotVersion ?? 1,
-    },
-  );
+  return createRuntimeConfigSnapshot({
+    globalConfigFilePath: options.globalConfigFilePath,
+    workspaceConfigFilePath: options.workspaceConfigFilePath,
+    workspaceId: options.workspaceId,
+    rootDir: workspace.rootDir,
+    otherRootDirs: workspace.otherRootDirs,
+    host: workspace.host,
+    port: workspace.port,
+    lineEnding: workspace.lineEnding,
+    logsDir,
+    ...(workspace.android ? { android: workspace.android } : {}),
+    rules: workspace.rules,
+    compiledFileAccessPolicy: workspace.compiledFileAccessPolicy,
+    snapshotVersion: options.snapshotVersion ?? 1,
+  });
 }
 
 export function createRuntimeConfigSnapshot(
@@ -115,15 +110,14 @@ export function createRuntimeConfigSnapshot(
   const logsDir = resolve(input.logsDir);
   const android = resolveRuntimeAndroidConfig(input.android);
   const rules = cloneRuntimeRulesConfig(input.rules);
-  const compiledPolicy = input.compiledFileAccessPolicy ??
+  const compiledPolicy =
+    input.compiledFileAccessPolicy ??
     createEmptyCompiledFileAccessPolicy(input.rootDir, configuredOtherRootDirs);
   const fileAccessPolicyContext = createFileAccessPolicyContext(
     pathSafetyContext,
     cloneRootFileAccessPolicies(compiledPolicy.roots),
   );
-  const fileAccessPolicyFiles = cloneRootFileAccessPolicyFiles(
-    compiledPolicy.roots,
-  );
+  const fileAccessPolicyFiles = cloneRootFileAccessPolicyFiles(compiledPolicy.roots);
 
   const snapshot: RuntimeConfigSnapshot = {
     snapshotVersion: input.snapshotVersion ?? 1,
@@ -168,17 +162,11 @@ function readRuntimeLogsDir(options: BuildRuntimeConfigSnapshotOptions): string 
   });
 }
 
-function assertRuntimeConfigSnapshotInputPreconditions(
-  input: RuntimeConfigSnapshotInput,
-): void {
+function assertRuntimeConfigSnapshotInputPreconditions(input: RuntimeConfigSnapshotInput): void {
   assertSnapshotPathValue(input, input.rootDir, 'rootDir');
 
   input.otherRootDirs?.forEach((otherRootDir, index) => {
-    assertSnapshotPathValue(
-      input,
-      otherRootDir,
-      `otherRootDirs[${index}]`,
-    );
+    assertSnapshotPathValue(input, otherRootDir, `otherRootDirs[${index}]`);
   });
 
   assertSnapshotPathValue(input, input.logsDir, 'logsDir');
@@ -187,16 +175,8 @@ function assertRuntimeConfigSnapshotInputPreconditions(
     return;
   }
 
-  assertSnapshotPathValue(
-    input,
-    input.android.workspaceRoot,
-    'android.workspaceRoot',
-  );
-  assertSnapshotPathValue(
-    input,
-    input.android.javaHome,
-    'android.javaHome',
-  );
+  assertSnapshotPathValue(input, input.android.workspaceRoot, 'android.workspaceRoot');
+  assertSnapshotPathValue(input, input.android.javaHome, 'android.javaHome');
 }
 
 function assertSnapshotPathValue(
@@ -249,12 +229,14 @@ function cloneRuntimeRulesConfig(rules: RuntimeRulesConfig): RuntimeRulesConfig 
 function cloneRootFileAccessPolicies(
   roots: readonly CompiledRootFileAccessPolicy[],
 ): readonly RootFileAccessPolicy[] {
-  return roots.map(({ policy }) => Object.freeze({
-    rootDir: policy.rootDir,
-    realRootDir: policy.realRootDir,
-    ignore: Object.freeze({ isIgnored: policy.ignore.isIgnored }),
-    deny: Object.freeze({ isIgnored: policy.deny.isIgnored }),
-  }));
+  return roots.map(({ policy }) =>
+    Object.freeze({
+      rootDir: policy.rootDir,
+      realRootDir: policy.realRootDir,
+      ignore: Object.freeze({ isIgnored: policy.ignore.isIgnored }),
+      deny: Object.freeze({ isIgnored: policy.deny.isIgnored }),
+    }),
+  );
 }
 
 function cloneRootFileAccessPolicyFiles(
@@ -292,9 +274,7 @@ function createPathSafetyContextOrThrowConfigError(
   }
 }
 
-function inferAllowedRootFieldPath(
-  message: string,
-): string {
+function inferAllowedRootFieldPath(message: string): string {
   const otherRootMatches = [...message.matchAll(/otherRootDirs\[\d+\]/g)].map((match) => match[0]);
 
   if (otherRootMatches.length > 0) {

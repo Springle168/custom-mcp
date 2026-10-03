@@ -75,17 +75,10 @@ async function removeLinkIfExists(linkPath: string): Promise<void> {
   }
 }
 
-async function createDirectoryLink(
-  linkPath: string,
-  targetPath: string,
-): Promise<boolean> {
+async function createDirectoryLink(linkPath: string, targetPath: string): Promise<boolean> {
   await removeLinkIfExists(linkPath);
   try {
-    await fs.symlink(
-      targetPath,
-      linkPath,
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
+    await fs.symlink(targetPath, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
     return true;
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
@@ -116,7 +109,11 @@ function captureConfigError(run: () => unknown): ConfigError {
     run();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Expected a structured ConfigError');
-    assertEqual(error.code, 'config_validation_failed', 'Runtime snapshot failures should use config_validation_failed');
+    assertEqual(
+      error.code,
+      'config_validation_failed',
+      'Runtime snapshot failures should use config_validation_failed',
+    );
     return error;
   }
 
@@ -125,10 +122,12 @@ function captureConfigError(run: () => unknown): ConfigError {
 
 async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    rootDir: `${PRIMARY_DIR}${path.sep}`,
-    otherRootDirs: [`${ADDITIONAL_A_DIR}${path.sep}`],
-  }));
+  await writeGlobalConfig(
+    globalConfig({
+      rootDir: `${PRIMARY_DIR}${path.sep}`,
+      otherRootDirs: [`${ADDITIONAL_A_DIR}${path.sep}`],
+    }),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -137,15 +136,47 @@ async function testSnapshotUsesCanonicalPathSafetyRoots(): Promise<void> {
   });
 
   assertEqual(snapshot.snapshotVersion, 1, 'Initial runtime snapshot version should be 1');
-  assertEqual(snapshot.globalConfigFilePath, CONFIG_FILE, 'Snapshot should record the global config file path');
-  assertEqual(snapshot.workspaceConfigFilePath, WORKSPACE_CONFIG_FILE, 'Snapshot should record the workspace config file path');
-  assertEqual(snapshot.workspaceId, 'runtime-workspace', 'Snapshot should record selected workspace id');
+  assertEqual(
+    snapshot.globalConfigFilePath,
+    CONFIG_FILE,
+    'Snapshot should record the global config file path',
+  );
+  assertEqual(
+    snapshot.workspaceConfigFilePath,
+    WORKSPACE_CONFIG_FILE,
+    'Snapshot should record the workspace config file path',
+  );
+  assertEqual(
+    snapshot.workspaceId,
+    'runtime-workspace',
+    'Snapshot should record selected workspace id',
+  );
   assertEqual(snapshot.host, '127.0.0.1', 'Snapshot should use the default IPv4 loopback host');
-  assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Snapshot should use the default home dotdir logs dir');
-  assertEqual(snapshot.rootDir, path.resolve(PRIMARY_DIR), 'Snapshot rootDir should use canonical path safety primary root');
-  assertEqual(snapshot.otherRootDirs.length, 1, 'Snapshot should include canonical additional roots');
-  assertEqual(snapshot.otherRootDirs[0], path.resolve(ADDITIONAL_A_DIR), 'Snapshot otherRootDirs should come from path safety roots');
-  assertEqual(snapshot.pathSafetyContext.primaryRoot.rootDir, snapshot.rootDir, 'Snapshot rootDir should match pathSafetyContext primary root');
+  assertEqual(
+    snapshot.logsDir,
+    DEFAULT_LOGS_DIR,
+    'Snapshot should use the default home dotdir logs dir',
+  );
+  assertEqual(
+    snapshot.rootDir,
+    path.resolve(PRIMARY_DIR),
+    'Snapshot rootDir should use canonical path safety primary root',
+  );
+  assertEqual(
+    snapshot.otherRootDirs.length,
+    1,
+    'Snapshot should include canonical additional roots',
+  );
+  assertEqual(
+    snapshot.otherRootDirs[0],
+    path.resolve(ADDITIONAL_A_DIR),
+    'Snapshot otherRootDirs should come from path safety roots',
+  );
+  assertEqual(
+    snapshot.pathSafetyContext.primaryRoot.rootDir,
+    snapshot.rootDir,
+    'Snapshot rootDir should match pathSafetyContext primary root',
+  );
   assertEqual(
     snapshot.pathSafetyContext.allowedRoots[1]?.rootDir,
     snapshot.otherRootDirs[0],
@@ -163,15 +194,21 @@ async function testSnapshotUsesConfiguredLogsDir(): Promise<void> {
     env: {},
   });
 
-  assertEqual(snapshot.logsDir, path.resolve(CONFIGURED_LOGS_DIR), 'Configured logsDir should override the default logs dir');
+  assertEqual(
+    snapshot.logsDir,
+    path.resolve(CONFIGURED_LOGS_DIR),
+    'Configured logsDir should override the default logs dir',
+  );
 }
 
 async function testSnapshotUsesAllowedLogsDirEnvOverride(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    logsDir: CONFIGURED_LOGS_DIR,
-    envOverrides: { allowedFields: ['logsDir'] },
-  }));
+  await writeGlobalConfig(
+    globalConfig({
+      logsDir: CONFIGURED_LOGS_DIR,
+      envOverrides: { allowedFields: ['logsDir'] },
+    }),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -179,27 +216,45 @@ async function testSnapshotUsesAllowedLogsDirEnvOverride(): Promise<void> {
     env: { MCP_LOGS_DIR: OVERRIDE_LOGS_DIR },
   });
 
-  assertEqual(snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Allowed MCP_LOGS_DIR should override configured logsDir');
+  assertEqual(
+    snapshot.logsDir,
+    path.resolve(OVERRIDE_LOGS_DIR),
+    'Allowed MCP_LOGS_DIR should override configured logsDir',
+  );
 }
 
 async function testEmptyLogsDirEnvFailsBeforeSnapshot(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    logsDir: CONFIGURED_LOGS_DIR,
-    envOverrides: { allowedFields: ['logsDir'] },
-  }));
+  await writeGlobalConfig(
+    globalConfig({
+      logsDir: CONFIGURED_LOGS_DIR,
+      envOverrides: { allowedFields: ['logsDir'] },
+    }),
+  );
 
   const error = captureConfigError(() =>
     loadRuntimeConfig({
       homeDir: HOME_DIR,
       workspaceId: 'runtime-workspace',
       env: { MCP_LOGS_DIR: '' },
-    })
+    }),
   );
 
-  assertEqual(error.fieldPath, 'logsDir', 'Empty MCP_LOGS_DIR should identify the target config field');
-  assertIncludes(error.message, 'MCP_LOGS_DIR must be a non-empty string', 'Empty MCP_LOGS_DIR should fail as an env value');
-  assertIncludes(error.suggestion, 'Fix MCP_LOGS_DIR', 'Empty MCP_LOGS_DIR suggestion should point at the environment');
+  assertEqual(
+    error.fieldPath,
+    'logsDir',
+    'Empty MCP_LOGS_DIR should identify the target config field',
+  );
+  assertIncludes(
+    error.message,
+    'MCP_LOGS_DIR must be a non-empty string',
+    'Empty MCP_LOGS_DIR should fail as an env value',
+  );
+  assertIncludes(
+    error.suggestion,
+    'Fix MCP_LOGS_DIR',
+    'Empty MCP_LOGS_DIR suggestion should point at the environment',
+  );
 }
 
 async function testMissingDefaultLogsDirFailsStartup(): Promise<void> {
@@ -212,12 +267,24 @@ async function testMissingDefaultLogsDirFailsStartup(): Promise<void> {
       homeDir: HOME_DIR,
       workspaceId: 'runtime-workspace',
       env: {},
-    })
+    }),
   );
 
-  assertEqual(error.fieldPath, 'logsDir', 'Missing default logs root should identify the effective logsDir field');
-  assertIncludes(error.message, 'does not exist or cannot be accessed', 'Missing default logs root should fail existing-directory policy');
-  assertIncludes(error.suggestion, 'Create the default logs root', 'Missing default logs root suggestion should ask for directory creation');
+  assertEqual(
+    error.fieldPath,
+    'logsDir',
+    'Missing default logs root should identify the effective logsDir field',
+  );
+  assertIncludes(
+    error.message,
+    'does not exist or cannot be accessed',
+    'Missing default logs root should fail existing-directory policy',
+  );
+  assertIncludes(
+    error.suggestion,
+    'Create the default logs root',
+    'Missing default logs root suggestion should ask for directory creation',
+  );
 }
 
 async function testDefaultLogsDirMustBeDirectory(): Promise<void> {
@@ -231,12 +298,24 @@ async function testDefaultLogsDirMustBeDirectory(): Promise<void> {
       homeDir: HOME_DIR,
       workspaceId: 'runtime-workspace',
       env: {},
-    })
+    }),
   );
 
-  assertEqual(error.fieldPath, 'logsDir', 'File default logs root should identify the effective logsDir field');
-  assertIncludes(error.message, 'must point to an existing directory', 'File default logs root should fail directory policy');
-  assertIncludes(error.suggestion, 'Create the default logs root', 'File default logs root suggestion should ask for a directory');
+  assertEqual(
+    error.fieldPath,
+    'logsDir',
+    'File default logs root should identify the effective logsDir field',
+  );
+  assertIncludes(
+    error.message,
+    'must point to an existing directory',
+    'File default logs root should fail directory policy',
+  );
+  assertIncludes(
+    error.suggestion,
+    'Create the default logs root',
+    'File default logs root suggestion should ask for a directory',
+  );
 }
 
 async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
@@ -263,8 +342,7 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
   const cases = [
     {
       name: 'rootDir',
-      run: () =>
-        createRuntimeConfigSnapshot({ ...baseInput, rootDir: `${PRIMARY_DIR} ` }),
+      run: () => createRuntimeConfigSnapshot({ ...baseInput, rootDir: `${PRIMARY_DIR} ` }),
       expectedFieldPath: 'rootDir',
     },
     {
@@ -275,8 +353,7 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
     },
     {
       name: 'logsDir',
-      run: () =>
-        createRuntimeConfigSnapshot({ ...baseInput, logsDir: `${DEFAULT_LOGS_DIR} ` }),
+      run: () => createRuntimeConfigSnapshot({ ...baseInput, logsDir: `${DEFAULT_LOGS_DIR} ` }),
       expectedFieldPath: 'logsDir',
     },
     {
@@ -302,25 +379,39 @@ async function testSnapshotRejectsWhitespacePathPreconditions(): Promise<void> {
   for (const testCase of cases) {
     const error = captureConfigError(testCase.run);
 
-    assertEqual(error.fieldPath, testCase.expectedFieldPath, `${testCase.name} precondition should identify the offending field`);
-    assertIncludes(error.message, 'must not contain leading or trailing whitespace', `${testCase.name} precondition should reject whitespace instead of trimming`);
-    assertIncludes(error.suggestion, 'Snapshot path-like inputs', `${testCase.name} precondition should explain the snapshot seam contract`);
+    assertEqual(
+      error.fieldPath,
+      testCase.expectedFieldPath,
+      `${testCase.name} precondition should identify the offending field`,
+    );
+    assertIncludes(
+      error.message,
+      'must not contain leading or trailing whitespace',
+      `${testCase.name} precondition should reject whitespace instead of trimming`,
+    );
+    assertIncludes(
+      error.suggestion,
+      'Snapshot path-like inputs',
+      `${testCase.name} precondition should explain the snapshot seam contract`,
+    );
   }
 }
 
 async function testLogsAndAndroidPathsStayOutsideAllowedRoots(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    logsDir: CONFIGURED_LOGS_DIR,
-    otherRootDirs: [ADDITIONAL_A_DIR],
-    android: {
-      workspaceRoot: ANDROID_WORKSPACE_DIR,
-      javaHome: ANDROID_JAVA_HOME_DIR,
-      buildTimeoutMs: 900000,
-      maxErrorBlockChars: 2500,
-      maxLogTailChars: 4000,
-    },
-  }));
+  await writeGlobalConfig(
+    globalConfig({
+      logsDir: CONFIGURED_LOGS_DIR,
+      otherRootDirs: [ADDITIONAL_A_DIR],
+      android: {
+        workspaceRoot: ANDROID_WORKSPACE_DIR,
+        javaHome: ANDROID_JAVA_HOME_DIR,
+        buildTimeoutMs: 900000,
+        maxErrorBlockChars: 2500,
+        maxLogTailChars: 4000,
+      },
+    }),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -329,13 +420,34 @@ async function testLogsAndAndroidPathsStayOutsideAllowedRoots(): Promise<void> {
   });
   const allowedRootPaths = snapshot.pathSafetyContext.allowedRoots.map((root) => root.rootDir);
 
-  assertEqual(snapshot.logsDir, path.resolve(CONFIGURED_LOGS_DIR), 'Snapshot should resolve configured logsDir for runtime use');
+  assertEqual(
+    snapshot.logsDir,
+    path.resolve(CONFIGURED_LOGS_DIR),
+    'Snapshot should resolve configured logsDir for runtime use',
+  );
   assert(snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_DIR), 'Snapshot should resolve Android workspaceRoot');
-  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME_DIR), 'Snapshot should resolve Android javaHome');
-  assert(!allowedRootPaths.includes(path.resolve(CONFIGURED_LOGS_DIR)), 'logsDir should not become an allowed root');
-  assert(!allowedRootPaths.includes(path.resolve(ANDROID_WORKSPACE_DIR)), 'android.workspaceRoot should not become an allowed root');
-  assert(!allowedRootPaths.includes(path.resolve(ANDROID_JAVA_HOME_DIR)), 'android.javaHome should not become an allowed root');
+  assertEqual(
+    snapshot.android.workspaceRoot,
+    path.resolve(ANDROID_WORKSPACE_DIR),
+    'Snapshot should resolve Android workspaceRoot',
+  );
+  assertEqual(
+    snapshot.android.javaHome,
+    path.resolve(ANDROID_JAVA_HOME_DIR),
+    'Snapshot should resolve Android javaHome',
+  );
+  assert(
+    !allowedRootPaths.includes(path.resolve(CONFIGURED_LOGS_DIR)),
+    'logsDir should not become an allowed root',
+  );
+  assert(
+    !allowedRootPaths.includes(path.resolve(ANDROID_WORKSPACE_DIR)),
+    'android.workspaceRoot should not become an allowed root',
+  );
+  assert(
+    !allowedRootPaths.includes(path.resolve(ANDROID_JAVA_HOME_DIR)),
+    'android.javaHome should not become an allowed root',
+  );
 }
 
 async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
@@ -375,13 +487,29 @@ async function testInvalidOtherRootDirsReturnStructuredErrors(): Promise<void> {
         homeDir: HOME_DIR,
         workspaceId: 'runtime-workspace',
         env: {},
-      })
+      }),
     );
 
-    assertEqual(error.fieldPath, testCase.expectedFieldPath, `${testCase.name} should identify the offending otherRootDirs entry`);
-    assertIncludes(error.message, testCase.expectedMessage, `${testCase.name} should include the path safety error`);
-    assertIncludes(error.message, 'Selected workspace allowed roots are invalid', `${testCase.name} should identify snapshot root validation`);
-    assertIncludes(error.suggestion, 'rootDir/otherRootDirs', `${testCase.name} should include a useful suggestion`);
+    assertEqual(
+      error.fieldPath,
+      testCase.expectedFieldPath,
+      `${testCase.name} should identify the offending otherRootDirs entry`,
+    );
+    assertIncludes(
+      error.message,
+      testCase.expectedMessage,
+      `${testCase.name} should include the path safety error`,
+    );
+    assertIncludes(
+      error.message,
+      'Selected workspace allowed roots are invalid',
+      `${testCase.name} should identify snapshot root validation`,
+    );
+    assertIncludes(
+      error.suggestion,
+      'rootDir/otherRootDirs',
+      `${testCase.name} should include a useful suggestion`,
+    );
   }
 }
 
@@ -399,12 +527,24 @@ async function testOtherRootDirsRealpathDuplicateValidation(): Promise<void> {
         homeDir: HOME_DIR,
         workspaceId: 'runtime-workspace',
         env: {},
-      })
+      }),
     );
 
-    assertEqual(error.fieldPath, 'otherRootDirs[1]', 'Realpath duplicate should identify the symlinked additional root');
-    assertIncludes(error.message, 'unique at the real path layer', 'Realpath duplicate additional roots should be rejected');
-    assertIncludes(error.message, 'otherRootDirs[0] and otherRootDirs[1]', 'Realpath duplicate error should mention both additional roots');
+    assertEqual(
+      error.fieldPath,
+      'otherRootDirs[1]',
+      'Realpath duplicate should identify the symlinked additional root',
+    );
+    assertIncludes(
+      error.message,
+      'unique at the real path layer',
+      'Realpath duplicate additional roots should be rejected',
+    );
+    assertIncludes(
+      error.message,
+      'otherRootDirs[0] and otherRootDirs[1]',
+      'Realpath duplicate error should mention both additional roots',
+    );
   } finally {
     await removeLinkIfExists(linkPath);
   }
@@ -424,12 +564,24 @@ async function testOtherRootDirsRealpathNestedValidation(): Promise<void> {
         homeDir: HOME_DIR,
         workspaceId: 'runtime-workspace',
         env: {},
-      })
+      }),
     );
 
-    assertEqual(error.fieldPath, 'otherRootDirs[1]', 'Realpath nested root should identify the symlinked nested additional root');
-    assertIncludes(error.message, 'must not be nested at the real path layer', 'Realpath nested additional roots should be rejected');
-    assertIncludes(error.message, 'otherRootDirs[1]', 'Realpath nested error should mention the nested additional root');
+    assertEqual(
+      error.fieldPath,
+      'otherRootDirs[1]',
+      'Realpath nested root should identify the symlinked nested additional root',
+    );
+    assertIncludes(
+      error.message,
+      'must not be nested at the real path layer',
+      'Realpath nested additional roots should be rejected',
+    );
+    assertIncludes(
+      error.message,
+      'otherRootDirs[1]',
+      'Realpath nested error should mention the nested additional root',
+    );
   } finally {
     await removeLinkIfExists(linkPath);
   }
@@ -437,19 +589,21 @@ async function testOtherRootDirsRealpathNestedValidation(): Promise<void> {
 
 async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    rules: {
-      requestHeaders: {
-        onInitialize: [{ readHeader: 'X-Tools', apply: 'setToolList' }],
-        onCallToolResult: [
-          {
-            match: { 'X-Client': 'android-studio' },
-            enable: ['structuredContentDup'],
-          },
-        ],
+  await writeGlobalConfig(
+    globalConfig({
+      rules: {
+        requestHeaders: {
+          onInitialize: [{ readHeader: 'X-Tools', apply: 'setToolList' }],
+          onCallToolResult: [
+            {
+              match: { 'X-Client': 'android-studio' },
+              enable: ['structuredContentDup'],
+            },
+          ],
+        },
       },
-    },
-  }));
+    }),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -457,27 +611,41 @@ async function testSnapshotHoldsRequestHeaderRules(): Promise<void> {
     env: {},
   });
 
-  assertEqual(snapshot.rules.requestHeaders.onCallToolResult.length, 1, 'Snapshot should hold selected workspace request header rules');
-  assertEqual(snapshot.rules.requestHeaders.onCallToolResult[0]?.match[0]?.name, 'x-client', 'Snapshot rules should contain normalized header names');
-  assertEqual(snapshot.rules.requestHeaders.onCallToolResult[0]?.enable[0], 'structuredContentDup', 'Snapshot rules should preserve enabled features');
+  assertEqual(
+    snapshot.rules.requestHeaders.onCallToolResult.length,
+    1,
+    'Snapshot should hold selected workspace request header rules',
+  );
+  assertEqual(
+    snapshot.rules.requestHeaders.onCallToolResult[0]?.match[0]?.name,
+    'x-client',
+    'Snapshot rules should contain normalized header names',
+  );
+  assertEqual(
+    snapshot.rules.requestHeaders.onCallToolResult[0]?.enable[0],
+    'structuredContentDup',
+    'Snapshot rules should preserve enabled features',
+  );
 }
 
 async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    otherRootDirs: [ADDITIONAL_A_DIR],
-    rules: {
-      requestHeaders: {
-        onInitialize: [{ readHeader: 'X-Tools', apply: 'setToolList' }],
-        onCallToolResult: [
-          {
-            match: { 'X-Client': 'android-studio' },
-            enable: ['structuredContentDup'],
-          },
-        ],
+  await writeGlobalConfig(
+    globalConfig({
+      otherRootDirs: [ADDITIONAL_A_DIR],
+      rules: {
+        requestHeaders: {
+          onInitialize: [{ readHeader: 'X-Tools', apply: 'setToolList' }],
+          onCallToolResult: [
+            {
+              match: { 'X-Client': 'android-studio' },
+              enable: ['structuredContentDup'],
+            },
+          ],
+        },
       },
-    },
-  }));
+    }),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -494,17 +662,32 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   }
   assertEqual(snapshot.logsDir, DEFAULT_LOGS_DIR, 'Frozen snapshot should keep logsDir immutable');
   assert(Object.isFrozen(snapshot.otherRootDirs), 'Snapshot otherRootDirs should be frozen');
-  assert(Object.isFrozen(snapshot.fileAccessPolicyFiles), 'Snapshot policy file metadata should be frozen');
+  assert(
+    Object.isFrozen(snapshot.fileAccessPolicyFiles),
+    'Snapshot policy file metadata should be frozen',
+  );
   for (const root of snapshot.fileAccessPolicyFiles) {
     assert(Object.isFrozen(root), 'Each policy file metadata entry should be frozen');
     assert(Object.isFrozen(root.ignoreFiles), 'Each ignore file metadata array should be frozen');
     assert(Object.isFrozen(root.denyFiles), 'Each deny file metadata array should be frozen');
   }
   assert(Object.isFrozen(snapshot.rules), 'Snapshot rules object should be frozen');
-  assert(Object.isFrozen(snapshot.rules.requestHeaders), 'Snapshot requestHeaders object should be frozen');
-  assert(Object.isFrozen(snapshot.rules.requestHeaders.onInitialize), 'Initialization array should be frozen');
-  assert(Object.isFrozen(snapshot.rules.requestHeaders.onInitialize[0]), 'Initialization binding should be frozen');
-  assert(Object.isFrozen(snapshot.rules.requestHeaders.onCallToolResult), 'Result rules array should be frozen');
+  assert(
+    Object.isFrozen(snapshot.rules.requestHeaders),
+    'Snapshot requestHeaders object should be frozen',
+  );
+  assert(
+    Object.isFrozen(snapshot.rules.requestHeaders.onInitialize),
+    'Initialization array should be frozen',
+  );
+  assert(
+    Object.isFrozen(snapshot.rules.requestHeaders.onInitialize[0]),
+    'Initialization binding should be frozen',
+  );
+  assert(
+    Object.isFrozen(snapshot.rules.requestHeaders.onCallToolResult),
+    'Result rules array should be frozen',
+  );
   const firstRule = snapshot.rules.requestHeaders.onCallToolResult[0];
   assert(firstRule !== undefined, 'Fixture should include a request header rule');
   assert(Object.isFrozen(firstRule), 'Each request header rule should be frozen');
@@ -513,11 +696,20 @@ async function testSnapshotGraphIsDeepFrozen(): Promise<void> {
   assert(Object.isFrozen(firstRule.enable), 'Rule enable array should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext), 'PathSafetyContext should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot), 'Primary root should be frozen');
-  assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot.permissions), 'Primary root permissions should be frozen');
-  assert(Object.isFrozen(snapshot.pathSafetyContext.allowedRoots), 'Allowed roots array should be frozen');
+  assert(
+    Object.isFrozen(snapshot.pathSafetyContext.primaryRoot.permissions),
+    'Primary root permissions should be frozen',
+  );
+  assert(
+    Object.isFrozen(snapshot.pathSafetyContext.allowedRoots),
+    'Allowed roots array should be frozen',
+  );
   for (const root of snapshot.pathSafetyContext.allowedRoots) {
     assert(Object.isFrozen(root), 'Each allowed root should be frozen');
-    assert(Object.isFrozen(root.permissions), 'Each allowed root permissions object should be frozen');
+    assert(
+      Object.isFrozen(root.permissions),
+      'Each allowed root permissions object should be frozen',
+    );
   }
 }
 
@@ -554,9 +746,11 @@ async function testToolRuntimeContextUsesSnapshotAndroidMessage(): Promise<void>
 
 async function testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig({
-    tools: { enabled: ['read_file'] },
-  }));
+  await writeGlobalConfig(
+    globalConfig({
+      tools: { enabled: ['read_file'] },
+    }),
+  );
 
   const loaded = loadRuntimeConfigWithIdentity({
     homeDir: HOME_DIR,
@@ -582,18 +776,42 @@ async function main(): Promise<void> {
       { name: 'uses canonical path safety roots', run: testSnapshotUsesCanonicalPathSafetyRoots },
       { name: 'uses configured logsDir', run: testSnapshotUsesConfiguredLogsDir },
       { name: 'uses allowed logsDir env override', run: testSnapshotUsesAllowedLogsDirEnvOverride },
-      { name: 'empty logsDir env fails before snapshot', run: testEmptyLogsDirEnvFailsBeforeSnapshot },
+      {
+        name: 'empty logsDir env fails before snapshot',
+        run: testEmptyLogsDirEnvFailsBeforeSnapshot,
+      },
       { name: 'missing default logsDir fails startup', run: testMissingDefaultLogsDirFailsStartup },
       { name: 'default logsDir must be a directory', run: testDefaultLogsDirMustBeDirectory },
-      { name: 'snapshot rejects whitespace path preconditions', run: testSnapshotRejectsWhitespacePathPreconditions },
-      { name: 'logsDir and Android paths stay outside allowed roots', run: testLogsAndAndroidPathsStayOutsideAllowedRoots },
-      { name: 'invalid selected otherRootDirs return structured errors', run: testInvalidOtherRootDirsReturnStructuredErrors },
-      { name: 'selected otherRootDirs reject realpath duplicates', run: testOtherRootDirsRealpathDuplicateValidation },
-      { name: 'selected otherRootDirs reject realpath nesting', run: testOtherRootDirsRealpathNestedValidation },
+      {
+        name: 'snapshot rejects whitespace path preconditions',
+        run: testSnapshotRejectsWhitespacePathPreconditions,
+      },
+      {
+        name: 'logsDir and Android paths stay outside allowed roots',
+        run: testLogsAndAndroidPathsStayOutsideAllowedRoots,
+      },
+      {
+        name: 'invalid selected otherRootDirs return structured errors',
+        run: testInvalidOtherRootDirsReturnStructuredErrors,
+      },
+      {
+        name: 'selected otherRootDirs reject realpath duplicates',
+        run: testOtherRootDirsRealpathDuplicateValidation,
+      },
+      {
+        name: 'selected otherRootDirs reject realpath nesting',
+        run: testOtherRootDirsRealpathNestedValidation,
+      },
       { name: 'snapshot holds request header rules', run: testSnapshotHoldsRequestHeaderRules },
       { name: 'deep-freezes snapshot graph', run: testSnapshotGraphIsDeepFrozen },
-      { name: 'tool runtime context uses snapshot Android message', run: testToolRuntimeContextUsesSnapshotAndroidMessage },
-      { name: 'runtime-only metadata stays out of identity and tool context', run: testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext },
+      {
+        name: 'tool runtime context uses snapshot Android message',
+        run: testToolRuntimeContextUsesSnapshotAndroidMessage,
+      },
+      {
+        name: 'runtime-only metadata stays out of identity and tool context',
+        run: testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext,
+      },
     ],
   });
 }

@@ -1,6 +1,5 @@
 export type StrictRequestHeaderValueState =
-  | { readonly kind: 'single'; readonly value: string }
-  | { readonly kind: 'duplicate' };
+  { readonly kind: 'single'; readonly value: string } | { readonly kind: 'duplicate' };
 
 export type StrictRequestHeaderView =
   | {

@@ -1,11 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  ConfigError,
-  loadRuntimeConfig,
-  loadRuntimeConfigWithIdentity,
-} from '../../src/config.js';
+import { ConfigError, loadRuntimeConfig, loadRuntimeConfigWithIdentity } from '../../src/config.js';
 import {
   assert,
   assertEqual,
@@ -71,7 +67,11 @@ function captureConfigError(run: () => unknown): ConfigError {
     run();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Expected a structured ConfigError');
-    assertEqual(error.code, 'config_validation_failed', 'Env override failures should use config_validation_failed');
+    assertEqual(
+      error.code,
+      'config_validation_failed',
+      'Env override failures should use config_validation_failed',
+    );
     return error;
   }
 
@@ -104,7 +104,9 @@ function workspace(
   };
 }
 
-function globalConfig(workspaces: unknown[] = [workspace('workspace-a', WORKSPACE_A_DIR, 4701)]): Record<string, unknown> {
+function globalConfig(
+  workspaces: unknown[] = [workspace('workspace-a', WORKSPACE_A_DIR, 4701)],
+): Record<string, unknown> {
   return {
     version: 1,
     workspaces,
@@ -150,18 +152,34 @@ function assertEnvValueError(
   expectedMessage: string,
   selector: string,
 ): void {
-  assertEqual(error.fieldPath, expectedFieldPath, `${envVar} error should identify the target config field`);
+  assertEqual(
+    error.fieldPath,
+    expectedFieldPath,
+    `${envVar} error should identify the target config field`,
+  );
   assertIncludes(error.message, envVar, `${envVar} error message should include the env var name`);
-  assertIncludes(error.message, expectedMessage, `${envVar} error should explain the invalid value`);
-  assertIncludes(error.suggestion, `Fix ${envVar}`, `${envVar} suggestion should point at the environment`);
-  assertIncludes(error.suggestion, `remove ${selector}`, `${envVar} suggestion should mention removing the allowlist entry`);
+  assertIncludes(
+    error.message,
+    expectedMessage,
+    `${envVar} error should explain the invalid value`,
+  );
+  assertIncludes(
+    error.suggestion,
+    `Fix ${envVar}`,
+    `${envVar} suggestion should point at the environment`,
+  );
+  assertIncludes(
+    error.suggestion,
+    `remove ${selector}`,
+    `${envVar} suggestion should mention removing the allowlist entry`,
+  );
 }
 
 async function testEnvIgnoredWhenEnvOverridesMissing(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, { android: androidConfig() }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([workspace('workspace-a', WORKSPACE_A_DIR, 4701, { android: androidConfig() })]),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -169,25 +187,47 @@ async function testEnvIgnoredWhenEnvOverridesMissing(): Promise<void> {
     env: invalidEnvValues(),
   });
 
-  assertEqual(snapshot.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not affect rootDir without an allowlist');
+  assertEqual(
+    snapshot.rootDir,
+    WORKSPACE_A_DIR,
+    'MCP_ROOT_DIR should not affect rootDir without an allowlist',
+  );
   assertEqual(snapshot.host, '127.0.0.1', 'MCP_HOST should not affect host without an allowlist');
   assertEqual(snapshot.port, 4701, 'MCP_PORT should not affect port without an allowlist');
   assertEqual(snapshot.lineEnding, 'lf', 'MCP_LINE_ENDING should not apply without envOverrides');
-  assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'MCP_LOGS_DIR should not apply without envOverrides');
+  assertEqual(
+    snapshot.logsDir,
+    path.join(HOME_DIR, '.custom-mcp', 'logs'),
+    'MCP_LOGS_DIR should not apply without envOverrides',
+  );
   assert(snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'ANDROID_WORKSPACE_ROOT should not apply without envOverrides');
-  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'ANDROID_JAVA_HOME should not apply without envOverrides');
-  assertEqual(snapshot.android.buildTimeoutMs, 900000, 'ANDROID_BUILD_TIMEOUT_MS should not apply without envOverrides');
+  assertEqual(
+    snapshot.android.workspaceRoot,
+    path.resolve(ANDROID_WORKSPACE_ROOT),
+    'ANDROID_WORKSPACE_ROOT should not apply without envOverrides',
+  );
+  assertEqual(
+    snapshot.android.javaHome,
+    path.resolve(ANDROID_JAVA_HOME),
+    'ANDROID_JAVA_HOME should not apply without envOverrides',
+  );
+  assertEqual(
+    snapshot.android.buildTimeoutMs,
+    900000,
+    'ANDROID_BUILD_TIMEOUT_MS should not apply without envOverrides',
+  );
 }
 
 async function testEnvIgnoredWhenAllowlistIsEmpty(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      android: androidConfig(),
-      envOverrides: { allowedFields: [] },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        android: androidConfig(),
+        envOverrides: { allowedFields: [] },
+      }),
+    ]),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -195,21 +235,39 @@ async function testEnvIgnoredWhenAllowlistIsEmpty(): Promise<void> {
     env: invalidEnvValues(),
   });
 
-  assertEqual(snapshot.lineEnding, 'lf', 'An empty allowedFields array should disable lineEnding overrides');
-  assertEqual(snapshot.logsDir, path.join(HOME_DIR, '.custom-mcp', 'logs'), 'An empty allowedFields array should disable logsDir overrides');
+  assertEqual(
+    snapshot.lineEnding,
+    'lf',
+    'An empty allowedFields array should disable lineEnding overrides',
+  );
+  assertEqual(
+    snapshot.logsDir,
+    path.join(HOME_DIR, '.custom-mcp', 'logs'),
+    'An empty allowedFields array should disable logsDir overrides',
+  );
   assert(snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'An empty allowedFields array should disable Android overrides');
-  assertEqual(snapshot.android.maxLogTailChars, 4000, 'An empty allowedFields array should disable numeric Android overrides');
+  assertEqual(
+    snapshot.android.javaHome,
+    path.resolve(ANDROID_JAVA_HOME),
+    'An empty allowedFields array should disable Android overrides',
+  );
+  assertEqual(
+    snapshot.android.maxLogTailChars,
+    4000,
+    'An empty allowedFields array should disable numeric Android overrides',
+  );
 }
 
 async function testUnallowlistedEnvValuesAreNotRead(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      logsDir: LOGS_DIR,
-      envOverrides: { allowedFields: ['lineEnding'] },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        logsDir: LOGS_DIR,
+        envOverrides: { allowedFields: ['lineEnding'] },
+      }),
+    ]),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -221,18 +279,24 @@ async function testUnallowlistedEnvValuesAreNotRead(): Promise<void> {
   });
 
   assertEqual(snapshot.lineEnding, 'crlf', 'The allowlisted lineEnding env should apply');
-  assertEqual(snapshot.logsDir, path.resolve(LOGS_DIR), 'Unallowlisted MCP_LOGS_DIR should not be read');
+  assertEqual(
+    snapshot.logsDir,
+    path.resolve(LOGS_DIR),
+    'Unallowlisted MCP_LOGS_DIR should not be read',
+  );
 }
 
 async function testAllowlistedEnvAbsenceDoesNotOverrideConfig(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      android: androidConfig(),
-      logsDir: LOGS_DIR,
-      envOverrides: { allowedFields: ALL_ALLOWED_FIELDS },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        android: androidConfig(),
+        logsDir: LOGS_DIR,
+        envOverrides: { allowedFields: ALL_ALLOWED_FIELDS },
+      }),
+    ]),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -240,23 +304,45 @@ async function testAllowlistedEnvAbsenceDoesNotOverrideConfig(): Promise<void> {
     env: {},
   });
 
-  assertEqual(snapshot.lineEnding, 'lf', 'Missing MCP_LINE_ENDING should keep the config file value');
-  assertEqual(snapshot.logsDir, path.resolve(LOGS_DIR), 'Missing MCP_LOGS_DIR should keep configured logsDir');
+  assertEqual(
+    snapshot.lineEnding,
+    'lf',
+    'Missing MCP_LINE_ENDING should keep the config file value',
+  );
+  assertEqual(
+    snapshot.logsDir,
+    path.resolve(LOGS_DIR),
+    'Missing MCP_LOGS_DIR should keep configured logsDir',
+  );
   assert(snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(snapshot.android.workspaceRoot, path.resolve(ANDROID_WORKSPACE_ROOT), 'Missing ANDROID_WORKSPACE_ROOT should keep config value');
-  assertEqual(snapshot.android.javaHome, path.resolve(ANDROID_JAVA_HOME), 'Missing ANDROID_JAVA_HOME should keep config value');
-  assertEqual(snapshot.android.buildTimeoutMs, 900000, 'Missing numeric Android env should keep config value');
+  assertEqual(
+    snapshot.android.workspaceRoot,
+    path.resolve(ANDROID_WORKSPACE_ROOT),
+    'Missing ANDROID_WORKSPACE_ROOT should keep config value',
+  );
+  assertEqual(
+    snapshot.android.javaHome,
+    path.resolve(ANDROID_JAVA_HOME),
+    'Missing ANDROID_JAVA_HOME should keep config value',
+  );
+  assertEqual(
+    snapshot.android.buildTimeoutMs,
+    900000,
+    'Missing numeric Android env should keep config value',
+  );
 }
 
 async function testAllowedFieldsOverrideSnapshotOnly(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      android: androidConfig(),
-      logsDir: LOGS_DIR,
-      envOverrides: { allowedFields: ALL_ALLOWED_FIELDS },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        android: androidConfig(),
+        logsDir: LOGS_DIR,
+        envOverrides: { allowedFields: ALL_ALLOWED_FIELDS },
+      }),
+    ]),
+  );
 
   const loaded = loadRuntimeConfigWithIdentity({
     homeDir: HOME_DIR,
@@ -264,25 +350,80 @@ async function testAllowedFieldsOverrideSnapshotOnly(): Promise<void> {
     env: envValues(),
   });
 
-  assertEqual(loaded.snapshot.rootDir, WORKSPACE_A_DIR, 'Boundary rootDir should not be overridden');
+  assertEqual(
+    loaded.snapshot.rootDir,
+    WORKSPACE_A_DIR,
+    'Boundary rootDir should not be overridden',
+  );
   assertEqual(loaded.snapshot.host, '127.0.0.1', 'Boundary host should not be overridden');
   assertEqual(loaded.snapshot.port, 4701, 'Boundary port should not be overridden');
-  assertEqual(loaded.identity.rootDir, WORKSPACE_A_DIR, 'Runtime identity rootDir should stay based on config file selection');
-  assertEqual(loaded.identity.host, '127.0.0.1', 'Runtime identity host should stay based on config file selection');
-  assertEqual(loaded.identity.port, 4701, 'Runtime identity port should stay based on config file selection');
-  assertEqual(loaded.snapshot.lineEnding, 'crlf', 'Allowed MCP_LINE_ENDING should override snapshot lineEnding');
-  assertEqual(loaded.snapshot.logsDir, path.resolve(OVERRIDE_LOGS_DIR), 'Allowed MCP_LOGS_DIR should override snapshot logsDir');
+  assertEqual(
+    loaded.identity.rootDir,
+    WORKSPACE_A_DIR,
+    'Runtime identity rootDir should stay based on config file selection',
+  );
+  assertEqual(
+    loaded.identity.host,
+    '127.0.0.1',
+    'Runtime identity host should stay based on config file selection',
+  );
+  assertEqual(
+    loaded.identity.port,
+    4701,
+    'Runtime identity port should stay based on config file selection',
+  );
+  assertEqual(
+    loaded.snapshot.lineEnding,
+    'crlf',
+    'Allowed MCP_LINE_ENDING should override snapshot lineEnding',
+  );
+  assertEqual(
+    loaded.snapshot.logsDir,
+    path.resolve(OVERRIDE_LOGS_DIR),
+    'Allowed MCP_LOGS_DIR should override snapshot logsDir',
+  );
   assert(loaded.snapshot.android !== undefined, 'Fixture should include Android config');
-  assertEqual(loaded.snapshot.android.workspaceRoot, path.resolve(ANDROID_OVERRIDE_WORKSPACE_ROOT), 'Allowed ANDROID_WORKSPACE_ROOT should override Android workspaceRoot');
-  assertEqual(loaded.snapshot.android.javaHome, path.resolve(ANDROID_OVERRIDE_JAVA_HOME), 'Allowed ANDROID_JAVA_HOME should override Android javaHome');
-  assertEqual(loaded.snapshot.android.buildTimeoutMs, 1234, 'Allowed ANDROID_BUILD_TIMEOUT_MS should override buildTimeoutMs');
-  assertEqual(loaded.snapshot.android.maxErrorBlockChars, 1235, 'Allowed ANDROID_MAX_ERROR_BLOCK_CHARS should override maxErrorBlockChars');
-  assertEqual(loaded.snapshot.android.maxLogTailChars, 1236, 'Allowed ANDROID_MAX_LOG_TAIL_CHARS should override maxLogTailChars');
+  assertEqual(
+    loaded.snapshot.android.workspaceRoot,
+    path.resolve(ANDROID_OVERRIDE_WORKSPACE_ROOT),
+    'Allowed ANDROID_WORKSPACE_ROOT should override Android workspaceRoot',
+  );
+  assertEqual(
+    loaded.snapshot.android.javaHome,
+    path.resolve(ANDROID_OVERRIDE_JAVA_HOME),
+    'Allowed ANDROID_JAVA_HOME should override Android javaHome',
+  );
+  assertEqual(
+    loaded.snapshot.android.buildTimeoutMs,
+    1234,
+    'Allowed ANDROID_BUILD_TIMEOUT_MS should override buildTimeoutMs',
+  );
+  assertEqual(
+    loaded.snapshot.android.maxErrorBlockChars,
+    1235,
+    'Allowed ANDROID_MAX_ERROR_BLOCK_CHARS should override maxErrorBlockChars',
+  );
+  assertEqual(
+    loaded.snapshot.android.maxLogTailChars,
+    1236,
+    'Allowed ANDROID_MAX_LOG_TAIL_CHARS should override maxLogTailChars',
+  );
 
-  const allowedRootPaths = loaded.snapshot.pathSafetyContext.allowedRoots.map((root) => root.rootDir);
-  assert(!allowedRootPaths.includes(path.resolve(OVERRIDE_LOGS_DIR)), 'Env-overridden logsDir should not become an allowed root');
-  assert(!allowedRootPaths.includes(path.resolve(ANDROID_OVERRIDE_WORKSPACE_ROOT)), 'Env-overridden android.workspaceRoot should not become an allowed root');
-  assert(!allowedRootPaths.includes(path.resolve(ANDROID_OVERRIDE_JAVA_HOME)), 'Env-overridden android.javaHome should not become an allowed root');
+  const allowedRootPaths = loaded.snapshot.pathSafetyContext.allowedRoots.map(
+    (root) => root.rootDir,
+  );
+  assert(
+    !allowedRootPaths.includes(path.resolve(OVERRIDE_LOGS_DIR)),
+    'Env-overridden logsDir should not become an allowed root',
+  );
+  assert(
+    !allowedRootPaths.includes(path.resolve(ANDROID_OVERRIDE_WORKSPACE_ROOT)),
+    'Env-overridden android.workspaceRoot should not become an allowed root',
+  );
+  assert(
+    !allowedRootPaths.includes(path.resolve(ANDROID_OVERRIDE_JAVA_HOME)),
+    'Env-overridden android.javaHome should not become an allowed root',
+  );
 }
 
 async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<void> {
@@ -331,20 +472,22 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
 
   for (const testCase of cases) {
     await resetFixtures();
-    await writeGlobalConfig(globalConfig([
-      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-        android: androidConfig(),
-        logsDir: LOGS_DIR,
-        envOverrides: { allowedFields: ALL_ALLOWED_FIELDS },
-      }),
-    ]));
+    await writeGlobalConfig(
+      globalConfig([
+        workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+          android: androidConfig(),
+          logsDir: LOGS_DIR,
+          envOverrides: { allowedFields: ALL_ALLOWED_FIELDS },
+        }),
+      ]),
+    );
 
     const error = captureConfigError(() =>
       loadRuntimeConfig({
         homeDir: HOME_DIR,
         workspaceId: 'workspace-a',
         env: envValues(testCase.env),
-      })
+      }),
     );
 
     assertEnvValueError(
@@ -359,18 +502,20 @@ async function testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup(): Promise<v
 
 async function testInvalidTokenEnvValuesFailStartup(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      envOverrides: { allowedFields: ['lineEnding'] },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        envOverrides: { allowedFields: ['lineEnding'] },
+      }),
+    ]),
+  );
 
   const error = captureConfigError(() =>
     loadRuntimeConfig({
       homeDir: HOME_DIR,
       workspaceId: 'workspace-a',
       env: envValues({ MCP_LINE_ENDING: 'native' }),
-    })
+    }),
   );
 
   assertEnvValueError(
@@ -385,57 +530,71 @@ async function testInvalidTokenEnvValuesFailStartup(): Promise<void> {
 async function testPathEnvOverridesRequireExistingDirectories(): Promise<void> {
   const cases = [
     { name: 'relative path', value: 'relative-logs', message: 'must be an absolute local path' },
-    { name: 'UNC slash path', value: '//server/share/project', message: 'must be an absolute local path' },
-    { name: 'namespace path', value: '\\\\?\\C:\\project', message: 'must be an absolute local path' },
+    {
+      name: 'UNC slash path',
+      value: '//server/share/project',
+      message: 'must be an absolute local path',
+    },
+    {
+      name: 'namespace path',
+      value: '\\\\?\\C:\\project',
+      message: 'must be an absolute local path',
+    },
     { name: 'drive-relative path', value: 'C:project', message: 'must be an absolute local path' },
-    { name: 'rooted without drive path', value: '\\project', message: 'must be an absolute local path' },
+    {
+      name: 'rooted without drive path',
+      value: '\\project',
+      message: 'must be an absolute local path',
+    },
     { name: 'tilde path', value: '~/project', message: 'cannot use ~ expansion' },
     { name: 'missing path', value: MISSING_DIR, message: 'does not exist or cannot be accessed' },
-    { name: 'file path', value: NOT_DIRECTORY_FILE, message: 'must point to an existing directory' },
+    {
+      name: 'file path',
+      value: NOT_DIRECTORY_FILE,
+      message: 'must point to an existing directory',
+    },
   ];
 
   for (const testCase of cases) {
     await resetFixtures();
-    await writeGlobalConfig(globalConfig([
-      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-        logsDir: LOGS_DIR,
-        envOverrides: { allowedFields: ['logsDir'] },
-      }),
-    ]));
+    await writeGlobalConfig(
+      globalConfig([
+        workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+          logsDir: LOGS_DIR,
+          envOverrides: { allowedFields: ['logsDir'] },
+        }),
+      ]),
+    );
 
     const error = captureConfigError(() =>
       loadRuntimeConfig({
         homeDir: HOME_DIR,
         workspaceId: 'workspace-a',
         env: { MCP_LOGS_DIR: testCase.value },
-      })
+      }),
     );
 
-    assertEnvValueError(
-      error,
-      'logsDir',
-      'MCP_LOGS_DIR',
-      testCase.message,
-      'logsDir',
-    );
+    assertEnvValueError(error, 'logsDir', 'MCP_LOGS_DIR', testCase.message, 'logsDir');
   }
 }
 
 async function testAndroidPathEnvOverridesRequireExistingDirectories(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      android: androidConfig(),
-      envOverrides: { allowedFields: ['android.workspaceRoot'] },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        android: androidConfig(),
+        envOverrides: { allowedFields: ['android.workspaceRoot'] },
+      }),
+    ]),
+  );
 
   const error = captureConfigError(() =>
     loadRuntimeConfig({
       homeDir: HOME_DIR,
       workspaceId: 'workspace-a',
       env: { ANDROID_WORKSPACE_ROOT: NOT_DIRECTORY_FILE },
-    })
+    }),
   );
 
   assertEnvValueError(
@@ -507,19 +666,21 @@ async function testNumericEnvOverridesUseRawPositiveIntegerGrammar(): Promise<vo
 
   for (const testCase of cases) {
     await resetFixtures();
-    await writeGlobalConfig(globalConfig([
-      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-        android: androidConfig(),
-        envOverrides: { allowedFields: [testCase.selector] },
-      }),
-    ]));
+    await writeGlobalConfig(
+      globalConfig([
+        workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+          android: androidConfig(),
+          envOverrides: { allowedFields: [testCase.selector] },
+        }),
+      ]),
+    );
 
     const error = captureConfigError(() =>
       loadRuntimeConfig({
         homeDir: HOME_DIR,
         workspaceId: 'workspace-a',
         env: { [testCase.envVar]: testCase.value },
-      })
+      }),
     );
 
     assertEnvValueError(
@@ -534,33 +695,45 @@ async function testNumericEnvOverridesUseRawPositiveIntegerGrammar(): Promise<vo
 
 async function testAndroidAllowlistCannotCreateMissingAndroidConfig(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      envOverrides: { allowedFields: ['android.javaHome'] },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        envOverrides: { allowedFields: ['android.javaHome'] },
+      }),
+    ]),
+  );
 
   const error = captureConfigError(() =>
     loadRuntimeConfig({
       homeDir: HOME_DIR,
       workspaceId: 'workspace-a',
       env: envValues({ ANDROID_JAVA_HOME: ANDROID_OVERRIDE_JAVA_HOME }),
-    })
+    }),
   );
 
-  assertIncludes(error.message, 'android is not configured', 'Android allowlist fields should require an existing android config block');
-  assertEqual(error.fieldPath, 'envOverrides.allowedFields[0]', 'Missing Android config should identify the allowlist entry');
+  assertIncludes(
+    error.message,
+    'android is not configured',
+    'Android allowlist fields should require an existing android config block',
+  );
+  assertEqual(
+    error.fieldPath,
+    'envOverrides.allowedFields[0]',
+    'Missing Android config should identify the allowlist entry',
+  );
 }
 
 async function testEnvOverridesOnlySelectedWorkspace(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, { lineEnding: 'lf' }),
-    workspace('workspace-b', WORKSPACE_B_DIR, 4702, {
-      lineEnding: 'auto',
-      envOverrides: { allowedFields: ['lineEnding'] },
-    }),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, { lineEnding: 'lf' }),
+      workspace('workspace-b', WORKSPACE_B_DIR, 4702, {
+        lineEnding: 'auto',
+        envOverrides: { allowedFields: ['lineEnding'] },
+      }),
+    ]),
+  );
 
   const selectedA = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -568,7 +741,11 @@ async function testEnvOverridesOnlySelectedWorkspace(): Promise<void> {
     env: { MCP_LINE_ENDING: ' native ' },
   });
   assertEqual(selectedA.workspaceId, 'workspace-a', 'Fixture should select workspace-a');
-  assertEqual(selectedA.lineEnding, 'lf', 'Unselected workspace-b allowlist should not read env for workspace-a');
+  assertEqual(
+    selectedA.lineEnding,
+    'lf',
+    'Unselected workspace-b allowlist should not read env for workspace-a',
+  );
 
   const selectedB = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -576,17 +753,23 @@ async function testEnvOverridesOnlySelectedWorkspace(): Promise<void> {
     env: { MCP_LINE_ENDING: 'crlf' },
   });
   assertEqual(selectedB.workspaceId, 'workspace-b', 'Fixture should select workspace-b');
-  assertEqual(selectedB.lineEnding, 'crlf', 'Selected workspace-b allowlist should apply to workspace-b');
+  assertEqual(
+    selectedB.lineEnding,
+    'crlf',
+    'Selected workspace-b allowlist should apply to workspace-b',
+  );
 }
 
 async function testEnvOverridesDoNotParticipateInExplicitSelection(): Promise<void> {
   await resetFixtures();
-  await writeGlobalConfig(globalConfig([
-    workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
-      envOverrides: { allowedFields: ['lineEnding'] },
-    }),
-    workspace('workspace-b', WORKSPACE_B_DIR, 4702),
-  ]));
+  await writeGlobalConfig(
+    globalConfig([
+      workspace('workspace-a', WORKSPACE_A_DIR, 4701, {
+        envOverrides: { allowedFields: ['lineEnding'] },
+      }),
+      workspace('workspace-b', WORKSPACE_B_DIR, 4702),
+    ]),
+  );
 
   const loaded = loadRuntimeConfigWithIdentity({
     homeDir: HOME_DIR,
@@ -599,14 +782,38 @@ async function testEnvOverridesDoNotParticipateInExplicitSelection(): Promise<vo
     }),
   });
 
-  assertEqual(loaded.snapshot.workspaceId, 'workspace-a', 'Explicit selection should use the requested id, not env');
-  assertEqual(loaded.snapshot.rootDir, WORKSPACE_A_DIR, 'MCP_ROOT_DIR should not change selected rootDir');
+  assertEqual(
+    loaded.snapshot.workspaceId,
+    'workspace-a',
+    'Explicit selection should use the requested id, not env',
+  );
+  assertEqual(
+    loaded.snapshot.rootDir,
+    WORKSPACE_A_DIR,
+    'MCP_ROOT_DIR should not change selected rootDir',
+  );
   assertEqual(loaded.snapshot.host, '127.0.0.1', 'MCP_HOST should not change selected host');
   assertEqual(loaded.snapshot.port, 4701, 'MCP_PORT should not change selected port');
-  assertEqual(loaded.snapshot.lineEnding, 'crlf', 'Allowed non-boundary env should still apply after selection');
-  assertEqual(loaded.identity.workspaceId, 'workspace-a', 'Runtime identity should record the selected workspace');
-  assertEqual(loaded.identity.rootDir, WORKSPACE_A_DIR, 'Runtime identity should not include env overrides');
-  assertEqual(loaded.identity.host, '127.0.0.1', 'Runtime identity host should not include env overrides');
+  assertEqual(
+    loaded.snapshot.lineEnding,
+    'crlf',
+    'Allowed non-boundary env should still apply after selection',
+  );
+  assertEqual(
+    loaded.identity.workspaceId,
+    'workspace-a',
+    'Runtime identity should record the selected workspace',
+  );
+  assertEqual(
+    loaded.identity.rootDir,
+    WORKSPACE_A_DIR,
+    'Runtime identity should not include env overrides',
+  );
+  assertEqual(
+    loaded.identity.host,
+    '127.0.0.1',
+    'Runtime identity host should not include env overrides',
+  );
   assertEqual(loaded.identity.port, 4701, 'Runtime identity port should not include env overrides');
 }
 
@@ -615,19 +822,43 @@ async function main(): Promise<void> {
     title: 'Testing env override allowlist',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'env ignored when envOverrides is missing', run: testEnvIgnoredWhenEnvOverridesMissing },
+      {
+        name: 'env ignored when envOverrides is missing',
+        run: testEnvIgnoredWhenEnvOverridesMissing,
+      },
       { name: 'env ignored when allowlist is empty', run: testEnvIgnoredWhenAllowlistIsEmpty },
       { name: 'unallowlisted env values are not read', run: testUnallowlistedEnvValuesAreNotRead },
-      { name: 'allowlisted env absence does not override config', run: testAllowlistedEnvAbsenceDoesNotOverrideConfig },
+      {
+        name: 'allowlisted env absence does not override config',
+        run: testAllowlistedEnvAbsenceDoesNotOverrideConfig,
+      },
       { name: 'allowed fields override snapshot only', run: testAllowedFieldsOverrideSnapshotOnly },
-      { name: 'authorized env empty and whitespace values fail startup', run: testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup },
+      {
+        name: 'authorized env empty and whitespace values fail startup',
+        run: testAuthorizedEnvEmptyAndWhitespaceValuesFailStartup,
+      },
       { name: 'invalid token env values fail startup', run: testInvalidTokenEnvValuesFailStartup },
-      { name: 'path env overrides require existing directories', run: testPathEnvOverridesRequireExistingDirectories },
-      { name: 'Android path env overrides require existing directories', run: testAndroidPathEnvOverridesRequireExistingDirectories },
-      { name: 'numeric env overrides use raw positive integer grammar', run: testNumericEnvOverridesUseRawPositiveIntegerGrammar },
-      { name: 'Android allowlist cannot create missing Android config', run: testAndroidAllowlistCannotCreateMissingAndroidConfig },
+      {
+        name: 'path env overrides require existing directories',
+        run: testPathEnvOverridesRequireExistingDirectories,
+      },
+      {
+        name: 'Android path env overrides require existing directories',
+        run: testAndroidPathEnvOverridesRequireExistingDirectories,
+      },
+      {
+        name: 'numeric env overrides use raw positive integer grammar',
+        run: testNumericEnvOverridesUseRawPositiveIntegerGrammar,
+      },
+      {
+        name: 'Android allowlist cannot create missing Android config',
+        run: testAndroidAllowlistCannotCreateMissingAndroidConfig,
+      },
       { name: 'env overrides only selected workspace', run: testEnvOverridesOnlySelectedWorkspace },
-      { name: 'env overrides do not participate in explicit selection', run: testEnvOverridesDoNotParticipateInExplicitSelection },
+      {
+        name: 'env overrides do not participate in explicit selection',
+        run: testEnvOverridesDoNotParticipateInExplicitSelection,
+      },
     ],
   });
 }

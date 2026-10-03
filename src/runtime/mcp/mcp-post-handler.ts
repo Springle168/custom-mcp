@@ -4,7 +4,11 @@ import {
   JSONRPCRequestSchema,
   type RequestId,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { McpSessionOptions, RuntimeExtensions, SessionPreparation } from '../runtime-extensions.js';
+import type {
+  McpSessionOptions,
+  RuntimeExtensions,
+  SessionPreparation,
+} from '../runtime-extensions.js';
 import { observeInitializationHttpCompletion } from './initialization-http-completion.js';
 import type { McpPendingSession } from './pending-session.js';
 
@@ -35,17 +39,12 @@ export interface HandleMcpPostRequestOptions {
   readonly logger: McpPostLogger;
   readonly defaultSessionOptions: McpSessionOptions;
   readonly extensions?: RuntimeExtensions;
-  readonly createSession: (
-    settings: McpSessionOptions,
-    requestId?: RequestId,
-  ) => McpPendingSession;
+  readonly createSession: (settings: McpSessionOptions, requestId?: RequestId) => McpPendingSession;
   readonly isAcceptingNewSessions?: () => boolean;
 }
 
 /** SDK owns protocol validation; this entry owns session preparation and publication. */
-export async function handleMcpPostRequest(
-  options: HandleMcpPostRequestOptions,
-): Promise<void> {
+export async function handleMcpPostRequest(options: HandleMcpPostRequestOptions): Promise<void> {
   const { req, res, sessions, logger } = options;
   const sessionId = getMcpSessionId(req);
   const handle = (transport: McpPostTransport) => {
@@ -72,14 +71,19 @@ export async function handleMcpPostRequest(
 
   const requestId = getInitializeRequestId(req.body);
   let preparation: Extract<SessionPreparation, { accepted: true }> = {
-    accepted: true, options: options.defaultSessionOptions,
+    accepted: true,
+    options: options.defaultSessionOptions,
   };
   if (requestId !== undefined && options.extensions?.prepareSession) {
     try {
-      const result = options.extensions.prepareSession(req.rawHeaders, options.defaultSessionOptions);
+      const result = options.extensions.prepareSession(
+        req.rawHeaders,
+        options.defaultSessionOptions,
+      );
       if (!result.accepted) {
         res.status(400).json({
-          jsonrpc: '2.0', id: requestId,
+          jsonrpc: '2.0',
+          id: requestId,
           error: { code: -32602, message: result.message },
         });
         return;
@@ -105,10 +109,12 @@ export async function handleMcpPostRequest(
       session.closed,
       session.transport.initializationSendRejected,
     ]).then(() => false);
-    if (!await Promise.race([session.connect().then(() => true), stopped])) {
+    if (!(await Promise.race([session.connect().then(() => true), stopped]))) {
       return;
     }
-    if (!await Promise.race([Promise.resolve(handle(session.transport)).then(() => true), stopped])) {
+    if (
+      !(await Promise.race([Promise.resolve(handle(session.transport)).then(() => true), stopped]))
+    ) {
       return;
     }
     const normalHttp = await Promise.race([http.completed, stopped]);
@@ -174,7 +180,8 @@ function getMcpSessionId(req: Request): string | undefined {
 function sendInternalError(res: Response, requestId: RequestId | undefined): void {
   if (!res.headersSent && !res.destroyed) {
     res.status(500).json({
-      jsonrpc: '2.0', id: requestId ?? null,
+      jsonrpc: '2.0',
+      id: requestId ?? null,
       error: { code: -32603, message: 'Internal initialization error' },
     });
   } else if (!res.writableEnded) {

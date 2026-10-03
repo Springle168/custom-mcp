@@ -45,9 +45,7 @@ export function loadApplicationRuntime(
 ): LoadedApplicationRuntime {
   const loadedConfig = loadRuntimeConfigWithIdentity(options);
   const builtInTools = getCompiledBuiltInTools();
-  const builtInToolNames = new Set(
-    builtInTools.map((tool) => tool.definition.name),
-  );
+  const builtInToolNames = new Set(builtInTools.map((tool) => tool.definition.name));
   const loadedTools = loadConfiguredTools(
     loadedConfig.workspaceTools.toolConfigFile,
     builtInToolNames,

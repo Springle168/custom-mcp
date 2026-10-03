@@ -27,10 +27,7 @@ export function extractGuidelineFrontMatterSource(
   while (lineStart < text.length) {
     const lineFeedIndex = text.indexOf('\n', lineStart);
     if (lineFeedIndex === -1) {
-      if (
-        prefixContainsWholeFile &&
-        text.slice(lineStart) === '---'
-      ) {
+      if (prefixContainsWholeFile && text.slice(lineStart) === '---') {
         return text.slice(contentStart, lineStart);
       }
       return null;
@@ -58,9 +55,7 @@ function getDirectStringScalar(
 ): string | null {
   const pair = items.find(
     (item) =>
-      isScalar(item.key) &&
-      typeof item.key.value === 'string' &&
-      item.key.value === fieldName,
+      isScalar(item.key) && typeof item.key.value === 'string' && item.key.value === fieldName,
   );
   if (!pair || !isScalar(pair.value) || typeof pair.value.value !== 'string') {
     return null;
@@ -80,10 +75,7 @@ export function parseGuidelineFrontMatter(
   prefix: string,
   prefixContainsWholeFile: boolean,
 ): GuidelineMetadata | null {
-  const source = extractGuidelineFrontMatterSource(
-    prefix,
-    prefixContainsWholeFile,
-  );
+  const source = extractGuidelineFrontMatterSource(prefix, prefixContainsWholeFile);
   if (source === null) {
     return null;
   }
@@ -107,10 +99,7 @@ export function parseGuidelineFrontMatter(
   }
 
   const name = getDirectStringScalar(document.contents.items, 'name');
-  const description = getDirectStringScalar(
-    document.contents.items,
-    'description',
-  );
+  const description = getDirectStringScalar(document.contents.items, 'description');
   if (
     name === null ||
     description === null ||

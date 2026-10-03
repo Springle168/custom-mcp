@@ -109,15 +109,21 @@ export async function writeSplitConfigFixture(
     };
   });
 
-  await Promise.all(references.map(({ configFile, workspaceConfig }) =>
-    fs.writeFile(configFile, JSON.stringify(workspaceConfig, null, 2), 'utf-8')
-  ));
+  await Promise.all(
+    references.map(({ configFile, workspaceConfig }) =>
+      fs.writeFile(configFile, JSON.stringify(workspaceConfig, null, 2), 'utf-8'),
+    ),
+  );
   await fs.writeFile(
     globalConfigFilePath,
-    JSON.stringify({
-      version: 2,
-      workspaces: references.map(({ id, configFile }) => ({ id, configFile })),
-    }, null, 2),
+    JSON.stringify(
+      {
+        version: 2,
+        workspaces: references.map(({ id, configFile }) => ({ id, configFile })),
+      },
+      null,
+      2,
+    ),
     'utf-8',
   );
 
@@ -125,13 +131,15 @@ export async function writeSplitConfigFixture(
 }
 
 export function getResultText(result: TextResultLike): string {
-  return result.content
-    ?.filter(
-      (block): block is { readonly type: 'text'; readonly text: string } =>
-        block.type === 'text' && typeof block.text === 'string',
-    )
-    .map((block) => block.text)
-    .join('\n') ?? '';
+  return (
+    result.content
+      ?.filter(
+        (block): block is { readonly type: 'text'; readonly text: string } =>
+          block.type === 'text' && typeof block.text === 'string',
+      )
+      .map((block) => block.text)
+      .join('\n') ?? ''
+  );
 }
 
 export async function runTest(name: string, test: TestFn): Promise<void> {
@@ -146,9 +154,7 @@ export async function runTest(name: string, test: TestFn): Promise<void> {
   }
 }
 
-export async function runTestSuite(
-  options: RunTestSuiteOptions,
-): Promise<TestSuiteResult> {
+export async function runTestSuite(options: RunTestSuiteOptions): Promise<TestSuiteResult> {
   if (VERBOSE_TEST_OUTPUT) {
     printDivider();
     console.log(options.title);

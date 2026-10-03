@@ -24,11 +24,13 @@ async function createHarness(extensions?: RuntimeExtensions) {
   const service: WorkspaceToolService = {
     getDefinitions() {
       listCalls++;
-      return [{
-        name: 'probe_tool',
-        description: 'Tests HTTP workspace service wiring.',
-        inputSchema: { type: 'object' },
-      }];
+      return [
+        {
+          name: 'probe_tool',
+          description: 'Tests HTTP workspace service wiring.',
+          inputSchema: { type: 'object' },
+        },
+      ];
     },
     async routeToolCall(name, _args, _context, invocation) {
       invocations.push(invocation);
@@ -44,10 +46,12 @@ async function createHarness(extensions?: RuntimeExtensions) {
       rules: {
         requestHeaders: {
           onInitialize: [],
-          onCallToolResult: [{
-            match: [{ name: 'x-client', value: 'http-test' }],
-            enable: ['structuredContentDup'],
-          }],
+          onCallToolResult: [
+            {
+              match: [{ name: 'x-client', value: 'http-test' }],
+              enable: ['structuredContentDup'],
+            },
+          ],
         },
       },
     }),
@@ -86,7 +90,9 @@ async function createHarness(extensions?: RuntimeExtensions) {
     messages,
     closedSessions,
     listCalls: () => listCalls,
-    stopAdmission: () => { accepting = false; },
+    stopAdmission: () => {
+      accepting = false;
+    },
     close: () => lifecycle.close(),
   };
 }
@@ -103,30 +109,70 @@ async function testSessionsShareServiceWithoutExtensions(): Promise<void> {
     await first.connect(firstTransport);
     await second.connect(secondTransport);
     assertEqual(harness.sessions.size, 2, 'Both initialized sessions should be registered');
-    assert(firstTransport.sessionId !== undefined && firstTransport.sessionId.startsWith('session_'), 'Production session IDs should be used');
-    assert(secondTransport.sessionId !== firstTransport.sessionId, 'Session identities should be distinct');
+    assert(
+      firstTransport.sessionId !== undefined && firstTransport.sessionId.startsWith('session_'),
+      'Production session IDs should be used',
+    );
+    assert(
+      secondTransport.sessionId !== firstTransport.sessionId,
+      'Session identities should be distinct',
+    );
 
     for (const client of [first, second]) {
       const listed = await client.listTools();
-      assertEqual(listed.tools.map((tool) => tool.name).join(','), 'probe_tool', 'Both sessions should use the supplied service');
+      assertEqual(
+        listed.tools.map((tool) => tool.name).join(','),
+        'probe_tool',
+        'Both sessions should use the supplied service',
+      );
     }
-    assertEqual(harness.listCalls(), 2, 'One application service should handle both tools/list calls');
+    assertEqual(
+      harness.listCalls(),
+      2,
+      'One application service should handle both tools/list calls',
+    );
 
     const firstResult = await first.callTool({ name: 'probe_tool', arguments: {} });
     const secondResult = await second.callTool({ name: 'probe_tool', arguments: {} });
-    assert(firstResult.structuredContent === undefined, 'Configured rules and matching headers must be inert without injected hooks');
+    assert(
+      firstResult.structuredContent === undefined,
+      'Configured rules and matching headers must be inert without injected hooks',
+    );
     assert(secondResult.structuredContent === undefined, 'No-hook calls should preserve results');
-    assertEqual(harness.invocations.length, 2, 'Both tools/call requests should reach the supplied service');
-    assertEqual(harness.invocations[0]?.sessionId, firstTransport.sessionId, 'Invocation should carry the first session ID');
-    assertEqual(harness.invocations[1]?.sessionId, secondTransport.sessionId, 'Invocation should carry the second session ID');
-    assert(harness.invocations[0]?.signal instanceof AbortSignal, 'Transport cancellation should reach the invocation');
+    assertEqual(
+      harness.invocations.length,
+      2,
+      'Both tools/call requests should reach the supplied service',
+    );
+    assertEqual(
+      harness.invocations[0]?.sessionId,
+      firstTransport.sessionId,
+      'Invocation should carry the first session ID',
+    );
+    assertEqual(
+      harness.invocations[1]?.sessionId,
+      secondTransport.sessionId,
+      'Invocation should carry the second session ID',
+    );
+    assert(
+      harness.invocations[0]?.signal instanceof AbortSignal,
+      'Transport cancellation should reach the invocation',
+    );
 
     const firstSessionId = firstTransport.sessionId;
     assert(firstSessionId !== undefined, 'Initialized transport should have a session ID');
     await firstTransport.terminateSession();
-    assertEqual(harness.closedSessions[0], firstSessionId, 'DELETE should delegate to the application lifecycle');
+    assertEqual(
+      harness.closedSessions[0],
+      firstSessionId,
+      'DELETE should delegate to the application lifecycle',
+    );
     assert(!harness.sessions.has(firstSessionId), 'Deleted session should be removed');
-    assertEqual(harness.sessions.size, 1, 'Deleting one session should leave the other session alive');
+    assertEqual(
+      harness.sessions.size,
+      1,
+      'Deleting one session should leave the other session alive',
+    );
     await second.listTools();
   } finally {
     await Promise.all([first.close(), second.close()]);
@@ -147,25 +193,28 @@ async function testAlternativeExtensionsReachServerAndKeepPostContextIsolated():
         accepted: true,
         options: {
           toolService: {
-            getDefinitions: () => [{
-              name: 'extension_tool',
-              description: 'Alternative session service.',
-              inputSchema: { type: 'object' },
-            }],
+            getDefinitions: () => [
+              {
+                name: 'extension_tool',
+                description: 'Alternative session service.',
+                inputSchema: { type: 'object' },
+              },
+            ],
             routeToolCall: defaults.toolService.routeToolCall,
           },
           instructions: 'Alternative session instructions',
         },
-        onPublished(sessionId) { published.push(sessionId); },
+        onPublished(sessionId) {
+          published.push(sessionId);
+        },
       };
     },
     prepareToolResult() {
       preparedResults++;
       const enabled = context.getStore()?.includes('http-test') === true;
       return {
-        adaptResult: (result) => enabled
-          ? { ...result, structuredContent: { extension: 'alternative' } }
-          : result,
+        adaptResult: (result) =>
+          enabled ? { ...result, structuredContent: { extension: 'alternative' } } : result,
       };
     },
   });
@@ -180,13 +229,31 @@ async function testAlternativeExtensionsReachServerAndKeepPostContextIsolated():
     await second.connect(secondTransport);
     assertEqual(preparedSessions, 2, 'Each initialization should prepare one final set of options');
     assertEqual(published.length, 2, 'Each successful HTTP initialization should notify once');
-    assert(published.every((sessionId) => harness.sessions.has(sessionId)), 'Observers should correspond to published sessions');
-    assertEqual(first.getInstructions(), 'Alternative session instructions', 'HTTP factory should pass final instructions to Server');
-    assertEqual((await first.listTools()).tools[0]?.name, 'extension_tool', 'HTTP factory should use the final tool service');
+    assert(
+      published.every((sessionId) => harness.sessions.has(sessionId)),
+      'Observers should correspond to published sessions',
+    );
+    assertEqual(
+      first.getInstructions(),
+      'Alternative session instructions',
+      'HTTP factory should pass final instructions to Server',
+    );
+    assertEqual(
+      (await first.listTools()).tools[0]?.name,
+      'extension_tool',
+      'HTTP factory should use the final tool service',
+    );
     const firstResult = await first.callTool({ name: 'extension_tool', arguments: {} });
     const secondResult = await second.callTool({ name: 'extension_tool', arguments: {} });
-    assertEqual((firstResult.structuredContent as { extension: string }).extension, 'alternative', 'Injected result hook should reach MCP server');
-    assert(secondResult.structuredContent === undefined, 'POST bridge context must not leak across sessions');
+    assertEqual(
+      (firstResult.structuredContent as { extension: string }).extension,
+      'alternative',
+      'Injected result hook should reach MCP server',
+    );
+    assert(
+      secondResult.structuredContent === undefined,
+      'POST bridge context must not leak across sessions',
+    );
     assertEqual(preparedResults, 2, 'Result hook should run once per tools/call');
     assertEqual(preparedSessions, 2, 'Existing-session requests should bypass session preparation');
     assertEqual(context.getStore(), undefined, 'POST context should not leak into the caller');
@@ -202,13 +269,21 @@ async function testMissingAndStaleSessionResponses(): Promise<void> {
     for (const method of ['GET', 'DELETE']) {
       const missing = await fetch(harness.url, { method });
       assertEqual(missing.status, 400, `${method} without session ID should return 400`);
-      assertIncludes(await missing.text(), 'Missing session ID', 'Missing-session error text should be preserved');
+      assertIncludes(
+        await missing.text(),
+        'Missing session ID',
+        'Missing-session error text should be preserved',
+      );
       const stale = await fetch(harness.url, {
         method,
         headers: { 'mcp-session-id': 'stale-session' },
       });
       assertEqual(stale.status, 404, `${method} with stale session ID should return 404`);
-      assertIncludes(await stale.text(), 'Session not found or expired', 'Stale-session error text should be preserved');
+      assertIncludes(
+        await stale.text(),
+        'Session not found or expired',
+        'Stale-session error text should be preserved',
+      );
     }
     const stalePost = await fetch(harness.url, {
       method: 'POST',
@@ -232,7 +307,11 @@ async function testAdmissionCallbackRejectsInitialization(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
     });
-    assertEqual(response.status, 503, 'Stopped admission should reject initialization before allocating a transport');
+    assertEqual(
+      response.status,
+      503,
+      'Stopped admission should reject initialization before allocating a transport',
+    );
     await response.text();
     assertEqual(harness.sessions.size, 0, 'Rejected initialization should not publish a session');
   } finally {
@@ -258,7 +337,11 @@ async function testGetDelegatesToRegisteredTransport(): Promise<void> {
     const response = await fetch(harness.url, {
       headers: { 'mcp-session-id': 'get-session' },
     });
-    assertEqual(await response.text(), 'registered transport', 'GET should forward the transport response');
+    assertEqual(
+      await response.text(),
+      'registered transport',
+      'GET should forward the transport response',
+    );
     assertEqual(calls, 1, 'GET should call the registered transport once');
   } finally {
     await harness.close();
@@ -268,10 +351,19 @@ async function testGetDelegatesToRegisteredTransport(): Promise<void> {
 await runTestSuite({
   title: 'Testing MCP HTTP application wiring',
   tests: [
-    { name: 'sessions share service without extensions', run: testSessionsShareServiceWithoutExtensions },
-    { name: 'alternative extensions reach server and isolate POST context', run: testAlternativeExtensionsReachServerAndKeepPostContextIsolated },
+    {
+      name: 'sessions share service without extensions',
+      run: testSessionsShareServiceWithoutExtensions,
+    },
+    {
+      name: 'alternative extensions reach server and isolate POST context',
+      run: testAlternativeExtensionsReachServerAndKeepPostContextIsolated,
+    },
     { name: 'missing and stale session responses', run: testMissingAndStaleSessionResponses },
-    { name: 'admission callback rejects initialization', run: testAdmissionCallbackRejectsInitialization },
+    {
+      name: 'admission callback rejects initialization',
+      run: testAdmissionCallbackRejectsInitialization,
+    },
     { name: 'GET delegates to registered transport', run: testGetDelegatesToRegisteredTransport },
   ],
 });

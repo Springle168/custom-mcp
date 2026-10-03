@@ -1,8 +1,4 @@
-import {
-  Ajv2020,
-  type ErrorObject,
-  type SchemaObject,
-} from 'ajv/dist/2020.js';
+import { Ajv2020, type ErrorObject, type SchemaObject } from 'ajv/dist/2020.js';
 
 export interface InputSchemaValidationIssue {
   readonly instancePath: string;

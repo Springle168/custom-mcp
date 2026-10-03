@@ -29,9 +29,7 @@ export function getDefaultGlobalConfigPath(
   };
 }
 
-export function getDefaultGlobalLogsDir(
-  options: DefaultGlobalConfigPathOptions = {},
-): string {
+export function getDefaultGlobalLogsDir(options: DefaultGlobalConfigPathOptions = {}): string {
   return path.join(getDefaultGlobalDotdir(options), GLOBAL_LOGS_DIR_NAME);
 }
 

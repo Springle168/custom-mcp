@@ -11,11 +11,7 @@ import {
   formatFileAccessPolicyStartupLines,
 } from '../../src/runtime/application/startup-logging.js';
 import { createTestRuntimeConfigSnapshot } from '../helpers/runtime-config.js';
-import {
-  assertEqual,
-  assertNotIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assertEqual, assertNotIncludes, runTestSuite } from '../test-utils.js';
 
 function externalRoute(options: {
   readonly definitionId: string;
@@ -64,50 +60,57 @@ function externalRoutingConfig(
   return {
     configFilePath: 'C:\\RouteConfig\\external-routing.json',
     processorConfigFilePath: 'C:\\RouteConfig\\processor.json',
-    processorsByName: new Map([[
-      'body-codec',
-      {
-        name: 'body-codec',
-        executable: {
-          resolution: 'absolute-path',
-          path: 'C:\\RouteProcessors\\body-codec.exe',
+    processorsByName: new Map([
+      [
+        'body-codec',
+        {
+          name: 'body-codec',
+          executable: {
+            resolution: 'absolute-path',
+            path: 'C:\\RouteProcessors\\body-codec.exe',
+          },
+          arguments: ['--processor-argument-not-for-startup'],
+          workingDirectory: 'C:\\RouteProcessors',
+          timeoutMs: 30_000,
         },
-        arguments: ['--processor-argument-not-for-startup'],
-        workingDirectory: 'C:\\RouteProcessors',
-        timeoutMs: 30_000,
-      },
-    ]]),
+      ],
+    ]),
     routes,
     routesByDefinitionId: new Map(routes.map((route) => [route.definitionId, route])),
   };
 }
 
 function testFormatsStableSafeMultiRouteExternalRoutingSummary(): void {
-  const summary = formatExternalRoutingStartupLines(externalRoutingConfig([
-    externalRoute({
-      definitionId: 'external-second',
-      toolName: 'second_tool',
-      endpointUrl: 'http://second-user:second-password@second.example.test:8080/second?access=second-query#ignored-fragment',
-      requestStage: { mode: 'direct' },
-      responseStage: { mode: 'canonical-filter', processor: 'body-codec' },
-    }),
-    mcpRoute({
-      definitionId: 'external-mcp',
-      toolName: 'mcp_tool',
-      serverUrl: 'https://mcp-user:mcp-password@mcp.example.test:8443/mcp?token=mcp-query-secret#fragment-secret',
-    }),
-    externalRoute({
-      definitionId: 'external-first',
-      toolName: 'first_tool',
-      endpointUrl: 'https://route-user:route-password@external.example.test:8443/tool?access=redacted-query',
-      requestStage: {
-        mode: 'body-encoder',
-        processor: 'body-codec',
-        contentType: 'application/octet-stream',
-      },
-      responseStage: { mode: 'body-decoder', processor: 'body-codec' },
-    }),
-  ])).join('\n');
+  const summary = formatExternalRoutingStartupLines(
+    externalRoutingConfig([
+      externalRoute({
+        definitionId: 'external-second',
+        toolName: 'second_tool',
+        endpointUrl:
+          'http://second-user:second-password@second.example.test:8080/second?access=second-query#ignored-fragment',
+        requestStage: { mode: 'direct' },
+        responseStage: { mode: 'canonical-filter', processor: 'body-codec' },
+      }),
+      mcpRoute({
+        definitionId: 'external-mcp',
+        toolName: 'mcp_tool',
+        serverUrl:
+          'https://mcp-user:mcp-password@mcp.example.test:8443/mcp?token=mcp-query-secret#fragment-secret',
+      }),
+      externalRoute({
+        definitionId: 'external-first',
+        toolName: 'first_tool',
+        endpointUrl:
+          'https://route-user:route-password@external.example.test:8443/tool?access=redacted-query',
+        requestStage: {
+          mode: 'body-encoder',
+          processor: 'body-codec',
+          contentType: 'application/octet-stream',
+        },
+        responseStage: { mode: 'body-decoder', processor: 'body-codec' },
+      }),
+    ]),
+  ).join('\n');
 
   assertEqual(
     summary,
@@ -176,24 +179,23 @@ function testFormatsDisabledExternalRouting(): void {
 function testFormatsConfiguredExternalRoutingWithoutRoutes(): void {
   assertEqual(
     formatExternalRoutingStartupLines(externalRoutingConfig([])).join('\n'),
-    [
-      '  External routing: configured',
-      '    Routes: 0',
-    ].join('\n'),
+    ['  External routing: configured', '    Routes: 0'].join('\n'),
     'A compiled routing config without routes should be identified as configured rather than enabled',
   );
 }
 
 function testDoesNotExposeMalformedEndpointInput(): void {
-  const summary = formatExternalRoutingStartupLines(externalRoutingConfig([
-    externalRoute({
-      definitionId: 'external-malformed',
-      toolName: 'malformed_tool',
-      endpointUrl: 'not a valid endpoint',
-      requestStage: { mode: 'direct' },
-      responseStage: { mode: 'direct' },
-    }),
-  ])).join('\n');
+  const summary = formatExternalRoutingStartupLines(
+    externalRoutingConfig([
+      externalRoute({
+        definitionId: 'external-malformed',
+        toolName: 'malformed_tool',
+        endpointUrl: 'not a valid endpoint',
+        requestStage: { mode: 'direct' },
+        responseStage: { mode: 'direct' },
+      }),
+    ]),
+  ).join('\n');
 
   assertEqual(
     summary,
@@ -217,13 +219,15 @@ function testDoesNotExposeMalformedEndpointInput(): void {
 }
 
 function testDoesNotExposeMalformedMcpServerInput(): void {
-  const summary = formatExternalRoutingStartupLines(externalRoutingConfig([
-    mcpRoute({
-      definitionId: 'external-malformed-mcp',
-      toolName: 'malformed_mcp_tool',
-      serverUrl: 'not a valid MCP server secret',
-    }),
-  ])).join('\n');
+  const summary = formatExternalRoutingStartupLines(
+    externalRoutingConfig([
+      mcpRoute({
+        definitionId: 'external-malformed-mcp',
+        toolName: 'malformed_mcp_tool',
+        serverUrl: 'not a valid MCP server secret',
+      }),
+    ]),
+  ).join('\n');
   assertEqual(
     summary,
     [
@@ -236,17 +240,18 @@ function testDoesNotExposeMalformedMcpServerInput(): void {
     ].join('\n'),
     'Malformed server input should use a safe fallback',
   );
-  assertNotIncludes(summary, 'not a valid MCP server secret', 'Raw server URL must not enter startup logs');
+  assertNotIncludes(
+    summary,
+    'not a valid MCP server secret',
+    'Raw server URL must not enter startup logs',
+  );
 }
 
 function testFormatsRootSpecificPolicyFiles(): void {
   const lines = formatFileAccessPolicyStartupLines([
     {
       rootDir: 'E:\\Workspace',
-      ignoreFiles: [
-        'C:\\Policies\\base.ignore',
-        'C:\\Policies\\base.ignore',
-      ],
+      ignoreFiles: ['C:\\Policies\\base.ignore', 'C:\\Policies\\base.ignore'],
       denyFiles: ['C:\\Policies\\project.deny'],
     },
     {

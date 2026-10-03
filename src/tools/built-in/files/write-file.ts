@@ -68,10 +68,7 @@ function getOmissionPlaceholderWarning(content: string): string | null {
   return `Warning: content contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete file content.`;
 }
 
-function normalizeLineEndings(
-  content: string,
-  lineEnding: '\r\n' | '\n',
-): string {
+function normalizeLineEndings(content: string, lineEnding: '\r\n' | '\n'): string {
   if (lineEnding === '\r\n') {
     return content.replace(/\r\n|\r|\n/g, '\r\n');
   }
@@ -94,20 +91,14 @@ async function handleWriteFile(
   const content = args.content as string;
   const placeholderWarning = getOmissionPlaceholderWarning(content);
   const fileAccessPolicyContext = context.fileAccessPolicyContext;
-  const safePathResult = resolveFileAccessPath(
-    filePath,
-    fileAccessPolicyContext,
-  );
+  const safePathResult = resolveFileAccessPath(filePath, fileAccessPolicyContext);
   if (!safePathResult.ok) {
     return textErrorResult(safePathResult.reason);
   }
   const safePath = safePathResult.path;
 
   return withFileLock(safePath.resolvedPath, async () => {
-    const safetyResult = await validateFileAccessWriteTarget(
-      safePath,
-      fileAccessPolicyContext,
-    );
+    const safetyResult = await validateFileAccessWriteTarget(safePath, fileAccessPolicyContext);
     if (!safetyResult.ok) return textErrorResult(safetyResult.reason);
 
     let detectedLineEnding: '\r\n' | '\n' | null = null;

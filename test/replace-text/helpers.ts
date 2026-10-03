@@ -7,12 +7,7 @@ import replaceTool from '../../src/tools/built-in/files/replace.js';
 import type { MCPTool, ToolCallResult } from '../../src/tools/types.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  getResultText,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, getResultText } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,36 +72,26 @@ export interface SingleReplaceArgs {
 }
 
 export function singleReplaceBatch(args: SingleReplaceArgs): Record<string, unknown> {
-  const {
-    file_path,
-    target,
-    replacement,
-    allow_multiple,
-    match_mode,
-    regex_flags,
-  } = args;
+  const { file_path, target, replacement, allow_multiple, match_mode, regex_flags } = args;
   return {
-    files: [{
-      file_path,
-      ...(allow_multiple === undefined ? {} : { allow_multiple }),
-      ...(match_mode === undefined ? {} : { match_mode }),
-      ...(regex_flags === undefined ? {} : { regex_flags }),
-      replacements: [{ target, replacement }],
-    }],
+    files: [
+      {
+        file_path,
+        ...(allow_multiple === undefined ? {} : { allow_multiple }),
+        ...(match_mode === undefined ? {} : { match_mode }),
+        ...(regex_flags === undefined ? {} : { regex_flags }),
+        replacements: [{ target, replacement }],
+      },
+    ],
   };
 }
 
 export function createReplaceTextFixtureHarness(suiteName: string) {
-  assert(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(suiteName),
-    'Fixture suite name should use kebab-case',
-  );
+  assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(suiteName), 'Fixture suite name should use kebab-case');
 
   const fixturesDir = path.join(FIXTURES_ROOT, suiteName);
 
-  function createTestToolContext(
-    lineEnding: LineEnding = 'auto',
-  ): ToolRuntimeContext {
+  function createTestToolContext(lineEnding: LineEnding = 'auto'): ToolRuntimeContext {
     return createTestToolRuntimeContext({ rootDir: fixturesDir, lineEnding });
   }
 
@@ -124,10 +109,7 @@ export function createReplaceTextFixtureHarness(suiteName: string) {
     return path.join(fixturesDir, ...segments);
   }
 
-  async function writeFixture(
-    relativePath: string,
-    content: string | Uint8Array,
-  ): Promise<string> {
+  async function writeFixture(relativePath: string, content: string | Uint8Array): Promise<string> {
     const absolutePath = fixturePath(relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, content);
@@ -184,10 +166,7 @@ export function createReplaceTextFixtureHarness(suiteName: string) {
     assertEqual(actual, expected, message);
   }
 
-  async function assertFixtureMissing(
-    relativePath: string,
-    message: string,
-  ): Promise<void> {
+  async function assertFixtureMissing(relativePath: string, message: string): Promise<void> {
     assertEqual(await fixtureExists(relativePath), false, message);
   }
 
@@ -267,18 +246,11 @@ export function assertSpan(
   message: string,
 ): void {
   assert(json.matched_span !== null, `${message}: expected matched_span`);
-  assertEqual(
-    json.matched_span.start_line,
-    startLine,
-    `${message}: start_line`,
-  );
+  assertEqual(json.matched_span.start_line, startLine, `${message}: start_line`);
   assertEqual(json.matched_span.end_line, endLine, `${message}: end_line`);
 }
 
-export function assertNoSpan(
-  json: ReplaceTextReplacementJson,
-  message: string,
-): void {
+export function assertNoSpan(json: ReplaceTextReplacementJson, message: string): void {
   assertEqual(json.matched_span, null, message);
 }
 
@@ -298,11 +270,7 @@ export function assertJsonDefaults(json: ReplaceTextReplacementJson): void {
   assertEqual(json.file_line_count.current, null, 'Unknown current line count');
 }
 
-export function assertDeepEqual(
-  actual: unknown,
-  expected: unknown,
-  message: string,
-): void {
+export function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {
   const actualText = JSON.stringify(actual);
   const expectedText = JSON.stringify(expected);
   assertEqual(actualText, expectedText, message);
@@ -314,25 +282,13 @@ export function countSpecLines(text: string): number {
 }
 
 function assertEnvelope(result: ToolCallResult): void {
-  assert(
-    Array.isArray(result.content),
-    'Result should contain MCP content array',
-  );
+  assert(Array.isArray(result.content), 'Result should contain MCP content array');
   assertEqual(result.content.length, 1, 'Result should have one content item');
   const firstContent = result.content[0];
   assert(firstContent?.type === 'text', 'Result content type should be text');
-  assert(
-    typeof firstContent.text === 'string',
-    'Result content text should be a string',
-  );
-  assert(
-    typeof result.isError === 'boolean',
-    'Result should include explicit isError boolean',
-  );
-  assert(
-    !('structuredContent' in result),
-    'replace_text should not return structuredContent',
-  );
+  assert(typeof firstContent.text === 'string', 'Result content text should be a string');
+  assert(typeof result.isError === 'boolean', 'Result should include explicit isError boolean');
+  assert(!('structuredContent' in result), 'replace_text should not return structuredContent');
 }
 
 function assertBatchResultShape(value: unknown): asserts value is ReplaceTextBatchJson {
@@ -360,19 +316,14 @@ function assertFileResultShape(value: unknown): asserts value is ReplaceTextFile
     value.match_mode === 'default' || value.match_mode === 'regex',
     'match_mode should be default or regex',
   );
-  assert(
-    typeof value.allow_multiple === 'boolean',
-    'allow_multiple should be boolean',
-  );
+  assert(typeof value.allow_multiple === 'boolean', 'allow_multiple should be boolean');
   assert(Array.isArray(value.replacements), 'replacements should be an array');
   for (const replacement of value.replacements) {
     assertReplacementResultShape(replacement);
   }
 }
 
-function assertReplacementResultShape(
-  value: unknown,
-): asserts value is ReplaceTextReplacementJson {
+function assertReplacementResultShape(value: unknown): asserts value is ReplaceTextReplacementJson {
   assert(isRecord(value), 'Replacement result should be an object');
 
   const requiredKeys = [
@@ -400,10 +351,7 @@ function assertReplacementResultShape(
   assert(typeof value.success === 'boolean', 'success should be boolean');
   assertNonNegativeInteger(value.matched_targets, 'matched_targets');
   assertNonNegativeInteger(value.replacement_count, 'replacement_count');
-  assertNonNegativeInteger(
-    value.replacement_line_count,
-    'replacement_line_count',
-  );
+  assertNonNegativeInteger(value.replacement_line_count, 'replacement_line_count');
 
   if (value.matched_span !== null) {
     assert(isRecord(value.matched_span), 'matched_span should be object or null');
@@ -422,14 +370,8 @@ function assertReplacementResultShape(
     ['current', 'previous'],
     'file_line_count should contain only previous and current',
   );
-  assertNullableNonNegativeInteger(
-    value.file_line_count.previous,
-    'file_line_count.previous',
-  );
-  assertNullableNonNegativeInteger(
-    value.file_line_count.current,
-    'file_line_count.current',
-  );
+  assertNullableNonNegativeInteger(value.file_line_count.previous, 'file_line_count.previous');
+  assertNullableNonNegativeInteger(value.file_line_count.current, 'file_line_count.current');
 
   if ('note' in value) {
     assert(typeof value.note === 'string', 'note should be string when present');
@@ -447,10 +389,7 @@ function assertNonNegativeInteger(value: unknown, fieldName: string): void {
   );
 }
 
-function assertNullableNonNegativeInteger(
-  value: unknown,
-  fieldName: string,
-): void {
+function assertNullableNonNegativeInteger(value: unknown, fieldName: string): void {
   if (value === null) return;
   assertNonNegativeInteger(value, fieldName);
 }

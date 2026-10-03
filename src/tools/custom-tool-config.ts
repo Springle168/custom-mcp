@@ -1,9 +1,5 @@
 import { ConfigError } from '../config/errors.js';
-import {
-  readJsonFile,
-  type JsonObject,
-  type JsonValue,
-} from '../config/json-file.js';
+import { readJsonFile, type JsonObject, type JsonValue } from '../config/json-file.js';
 import { readLocalAbsolutePath } from '../config/path-policy.js';
 import type { ValuePolicyResult } from '../config/value-policy.js';
 import {
@@ -70,20 +66,23 @@ export function loadCustomToolConfig(
   const rawConfig = readJsonFile(validatedConfigPath, { label: 'Tool config file' });
   const parsedConfig = parseToolConfig(rawConfig, validatedConfigPath);
   const definitions = parsedConfig.references.map((reference) =>
-    loadDefinition(validatedConfigPath, reference)
+    loadDefinition(validatedConfigPath, reference),
   );
 
   assertUniqueDefinitionNames(validatedConfigPath, definitions);
-  const externalRouting = parsedConfig.externalRoutingConfigFilePath === undefined
-    ? undefined
-    : loadExternalRoutingConfig(
-      parsedConfig.externalRoutingConfigFilePath,
-      definitions.map((definition) => Object.freeze({
-        definitionId: definition.source.referenceId,
-        toolName: definition.definition.name,
-        builtIn: builtInToolNames.has(definition.definition.name),
-      })),
-    );
+  const externalRouting =
+    parsedConfig.externalRoutingConfigFilePath === undefined
+      ? undefined
+      : loadExternalRoutingConfig(
+          parsedConfig.externalRoutingConfigFilePath,
+          definitions.map((definition) =>
+            Object.freeze({
+              definitionId: definition.source.referenceId,
+              toolName: definition.definition.name,
+              builtIn: builtInToolNames.has(definition.definition.name),
+            }),
+          ),
+        );
 
   return Object.freeze({
     toolConfigFilePath: validatedConfigPath,
@@ -92,22 +91,12 @@ export function loadCustomToolConfig(
   });
 }
 
-function parseToolConfig(
-  value: JsonValue,
-  toolConfigFilePath: string,
-): ParsedToolConfig {
-  const rawConfig = readObject(
-    value,
-    () => failConfig(
-      toolConfigFilePath,
-      undefined,
-      'Tool config file must contain a JSON object.',
-    ),
+function parseToolConfig(value: JsonValue, toolConfigFilePath: string): ParsedToolConfig {
+  const rawConfig = readObject(value, () =>
+    failConfig(toolConfigFilePath, undefined, 'Tool config file must contain a JSON object.'),
   );
-  assertKnownFields(
-    rawConfig,
-    TOOL_CONFIG_FIELDS,
-    (fieldPath) => failConfig(
+  assertKnownFields(rawConfig, TOOL_CONFIG_FIELDS, (fieldPath) =>
+    failConfig(
       toolConfigFilePath,
       fieldPath,
       `Unknown tool config field ${fieldPath}. Remove it or update the config schema.`,
@@ -144,18 +133,16 @@ function parseToolConfig(
     'externalRoutingConfigFile',
   )
     ? unwrapConfigPathPolicy(
-      toolConfigFilePath,
-      readLocalAbsolutePath(rawConfig.externalRoutingConfigFile, {
-        fieldPath: 'externalRoutingConfigFile',
-      }),
-    )
+        toolConfigFilePath,
+        readLocalAbsolutePath(rawConfig.externalRoutingConfigFile, {
+          fieldPath: 'externalRoutingConfigFile',
+        }),
+      )
     : undefined;
 
   return Object.freeze({
     references: Object.freeze(references),
-    ...(externalRoutingConfigFilePath === undefined
-      ? {}
-      : { externalRoutingConfigFilePath }),
+    ...(externalRoutingConfigFilePath === undefined ? {} : { externalRoutingConfigFilePath }),
   });
 }
 
@@ -165,18 +152,11 @@ function parseDefinitionReference(
   toolConfigFilePath: string,
 ): DefinitionReference {
   const fieldPath = `definitions[${index}]`;
-  const rawReference = readObject(
-    value,
-    () => failConfig(
-      toolConfigFilePath,
-      fieldPath,
-      `${fieldPath} must be a JSON object.`,
-    ),
+  const rawReference = readObject(value, () =>
+    failConfig(toolConfigFilePath, fieldPath, `${fieldPath} must be a JSON object.`),
   );
-  assertKnownFields(
-    rawReference,
-    DEFINITION_REFERENCE_FIELDS,
-    (unknownField) => failConfig(
+  assertKnownFields(rawReference, DEFINITION_REFERENCE_FIELDS, (unknownField) =>
+    failConfig(
       toolConfigFilePath,
       `${fieldPath}.${unknownField}`,
       `Unknown definition reference field ${fieldPath}.${unknownField}. Remove it.`,
@@ -186,16 +166,14 @@ function parseDefinitionReference(
   const idPath = `${fieldPath}.id`;
   const definitionFilePath = `${fieldPath}.toolDefinitionFile`;
   assertRequired(rawReference, 'id', () =>
-    failConfig(toolConfigFilePath, idPath, `${idPath} is required.`));
+    failConfig(toolConfigFilePath, idPath, `${idPath} is required.`),
+  );
   assertRequired(rawReference, 'toolDefinitionFile', () =>
-    failConfig(toolConfigFilePath, definitionFilePath, `${definitionFilePath} is required.`));
+    failConfig(toolConfigFilePath, definitionFilePath, `${definitionFilePath} is required.`),
+  );
 
   if (typeof rawReference.id !== 'string' || !TOOL_IDENTITY_RE.test(rawReference.id)) {
-    failConfig(
-      toolConfigFilePath,
-      idPath,
-      `${idPath} must match ^[A-Za-z0-9._-]{1,128}$.`,
-    );
+    failConfig(toolConfigFilePath, idPath, `${idPath} must match ^[A-Za-z0-9._-]{1,128}$.`);
   }
 
   return {
@@ -249,31 +227,19 @@ function parseToolDefinition(
   value: JsonValue,
   reference: DefinitionReference,
 ): CustomToolDefinition {
-  const rawDefinition = readObject(
-    value,
-    () => failDefinition(reference, undefined, 'Tool definition file must contain a JSON object.'),
+  const rawDefinition = readObject(value, () =>
+    failDefinition(reference, undefined, 'Tool definition file must contain a JSON object.'),
   );
-  assertKnownFields(
-    rawDefinition,
-    TOOL_DEFINITION_FIELDS,
-    (fieldPath) => failDefinition(
-      reference,
-      fieldPath,
-      `Unknown Tool definition field ${fieldPath}. Remove it.`,
-    ),
+  assertKnownFields(rawDefinition, TOOL_DEFINITION_FIELDS, (fieldPath) =>
+    failDefinition(reference, fieldPath, `Unknown Tool definition field ${fieldPath}. Remove it.`),
   );
 
   for (const key of TOOL_DEFINITION_FIELDS) {
-    assertRequired(rawDefinition, key, () =>
-      failDefinition(reference, key, `${key} is required.`));
+    assertRequired(rawDefinition, key, () => failDefinition(reference, key, `${key} is required.`));
   }
 
   if (typeof rawDefinition.name !== 'string' || !TOOL_IDENTITY_RE.test(rawDefinition.name)) {
-    failDefinition(
-      reference,
-      'name',
-      'name must match ^[A-Za-z0-9._-]{1,128}$.',
-    );
+    failDefinition(reference, 'name', 'name must match ^[A-Za-z0-9._-]{1,128}$.');
   }
   if (
     typeof rawDefinition.description !== 'string' ||
@@ -286,13 +252,8 @@ function parseToolDefinition(
     );
   }
 
-  const inputSchema = readObject(
-    rawDefinition.inputSchema,
-    () => failDefinition(
-      reference,
-      'inputSchema',
-      'inputSchema must be a JSON object.',
-    ),
+  const inputSchema = readObject(rawDefinition.inputSchema, () =>
+    failDefinition(reference, 'inputSchema', 'inputSchema must be a JSON object.'),
   );
   assertInputSchemaProtocolShape(inputSchema, reference);
 
@@ -329,9 +290,8 @@ function assertInputSchemaProtocolShape(
   if (!Object.prototype.hasOwnProperty.call(inputSchema, 'properties')) {
     return;
   }
-  const properties = readObject(
-    inputSchema.properties,
-    () => failDefinition(
+  const properties = readObject(inputSchema.properties, () =>
+    failDefinition(
       reference,
       'inputSchema.properties',
       'inputSchema.properties must be a JSON object when present.',
@@ -393,20 +353,13 @@ function assertKnownFields(
   }
 }
 
-function assertRequired(
-  value: JsonObject,
-  key: string,
-  fail: () => never,
-): void {
+function assertRequired(value: JsonObject, key: string, fail: () => never): void {
   if (!Object.prototype.hasOwnProperty.call(value, key)) {
     fail();
   }
 }
 
-function unwrapPathPolicy(
-  configFilePath: string,
-  result: ValuePolicyResult<string>,
-): string {
+function unwrapPathPolicy(configFilePath: string, result: ValuePolicyResult<string>): string {
   if (!result.ok) {
     failConfig(configFilePath, result.error.fieldPath, result.error.message);
   }

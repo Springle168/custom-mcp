@@ -17,9 +17,9 @@ export function createRequestHeaderExtensions(
     ...(rules.requestHeaders.onCallToolResult.length === 0
       ? {}
       : {
-        prepareToolResult: prepareRequestHeaderToolResult,
-        runWithPostContext: <T>(rawHeaders: readonly string[], action: () => T): T =>
-          runWithRequestHeaderContext(createStrictRequestHeaderView(rawHeaders), action),
-      }),
+          prepareToolResult: prepareRequestHeaderToolResult,
+          runWithPostContext: <T>(rawHeaders: readonly string[], action: () => T): T =>
+            runWithRequestHeaderContext(createStrictRequestHeaderView(rawHeaders), action),
+        }),
   };
 }

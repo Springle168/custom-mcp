@@ -1,23 +1,9 @@
 import { getAllToolDefinitions } from '../../src/tools/index.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
-import {
-  assertDeepEqual,
-  createReplaceTextFixtureHarness,
-  parseResultJson,
-} from './helpers.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
+import { assertDeepEqual, createReplaceTextFixtureHarness, parseResultJson } from './helpers.js';
 
-const {
-  callReplace,
-  cleanupFixtures,
-  createTestToolContext,
-  resetFixtures,
-  writeFixture,
-} = createReplaceTextFixtureHarness('schema');
+const { callReplace, cleanupFixtures, createTestToolContext, resetFixtures, writeFixture } =
+  createReplaceTextFixtureHarness('schema');
 
 function getReplaceDefinition(): Record<string, unknown> {
   const definition = getAllToolDefinitions().find((tool) => tool.name === 'replace_text');
@@ -26,10 +12,7 @@ function getReplaceDefinition(): Record<string, unknown> {
 }
 
 function asRecord(value: unknown, message: string): Record<string, unknown> {
-  assert(
-    typeof value === 'object' && value !== null && !Array.isArray(value),
-    message,
-  );
+  assert(typeof value === 'object' && value !== null && !Array.isArray(value), message);
   return value as Record<string, unknown>;
 }
 
@@ -120,19 +103,29 @@ function testMatchModeSchema(): void {
 function testDescriptionsFollowSchemaResponsibilities(): void {
   const definition = getReplaceDefinition();
   const description = String(definition.description ?? '').toLowerCase();
-  const {
-    files,
-    fileProperties,
-    replacements,
-    replacementProperties,
-  } = getSchemaLayers();
+  const { files, fileProperties, replacements, replacementProperties } = getSchemaLayers();
 
   assertIncludes(description, 'ordered batch', 'Tool description should describe batching');
-  assertIncludes(description, 'does not roll back', 'Tool description should describe partial success');
-  assert(!description.includes('regex_flags'), 'Tool description should not duplicate nested flag details');
+  assertIncludes(
+    description,
+    'does not roll back',
+    'Tool description should describe partial success',
+  );
+  assert(
+    !description.includes('regex_flags'),
+    'Tool description should not duplicate nested flag details',
+  );
 
-  assertIncludes(String(files.description).toLowerCase(), 'ordered', 'files should describe ordering');
-  assertIncludes(String(files.description).toLowerCase(), 'repeated path', 'files should describe repeated paths');
+  assertIncludes(
+    String(files.description).toLowerCase(),
+    'ordered',
+    'files should describe ordering',
+  );
+  assertIncludes(
+    String(files.description).toLowerCase(),
+    'repeated path',
+    'files should describe repeated paths',
+  );
   assertIncludes(
     String(replacements.description),
     're-reads',
@@ -168,11 +161,14 @@ function testNoOutputSchemaOnDefinition(): void {
 async function testToolResultHasNoStructuredContent(): Promise<void> {
   await resetFixtures();
   await writeFixture('schema-result.txt', 'alpha\n');
-  const result = await callReplace({
-    file_path: 'schema-result.txt',
-    target: 'alpha',
-    replacement: 'beta',
-  }, createTestToolContext());
+  const result = await callReplace(
+    {
+      file_path: 'schema-result.txt',
+      target: 'alpha',
+      replacement: 'beta',
+    },
+    createTestToolContext(),
+  );
   assert(!('structuredContent' in result), 'Tool result should not include structuredContent');
   parseResultJson(result);
 }
@@ -183,11 +179,20 @@ async function main(): Promise<void> {
     details: 'Covers nested input schema, layered descriptions, and output transport shape.',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'Input schema uses strict non-empty batch shape', run: testInputSchemaUsesBatchShape },
+      {
+        name: 'Input schema uses strict non-empty batch shape',
+        run: testInputSchemaUsesBatchShape,
+      },
       { name: 'Input schema defines match_mode enum', run: testMatchModeSchema },
-      { name: 'Descriptions follow schema-layer responsibilities', run: testDescriptionsFollowSchemaResponsibilities },
+      {
+        name: 'Descriptions follow schema-layer responsibilities',
+        run: testDescriptionsFollowSchemaResponsibilities,
+      },
       { name: 'Definition does not expose outputSchema', run: testNoOutputSchemaOnDefinition },
-      { name: 'Tool result does not expose structuredContent', run: testToolResultHasNoStructuredContent },
+      {
+        name: 'Tool result does not expose structuredContent',
+        run: testToolResultHasNoStructuredContent,
+      },
     ],
   });
 }

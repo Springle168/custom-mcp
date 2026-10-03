@@ -1,10 +1,5 @@
 import { parseAndroidGradleOutput } from '../../src/engine/android-gradle-output.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 function testSuccessResult() {
   const result = parseAndroidGradleOutput({
@@ -126,12 +121,13 @@ function testAnsiRemovalAndTailTruncation() {
     includeLogTail: true,
   });
 
-  assertIncludes(result.firstErrorBlock, 'error: Something failed', 'Should strip ANSI escape sequences');
-  assertIncludes(result.logTail, '...[truncated]', 'Should mark truncated log tail');
-  assert(
-    !result.logTail?.includes('\u001B[31m'),
-    'Should not keep raw ANSI sequences',
+  assertIncludes(
+    result.firstErrorBlock,
+    'error: Something failed',
+    'Should strip ANSI escape sequences',
   );
+  assertIncludes(result.logTail, '...[truncated]', 'Should mark truncated log tail');
+  assert(!result.logTail?.includes('\u001B[31m'), 'Should not keep raw ANSI sequences');
 }
 
 function testCombinedOutputPreservesArrivalOrder() {
@@ -170,11 +166,17 @@ async function main(): Promise<void> {
     tests: [
       { name: 'success result', run: testSuccessResult },
       { name: 'cancelled result', run: testCancelledResult },
-      { name: 'timeout ignores late zero exit code', run: testTimedOutResultIgnoresLateZeroExitCode },
+      {
+        name: 'timeout ignores late zero exit code',
+        run: testTimedOutResultIgnoresLateZeroExitCode,
+      },
       { name: 'compiler error extraction', run: testCompilerErrorExtraction },
       { name: 'what went wrong extraction', run: testWhatWentWrongExtraction },
       { name: 'ANSI removal and tail truncation', run: testAnsiRemovalAndTailTruncation },
-      { name: 'combined output preserves arrival order', run: testCombinedOutputPreservesArrivalOrder },
+      {
+        name: 'combined output preserves arrival order',
+        run: testCombinedOutputPreservesArrivalOrder,
+      },
       { name: 'log tail is opt-in', run: testLogTailIsOptIn },
     ],
   });
