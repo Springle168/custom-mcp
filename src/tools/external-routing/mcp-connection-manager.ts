@@ -107,7 +107,7 @@ export class McpConnectionManager {
         const controller = new AbortController();
         const relayAbort = (): void => controller.abort(options.signal?.reason);
         options.signal?.addEventListener('abort', relayAbort, { once: true });
-        if (Boolean(options.signal?.aborted)) relayAbort();
+        if (options.signal?.aborted) relayAbort();
 
         let captured: { readonly result: Promise<unknown>; readonly exchange: TrackedMcpExchange };
         try {
@@ -191,8 +191,6 @@ export class McpConnectionManager {
   async #connect(attempt: ConnectingAttempt): Promise<ReadyConnection> {
     const startedAt = Date.now();
     const controllersByRequestId = new Map<string | number, AbortController>();
-    let tracked!: TrackedMcpTransport;
-    let ownedFetch!: FetchLike;
     let sharedStreamTerminated = false;
     let protocolFailed = false;
     const proxyFetch: FetchLike = (url, init) => ownedFetch(url, init);
@@ -201,7 +199,7 @@ export class McpConnectionManager {
       fetch: proxyFetch,
       reconnectionOptions: RECONNECTION_OPTIONS,
     });
-    tracked = new TrackedMcpTransport(baseTransport, {
+    const tracked: TrackedMcpTransport = new TrackedMcpTransport(baseTransport, {
       onRequestBodyTerminated: (requestId) => controllersByRequestId.get(requestId)?.abort(),
       onSharedStreamTerminated: () => {
         sharedStreamTerminated = true;
@@ -213,7 +211,7 @@ export class McpConnectionManager {
         this.#invalidateConnection(tracked);
       },
     });
-    ownedFetch = tracked.createFetch(this.#fetch);
+    const ownedFetch: FetchLike = tracked.createFetch(this.#fetch);
     attempt.transport = tracked;
     attempt.baseTransport = baseTransport;
     const client = new Client(

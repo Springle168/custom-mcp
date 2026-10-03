@@ -31,7 +31,6 @@ const ADDITIONAL_A_DIR = path.join(FIXTURES_DIR, 'additional-a');
 const ADDITIONAL_A_CHILD_DIR = path.join(ADDITIONAL_A_DIR, 'child');
 const ADDITIONAL_B_DIR = path.join(FIXTURES_DIR, 'additional-b');
 const NOT_DIRECTORY_FILE = path.join(FIXTURES_DIR, 'not-a-directory.txt');
-const MISSING_DIR = path.join(FIXTURES_DIR, 'missing');
 const CONFIGURED_LOGS_DIR = path.join(FIXTURES_DIR, 'configured-logs');
 const OVERRIDE_LOGS_DIR = path.join(FIXTURES_DIR, 'override-logs');
 const ANDROID_WORKSPACE_DIR = path.join(FIXTURES_DIR, 'android-project');

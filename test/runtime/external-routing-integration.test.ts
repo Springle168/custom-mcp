@@ -351,9 +351,20 @@ function handleEndpointRequest(
 async function startDownstreamMcpServer(): Promise<DownstreamMcpServer> {
   const calls: Record<string, unknown>[] = [];
   const sockets = new Set<Socket>();
+  const failures: unknown[] = [];
+  const requests: Promise<void>[] = [];
   let initializeCount = 0;
   let listCount = 0;
-  const server = createServer(async (request, response) => {
+  const server = createServer((request, response) => {
+    // A controlled client transport error must not hide a broken server fixture.
+    requests.push(
+      handleRequest(request, response).catch((error: unknown) => {
+        failures.push(error);
+        response.destroy();
+      }),
+    );
+  });
+  async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     if (request.method === 'GET') {
       response.writeHead(405).end();
       return;
@@ -397,7 +408,7 @@ async function startDownstreamMcpServer(): Promise<DownstreamMcpServer> {
       return;
     }
     response.writeHead(400).end();
-  });
+  }
   server.on('connection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
@@ -419,8 +430,44 @@ async function startDownstreamMcpServer(): Promise<DownstreamMcpServer> {
     calls,
     initializeCount: () => initializeCount,
     listCount: () => listCount,
-    close: () => closeHttpServer(server, sockets),
+    async close() {
+      try {
+        await closeHttpServer(server, sockets);
+      } catch (error: unknown) {
+        failures.push(error);
+      }
+      await Promise.all(requests);
+      if (failures.length > 0) {
+        throw new AggregateError(failures, 'Downstream MCP fixture request failed');
+      }
+    },
   };
+}
+
+async function testDownstreamFixtureFailuresReachTest(): Promise<void> {
+  const downstream = await startDownstreamMcpServer();
+  let failure: unknown;
+  try {
+    let requestFailed = false;
+    try {
+      await fetch(downstream.url, {
+        method: 'POST',
+        body: '{invalid-json',
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch {
+      requestFailed = true;
+    }
+    assert(requestFailed, 'Malformed request should destroy the response instead of hanging');
+  } finally {
+    try {
+      await downstream.close();
+    } catch (error: unknown) {
+      failure = error;
+    }
+  }
+  assert(failure instanceof AggregateError, 'Downstream fixture failure must reject after cleanup');
+  assert(failure.errors[0] instanceof SyntaxError, 'Fixture should retain the JSON parsing error');
 }
 
 function writeDownstreamJson(
@@ -781,8 +828,11 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
       'Each upstream call should be sent downstream exactly once.',
     );
   } finally {
-    await cleanupRuntimeResources({ pair, runtime, endpoints: [] });
-    await downstream.close();
+    try {
+      await cleanupRuntimeResources({ pair, runtime, endpoints: [] });
+    } finally {
+      await downstream.close();
+    }
   }
 }
 
@@ -1008,6 +1058,10 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
+      {
+        name: 'reports downstream fixture exceptions after cleanup',
+        run: testDownstreamFixtureFailuresReachTest,
+      },
       {
         name: 'preserves canonical content through validation, policy, logger and MCP Client',
         run: testCanonicalContentThroughMcpAndPolicy,

@@ -117,7 +117,7 @@ interface ResolvedWorkspaceRootConfigSpec extends WorkspaceRootConfigSpec {
 
 const DRIVE_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 const DRIVE_RELATIVE_RE = /^[a-zA-Z]:(?![\\/])/;
-const GLOB_MAGIC_RE = /[*?\[\]{}]|[!@+]\(/;
+const GLOB_MAGIC_RE = /[*?[\]{}]|[!@+]\(/;
 const MAX_SEGMENT_TRAVERSAL_CHECKS = 1024;
 const DEFAULT_WORKSPACE_ROOT_PERMISSIONS: WorkspaceRootPermissions = {
   read: true,
@@ -284,6 +284,7 @@ function validateWorkspaceRootExists(root: ResolvedWorkspaceRootConfigSpec): voi
     throw new Error(
       `${root.label} does not exist or cannot be accessed: ${root.resolvedRootDir}. ` +
         `Check the configured workspace root. ${error.message}`,
+      { cause: err },
     );
   }
 
@@ -300,6 +301,7 @@ function resolveConfiguredWorkspaceRootRealPath(root: ResolvedWorkspaceRootConfi
     throw new Error(
       `Could not resolve real path for ${root.label}: ${root.resolvedRootDir}. ` +
         `Check the configured workspace root. ${error.message}`,
+      { cause: err },
     );
   }
 }
@@ -850,7 +852,7 @@ function getStaticGlobBase(patternInput: string, kind: SafePathKind): StaticGlob
 
 function containsParentTraversal(globPart: string): boolean {
   if (/(^|\/)\.\.(\/|$)/.test(globPart)) return true;
-  if (/[({|,]\.\.(?:[\/)},|]|$)/.test(globPart)) return true;
+  if (/[({|,]\.\.(?:[/)},|]|$)/.test(globPart)) return true;
 
   return globPart.split('/').some((segment) => segmentCanExpandToParentTraversal(segment));
 }

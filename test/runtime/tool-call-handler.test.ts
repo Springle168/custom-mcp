@@ -374,13 +374,24 @@ async function testHandlerOrderUsesAdaptedResultForLogger(): Promise<void> {
   assert('structuredContent' in returned, 'Returned result should be the adapted result');
 }
 
-async function testHandlerWaitsForAsyncCallLogBeforeRouting(): Promise<void> {
+async function testHandlerWaitsForAsyncLogs(): Promise<void> {
   const { store } = createCountingStore(matchingRules());
   const events: string[] = [];
   let resolveCallLog: (() => void) | undefined;
   const callLogCompletion = new Promise<void>((resolve) => {
     resolveCallLog = () => {
       events.push('call:complete');
+      resolve();
+    };
+  });
+  let resolveResultLog: (() => void) | undefined;
+  let signalResultLogStarted: (() => void) | undefined;
+  const resultLogStarted = new Promise<void>((resolve) => {
+    signalResultLogStarted = resolve;
+  });
+  const resultLogCompletion = new Promise<void>((resolve) => {
+    resolveResultLog = () => {
+      events.push('result:complete');
       resolve();
     };
   });
@@ -393,7 +404,9 @@ async function testHandlerWaitsForAsyncCallLogBeforeRouting(): Promise<void> {
         return callLogCompletion;
       },
       logToolResult() {
-        events.push('result');
+        events.push('result:start');
+        signalResultLogStarted?.();
+        return resultLogCompletion;
       },
     },
     routeToolCall: async () => {
@@ -402,7 +415,13 @@ async function testHandlerWaitsForAsyncCallLogBeforeRouting(): Promise<void> {
     },
   });
 
-  const pendingResult = handler({ params: { name: 'async_call_log', arguments: {} } });
+  let returned = false;
+  const pendingResult = handler({ params: { name: 'async_logs', arguments: {} } }).then(
+    (result) => {
+      returned = true;
+      return result;
+    },
+  );
   await Promise.resolve();
   assertEqual(
     events.join('>'),
@@ -411,15 +430,24 @@ async function testHandlerWaitsForAsyncCallLogBeforeRouting(): Promise<void> {
   );
   assert(resolveCallLog !== undefined, 'CALL logger test should expose its completion');
   resolveCallLog();
-
-  const result = await pendingResult;
-
+  await resultLogStarted;
+  await new Promise<void>((resolve) => setImmediate(resolve));
   assertEqual(
     events.join('>'),
-    'call:start>call:complete>route>result',
+    'call:start>call:complete>route>result:start',
     'RESULT logging should begin only after a successful asynchronous CALL log',
   );
-  assertEqual(result.isError, false, 'Asynchronous CALL logging should preserve the tool result');
+  assertEqual(returned, false, 'Response must wait for asynchronous RESULT logging');
+  assert(resolveResultLog !== undefined, 'RESULT logger test should expose its completion');
+  resolveResultLog();
+
+  const result = await pendingResult;
+  assertEqual(
+    events.join('>'),
+    'call:start>call:complete>route>result:start>result:complete',
+    'Both asynchronous logs should complete before returning the response',
+  );
+  assertEqual(result.isError, false, 'Asynchronous logging should preserve the tool result');
 }
 
 async function testHandlerContainsRouterFailuresAndMalformedResults(): Promise<void> {
@@ -577,102 +605,116 @@ async function testMalformedNestedAccessorIsIsolatedBeforeAdapterAndLogger(): Pr
 }
 
 async function testLoggerFailuresAreIsolatedAndResultIsAttemptedOnce(): Promise<void> {
-  const { store } = createCountingStore(matchingRules());
-  let routedAfterCallLogFailure = 0;
-  let resultAttemptsAfterCallLogFailure = 0;
-  const callLogDiagnostics: ToolCallPipelineDiagnostic[] = [];
-  const callLoggerFailureHandler = createToolCallRequestHandler({
-    configStore: store,
-    prepareToolResult: prepareRequestHeaderToolResult,
-    logger: {
-      logToolCall() {
-        return Promise.reject(new Error('CALL logger failure'));
+  for (const asynchronous of [false, true]) {
+    const { store } = createCountingStore(matchingRules());
+    let routedAfterCallLogFailure = 0;
+    let resultAttemptsAfterCallLogFailure = 0;
+    const callLogDiagnostics: ToolCallPipelineDiagnostic[] = [];
+    const callLoggerFailureHandler = createToolCallRequestHandler({
+      configStore: store,
+      prepareToolResult: prepareRequestHeaderToolResult,
+      logger: {
+        logToolCall() {
+          const failure = new Error('CALL logger failure');
+          if (asynchronous) {
+            return Promise.reject(failure);
+          }
+          throw failure;
+        },
+        logToolResult() {
+          resultAttemptsAfterCallLogFailure++;
+        },
       },
-      logToolResult() {
-        resultAttemptsAfterCallLogFailure++;
+      routeToolCall: async () => {
+        routedAfterCallLogFailure++;
+        return textResult('ok');
       },
-    },
-    routeToolCall: async () => {
-      routedAfterCallLogFailure++;
-      return textResult('ok');
-    },
-    onDiagnostic(diagnostic) {
-      callLogDiagnostics.push(diagnostic);
-    },
-  });
-
-  const callLoggerFailureResult = await runWithRequestHeaderContext(
-    createStrictRequestHeaderView(['X-Client', 'android-studio']),
-    () =>
-      callLoggerFailureHandler({
-        params: { name: 'call_logger_failure', arguments: {} },
-      }),
-  );
-
-  assertEqual(routedAfterCallLogFailure, 1, 'CALL logger failure must not block routing');
-  assertEqual(
-    resultAttemptsAfterCallLogFailure,
-    0,
-    'RESULT logging should not run without a successful CALL log',
-  );
-  assertEqual(
-    callLoggerFailureResult.isError,
-    false,
-    'CALL logger failure must preserve the tool result',
-  );
-  assert(
-    'structuredContent' in callLoggerFailureResult,
-    'Matching policy must still adapt after CALL logging fails',
-  );
-  assertEqual(callLogDiagnostics.length, 1, 'CALL logger failure should emit one safe diagnostic');
-  assertEqual(
-    callLogDiagnostics[0]?.kind,
-    'call_log_failed',
-    'CALL logger diagnostic should be classified',
-  );
-
-  let resultAttempts = 0;
-  const resultLogDiagnostics: ToolCallPipelineDiagnostic[] = [];
-  const resultLoggerFailureHandler = createToolCallRequestHandler({
-    configStore: store,
-    prepareToolResult: prepareRequestHeaderToolResult,
-    logger: {
-      logToolCall() {},
-      logToolResult() {
-        resultAttempts++;
-        return Promise.reject(new Error('RESULT logger failure'));
+      onDiagnostic(diagnostic) {
+        callLogDiagnostics.push(diagnostic);
       },
-    },
-    routeToolCall: async () => textResult('ok'),
-    onDiagnostic(diagnostic) {
-      resultLogDiagnostics.push(diagnostic);
-    },
-  });
+    });
 
-  const resultLoggerFailureResult = await resultLoggerFailureHandler({
-    params: { name: 'result_logger_failure', arguments: {} },
-  });
+    const callLoggerFailureResult = await runWithRequestHeaderContext(
+      createStrictRequestHeaderView(['X-Client', 'android-studio']),
+      () =>
+        callLoggerFailureHandler({
+          params: { name: 'call_logger_failure', arguments: {} },
+        }),
+    );
 
-  assertEqual(
-    resultAttempts,
-    1,
-    'Successful CALL logging should attempt RESULT logging exactly once',
-  );
-  assertEqual(
-    resultLoggerFailureResult.isError,
-    false,
-    'RESULT logger failure must preserve the tool result',
-  );
-  assertEqual(
-    resultLogDiagnostics.length,
-    1,
-    'RESULT logger failure should emit one safe diagnostic',
-  );
-  assertEqual(
-    resultLogDiagnostics[0]?.kind,
-    'result_log_failed',
-    'RESULT logger diagnostic should be classified',
-  );
+    assertEqual(routedAfterCallLogFailure, 1, 'CALL logger failure must not block routing');
+    assertEqual(
+      resultAttemptsAfterCallLogFailure,
+      0,
+      'RESULT logging should not run without a successful CALL log',
+    );
+    assertEqual(
+      callLoggerFailureResult.isError,
+      false,
+      'CALL logger failure must preserve the tool result',
+    );
+    assert(
+      'structuredContent' in callLoggerFailureResult,
+      'Matching policy must still adapt after CALL logging fails',
+    );
+    assertEqual(
+      callLogDiagnostics.length,
+      1,
+      'CALL logger failure should emit one safe diagnostic',
+    );
+    assertEqual(
+      callLogDiagnostics[0]?.kind,
+      'call_log_failed',
+      'CALL logger diagnostic should be classified',
+    );
+
+    let resultAttempts = 0;
+    const resultLogDiagnostics: ToolCallPipelineDiagnostic[] = [];
+    const resultLoggerFailureHandler = createToolCallRequestHandler({
+      configStore: store,
+      prepareToolResult: prepareRequestHeaderToolResult,
+      logger: {
+        logToolCall() {},
+        logToolResult() {
+          resultAttempts++;
+          const failure = new Error('RESULT logger failure');
+          if (asynchronous) {
+            return Promise.reject(failure);
+          }
+          throw failure;
+        },
+      },
+      routeToolCall: async () => textResult('ok'),
+      onDiagnostic(diagnostic) {
+        resultLogDiagnostics.push(diagnostic);
+      },
+    });
+
+    const resultLoggerFailureResult = await resultLoggerFailureHandler({
+      params: { name: 'result_logger_failure', arguments: {} },
+    });
+
+    assertEqual(
+      resultAttempts,
+      1,
+      'Successful CALL logging should attempt RESULT logging exactly once',
+    );
+    assertEqual(
+      resultLoggerFailureResult.isError,
+      false,
+      'RESULT logger failure must preserve the tool result',
+    );
+    assertEqual(
+      resultLogDiagnostics.length,
+      1,
+      'RESULT logger failure should emit one safe diagnostic',
+    );
+    assertEqual(
+      resultLogDiagnostics[0]?.kind,
+      'result_log_failed',
+      'RESULT logger diagnostic should be classified',
+    );
+  }
 }
 
 async function testExtensionOrderAndSnapshotAcrossCallAwait(): Promise<void> {
@@ -1074,8 +1116,8 @@ async function main(): Promise<void> {
         run: testHandlerOrderUsesAdaptedResultForLogger,
       },
       {
-        name: 'handler waits for asynchronous CALL logging',
-        run: testHandlerWaitsForAsyncCallLogBeforeRouting,
+        name: 'handler waits for asynchronous CALL and RESULT logging',
+        run: testHandlerWaitsForAsyncLogs,
       },
       {
         name: 'router failures and malformed results are contained',

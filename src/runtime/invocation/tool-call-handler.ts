@@ -28,13 +28,13 @@ export interface ToolCallRequestMetadata {
 }
 
 export interface ToolCallLogger {
-  logToolCall(toolName: string, args: unknown, context: ToolCallLogContext): void;
+  logToolCall(toolName: string, args: unknown, context: ToolCallLogContext): void | Promise<void>;
   logToolResult(
     toolName: string,
     result: ToolCallResult,
     durationMs: number,
     context: ToolCallResultLogContext,
-  ): void;
+  ): void | Promise<void>;
 }
 
 export type ToolCallRouter = (

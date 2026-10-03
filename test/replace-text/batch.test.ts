@@ -9,7 +9,6 @@ const {
   callReplaceBatch,
   callWithHandler,
   cleanupFixtures,
-  fixturePath,
   resetFixtures,
   writeFixture,
 } = createReplaceTextFixtureHarness('batch');

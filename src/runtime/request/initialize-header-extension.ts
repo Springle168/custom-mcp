@@ -10,7 +10,7 @@ import { createStrictRequestHeaderView } from './request-header-view.js';
 /** Adapts initialization parameters without taking ownership of session resources. */
 export function createInitializeHeaderExtension(
   rules: RuntimeRulesConfig,
-  logger: { info(message: string): void },
+  logger: { info(message: string): void | Promise<void> },
 ): NonNullable<RuntimeExtensions['prepareSession']> {
   return (rawHeaders, defaults) => {
     let policy: ReturnType<typeof evaluateInitializeHeaderPolicy>;
@@ -55,7 +55,10 @@ export function createInitializeHeaderExtension(
   };
 }
 
-function safeInfo(logger: { info(message: string): void }, message: () => string): void {
+function safeInfo(
+  logger: { info(message: string): void | Promise<void> },
+  message: () => string,
+): void {
   try {
     void Promise.resolve(logger.info(message())).catch(() => {});
   } catch {

@@ -23,7 +23,6 @@ import { withFileLock } from '../../../utils/file-lock.js';
 import type { SafePath } from '../../../utils/paths.js';
 import { REPLACE_TOOL_DEFINITION } from './replace-text.definition.js';
 import type { MCPTool, ToolCallResult } from '../../types.js';
-import { textErrorResult } from '../../results.js';
 
 type MatchMode = 'default' | 'regex';
 

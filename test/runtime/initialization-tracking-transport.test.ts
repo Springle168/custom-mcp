@@ -43,6 +43,7 @@ async function testOnlyMatchingResultAfterSendFulfilled(): Promise<void> {
     async function (this: StreamableHTTPServerTransport, message, options) {
       receivedMessage = message;
       receivedOptions = options;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- Capture the actual receiver for the forwarding assertion.
       receivedTransport = this;
       await sendDone.promise;
     },

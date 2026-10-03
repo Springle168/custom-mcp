@@ -228,6 +228,41 @@ async function testUnknownFailuresPropagate() {
   );
 }
 
+async function testAsyncLoggerDoesNotDelayPreparationOrPublication(): Promise<void> {
+  let resolveLogger: (() => void) | undefined;
+  const loggerCompletion = new Promise<void>((resolve) => {
+    resolveLogger = resolve;
+  });
+  const messages: string[] = [];
+  const prepare = createInitializeHeaderExtension(rules, {
+    info(message) {
+      messages.push(message);
+      return loggerCompletion;
+    },
+  });
+  const base = defaults();
+  const rejected = prepare(['x-tools', 'private invalid JSON'], base.options);
+  assert(!rejected.accepted, 'Pending rejection log must not delay the safe policy rejection');
+  assertEqual(
+    messages[0],
+    'Initialize policy rejected: rules.requestHeaders.onInitialize[0]; invalid_json',
+    'Pending logger should receive only the safe rejection summary',
+  );
+
+  const accepted = prepare([], base.options);
+  assert(accepted.accepted, 'Pending logger must not delay valid preparation');
+  assert(accepted.onPublished !== undefined, 'Configured policy should observe publication');
+  assertEqual(
+    accepted.onPublished('published-id'),
+    undefined,
+    'Publication observer must not return or wait for asynchronous logger completion',
+  );
+  assertEqual(messages[1], 'Session policy: published-id; none', 'Publication summary stays safe');
+  assert(resolveLogger !== undefined, 'Asynchronous logger should expose its completion');
+  resolveLogger();
+  await loggerCompletion;
+}
+
 await runTestSuite({
   title: 'Initialization header extension stage adapter',
   tests: [
@@ -242,6 +277,10 @@ await runTestSuite({
     {
       name: 'safe parameter rejection and logger isolation',
       run: testSafeRejectionAndLoggerIsolation,
+    },
+    {
+      name: 'asynchronous logger does not delay preparation or publication',
+      run: testAsyncLoggerDoesNotDelayPreparationOrPublication,
     },
     { name: 'unexpected failures propagate', run: testUnknownFailuresPropagate },
   ],
