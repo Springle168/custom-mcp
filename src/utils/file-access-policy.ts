@@ -1,7 +1,8 @@
 import * as nodeFs from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { glob, Ignore } from 'glob';
+// The bundled entry embeds matching code that transitive dependency updates cannot replace.
+import { glob, Ignore } from 'glob/raw';
 import {
   formatPathSafetyError,
   resolveSafeGlobEntry,

@@ -239,6 +239,29 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   );
 }
 
+async function testLongBraceExcludePreservesFiltering(): Promise<void> {
+  // Many literal brace groups inside a comma set previously overflowed parseCommaParts.
+  const longExclude = `{${'{a}'.repeat(6000)},b}`;
+  const result = await readManyFilesTool.handler(
+    {
+      include: ['allowed/**/*.txt'],
+      exclude: [longExclude, 'allowed/sub/*.{txt,md}'],
+      use_ignore_files: false,
+    },
+    createContext(),
+    createTestToolInvocationContext(),
+  );
+
+  assert(result.isError !== true, 'Long brace excludes should not fail file discovery');
+  const text = getResultText(result);
+  assertIncludes(text, 'visible', 'A non-matching long exclude should preserve allowed files');
+  assertNotIncludes(
+    text,
+    'nested-visible',
+    'Ordinary brace excludes should still filter matching files',
+  );
+}
+
 async function testGlobDenyMixedResultPrivacy(): Promise<void> {
   const result = await readManyFilesTool.handler(
     { include: ['**/*.txt'], use_ignore_files: false },
@@ -433,6 +456,10 @@ async function main(): Promise<void> {
       {
         name: 'glob ignore toggle and no built-in defaults',
         run: testGlobIgnoreToggleAndNoBuiltInDefaults,
+      },
+      {
+        name: 'long brace excludes preserve ordinary filtering',
+        run: testLongBraceExcludePreservesFiltering,
       },
       { name: 'glob deny mixed-result privacy', run: testGlobDenyMixedResultPrivacy },
       {

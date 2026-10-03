@@ -1,6 +1,7 @@
 import { lstat, open } from 'node:fs/promises';
 import path from 'node:path';
-import { globIterate } from 'glob';
+// Use the unbundled entry so matching code follows the versions in the lockfile.
+import { globIterate } from 'glob/raw';
 import type { AndroidTestReportFile } from '../engine/android-test-report.js';
 
 const TEST_REPORT_PATTERN = '**/test-results/testDebugUnitTest/TEST-*.xml';
