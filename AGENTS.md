@@ -53,6 +53,7 @@
 - 格式化本次修改的文件：`npm exec -- prettier --write <文件路径...>`。
 - 格式检查：`npm run format:check`。
 - 统一格式化预设范围：`npm run format`。
+- 静态规则检查：`npm run lint`。
 - 生产源码编译：`npm run build`。
 - 生产源码与测试代码的静态类型检查：`npm run typecheck:test`。
 - 依次执行生产构建和测试类型检查：`npm run check`。
