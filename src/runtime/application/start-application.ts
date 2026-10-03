@@ -38,7 +38,6 @@ export function startApplication(options: LoadRuntimeConfigOptions): RunningAppl
   const sessions = new Map<string, McpPostSession>();
   const pendingSessions = new Set<McpPendingSession>();
   // Request callbacks run after synchronous listener/lifecycle assembly completes.
-  let lifecycle: ApplicationLifecycle;
   const app = createMcpHttpApp({
     configStore,
     toolService,
@@ -63,7 +62,7 @@ export function startApplication(options: LoadRuntimeConfigOptions): RunningAppl
       // Individual manager outcomes are reported through the diagnostic sink.
     });
   });
-  lifecycle = new ApplicationLifecycle({
+  const lifecycle: ApplicationLifecycle = new ApplicationLifecycle({
     listener,
     sessions,
     pendingSessions,

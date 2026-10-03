@@ -6,12 +6,7 @@ import {
   type SelectedReadableFile,
   type SkippedFileSelection,
 } from '../../../utils/file-selection.js';
-import {
-  isBinaryFile,
-  readTextFile,
-  MAX_LINE_LENGTH,
-  MAX_LINES_PER_FILE,
-} from '../../../utils/file-read.js';
+import { isBinaryFile, readTextFile, MAX_LINE_LENGTH } from '../../../utils/file-read.js';
 import {
   READ_MANY_FILES_TOOL_DEFINITION,
   SHALLOW_READ_BATCH_SIZE_BYTES,

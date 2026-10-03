@@ -48,7 +48,9 @@ function assertExistingLogsRoot(logsDir: string): void {
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Logger logsDir must be an existing directory: ${logsDir}. ${message}`);
+    throw new Error(`Logger logsDir must be an existing directory: ${logsDir}. ${message}`, {
+      cause: error,
+    });
   }
 
   throw new Error(`Logger logsDir must be an existing directory: ${logsDir}.`);
@@ -103,7 +105,7 @@ export class Logger {
     }
 
     return json.replace(
-      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
       (match) => {
         if (match.startsWith('"')) {
           if (match.endsWith(':')) {

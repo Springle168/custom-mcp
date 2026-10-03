@@ -198,6 +198,7 @@ export function parseResultJson(result: ToolCallResult): ReplaceTextBatchJson {
   } catch (error) {
     throw new Error(
       `Expected content[0].text to be batch JSON, but parsing failed: ${String(error)}\nText: ${text}`,
+      { cause: error },
     );
   }
 

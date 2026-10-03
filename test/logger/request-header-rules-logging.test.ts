@@ -22,6 +22,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_LOGS_DIR = join(__dirname, '..', 'logs', 'request-header-rules-logging');
+// eslint-disable-next-line no-control-regex -- Detect literal ANSI escapes to verify plain-text file logs.
 const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/u;
 
 function successResult(text = 'Succeeded.'): ToolCallResult {

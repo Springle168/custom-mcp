@@ -1,12 +1,9 @@
-import type {
-  ToolCallDiagnosticSink,
-  ToolCallPipelineDiagnostic,
-} from '../invocation/tool-call-handler.js';
+import type { ToolCallPipelineDiagnostic } from '../invocation/tool-call-handler.js';
 import type { ExternalRoutingProcessorDrainDiagnostic } from '../../tools/external-routing/strategy-adapter.js';
 import type { McpConnectionDiagnostic } from '../../tools/external-routing/mcp-connection-manager.js';
 
 export interface ApplicationDiagnosticLogger {
-  info(message: string): void;
+  info(message: string): void | Promise<void>;
 }
 
 /**
@@ -17,7 +14,7 @@ export class ApplicationDiagnostics {
   #logger: ApplicationDiagnosticLogger | undefined;
   #reportedFallbackFailure = false;
 
-  readonly onToolCallDiagnostic: ToolCallDiagnosticSink = (diagnostic) => {
+  readonly onToolCallDiagnostic = (diagnostic: ToolCallPipelineDiagnostic): void => {
     this.#report(formatToolCallDiagnostic(diagnostic));
   };
 
@@ -45,8 +42,7 @@ export class ApplicationDiagnostics {
         return;
       }
       const loggerResult = this.#logger.info(message);
-      // Although the injected type is void, implementations can still return
-      // promises. Observe rejections without making processor cleanup wait.
+      // Observe asynchronous failures without making invocation or cleanup wait.
       void Promise.resolve(loggerResult).catch(() => {
         this.#reportFallbackFailure();
       });

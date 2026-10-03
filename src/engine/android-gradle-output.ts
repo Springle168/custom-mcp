@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-control-regex -- Gradle color output contains literal ANSI escape characters.
 const ANSI_ESCAPE_PATTERN = /\u001B\[[0-9;]*m/g;
 const FAILED_TASK_PATTERN = /Execution failed for task ['"]([^'"]+)['"]\.?/i;
 

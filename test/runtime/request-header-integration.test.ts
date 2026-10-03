@@ -139,7 +139,6 @@ async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging 
       return { content: [{ type: 'text', text: `Executed ${name}` }], isError: false };
     },
   };
-  let lifecycle: ApplicationLifecycle;
   const logger = {
     info(message: string) {
       messages.push(message);
@@ -168,7 +167,7 @@ async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging 
     closeSession: (id) => lifecycle.closeSession(id),
   });
   const listener = app.listen(0, '127.0.0.1');
-  lifecycle = new ApplicationLifecycle({
+  const lifecycle: ApplicationLifecycle = new ApplicationLifecycle({
     listener,
     sessions,
     pendingSessions,

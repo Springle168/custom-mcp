@@ -1,4 +1,4 @@
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   createExternalRoutingExecutor,
   ExternalRoutingExecutor,
@@ -70,14 +70,25 @@ async function withHttpExecutor(
   responseFor: (request: CanonicalRequest) => unknown,
   run: (executor: ExternalRoutingExecutor) => Promise<void>,
 ): Promise<void> {
-  const server = createServer(async (request, response) => {
+  const failures: unknown[] = [];
+  const requests: Promise<void>[] = [];
+  const server = createServer((request, response) => {
+    // Node does not consume listener promises; report fixture failures after cleanup.
+    requests.push(
+      handleRequest(request, response).catch((error: unknown) => {
+        failures.push(error);
+        response.destroy();
+      }),
+    );
+  });
+  async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const canonicalRequest = parseCanonicalRequestDocument(Buffer.concat(chunks));
     const body = JSON.stringify(responseFor(canonicalRequest));
     response.writeHead(200, { 'Content-Type': 'application/json' });
     response.end(body);
-  });
+  }
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert(address !== null && typeof address !== 'string', 'HTTP fixture should expose a TCP port');
@@ -102,12 +113,46 @@ async function withHttpExecutor(
   });
   try {
     await run(executor);
-  } finally {
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+
+  try {
     await executor.close();
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
+  } catch (error: unknown) {
+    failures.push(error);
   }
+  await Promise.all(requests);
+  if (failures.length > 0) {
+    throw new AggregateError(failures, 'HTTP executor fixture failed');
+  }
+}
+
+async function testHttpFixtureFailuresReachTest(): Promise<void> {
+  const expectedError = new Error('Fixture response construction failed');
+  let failure: unknown;
+  try {
+    await withHttpExecutor(
+      () => {
+        throw expectedError;
+      },
+      async (executor) => {
+        const result = await executor.execute('test-route', invocation());
+        assertEqual(result.isError, true, 'Destroyed fixture response should settle the call');
+      },
+    );
+  } catch (error: unknown) {
+    failure = error;
+  }
+  assert(failure instanceof AggregateError, 'Fixture failure must reject after cleanup');
+  assertEqual(failure.errors[0], expectedError, 'Fixture should retain the original error');
 }
 
 async function testHttpCanonicalContentMapping(): Promise<void> {
@@ -515,6 +560,10 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing executor mapping and ownership',
     tests: [
+      {
+        name: 'reports HTTP fixture exceptions after cleanup',
+        run: testHttpFixtureFailuresReachTest,
+      },
       {
         name: 'maps actual HTTP canonical content for all statuses',
         run: testHttpCanonicalContentMapping,

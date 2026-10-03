@@ -124,13 +124,23 @@ async function testAsyncLoggerFailureUsesFallbackOnceWithoutUnhandledRejection()
 
   try {
     const diagnostics = new ApplicationDiagnostics();
+    let loggerAttempts = 0;
     diagnostics.bind({
       info() {
+        if (loggerAttempts++ === 0) {
+          throw new Error('private sync logger failure');
+        }
         return Promise.reject(new Error('private async logger failure'));
       },
     });
 
     diagnostics.onToolCallDiagnostic({ kind: 'call_log_failed', callId: 'call_test' });
+    diagnostics.onMcpConnectionDiagnostic({
+      server: 'https://downstream.example/mcp',
+      outcome: 'connected',
+      phase: 'connect',
+      durationMs: 1,
+    });
     diagnostics.onExternalProcessorDrain({
       definitionId: 'external-route',
       toolName: 'external_tool',
@@ -151,7 +161,12 @@ async function testAsyncLoggerFailureUsesFallbackOnceWithoutUnhandledRejection()
     assertEqual(
       fallbackMessages.length,
       1,
-      'Repeated asynchronous logger failures should trigger fallback only once',
+      'Synchronous and repeated asynchronous logger failures should trigger fallback only once',
+    );
+    assertEqual(
+      fallbackMessages[0],
+      'Application diagnostic sink unavailable.\n',
+      'Fallback must not expose the original logger failures',
     );
     assertEqual(
       unhandledRejections.length,
@@ -195,6 +210,21 @@ async function testExternalProcessorDrainDoesNotWaitForAsyncLogger(): Promise<vo
     callbackResult,
     undefined,
     'External processor drain diagnostics must not wait for asynchronous logger completion',
+  );
+  assertEqual(
+    diagnostics.onToolCallDiagnostic({ kind: 'call_log_failed', callId: 'call_test' }),
+    undefined,
+    'Tool-call diagnostics bridge must remain synchronous even with an asynchronous logger',
+  );
+  assertEqual(
+    diagnostics.onMcpConnectionDiagnostic({
+      server: 'https://downstream.example/mcp',
+      outcome: 'connected',
+      phase: 'connect',
+      durationMs: 1,
+    }),
+    undefined,
+    'MCP diagnostics bridge must remain synchronous even with an asynchronous logger',
   );
   assert(resolveLogger !== undefined, 'Asynchronous logger test should expose its completion');
   resolveLogger();

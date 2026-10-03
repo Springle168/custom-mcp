@@ -20,7 +20,6 @@ async function createHarness(extensions?: RuntimeExtensions) {
   const closedSessions: string[] = [];
   let accepting = true;
   let listCalls = 0;
-  let lifecycle: ApplicationLifecycle;
   const service: WorkspaceToolService = {
     getDefinitions() {
       listCalls++;
@@ -71,7 +70,7 @@ async function createHarness(extensions?: RuntimeExtensions) {
     },
   });
   const listener = app.listen(0, '127.0.0.1');
-  lifecycle = new ApplicationLifecycle({
+  const lifecycle: ApplicationLifecycle = new ApplicationLifecycle({
     listener,
     sessions,
     pendingSessions,
