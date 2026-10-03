@@ -11,7 +11,7 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" eslint.config.js --max-warnings 0",
     "build": "tsc",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "check": "npm run build && npm run typecheck:test",
+    "check": "npm run format:check && npm run lint && npm run build && npm run typecheck:test",
     "test": "node --import tsx test/run-tests.ts",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js"

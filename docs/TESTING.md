@@ -77,7 +77,7 @@ npm run build
 # 对 src/**/*.ts 与 test/**/*.ts 执行类型检查，不生成文件
 npm run typecheck:test
 
-# 依次执行生产构建和测试类型检查
+# 依次执行格式检查、静态规则检查、生产构建和测试类型检查
 npm run check
 
 # 串行运行默认自动化测试集

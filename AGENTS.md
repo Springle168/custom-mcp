@@ -56,7 +56,7 @@
 - 静态规则检查：`npm run lint`。
 - 生产源码编译：`npm run build`。
 - 生产源码与测试代码的静态类型检查：`npm run typecheck:test`。
-- 依次执行生产构建和测试类型检查：`npm run check`。
+- 依次执行格式检查、静态规则检查、生产构建和测试类型检查：`npm run check`。
 - 全部自动化测试：`npm test`。
 - 主题测试：`npm test -- <topic>`。
 - 单个脚本测试：`npm test -- test/<file>.ts`。
