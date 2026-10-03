@@ -54,13 +54,11 @@ export function readOptionalWorkspaceToolsConfig(
     );
   }
 
-  const toolConfigFile = readOptionalToolConfigFile(
-    rawTools.toolConfigFile,
-    options,
-  );
-  const exposure = hasEnabled || hasDisabled
-    ? readExposure(rawTools, hasEnabled ? 'enabled' : 'disabled', options)
-    : Object.freeze({ mode: 'all' as const });
+  const toolConfigFile = readOptionalToolConfigFile(rawTools.toolConfigFile, options);
+  const exposure =
+    hasEnabled || hasDisabled
+      ? readExposure(rawTools, hasEnabled ? 'enabled' : 'disabled', options)
+      : Object.freeze({ mode: 'all' as const });
 
   return Object.freeze({
     ...(toolConfigFile === undefined ? {} : { toolConfigFile }),

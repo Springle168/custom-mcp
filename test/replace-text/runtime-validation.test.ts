@@ -1,9 +1,4 @@
-import {
-  assertEqual,
-  assertIncludes,
-  getResultText,
-  runTestSuite,
-} from '../test-utils.js';
+import { assertEqual, assertIncludes, getResultText, runTestSuite } from '../test-utils.js';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
@@ -53,11 +48,13 @@ function validFile(overrides: Record<string, unknown> = {}): Record<string, unkn
 async function testDefaults(): Promise<void> {
   await resetFixtures();
   await writeFixture('defaults.txt', 'alpha\n');
-  const json = assertSuccessResult(await callReplace({
-    file_path: 'defaults.txt',
-    target: 'alpha',
-    replacement: 'beta',
-  }));
+  const json = assertSuccessResult(
+    await callReplace({
+      file_path: 'defaults.txt',
+      target: 'alpha',
+      replacement: 'beta',
+    }),
+  );
   assertEqual(json.file_path, 'defaults.txt', 'file_path should echo input');
   assertEqual(json.match_mode, 'default', 'match_mode default');
   assertEqual(json.allow_multiple, false, 'allow_multiple default');
@@ -143,12 +140,14 @@ async function testReplacementShapeValidation(): Promise<void> {
 async function testRegexFlagsWithoutRegexModeRejected(): Promise<void> {
   await resetFixtures();
   await writeFixture('flags-default.txt', 'alpha\n');
-  const json = assertErrorResult(await callReplace({
-    file_path: 'flags-default.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    regex_flags: 'm',
-  }));
+  const json = assertErrorResult(
+    await callReplace({
+      file_path: 'flags-default.txt',
+      target: 'alpha',
+      replacement: 'beta',
+      regex_flags: 'm',
+    }),
+  );
   assertJsonNoteIncludes(json, "match_mode is 'regex'", 'regex_flags mode note');
   assertJsonDefaults(json);
   await assertFixtureContent('flags-default.txt', 'alpha\n', 'Invalid flags should not write');
@@ -157,23 +156,27 @@ async function testRegexFlagsWithoutRegexModeRejected(): Promise<void> {
 async function testInvalidRegexFlagsRejected(): Promise<void> {
   await resetFixtures();
   await writeFixture('flags-invalid.txt', 'alpha\n');
-  const invalid = assertErrorResult(await callReplace({
-    file_path: 'flags-invalid.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    match_mode: 'regex',
-    regex_flags: 'mi',
-  }));
+  const invalid = assertErrorResult(
+    await callReplace({
+      file_path: 'flags-invalid.txt',
+      target: 'alpha',
+      replacement: 'beta',
+      match_mode: 'regex',
+      regex_flags: 'mi',
+    }),
+  );
   assertJsonNoteIncludes(invalid, "'g', 'm', and 's'", 'Invalid flag note');
   assertJsonDefaults(invalid);
 
-  const duplicate = assertErrorResult(await callReplace({
-    file_path: 'flags-invalid.txt',
-    target: 'alpha',
-    replacement: 'beta',
-    match_mode: 'regex',
-    regex_flags: 'msm',
-  }));
+  const duplicate = assertErrorResult(
+    await callReplace({
+      file_path: 'flags-invalid.txt',
+      target: 'alpha',
+      replacement: 'beta',
+      match_mode: 'regex',
+      regex_flags: 'msm',
+    }),
+  );
   assertJsonNoteIncludes(duplicate, 'must not repeat flags', 'Duplicate flag note');
   assertJsonDefaults(duplicate);
 }
@@ -181,11 +184,16 @@ async function testInvalidRegexFlagsRejected(): Promise<void> {
 async function testRouteUsesProvidedFixtureRootOnly(): Promise<void> {
   await resetFixtures();
   await writeFixture('fixture-root.txt', 'alpha\n');
-  assertSuccessResult(await callReplace({
-    file_path: 'fixture-root.txt',
-    target: 'alpha',
-    replacement: 'beta',
-  }, createTestToolContext()));
+  assertSuccessResult(
+    await callReplace(
+      {
+        file_path: 'fixture-root.txt',
+        target: 'alpha',
+        replacement: 'beta',
+      },
+      createTestToolContext(),
+    ),
+  );
   await assertFixtureContent('fixture-root.txt', 'beta\n', 'Should use explicit fixture root');
 }
 

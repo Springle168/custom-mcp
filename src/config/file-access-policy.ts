@@ -3,14 +3,8 @@ import * as path from 'node:path';
 import ignore from 'ignore';
 import { ConfigError } from './errors.js';
 import type { ParsedFileAccessConfig, ParsedWorkspaceConfig } from './schema.js';
-import {
-  readStrictUtf8RegularFile,
-  StrictUtf8FileError,
-} from './strict-utf8-file.js';
-import type {
-  FileAccessPolicyQuery,
-  RootFileAccessPolicy,
-} from '../utils/file-access-policy.js';
+import { readStrictUtf8RegularFile, StrictUtf8FileError } from './strict-utf8-file.js';
+import type { FileAccessPolicyQuery, RootFileAccessPolicy } from '../utils/file-access-policy.js';
 
 export interface CompiledFileAccessPolicy {
   readonly roots: readonly CompiledRootFileAccessPolicy[];
@@ -97,7 +91,7 @@ function compileRootPolicies(
         workspaceLabel,
         additionalRootPolicyFieldPath(workspaceIndex, additionalRoot),
         fileCache,
-      )
+      ),
     ),
   ];
 
@@ -118,7 +112,14 @@ function compileRootPolicy(
   try {
     realRootDir = realpathSync(rootDir);
   } catch (err: unknown) {
-    throwPolicyError(configFilePath, fieldPath, workspaceLabel, rootDir, 'Could not resolve the associated root.', err);
+    throwPolicyError(
+      configFilePath,
+      fieldPath,
+      workspaceLabel,
+      rootDir,
+      'Could not resolve the associated root.',
+      err,
+    );
   }
 
   const resolvedRootDir = path.resolve(rootDir);
@@ -237,10 +238,10 @@ function readPolicyFile(
     }
 
     if (
-      error.reason === 'not_found'
-      || error.reason === 'not_regular'
-      || error.reason === 'open_failed'
-      || error.reason === 'inspect_failed'
+      error.reason === 'not_found' ||
+      error.reason === 'not_regular' ||
+      error.reason === 'open_failed' ||
+      error.reason === 'inspect_failed'
     ) {
       throwPolicyError(
         configFilePath,
@@ -272,9 +273,9 @@ function isSupportedLocalAbsolutePath(value: string): boolean {
     return /^[a-zA-Z]:[\\/]/.test(value);
   }
 
-  return path.posix.isAbsolute(value) &&
-    !normalized.startsWith('//') &&
-    !/^[a-zA-Z]:[\\/]/.test(value);
+  return (
+    path.posix.isAbsolute(value) && !normalized.startsWith('//') && !/^[a-zA-Z]:[\\/]/.test(value)
+  );
 }
 
 function throwPolicyError(
@@ -306,9 +307,10 @@ function additionalRootPolicyFieldPath(
   workspaceIndex: number | undefined,
   rootKey: string,
 ): string {
-  const pathPrefix = workspaceIndex === undefined
-    ? 'fileAccess.otherRootDirs'
-    : `workspaces[${workspaceIndex}].fileAccess.otherRootDirs`;
+  const pathPrefix =
+    workspaceIndex === undefined
+      ? 'fileAccess.otherRootDirs'
+      : `workspaces[${workspaceIndex}].fileAccess.otherRootDirs`;
   return `${pathPrefix}[${JSON.stringify(rootKey)}]`;
 }
 

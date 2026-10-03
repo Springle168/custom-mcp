@@ -1,26 +1,20 @@
-import {
-  getAllToolDefinitions,
-  getCompiledBuiltInTools,
-} from '../../src/tools/index.js';
+import { getAllToolDefinitions, getCompiledBuiltInTools } from '../../src/tools/index.js';
 import type { ToolName } from '../../src/tools/names.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 function testToolDefinitionsDoNotExposeOutputSchema(): void {
   const definitions = getAllToolDefinitions();
 
   for (const definition of definitions) {
-    assert(!('outputSchema' in definition), `${definition.name} should not expose MCP outputSchema`);
+    assert(
+      !('outputSchema' in definition),
+      `${definition.name} should not expose MCP outputSchema`,
+    );
   }
 }
 
 function validateBuiltInArguments(name: ToolName, args: unknown): boolean {
-  const compiledTool = getCompiledBuiltInTools().find(
-    ({ definition }) => definition.name === name,
-  );
+  const compiledTool = getCompiledBuiltInTools().find(({ definition }) => definition.name === name);
   assert(compiledTool !== undefined, `${name} should be registered`);
   return compiledTool.implementationValidator.validate(args).valid;
 }
@@ -37,55 +31,55 @@ function testBuiltInSchemasOwnStructuralContracts(): void {
   assertInvalid(
     'replace_text',
     {
-      files: [{
-        file_path: '',
-        replacements: [{ target: 'a', replacement: 'b' }],
-      }],
+      files: [
+        {
+          file_path: '',
+          replacements: [{ target: 'a', replacement: 'b' }],
+        },
+      ],
     },
     'replace_text should reject an empty file_path',
   );
   assertInvalid(
     'replace_text',
     {
-      files: [{
-        file_path: 'a.txt',
-        allow_multiple: 'yes',
-        replacements: [{ target: 'a', replacement: 'b' }],
-      }],
+      files: [
+        {
+          file_path: 'a.txt',
+          allow_multiple: 'yes',
+          replacements: [{ target: 'a', replacement: 'b' }],
+        },
+      ],
     },
     'replace_text should reject non-boolean allow_multiple',
   );
   assertInvalid(
     'replace_text',
     {
-      files: [{
-        file_path: 'a.txt',
-        replacements: [{ target: 'a', replacement: 'b', extra: true }],
-      }],
+      files: [
+        {
+          file_path: 'a.txt',
+          replacements: [{ target: 'a', replacement: 'b', extra: true }],
+        },
+      ],
     },
     'replace_text should reject unknown properties',
   );
   assertValid(
     'replace_text',
     {
-      files: [{
-        file_path: 'a.txt',
-        replacements: [{ target: '', replacement: '' }],
-      }],
+      files: [
+        {
+          file_path: 'a.txt',
+          replacements: [{ target: '', replacement: '' }],
+        },
+      ],
     },
     'replace_text should leave empty-target mode semantics to the handler',
   );
 
-  assertInvalid(
-    'write_file',
-    { content: '' },
-    'write_file should require file_path',
-  );
-  assertInvalid(
-    'write_file',
-    { file_path: 'a.txt' },
-    'write_file should require content',
-  );
+  assertInvalid('write_file', { content: '' }, 'write_file should require file_path');
+  assertInvalid('write_file', { file_path: 'a.txt' }, 'write_file should require content');
   assertInvalid(
     'write_file',
     { file_path: '', content: '' },
@@ -102,11 +96,7 @@ function testBuiltInSchemasOwnStructuralContracts(): void {
     'write_file should accept empty content',
   );
 
-  assertInvalid(
-    'read_file',
-    { file_path: '' },
-    'read_file should reject an empty file_path',
-  );
+  assertInvalid('read_file', { file_path: '' }, 'read_file should reject an empty file_path');
   assertInvalid(
     'read_file',
     { file_path: 'a.txt', start_line: 0 },
@@ -178,8 +168,14 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing tool definitions response shape',
     tests: [
-      { name: 'tool definitions do not expose outputSchema', run: testToolDefinitionsDoNotExposeOutputSchema },
-      { name: 'built-in schemas own structural contracts', run: testBuiltInSchemasOwnStructuralContracts },
+      {
+        name: 'tool definitions do not expose outputSchema',
+        run: testToolDefinitionsDoNotExposeOutputSchema,
+      },
+      {
+        name: 'built-in schemas own structural contracts',
+        run: testBuiltInSchemasOwnStructuralContracts,
+      },
       { name: 'write_file rejects unknown properties', run: testWriteFileRejectsUnknownProperties },
     ],
   });

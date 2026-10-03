@@ -22,13 +22,15 @@ function testCliErrorIncludesIndentedSuggestion(): void {
 
 function testConfigErrorIncludesFileAndField(): void {
   assertEqual(
-    formatStartupError(new ConfigError({
-      code: 'config_validation_failed',
-      message: 'Invalid port.',
-      configFilePath: 'C:\\Config\\workspace.json',
-      fieldPath: 'port',
-      suggestion: 'Use a valid port.',
-    })),
+    formatStartupError(
+      new ConfigError({
+        code: 'config_validation_failed',
+        message: 'Invalid port.',
+        configFilePath: 'C:\\Config\\workspace.json',
+        fieldPath: 'port',
+        suggestion: 'Use a valid port.',
+      }),
+    ),
     [
       'Failed to load configuration.',
       'Reason: Invalid port.',
@@ -56,13 +58,27 @@ function testErrorsWithoutOptionalDetails(): void {
 }
 
 function testEntrypointRejectsMissingWorkspace(): void {
-  const result = spawnSync(process.execPath, [
-    '--import', 'tsx', fileURLToPath(new URL('../../src/index.ts', import.meta.url)),
-  ], { encoding: 'utf8', timeout: 10_000 });
-  assertEqual(result.status, 1, 'Missing workspace should cause the executable to exit with status 1');
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', fileURLToPath(new URL('../../src/index.ts', import.meta.url))],
+    { encoding: 'utf8', timeout: 10_000 },
+  );
+  assertEqual(
+    result.status,
+    1,
+    'Missing workspace should cause the executable to exit with status 1',
+  );
   assertEqual(result.stdout, '', 'CLI failure must not start a listener or emit startup logs');
-  assertIncludes(result.stderr, 'Failed to parse command line arguments.', 'Entrypoint should use the CLI error formatter');
-  assertIncludes(result.stderr, '--workspace <id> is required.', 'Entrypoint should preserve the parser reason');
+  assertIncludes(
+    result.stderr,
+    'Failed to parse command line arguments.',
+    'Entrypoint should use the CLI error formatter',
+  );
+  assertIncludes(
+    result.stderr,
+    '--workspace <id> is required.',
+    'Entrypoint should preserve the parser reason',
+  );
   assertIncludes(result.stderr, 'Next step:', 'Entrypoint should preserve actionable suggestions');
 }
 

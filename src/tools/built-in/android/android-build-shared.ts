@@ -37,9 +37,7 @@ interface AndroidGradleFailureEnhancement {
   testReport?: TestReportSummary;
 }
 
-export function toRunAndroidGradleOptions(
-  args: Record<string, unknown>,
-): RunAndroidGradleOptions {
+export function toRunAndroidGradleOptions(args: Record<string, unknown>): RunAndroidGradleOptions {
   const options: RunAndroidGradleOptions = {};
 
   if (typeof args.quiet === 'boolean') {
@@ -92,22 +90,14 @@ export async function executeAndroidGradleTask(
   const gated = await androidGradleGateRegistry.run(
     runtimeConfig.value.workspaceRoot,
     callerSignal,
-    (lease) => createAndroidGradleGateExecution(
-      task,
-      runtimeConfig.value,
-      options,
-      lease.signal,
-    ),
+    (lease) => createAndroidGradleGateExecution(task, runtimeConfig.value, options, lease.signal),
   );
 
   if (gated.status === 'completed') {
     return gated.value;
   }
   if (gated.status === 'cancelled') {
-    return formatAndroidGradleToolResult(createQueuedCancellationResult(
-      task,
-      options,
-    ));
+    return formatAndroidGradleToolResult(createQueuedCancellationResult(task, options));
   }
   return textErrorResult('The Android Gradle operation failed unexpectedly.');
 }
@@ -119,14 +109,13 @@ function createAndroidGradleGateExecution(
   operationSignal: AbortSignal,
 ): AndroidGradleGateExecution<ToolCallResult> {
   const activeStartedAt = Date.now();
-  let execution:
-    | ReturnType<typeof startAndroidGradleExecution>
-    | undefined;
+  let execution: ReturnType<typeof startAndroidGradleExecution> | undefined;
   let shutdownDetachRequested = false;
   const started = (async () => {
-    const reportSnapshot = task === 'testDebugUnitTest'
-      ? await trySnapshotAndroidTestReports(runtimeConfig.workspaceRoot)
-      : null;
+    const reportSnapshot =
+      task === 'testDebugUnitTest'
+        ? await trySnapshotAndroidTestReports(runtimeConfig.workspaceRoot)
+        : null;
     execution = startAndroidGradleExecution(
       task,
       runtimeConfig,
@@ -153,9 +142,7 @@ function createAndroidGradleGateExecution(
         : undefined;
     return formatAndroidGradleToolResult(result, enhancement);
   });
-  const drained = started.then(
-    ({ execution: activeExecution }) => activeExecution.drained,
-  );
+  const drained = started.then(({ execution: activeExecution }) => activeExecution.drained);
 
   return {
     settled,
@@ -198,9 +185,7 @@ export function formatAndroidGradleToolResult(
   return textErrorResult(JSON.stringify(failure));
 }
 
-function toAndroidTestReportPayload(
-  report: TestReportSummary,
-) {
+function toAndroidTestReportPayload(report: TestReportSummary) {
   return {
     status: report.status,
     report_files: report.reportFiles,
@@ -258,10 +243,7 @@ async function buildTestFailureEnhancement(
   }
 
   try {
-    const changed = await readChangedAndroidTestReportFiles(
-      workspaceRoot,
-      before,
-    );
+    const changed = await readChangedAndroidTestReportFiles(workspaceRoot, before);
 
     if (changed.changedFileCount > 0) {
       if (changed.files.length === 0) {
@@ -270,15 +252,9 @@ async function buildTestFailureEnhancement(
         };
       }
 
-      const parsed = parseAndroidTestReports(
-        changed.files,
-        undefined,
-        maxErrorBlockChars,
-      );
+      const parsed = parseAndroidTestReports(changed.files, undefined, maxErrorBlockChars);
       return {
-        ...(parsed.firstErrorBlock
-          ? { firstErrorBlock: parsed.firstErrorBlock }
-          : {}),
+        ...(parsed.firstErrorBlock ? { firstErrorBlock: parsed.firstErrorBlock } : {}),
         testReport: parsed.summary,
       };
     }
@@ -300,10 +276,7 @@ async function buildTestFailureEnhancement(
 }
 
 function isRequestedTestTask(failedTask: string | null): boolean {
-  return (
-    failedTask === 'testDebugUnitTest' ||
-    failedTask?.endsWith(':testDebugUnitTest') === true
-  );
+  return failedTask === 'testDebugUnitTest' || failedTask?.endsWith(':testDebugUnitTest') === true;
 }
 
 function toRuntimeConfig(androidConfig: ToolAndroidConfig): AndroidGradleRuntimeConfig {

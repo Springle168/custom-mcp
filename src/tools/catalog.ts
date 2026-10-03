@@ -127,33 +127,33 @@ export function compileWorkspaceToolCatalog(
       referenceId: custom.source.referenceId,
       definitionFilePath: custom.source.toolDefinitionFilePath,
     });
-    const externalExecutor = options.externalBindingsByDefinitionId?.get(
-      custom.source.referenceId,
-    );
+    const externalExecutor = options.externalBindingsByDefinitionId?.get(custom.source.referenceId);
     if (externalExecutor === undefined) {
-      effectiveEntries.push(freezeEntry({
-        binding: 'unavailable',
-        definition: custom.definition,
-        effectiveValidator: custom.validator,
-        source,
-      }));
+      effectiveEntries.push(
+        freezeEntry({
+          binding: 'unavailable',
+          definition: custom.definition,
+          effectiveValidator: custom.validator,
+          source,
+        }),
+      );
       continue;
     }
 
-    effectiveEntries.push(freezeEntry({
-      binding: 'external',
-      definition: custom.definition,
-      effectiveValidator: custom.validator,
-      externalExecutor,
-      source,
-    }));
+    effectiveEntries.push(
+      freezeEntry({
+        binding: 'external',
+        definition: custom.definition,
+        effectiveValidator: custom.validator,
+        externalExecutor,
+        source,
+      }),
+    );
   }
 
   const effectiveNames = new Set(effectiveEntries.map((entry) => entry.definition.name));
   validateExposureMembers(options.exposure, effectiveNames, options.workspaceConfigFilePath);
-  const configuredNames = new Set(
-    options.exposure.mode === 'all' ? [] : options.exposure.names,
-  );
+  const configuredNames = new Set(options.exposure.mode === 'all' ? [] : options.exposure.names);
   const exposedEntries = effectiveEntries.filter((entry) => {
     if (options.exposure.mode === 'all') {
       return true;
@@ -190,8 +190,8 @@ export function compileWorkspaceToolCatalog(
       }
 
       if (
-        entry.binding === 'built-in'
-        && entry.implementationValidator !== entry.effectiveValidator
+        entry.binding === 'built-in' &&
+        entry.implementationValidator !== entry.effectiveValidator
       ) {
         const implementationResult = entry.implementationValidator.validate(args);
         if (!implementationResult.valid) {
@@ -207,11 +207,7 @@ export function compileWorkspaceToolCatalog(
           return textErrorResult('The tool call was cancelled before execution started.');
         }
 
-        return entry.executor(
-          args as Record<string, unknown>,
-          context,
-          invocationContext,
-        );
+        return entry.executor(args as Record<string, unknown>, context, invocationContext);
       }
 
       if (entry.binding === 'external') {

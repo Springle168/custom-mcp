@@ -1,9 +1,6 @@
 import { createRequire } from 'node:module';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { ConfigStore } from '../application/config-store.js';
 import {
   createToolCallRequestHandler,
@@ -58,9 +55,8 @@ export function createMCPServer(options: CreateMCPServerOptions): Server {
       ? {}
       : { onDiagnostic: options.onToolCallDiagnostic }),
   });
-  server.setRequestHandler(
-    CallToolRequestSchema,
-    (request, extra) => handleToolCall(request, extra),
+  server.setRequestHandler(CallToolRequestSchema, (request, extra) =>
+    handleToolCall(request, extra),
   );
 
   return server;

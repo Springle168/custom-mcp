@@ -6,13 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import writeFileTool from '../../src/tools/built-in/files/write-file.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  getResultText,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, getResultText, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,7 +49,8 @@ async function removeLinkIfExists(linkPath: string): Promise<void> {
 async function testCreateNestedFile() {
   const result = await writeFileTool.handler(
     { file_path: 'nested/example.txt', content: 'alpha\nbeta' },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -76,7 +71,8 @@ async function testOverwriteExistingFilePreservesLineEnding() {
 
   const result = await writeFileTool.handler(
     { file_path: 'existing.txt', content: 'new1\nnew2' },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -93,7 +89,8 @@ async function testRejectOutsideWorkspace() {
   const outsidePath = path.join(__dirname, 'write-file-outside.txt');
   const result = await writeFileTool.handler(
     { file_path: outsidePath, content: 'nope' },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -109,7 +106,8 @@ async function testRejectOutsideWorkspace() {
 async function testRejectBinaryTarget() {
   const result = await writeFileTool.handler(
     { file_path: 'binary/fake.png', content: 'nope' },
-    createToolContext(), createTestToolInvocationContext(),
+    createToolContext(),
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -126,7 +124,8 @@ async function testWarnButWritePlaceholderContent() {
     const filePath = `placeholder-${index}.txt`;
     const result = await writeFileTool.handler(
       { file_path: filePath, content },
-      createToolContext(), createTestToolInvocationContext(),
+      createToolContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError !== true, `Should succeed for ${JSON.stringify(content)}`);
@@ -158,11 +157,7 @@ async function testRejectSymlinkEscapingWorkspace() {
 
   try {
     try {
-      await fs.symlink(
-        outsideDir,
-        linkPath,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
+      await fs.symlink(outsideDir, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       console.log(`  - Skipped symlink assertion: ${error.message}\n`);
@@ -171,7 +166,8 @@ async function testRejectSymlinkEscapingWorkspace() {
 
     const result = await writeFileTool.handler(
       { file_path: path.join('escape-link', 'escaped.txt'), content: 'nope' },
-      createToolContext(), createTestToolInvocationContext(),
+      createToolContext(),
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError === true, 'Should fail');
@@ -201,7 +197,10 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'Create nested file', run: testCreateNestedFile },
-      { name: 'Overwrite existing file and keep CRLF', run: testOverwriteExistingFilePreservesLineEnding },
+      {
+        name: 'Overwrite existing file and keep CRLF',
+        run: testOverwriteExistingFilePreservesLineEnding,
+      },
       { name: 'Reject path outside workspace', run: testRejectOutsideWorkspace },
       { name: 'Reject binary target', run: testRejectBinaryTarget },
       { name: 'Warn but write placeholder content', run: testWarnButWritePlaceholderContent },

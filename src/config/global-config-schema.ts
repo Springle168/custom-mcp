@@ -1,9 +1,6 @@
 import { ConfigError } from './errors.js';
 import { readLocalAbsolutePath } from './path-policy.js';
-import {
-  readWorkspaceIdToken,
-  type ValuePolicyResult,
-} from './value-policy.js';
+import { readWorkspaceIdToken, type ValuePolicyResult } from './value-policy.js';
 
 export interface WorkspaceConfigReference {
   readonly id: string;
@@ -31,7 +28,12 @@ export function parseGlobalConfig(
   options: ParseGlobalConfigOptions,
 ): ParsedGlobalConfig {
   const context: ParseContext = { configFilePath: options.configFilePath };
-  const rawConfig = readObject(context, value, undefined, 'Global config file must contain a JSON object.');
+  const rawConfig = readObject(
+    context,
+    value,
+    undefined,
+    'Global config file must contain a JSON object.',
+  );
 
   assertKnownFields(context, rawConfig, TOP_LEVEL_FIELDS, undefined);
 
@@ -77,12 +79,7 @@ function parseWorkspaceReference(
   index: number,
 ): WorkspaceConfigReference {
   const fieldPath = `workspaces[${index}]`;
-  const rawWorkspace = readObject(
-    context,
-    value,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  );
+  const rawWorkspace = readObject(context, value, fieldPath, `${fieldPath} must be a JSON object.`);
   assertKnownFields(context, rawWorkspace, WORKSPACE_REFERENCE_FIELDS, fieldPath);
 
   const idPath = `${fieldPath}.id`;
@@ -147,11 +144,7 @@ function unwrapPolicy<T>(context: ParseContext, result: ValuePolicyResult<T>): T
   return result.value;
 }
 
-function fail(
-  context: ParseContext,
-  fieldPath: string | undefined,
-  message: string,
-): never {
+function fail(context: ParseContext, fieldPath: string | undefined, message: string): never {
   throw new ConfigError({
     code: 'config_validation_failed',
     configFilePath: context.configFilePath,

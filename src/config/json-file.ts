@@ -1,16 +1,7 @@
 import { ConfigError } from './errors.js';
-import {
-  readStrictUtf8RegularFile,
-  StrictUtf8FileError,
-} from './strict-utf8-file.js';
+import { readStrictUtf8RegularFile, StrictUtf8FileError } from './strict-utf8-file.js';
 
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | JsonObject;
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
 
 export interface JsonObject {
   readonly [key: string]: JsonValue;
@@ -28,13 +19,11 @@ export interface ReadJsonFileOptions {
 /**
  * Reads and parses one strict UTF-8 JSON document from a regular file.
  */
-export function readJsonFile(
-  filePath: string,
-  options: ReadJsonFileOptions,
-): JsonValue {
-  const subject = options.referenceId === undefined
-    ? options.label
-    : `${options.label} for definition reference "${options.referenceId}"`;
+export function readJsonFile(filePath: string, options: ReadJsonFileOptions): JsonValue {
+  const subject =
+    options.referenceId === undefined
+      ? options.label
+      : `${options.label} for definition reference "${options.referenceId}"`;
 
   let text: string;
   try {
@@ -49,8 +38,9 @@ export function readJsonFile(
         code: 'config_file_not_found',
         configFilePath: filePath,
         message: `${subject} does not exist: ${filePath}`,
-        suggestion: options.notFoundSuggestion
-          ?? 'Create the referenced JSON file or correct its absolute path, then restart the server.',
+        suggestion:
+          options.notFoundSuggestion ??
+          'Create the referenced JSON file or correct its absolute path, then restart the server.',
         cause: error.cause,
       });
     }
@@ -75,14 +65,13 @@ export function readJsonFile(
       });
     }
 
-    const causeMessage = error.cause instanceof Error
-      ? error.cause.message
-      : error.message;
+    const causeMessage = error.cause instanceof Error ? error.cause.message : error.message;
     throw new ConfigError({
       code: 'config_file_read_failed',
       configFilePath: filePath,
       message: `Failed to read ${subject.toLowerCase()} at ${filePath}: ${causeMessage}`,
-      suggestion: 'Check that the file exists, is a regular file, and that the current user can read it.',
+      suggestion:
+        'Check that the file exists, is a regular file, and that the current user can read it.',
       cause: error.cause,
     });
   }

@@ -13,10 +13,7 @@ import {
   readSelectorToken,
   type ValuePolicyResult,
 } from './value-policy.js';
-import {
-  readOptionalRulesConfig,
-  type RuntimeRulesConfig,
-} from './request-header-rules.js';
+import { readOptionalRulesConfig, type RuntimeRulesConfig } from './request-header-rules.js';
 
 export type ParsedLineEnding = 'auto' | 'lf' | 'crlf';
 const DEFAULT_WORKSPACE_HOST = '127.0.0.1';
@@ -103,7 +100,9 @@ const ENV_OVERRIDES_FIELDS = new Set(['allowedFields']);
 const FILE_ACCESS_FIELDS = new Set(['rootDir', 'otherRootDirs']);
 const ROOT_FILE_ACCESS_FIELDS = new Set(['ignoreFiles', 'denyFiles']);
 const MAX_PORT = 65535;
-const ENV_OVERRIDE_FIELD_NAMES = Object.keys(ENV_OVERRIDE_FIELD_ENV_VARS) as ParsedEnvOverrideField[];
+const ENV_OVERRIDE_FIELD_NAMES = Object.keys(
+  ENV_OVERRIDE_FIELD_ENV_VARS,
+) as ParsedEnvOverrideField[];
 const ENV_OVERRIDE_FIELDS = new Set<ParsedEnvOverrideField>(ENV_OVERRIDE_FIELD_NAMES);
 const ENV_VAR_SELECTOR_HINTS = new Map<string, string>([
   ...ENV_OVERRIDE_FIELD_NAMES.map((field) => [ENV_OVERRIDE_FIELD_ENV_VARS[field], field] as const),
@@ -237,7 +236,11 @@ function readOptionalRootFileAccessConfig(
   assertKnownFields(context, rawPolicy, ROOT_FILE_ACCESS_FIELDS, fieldPath);
 
   return {
-    ignoreFiles: readOptionalStringArray(context, rawPolicy.ignoreFiles, `${fieldPath}.ignoreFiles`),
+    ignoreFiles: readOptionalStringArray(
+      context,
+      rawPolicy.ignoreFiles,
+      `${fieldPath}.ignoreFiles`,
+    ),
     denyFiles: readOptionalStringArray(context, rawPolicy.denyFiles, `${fieldPath}.denyFiles`),
   };
 }
@@ -269,10 +272,18 @@ function readAdditionalRootFileAccessConfigs(
 
     const associatedRoot = additionalRoots.find((root) => areLexicallySamePath(root, validatedKey));
     if (associatedRoot === undefined) {
-      fail(context, keyPath, `${keyPath} must lexically identify exactly one configured otherRootDirs entry.`);
+      fail(
+        context,
+        keyPath,
+        `${keyPath} must lexically identify exactly one configured otherRootDirs entry.`,
+      );
     }
     if (associatedRoots.has(associatedRoot)) {
-      fail(context, keyPath, `${keyPath} duplicates another key for the same configured additional root.`);
+      fail(
+        context,
+        keyPath,
+        `${keyPath} duplicates another key for the same configured additional root.`,
+      );
     }
 
     try {
@@ -281,7 +292,11 @@ function readAdditionalRootFileAccessConfigs(
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      fail(context, keyPath, `${keyPath} could not be associated with its configured additional root. ${message}`);
+      fail(
+        context,
+        keyPath,
+        `${keyPath} could not be associated with its configured additional root. ${message}`,
+      );
     }
 
     associatedRoots.add(associatedRoot);
@@ -301,13 +316,19 @@ function readOptionalStringArray(
     fail(context, fieldPath, `${fieldPath} must be an array of non-empty strings.`);
   }
 
-  return Object.freeze(value.map((item, index) => {
-    const itemPath = `${fieldPath}[${index}]`;
-    if (typeof item !== 'string' || item.length === 0 || item.trim() !== item) {
-      fail(context, itemPath, `${itemPath} must be a non-empty string without leading or trailing whitespace.`);
-    }
-    return item;
-  }));
+  return Object.freeze(
+    value.map((item, index) => {
+      const itemPath = `${fieldPath}[${index}]`;
+      if (typeof item !== 'string' || item.length === 0 || item.trim() !== item) {
+        fail(
+          context,
+          itemPath,
+          `${itemPath} must be a non-empty string without leading or trailing whitespace.`,
+        );
+      }
+      return item;
+    }),
+  );
 }
 
 function emptyFileAccessConfig(): ParsedFileAccessConfig {
@@ -332,11 +353,7 @@ function areLexicallySamePath(left: string, right: string): boolean {
     : normalizedLeft === normalizedRight;
 }
 
-function readOptionalHost(
-  context: ParseContext,
-  value: unknown,
-  fieldPath: string,
-): string {
+function readOptionalHost(context: ParseContext, value: unknown, fieldPath: string): string {
   if (value === undefined) {
     return DEFAULT_WORKSPACE_HOST;
   }
@@ -374,10 +391,20 @@ function readOptionalAndroidConfig(
   assertKnownFields(context, rawAndroid, ANDROID_FIELDS, fieldPath);
 
   return {
-    workspaceRoot: readRequiredExistingDirectoryPath(context, rawAndroid, 'workspaceRoot', fieldPath),
+    workspaceRoot: readRequiredExistingDirectoryPath(
+      context,
+      rawAndroid,
+      'workspaceRoot',
+      fieldPath,
+    ),
     javaHome: readRequiredExistingDirectoryPath(context, rawAndroid, 'javaHome', fieldPath),
     buildTimeoutMs: readRequiredPositiveInteger(context, rawAndroid, 'buildTimeoutMs', fieldPath),
-    maxErrorBlockChars: readRequiredPositiveInteger(context, rawAndroid, 'maxErrorBlockChars', fieldPath),
+    maxErrorBlockChars: readRequiredPositiveInteger(
+      context,
+      rawAndroid,
+      'maxErrorBlockChars',
+      fieldPath,
+    ),
     maxLogTailChars: readRequiredPositiveInteger(context, rawAndroid, 'maxLogTailChars', fieldPath),
   };
 }
@@ -401,7 +428,11 @@ function readOptionalEnvOverridesConfig(
   assertKnownFields(context, rawEnvOverrides, ENV_OVERRIDES_FIELDS, fieldPath);
 
   if (!hasOwn(rawEnvOverrides, 'allowedFields')) {
-    fail(context, `${fieldPath}.allowedFields`, `${fieldPath}.allowedFields is required when envOverrides is configured.`);
+    fail(
+      context,
+      `${fieldPath}.allowedFields`,
+      `${fieldPath}.allowedFields is required when envOverrides is configured.`,
+    );
   }
 
   return {
@@ -538,7 +569,7 @@ function readOptionalExistingDirectoryPathArray(
   }
 
   return value.map((item, index) =>
-    readConfigExistingDirectoryPath(context, item, `${fieldPath}[${index}]`)
+    readConfigExistingDirectoryPath(context, item, `${fieldPath}[${index}]`),
   );
 }
 
@@ -589,13 +620,15 @@ function isEnvOverrideField(field: string): field is ParsedEnvOverrideField {
 }
 
 function isForbiddenEnvOverrideField(selector: string): boolean {
-  return FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector) ||
+  return (
+    FORBIDDEN_ENV_OVERRIDE_FIELDS.has(selector) ||
     selector === 'rules' ||
     selector.startsWith('rules.') ||
     selector === 'tools' ||
     selector.startsWith('tools.') ||
     selector === 'fileAccess' ||
-    selector.startsWith('fileAccess.');
+    selector.startsWith('fileAccess.')
+  );
 }
 
 function joinFieldPath(parentPath: string | undefined, key: string): string {
@@ -606,11 +639,7 @@ function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function fail(
-  context: ParseContext,
-  fieldPath: string | undefined,
-  message: string,
-): never {
+function fail(context: ParseContext, fieldPath: string | undefined, message: string): never {
   throw new ConfigError({
     code: 'config_validation_failed',
     configFilePath: context.configFilePath,

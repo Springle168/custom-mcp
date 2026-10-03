@@ -9,10 +9,7 @@ import {
   type CanonicalRequest,
   type CanonicalResponse,
 } from './canonical-protocol.js';
-import type {
-  CompiledHttpRoute,
-  ExternalProcessorDefinition,
-} from './config.js';
+import type { CompiledHttpRoute, ExternalProcessorDefinition } from './config.js';
 import type {
   ExternalHttpTransportExchange,
   ExternalHttpTransportOutcome,
@@ -116,8 +113,7 @@ export interface ExternalRoutingStrategyFailure {
 }
 
 export type ExternalRoutingStrategyOutcome =
-  | ExternalRoutingCanonicalOutcome
-  | ExternalRoutingStrategyFailure;
+  ExternalRoutingCanonicalOutcome | ExternalRoutingStrategyFailure;
 
 /**
  * One strategy invocation's dual completion. `settled` is caller-facing and
@@ -137,9 +133,7 @@ type RequestAdaptation =
     }
   | ExternalRoutingStrategyFailure;
 
-type ResponseAdaptation =
-  | CanonicalResponse
-  | ExternalRoutingStrategyFailure;
+type ResponseAdaptation = CanonicalResponse | ExternalRoutingStrategyFailure;
 
 /**
  * Combines configured request/response strategies without owning admission,
@@ -166,9 +160,7 @@ export class ExternalRoutingStrategyAdapter {
    * the next one immediately after its `settled` completion; stage cleanup is
    * aggregated separately into the outer `drained` promise.
    */
-  exchange(
-    options: ExecuteExternalRoutingStrategyOptions,
-  ): ExternalRoutingStrategyExchange {
+  exchange(options: ExecuteExternalRoutingStrategyOptions): ExternalRoutingStrategyExchange {
     const drains = new DrainTracker();
     let resolveSettled: (outcome: ExternalRoutingStrategyOutcome) => void;
     const settled = new Promise<ExternalRoutingStrategyOutcome>((resolve) => {
@@ -192,12 +184,11 @@ export class ExternalRoutingStrategyAdapter {
       signal?.addEventListener('abort', onAbort, { once: true });
     }
 
-    const pipeline = this.#runPipeline(options, drains, settle, isSettled)
-      .catch(() => {
-        // This is the final adapter boundary. Never expose an exception from a
-        // malformed injected dependency or local orchestration defect.
-        settle(failure('external_internal_failed'));
-      });
+    const pipeline = this.#runPipeline(options, drains, settle, isSettled).catch(() => {
+      // This is the final adapter boundary. Never expose an exception from a
+      // malformed injected dependency or local orchestration defect.
+      settle(failure('external_internal_failed'));
+    });
     const drained = (async (): Promise<void> => {
       try {
         await pipeline;
@@ -217,9 +208,7 @@ export class ExternalRoutingStrategyAdapter {
    * Test convenience for callers interested only in caller-facing settlement.
    * Runtime owners must use `exchange()` and retain the matching `drained`.
    */
-  execute(
-    options: ExecuteExternalRoutingStrategyOptions,
-  ): Promise<ExternalRoutingStrategyOutcome> {
+  execute(options: ExecuteExternalRoutingStrategyOptions): Promise<ExternalRoutingStrategyOutcome> {
     return this.exchange(options).settled;
   }
 
@@ -243,12 +232,7 @@ export class ExternalRoutingStrategyAdapter {
       return;
     }
 
-    const requestAdaptation = await this.#adaptRequest(
-      request,
-      options.signal,
-      drains,
-      isSettled,
-    );
+    const requestAdaptation = await this.#adaptRequest(request, options.signal, drains, isSettled);
     if (isSettled()) {
       return;
     }
@@ -257,13 +241,16 @@ export class ExternalRoutingStrategyAdapter {
       return;
     }
 
-    const transportOutcome = await this.#runTransport({
-      endpoint: this.#route.endpoint,
-      body: requestAdaptation.body,
-      contentType: requestAdaptation.contentType,
-      responseMode: this.#route.responseStage.mode,
-      signal: options.signal,
-    }, drains);
+    const transportOutcome = await this.#runTransport(
+      {
+        endpoint: this.#route.endpoint,
+        body: requestAdaptation.body,
+        contentType: requestAdaptation.contentType,
+        responseMode: this.#route.responseStage.mode,
+        signal: options.signal,
+      },
+      drains,
+    );
     if (isSettled()) {
       return;
     }
@@ -507,11 +494,7 @@ export class ExternalRoutingStrategyAdapter {
         environment,
         signal,
       });
-      drains.track(this.#observeProcessorDrain(
-        processor.name,
-        environment.role,
-        exchange,
-      ));
+      drains.track(this.#observeProcessorDrain(processor.name, environment.role, exchange));
     } catch {
       return failure('processor_failed');
     }
@@ -566,9 +549,7 @@ export class ExternalRoutingStrategyAdapter {
     });
   }
 
-  #emitProcessorDrainDiagnostic(
-    diagnostic: ExternalRoutingProcessorDrainDiagnostic,
-  ): void {
+  #emitProcessorDrainDiagnostic(diagnostic: ExternalRoutingProcessorDrainDiagnostic): void {
     const callback = this.#onProcessorDrain;
     if (!callback) {
       return;
@@ -676,11 +657,12 @@ function canonicalOutcome(response: CanonicalResponse): ExternalRoutingCanonical
   }
 
   const result = response.results[0];
-  const code: ExternalRoutingCanonicalOutcomeCode = result.status === 'completed'
-    ? 'external_tool_completed'
-    : result.status === 'failed'
-      ? 'external_tool_failed'
-      : 'external_tool_cancelled';
+  const code: ExternalRoutingCanonicalOutcomeCode =
+    result.status === 'completed'
+      ? 'external_tool_completed'
+      : result.status === 'failed'
+        ? 'external_tool_failed'
+        : 'external_tool_cancelled';
   return { kind: 'canonical', code, response };
 }
 
@@ -695,10 +677,7 @@ function failure(code: ExternalRoutingStrategyFailureCode): ExternalRoutingStrat
 }
 
 function isFailure(value: unknown): value is ExternalRoutingStrategyFailure {
-  return typeof value === 'object' &&
-    value !== null &&
-    'kind' in value &&
-    value.kind === 'failure';
+  return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'failure';
 }
 
 function ignoreDrainFailure(): void {

@@ -88,11 +88,15 @@ async function testCancellationKillsProcessTree() {
   const gradlewPath = path.join(tempDir, 'gradlew.bat');
   const markerPath = path.join(tempDir, 'child-survived.txt');
   const escapedMarkerPath = markerPath.replace(/'/g, "''");
-  await writeFile(gradlewPath, [
-    '@echo off',
-    `start "" /b powershell.exe -NoProfile -Command "Start-Sleep -Seconds 2; Set-Content -Path '${escapedMarkerPath}' -Value 'child survived'"`,
-    'powershell.exe -NoProfile -Command "Start-Sleep -Seconds 30"',
-  ].join('\r\n'), 'utf8');
+  await writeFile(
+    gradlewPath,
+    [
+      '@echo off',
+      `start "" /b powershell.exe -NoProfile -Command "Start-Sleep -Seconds 2; Set-Content -Path '${escapedMarkerPath}' -Value 'child survived'"`,
+      'powershell.exe -NoProfile -Command "Start-Sleep -Seconds 30"',
+    ].join('\r\n'),
+    'utf8',
+  );
 
   try {
     const controller = new AbortController();
@@ -117,7 +121,7 @@ async function testCancellationKillsProcessTree() {
 
     await sleep(3000);
     assert(
-      await fileExists(markerPath) === false,
+      (await fileExists(markerPath)) === false,
       'Cancelled child process should not survive long enough to create the marker file',
     );
   } finally {
@@ -130,7 +134,10 @@ async function main(): Promise<void> {
     title: 'Testing Android Gradle timeout handling',
     tests: [
       { name: 'timeout kills the full Gradle process tree', run: testTimeoutKillsProcessTree },
-      { name: 'cancellation kills the full Gradle process tree', run: testCancellationKillsProcessTree },
+      {
+        name: 'cancellation kills the full Gradle process tree',
+        run: testCancellationKillsProcessTree,
+      },
     ],
   });
 }

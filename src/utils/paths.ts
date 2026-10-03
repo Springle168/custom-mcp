@@ -54,9 +54,7 @@ export interface PathSafetyError {
   message: string;
 }
 
-export type SafePathResult =
-  | { ok: true; path: SafePath }
-  | { ok: false; error: PathSafetyError };
+export type SafePathResult = { ok: true; path: SafePath } | { ok: false; error: PathSafetyError };
 
 export interface SafeGlobPattern {
   input: string;
@@ -70,8 +68,7 @@ export interface SafeGlobPattern {
 }
 
 export type SafeGlobPatternResult =
-  | { ok: true; glob: SafeGlobPattern }
-  | { ok: false; error: PathSafetyError };
+  { ok: true; glob: SafeGlobPattern } | { ok: false; error: PathSafetyError };
 
 export type SafeReadTargetResult =
   | { ok: true; realPath: string }
@@ -88,8 +85,7 @@ interface PathClassification {
 }
 
 type PathClassificationResult =
-  | { ok: true; path: PathClassification }
-  | { ok: false; error: PathSafetyError };
+  { ok: true; path: PathClassification } | { ok: false; error: PathSafetyError };
 
 type WorkspaceRootMatch = WorkspaceRoot | 'multiple' | null;
 
@@ -154,9 +150,7 @@ export function createPathSafetyContext(
     primaryRoot,
     allowedRoots: [
       primaryRoot,
-      ...otherRootDirs.map((otherRootDir) =>
-        createWorkspaceRoot('additional', otherRootDir),
-      ),
+      ...otherRootDirs.map((otherRootDir) => createWorkspaceRoot('additional', otherRootDir)),
     ],
   };
 }
@@ -281,9 +275,7 @@ function isUnsupportedConfiguredWindowsRoot(rootDir: string): boolean {
   );
 }
 
-function validateWorkspaceRootExists(
-  root: ResolvedWorkspaceRootConfigSpec,
-): void {
+function validateWorkspaceRootExists(root: ResolvedWorkspaceRootConfigSpec): void {
   let stats;
   try {
     stats = statSync(root.resolvedRootDir);
@@ -296,15 +288,11 @@ function validateWorkspaceRootExists(
   }
 
   if (!stats.isDirectory()) {
-    throw new Error(
-      `${root.label} must point to an existing directory: ${root.resolvedRootDir}.`,
-    );
+    throw new Error(`${root.label} must point to an existing directory: ${root.resolvedRootDir}.`);
   }
 }
 
-function resolveConfiguredWorkspaceRootRealPath(
-  root: ResolvedWorkspaceRootConfigSpec,
-): string {
+function resolveConfiguredWorkspaceRootRealPath(root: ResolvedWorkspaceRootConfigSpec): string {
   try {
     return path.resolve(realpathSync.native(root.resolvedRootDir));
   } catch (err: unknown) {
@@ -374,10 +362,7 @@ export function resolvePath(filePath: string, rootDir: string): string {
   return result.path.resolvedPath;
 }
 
-export function validatePathAccess(
-  resolvedPath: string,
-  rootDir: string,
-): string | null {
+export function validatePathAccess(resolvedPath: string, rootDir: string): string | null {
   if (!isPathInsideRoot(resolvedPath, rootDir)) {
     return `Path ${resolvedPath} is outside the configured workspace root ${rootDir}.`;
   }
@@ -397,23 +382,22 @@ export function resolveSafePathInContext(
 
   const primaryRoot = context.primaryRoot;
   const allowedRoots = getAllowedRoots(context);
-  const resolvedPath = classification.path.kind === 'drive_absolute'
-    ? path.resolve(classification.path.pathInput)
-    : path.resolve(primaryRoot.rootDir, classification.path.pathInput);
+  const resolvedPath =
+    classification.path.kind === 'drive_absolute'
+      ? path.resolve(classification.path.pathInput)
+      : path.resolve(primaryRoot.rootDir, classification.path.pathInput);
 
-  const matchedRoot = classification.path.kind === 'drive_absolute'
-    ? matchUniqueAllowedRoot(resolvedPath, allowedRoots)
-    : matchPrimaryRoot(resolvedPath, primaryRoot);
+  const matchedRoot =
+    classification.path.kind === 'drive_absolute'
+      ? matchUniqueAllowedRoot(resolvedPath, allowedRoots)
+      : matchPrimaryRoot(resolvedPath, primaryRoot);
 
   if (matchedRoot === null) {
-    const message = classification.path.kind === 'relative'
-      ? describeRelativePathOutsidePrimaryRootError(input, context)
-      : `Path ${input} resolves outside the configured workspace roots (${describeAllowedWorkspaceRootsForError(context)}). Provide a drive-absolute path inside one of these roots.`;
-    return pathError(
-      input,
-      'outside_root_dir',
-      message,
-    );
+    const message =
+      classification.path.kind === 'relative'
+        ? describeRelativePathOutsidePrimaryRootError(input, context)
+        : `Path ${input} resolves outside the configured workspace roots (${describeAllowedWorkspaceRootsForError(context)}). Provide a drive-absolute path inside one of these roots.`;
+    return pathError(input, 'outside_root_dir', message);
   }
 
   if (matchedRoot === 'multiple') {
@@ -424,9 +408,8 @@ export function resolveSafePathInContext(
     );
   }
 
-  const displayKind: SafePathDisplayKind = classification.path.kind === 'drive_absolute'
-    ? 'absolute'
-    : 'relative_to_root';
+  const displayKind: SafePathDisplayKind =
+    classification.path.kind === 'drive_absolute' ? 'absolute' : 'relative_to_root';
 
   return {
     ok: true,
@@ -442,14 +425,8 @@ export function resolveSafePathInContext(
   };
 }
 
-export function resolveSafeGlobPattern(
-  input: string,
-  rootDir: string,
-): SafeGlobPatternResult {
-  return resolveSafeGlobPatternInContext(
-    input,
-    createPathSafetyContext(rootDir),
-  );
+export function resolveSafeGlobPattern(input: string, rootDir: string): SafeGlobPatternResult {
+  return resolveSafeGlobPatternInContext(input, createPathSafetyContext(rootDir));
 }
 
 export function resolveSafeGlobPatternInContext(
@@ -468,10 +445,7 @@ export function resolveSafeGlobPatternInContext(
     );
   }
 
-  const staticBase = getStaticGlobBase(
-    patternInput,
-    classification.path.kind,
-  );
+  const staticBase = getStaticGlobBase(patternInput, classification.path.kind);
 
   if (containsParentTraversal(staticBase.magicRemainder)) {
     return pathError(
@@ -483,23 +457,22 @@ export function resolveSafeGlobPatternInContext(
 
   const primaryRoot = context.primaryRoot;
   const allowedRoots = getAllowedRoots(context);
-  const resolvedStaticBase = classification.path.kind === 'drive_absolute'
-    ? path.resolve(staticBase.staticBase)
-    : path.resolve(primaryRoot.rootDir, staticBase.staticBase);
+  const resolvedStaticBase =
+    classification.path.kind === 'drive_absolute'
+      ? path.resolve(staticBase.staticBase)
+      : path.resolve(primaryRoot.rootDir, staticBase.staticBase);
 
-  const matchedRoot = classification.path.kind === 'drive_absolute'
-    ? matchUniqueAllowedRoot(resolvedStaticBase, allowedRoots)
-    : matchPrimaryRoot(resolvedStaticBase, primaryRoot);
+  const matchedRoot =
+    classification.path.kind === 'drive_absolute'
+      ? matchUniqueAllowedRoot(resolvedStaticBase, allowedRoots)
+      : matchPrimaryRoot(resolvedStaticBase, primaryRoot);
 
   if (matchedRoot === null) {
-    const message = classification.path.kind === 'relative'
-      ? describeRelativeGlobOutsidePrimaryRootError(input, context)
-      : `Glob pattern ${input} has a static base outside the configured workspace roots (${describeAllowedWorkspaceRootsForError(context)}). Provide a glob whose static base is inside one of these roots.`;
-    return pathError(
-      input,
-      'outside_root_dir',
-      message,
-    );
+    const message =
+      classification.path.kind === 'relative'
+        ? describeRelativeGlobOutsidePrimaryRootError(input, context)
+        : `Glob pattern ${input} has a static base outside the configured workspace roots (${describeAllowedWorkspaceRootsForError(context)}). Provide a glob whose static base is inside one of these roots.`;
+    return pathError(input, 'outside_root_dir', message);
   }
 
   if (matchedRoot === 'multiple') {
@@ -510,16 +483,10 @@ export function resolveSafeGlobPatternInContext(
     );
   }
 
-  const canonicalStaticBase = toGlobPath(
-    path.relative(matchedRoot.rootDir, resolvedStaticBase),
-  );
-  const pattern = joinGlobParts(
-    canonicalStaticBase,
-    staticBase.magicRemainder,
-  );
-  const displayKind: SafePathDisplayKind = classification.path.kind === 'drive_absolute'
-    ? 'absolute'
-    : 'relative_to_root';
+  const canonicalStaticBase = toGlobPath(path.relative(matchedRoot.rootDir, resolvedStaticBase));
+  const pattern = joinGlobParts(canonicalStaticBase, staticBase.magicRemainder);
+  const displayKind: SafePathDisplayKind =
+    classification.path.kind === 'drive_absolute' ? 'absolute' : 'relative_to_root';
 
   return {
     ok: true,
@@ -536,10 +503,7 @@ export function resolveSafeGlobPatternInContext(
   };
 }
 
-export function resolveSafeGlobEntry(
-  entry: string,
-  globPattern: SafeGlobPattern,
-): SafePathResult {
+export function resolveSafeGlobEntry(entry: string, globPattern: SafeGlobPattern): SafePathResult {
   const resolvedPath = path.resolve(entry);
 
   if (!isPathInsideRoot(resolvedPath, globPattern.matchedRoot.rootDir)) {
@@ -568,9 +532,7 @@ export function resolveSafeGlobEntry(
   };
 }
 
-export async function validateSafeReadTarget(
-  safePath: SafePath,
-): Promise<SafeReadTargetResult> {
+export async function validateSafeReadTarget(safePath: SafePath): Promise<SafeReadTargetResult> {
   let realRoot: string;
   try {
     realRoot = await resolveWorkspaceRealRoot(safePath.matchedRoot);
@@ -609,9 +571,7 @@ export async function validateSafeReadTarget(
   return { ok: true, realPath: realTarget };
 }
 
-export async function validateSafeWriteTarget(
-  safePath: SafePath,
-): Promise<string | null> {
+export async function validateSafeWriteTarget(safePath: SafePath): Promise<string | null> {
   let realRoot: string;
   try {
     realRoot = await resolveWorkspaceRealRoot(safePath.matchedRoot);
@@ -621,9 +581,7 @@ export async function validateSafeWriteTarget(
   }
 
   try {
-    const existingAncestor = await findExistingAncestor(
-      path.dirname(safePath.resolvedPath),
-    );
+    const existingAncestor = await findExistingAncestor(path.dirname(safePath.resolvedPath));
     const realAncestor = await fs.realpath(existingAncestor);
     if (!isPathInsideRoot(realAncestor, realRoot)) {
       return `Path ${safePath.input} resolves outside its matched ${describeWorkspaceRootForError(safePath.matchedRoot)}. Symlinks and real paths must stay within the same matched workspace root.`;
@@ -657,22 +615,15 @@ async function resolveWorkspaceRealRoot(root: WorkspaceRoot): Promise<string> {
   return fs.realpath(root.rootDir);
 }
 
-function matchPrimaryRoot(
-  resolvedPath: string,
-  primaryRoot: WorkspaceRoot,
-): WorkspaceRoot | null {
-  return isPathInsideRoot(resolvedPath, primaryRoot.rootDir)
-    ? primaryRoot
-    : null;
+function matchPrimaryRoot(resolvedPath: string, primaryRoot: WorkspaceRoot): WorkspaceRoot | null {
+  return isPathInsideRoot(resolvedPath, primaryRoot.rootDir) ? primaryRoot : null;
 }
 
 function matchUniqueAllowedRoot(
   resolvedPath: string,
   allowedRoots: WorkspaceRoot[],
 ): WorkspaceRootMatch {
-  const matches = allowedRoots.filter((root) =>
-    isPathInsideRoot(resolvedPath, root.rootDir),
-  );
+  const matches = allowedRoots.filter((root) => isPathInsideRoot(resolvedPath, root.rootDir));
 
   const [match, ...additionalMatches] = matches;
   if (match === undefined) return null;
@@ -680,14 +631,10 @@ function matchUniqueAllowedRoot(
   return match;
 }
 
-function getAllowedRoots(
-  context: PathSafetyContext,
-): [WorkspaceRoot, ...WorkspaceRoot[]] {
+function getAllowedRoots(context: PathSafetyContext): [WorkspaceRoot, ...WorkspaceRoot[]] {
   if (context.allowedRoots.includes(context.primaryRoot)) {
     const [firstRoot, ...remainingRoots] = context.allowedRoots;
-    return firstRoot === undefined
-      ? [context.primaryRoot]
-      : [firstRoot, ...remainingRoots];
+    return firstRoot === undefined ? [context.primaryRoot] : [firstRoot, ...remainingRoots];
   }
 
   return [context.primaryRoot, ...context.allowedRoots];
@@ -708,9 +655,7 @@ function describeAllowedWorkspaceRootsForError(context: PathSafetyContext): stri
   const allowedRoots = [firstRoot, ...remainingRoots];
   const primaryRoots = allowedRoots.filter((root) => root.kind === 'primary');
   const additionalRoots = allowedRoots.filter((root) => root.kind === 'additional');
-  const parts = [
-    ...primaryRoots.map((root) => describeWorkspaceRootForError(root)),
-  ];
+  const parts = [...primaryRoots.map((root) => describeWorkspaceRootForError(root))];
 
   if (additionalRoots.length > 0) {
     parts.push(
@@ -756,11 +701,7 @@ function classifyPathInput(
   options: { allowSlashLeadingGlob: boolean },
 ): PathClassificationResult {
   if (input.length === 0) {
-    return pathError(
-      input,
-      'empty_path',
-      'Path must be a non-empty string.',
-    );
+    return pathError(input, 'empty_path', 'Path must be a non-empty string.');
   }
 
   const normalized = normalizeGlobSeparators(input);
@@ -841,9 +782,7 @@ function pathError(
 function isPathInsideRoot(candidatePath: string, rootDir: string): boolean {
   const normalizedRoot = path.resolve(rootDir);
   const normalizedPath = path.resolve(candidatePath);
-  const rootPrefix = normalizedRoot.endsWith(path.sep)
-    ? normalizedRoot
-    : normalizedRoot + path.sep;
+  const rootPrefix = normalizedRoot.endsWith(path.sep) ? normalizedRoot : normalizedRoot + path.sep;
 
   if (process.platform === 'win32') {
     const lowerRoot = normalizedRoot.toLowerCase();
@@ -881,10 +820,7 @@ function countLeadingRootSeparators(input: string): number {
   return count;
 }
 
-function getStaticGlobBase(
-  patternInput: string,
-  kind: SafePathKind,
-): StaticGlobBase {
+function getStaticGlobBase(patternInput: string, kind: SafePathKind): StaticGlobBase {
   const segments = patternInput.split('/');
   const firstMagicIndex = segments.findIndex((segment) => hasGlobMagic(segment));
   const magicStart = firstMagicIndex === -1 ? segments.length : firstMagicIndex;
@@ -916,9 +852,7 @@ function containsParentTraversal(globPart: string): boolean {
   if (/(^|\/)\.\.(\/|$)/.test(globPart)) return true;
   if (/[({|,]\.\.(?:[\/)},|]|$)/.test(globPart)) return true;
 
-  return globPart
-    .split('/')
-    .some((segment) => segmentCanExpandToParentTraversal(segment));
+  return globPart.split('/').some((segment) => segmentCanExpandToParentTraversal(segment));
 }
 
 function segmentCanExpandToParentTraversal(segment: string): boolean {
@@ -953,7 +887,10 @@ function segmentCanExpandToParentTraversalWithinBudget(
   const extglob = findFirstExtglobGroup(segment);
   if (extglob && extglob.operator !== '!') {
     const alternatives = splitTopLevel(extglob.content, '|');
-    if ((extglob.operator === '*' || extglob.operator === '?') && alternatives.every((alternative) => alternative !== '')) {
+    if (
+      (extglob.operator === '*' || extglob.operator === '?') &&
+      alternatives.every((alternative) => alternative !== '')
+    ) {
       alternatives.push('');
     }
     return groupAlternativesCanExpandToParentTraversal(
@@ -979,12 +916,7 @@ function groupAlternativesCanExpandToParentTraversal(
   const suffix = segment.slice(end + 1);
 
   for (const alternative of alternatives) {
-    if (
-      segmentCanExpandToParentTraversalWithinBudget(
-        `${prefix}${alternative}${suffix}`,
-        budget,
-      )
-    ) {
+    if (segmentCanExpandToParentTraversalWithinBudget(`${prefix}${alternative}${suffix}`, budget)) {
       return true;
     }
   }

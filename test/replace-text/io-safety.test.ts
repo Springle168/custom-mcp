@@ -1,9 +1,5 @@
 import * as fs from 'node:fs/promises';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 import {
   assertErrorResult,
   assertJsonNoteIncludes,
@@ -36,7 +32,11 @@ async function testAbsolutePathInsideRootEchoesOriginalPath(): Promise<void> {
 
   const json = assertSuccessResult(result);
   assertEqual(json.file_path, absolutePath, 'Absolute file_path should be echoed unchanged');
-  await assertFixtureContent('absolute.txt', 'beta\n', 'Absolute path inside root should be writable');
+  await assertFixtureContent(
+    'absolute.txt',
+    'beta\n',
+    'Absolute path inside root should be writable',
+  );
 }
 
 async function testOutsideRootPathRejected(): Promise<void> {
@@ -110,7 +110,11 @@ async function testContentDetectedBinaryRejected(): Promise<void> {
   const json = assertErrorResult(result);
   assertJsonNoteIncludes(json, 'binary', 'Content-detected binary note should explain rejection');
   const raw = await fs.readFile(fixturePath('binary.unknown'));
-  assertEqual(Buffer.compare(raw, binaryContent), 0, 'Content-detected binary should remain unchanged');
+  assertEqual(
+    Buffer.compare(raw, binaryContent),
+    0,
+    'Content-detected binary should remain unchanged',
+  );
 }
 
 async function testOversizedFileRejectedBeforeWrite(): Promise<void> {
@@ -140,7 +144,11 @@ async function testAutoLineEndingPreservesExistingCrlf(): Promise<void> {
   });
 
   const json = assertSuccessResult(result);
-  assertEqual(json.file_line_count.previous, 3, 'CRLF previous line count should use LF-normalized content');
+  assertEqual(
+    json.file_line_count.previous,
+    3,
+    'CRLF previous line count should use LF-normalized content',
+  );
   const raw = await fs.readFile(fixturePath('auto-crlf.txt'), 'utf-8');
   assertEqual(raw, 'ALPHA\r\nbeta\r\n', 'auto lineEnding should preserve CRLF');
 }
@@ -224,7 +232,8 @@ async function testSameFileConcurrentReplacementsAreSerialized(): Promise<void> 
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 I/O safety tests',
-    details: 'Covers path safety, binary/size rejection, lineEnding behavior, and file-lock serialization.',
+    details:
+      'Covers path safety, binary/size rejection, lineEnding behavior, and file-lock serialization.',
     afterAll: cleanupFixtures,
     tests: [
       {
@@ -235,7 +244,10 @@ async function main(): Promise<void> {
       { name: 'Directory path is rejected', run: testDirectoryPathRejected },
       { name: 'Known binary extension is rejected', run: testKnownBinaryExtensionRejected },
       { name: 'Content-detected binary is rejected', run: testContentDetectedBinaryRejected },
-      { name: 'Oversized file is rejected before write', run: testOversizedFileRejectedBeforeWrite },
+      {
+        name: 'Oversized file is rejected before write',
+        run: testOversizedFileRejectedBeforeWrite,
+      },
       {
         name: 'auto lineEnding preserves existing CRLF',
         run: testAutoLineEndingPreservesExistingCrlf,

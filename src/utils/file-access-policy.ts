@@ -49,11 +49,7 @@ export type FileAccessReadTargetResult =
   | { readonly ok: true; readonly target: FileAccessReadTarget }
   | {
       readonly ok: false;
-      readonly code:
-        | 'not_found'
-        | 'outside_root_dir'
-        | 'io_error'
-        | 'deny_policy';
+      readonly code: 'not_found' | 'outside_root_dir' | 'io_error' | 'deny_policy';
       readonly reason: string;
     };
 
@@ -92,35 +88,26 @@ export function createFileAccessPolicyContext(
 ): FileAccessPolicyContext {
   if (policies.length > 0) {
     for (const root of pathSafetyContext.allowedRoots) {
-      const matches = policies.filter((policy) =>
-        areSamePath(policy.rootDir, root.rootDir)
-      );
+      const matches = policies.filter((policy) => areSamePath(policy.rootDir, root.rootDir));
       if (matches.length !== 1) {
         throw new Error(
           `File access policy must contain exactly one entry for workspace root ${root.rootDir}.`,
         );
       }
       const realRootDir = root.realRootDir ?? matches[0]?.realRootDir;
-      if (
-        realRootDir === undefined ||
-        !areSamePath(matches[0]?.realRootDir ?? '', realRootDir)
-      ) {
+      if (realRootDir === undefined || !areSamePath(matches[0]?.realRootDir ?? '', realRootDir)) {
         throw new Error(
           `File access policy real root does not match workspace root ${root.rootDir}.`,
         );
       }
     }
     if (policies.length !== pathSafetyContext.allowedRoots.length) {
-      throw new Error(
-        'File access policy contains roots that are not configured workspace roots.',
-      );
+      throw new Error('File access policy contains roots that are not configured workspace roots.');
     }
   }
 
   const roots = pathSafetyContext.allowedRoots.map((root) => {
-    const configured = policies.find((policy) =>
-      areSamePath(policy.rootDir, root.rootDir)
-    );
+    const configured = policies.find((policy) => areSamePath(policy.rootDir, root.rootDir));
     return Object.freeze({
       rootDir: root.rootDir,
       realRootDir: root.realRootDir ?? configured?.realRootDir ?? root.rootDir,
@@ -149,11 +136,9 @@ export function createPolicyCandidate(
   const normalized = relative.replace(/\\/g, '/');
   const segments = normalized.split('/');
   if (
-    segments.some((segment) =>
-      segment.length === 0 ||
-      segment === '.' ||
-      segment === '..' ||
-      segment.includes('\\')
+    segments.some(
+      (segment) =>
+        segment.length === 0 || segment === '.' || segment === '..' || segment.includes('\\'),
     )
   ) {
     throw new Error('Policy candidate contains an invalid path segment.');
@@ -351,10 +336,7 @@ export async function expandFileAccessGlob(
   input: string,
   context: FileAccessPolicyContext,
 ): Promise<FileAccessGlobExpansionResult> {
-  const globResult = resolveSafeGlobPatternInContext(
-    input,
-    context.pathSafetyContext,
-  );
+  const globResult = resolveSafeGlobPatternInContext(input, context.pathSafetyContext);
   if (!globResult.ok) {
     return {
       ok: false,
@@ -385,19 +367,21 @@ export async function expandFileAccessGlob(
         globResult.glob.matchedRoot,
         globResult.glob.resolvedStaticBase,
         context,
-      ).then((validation) => {
-        if (!validation.ok) {
-          if (validation.code === 'deny_policy') blockedByDeny = true;
-          const error = Object.assign(new Error(validation.reason), {
-            code: 'EACCES',
-          }) as NodeJS.ErrnoException;
-          callback(error);
-          return;
-        }
-        nodeFs.readdir(directory, options, callback);
-      }).catch((err: unknown) => {
-        callback(err as NodeJS.ErrnoException);
-      });
+      )
+        .then((validation) => {
+          if (!validation.ok) {
+            if (validation.code === 'deny_policy') blockedByDeny = true;
+            const error = Object.assign(new Error(validation.reason), {
+              code: 'EACCES',
+            }) as NodeJS.ErrnoException;
+            callback(error);
+            return;
+          }
+          nodeFs.readdir(directory, options, callback);
+        })
+        .catch((err: unknown) => {
+          callback(err as NodeJS.ErrnoException);
+        });
     },
   };
 
@@ -412,17 +396,9 @@ export async function expandFileAccessGlob(
       fs: controlledFs,
       ignore: {
         ignored: () => false,
-        childrenIgnored: (entry: {
-          fullpath: () => string;
-          isSymbolicLink: () => boolean;
-        }) => {
+        childrenIgnored: (entry: { fullpath: () => string; isSymbolicLink: () => boolean }) => {
           const directoryPath = path.resolve(entry.fullpath());
-          if (
-            isExplicitStaticBasePrefix(
-              directoryPath,
-              globResult.glob.resolvedStaticBase,
-            )
-          ) {
+          if (isExplicitStaticBasePrefix(directoryPath, globResult.glob.resolvedStaticBase)) {
             return false;
           }
           return entry.isSymbolicLink();
@@ -478,14 +454,12 @@ export function isIgnoredByFileAccessPolicy(
     safePath.matchedRoot.rootDir,
     'file',
   );
-  return candidate !== null &&
-    policyForRoot(context, safePath.matchedRoot).ignore.isIgnored(candidate);
+  return (
+    candidate !== null && policyForRoot(context, safePath.matchedRoot).ignore.isIgnored(candidate)
+  );
 }
 
-export function matchesExcludePattern(
-  safePath: SafePath,
-  patterns: readonly string[],
-): boolean {
+export function matchesExcludePattern(safePath: SafePath, patterns: readonly string[]): boolean {
   if (patterns.length === 0) return false;
   const matcher = new Ignore([...patterns], {
     dot: true,
@@ -531,8 +505,7 @@ async function validateGlobStaticBase(
       return {
         ok: false,
         code: 'io_error',
-        reason:
-          `Glob static base ${globPattern.input} resolves outside its matched workspace root.`,
+        reason: `Glob static base ${globPattern.input} resolves outside its matched workspace root.`,
       };
     }
     const remainder = path.relative(existingAncestor, globPattern.resolvedStaticBase);
@@ -583,22 +556,20 @@ async function validateTraversalDirectory(
 > {
   if (
     !isInsideRoot(directoryPath, root.rootDir) ||
-    (
-      !areSamePath(directoryPath, root.rootDir) &&
-      isDenied(directoryPath, root, 'directory', context, false)
-    )
+    (!areSamePath(directoryPath, root.rootDir) &&
+      isDenied(directoryPath, root, 'directory', context, false))
   ) {
     return isInsideRoot(directoryPath, root.rootDir)
-      ? { ...denyGlobResult('glob traversal'), reason: 'Directory was blocked by the file access deny policy.' }
+      ? {
+          ...denyGlobResult('glob traversal'),
+          reason: 'Directory was blocked by the file access deny policy.',
+        }
       : { ok: false, code: 'io_error', reason: 'Glob traversal left its matched workspace root.' };
   }
 
   try {
     const stats = await fs.lstat(directoryPath);
-    if (
-      stats.isSymbolicLink() &&
-      !isExplicitStaticBasePrefix(directoryPath, explicitStaticBase)
-    ) {
+    if (stats.isSymbolicLink() && !isExplicitStaticBasePrefix(directoryPath, explicitStaticBase)) {
       return {
         ok: false,
         code: 'io_error',
@@ -654,9 +625,7 @@ function policyForRoot(
   context: FileAccessPolicyContext,
   root: WorkspaceRoot,
 ): RootFileAccessPolicy {
-  const policy = context.roots.find((candidate) =>
-    areSamePath(candidate.rootDir, root.rootDir)
-  );
+  const policy = context.roots.find((candidate) => areSamePath(candidate.rootDir, root.rootDir));
   if (policy === undefined) {
     throw new Error(`Missing file access policy for workspace root ${root.rootDir}.`);
   }
@@ -689,9 +658,7 @@ function symbolicLinkWriteResult(input: string): FileAccessWriteTargetResult {
   };
 }
 
-function denyGlobResult(
-  input: string,
-): {
+function denyGlobResult(input: string): {
   readonly ok: false;
   readonly code: 'deny_policy';
   readonly reason: string;
@@ -712,16 +679,15 @@ function isInsideRoot(candidatePath: string, rootDir: string): boolean {
   const normalizedCandidate = path.resolve(candidatePath);
   if (areSamePath(normalizedCandidate, normalizedRoot)) return true;
   const relative = path.relative(normalizedRoot, normalizedCandidate);
-  return relative !== '' &&
+  return (
+    relative !== '' &&
     relative !== '..' &&
     !relative.startsWith(`..${path.sep}`) &&
-    !path.isAbsolute(relative);
+    !path.isAbsolute(relative)
+  );
 }
 
-function isExplicitStaticBasePrefix(
-  directoryPath: string,
-  explicitStaticBase: string,
-): boolean {
+function isExplicitStaticBasePrefix(directoryPath: string, explicitStaticBase: string): boolean {
   return isInsideRoot(explicitStaticBase, directoryPath);
 }
 

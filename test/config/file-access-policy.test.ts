@@ -1,10 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  ConfigError,
-  loadRuntimeConfig,
-} from '../../src/config.js';
+import { ConfigError, loadRuntimeConfig } from '../../src/config.js';
 import {
   assert,
   assertEqual,
@@ -73,47 +70,70 @@ async function testCompilesRootSpecificQueriesAndFreezesSnapshot(): Promise<void
   const additionalDeny = path.join(POLICIES_DIR, 'additional.deny');
   await fs.writeFile(
     baseIgnore,
-    Buffer.concat([
-      Buffer.from([0xef, 0xbb, 0xbf]),
-      Buffer.from('generated/**\n', 'utf-8'),
-    ]),
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('generated/**\n', 'utf-8')]),
   );
   await fs.writeFile(overrideIgnore, '!generated/keep.txt\n', 'utf-8');
   await fs.writeFile(primaryDeny, 'private-primary/**\n', 'utf-8');
   await fs.writeFile(additionalDeny, 'private/**\n', 'utf-8');
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: {
-        rootDir: {
-          ignoreFiles: [baseIgnore, baseIgnore, overrideIgnore],
-          denyFiles: [primaryDeny],
+    workspaces: [
+      workspace({
+        fileAccess: {
+          rootDir: {
+            ignoreFiles: [baseIgnore, baseIgnore, overrideIgnore],
+            denyFiles: [primaryDeny],
+          },
+          otherRootDirs: {
+            [`${ADDITIONAL_DIR}${path.sep}`]: { denyFiles: [additionalDeny] },
+          },
         },
-        otherRootDirs: {
-          [`${ADDITIONAL_DIR}${path.sep}`]: { denyFiles: [additionalDeny] },
-        },
-      },
-    })],
+      }),
+    ],
   });
 
   const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} });
   const [primaryPolicy, additionalPolicy] = snapshot.fileAccessPolicyContext.roots;
-  assert(primaryPolicy !== undefined && additionalPolicy !== undefined, 'Snapshot should contain one policy facade per allowed root');
-  assert(primaryPolicy.ignore.isIgnored('generated/output.txt'), 'Primary ignore should combine policy files in order');
-  assert(!primaryPolicy.ignore.isIgnored('generated/keep.txt'), 'Later negation should override an earlier policy file');
-  assert(!primaryPolicy.deny.isIgnored('private/secret.txt'), 'Primary policy should not inherit additional-root deny rules');
-  assert(additionalPolicy.deny.isIgnored('private/secret.txt'), 'Additional root should use its associated deny rules');
+  assert(
+    primaryPolicy !== undefined && additionalPolicy !== undefined,
+    'Snapshot should contain one policy facade per allowed root',
+  );
+  assert(
+    primaryPolicy.ignore.isIgnored('generated/output.txt'),
+    'Primary ignore should combine policy files in order',
+  );
+  assert(
+    !primaryPolicy.ignore.isIgnored('generated/keep.txt'),
+    'Later negation should override an earlier policy file',
+  );
+  assert(
+    !primaryPolicy.deny.isIgnored('private/secret.txt'),
+    'Primary policy should not inherit additional-root deny rules',
+  );
+  assert(
+    additionalPolicy.deny.isIgnored('private/secret.txt'),
+    'Additional root should use its associated deny rules',
+  );
   assertEqual(
     Object.prototype.hasOwnProperty.call(primaryPolicy.ignore, 'add'),
     false,
     'Query facade must not expose matcher mutation APIs',
   );
   assert(Object.isFrozen(snapshot), 'Runtime snapshot should be frozen');
-  assert(Object.isFrozen(snapshot.fileAccessPolicyContext), 'File access policy context should be frozen');
-  assert(Object.isFrozen(snapshot.fileAccessPolicyContext.roots), 'Root policy container should be frozen');
+  assert(
+    Object.isFrozen(snapshot.fileAccessPolicyContext),
+    'File access policy context should be frozen',
+  );
+  assert(
+    Object.isFrozen(snapshot.fileAccessPolicyContext.roots),
+    'Root policy container should be frozen',
+  );
   assert(Object.isFrozen(primaryPolicy.ignore), 'Query facade should be frozen');
   const [primaryFiles, additionalFiles] = snapshot.fileAccessPolicyFiles;
-  assert(primaryFiles !== undefined && additionalFiles !== undefined, 'Snapshot should contain policy file metadata for every allowed root');
+  assert(
+    primaryFiles !== undefined && additionalFiles !== undefined,
+    'Snapshot should contain policy file metadata for every allowed root',
+  );
   assertEqual(
     primaryFiles.ignoreFiles.join('|'),
     [baseIgnore, baseIgnore, overrideIgnore].map((file) => path.resolve(file)).join('|'),
@@ -129,7 +149,10 @@ async function testCompilesRootSpecificQueriesAndFreezesSnapshot(): Promise<void
     path.resolve(additionalDeny),
     'Additional-root deny file metadata should stay associated with its root',
   );
-  assert(Object.isFrozen(snapshot.fileAccessPolicyFiles), 'Policy file metadata container should be frozen');
+  assert(
+    Object.isFrozen(snapshot.fileAccessPolicyFiles),
+    'Policy file metadata container should be frozen',
+  );
   assert(Object.isFrozen(primaryFiles), 'Each policy file metadata entry should be frozen');
   assert(Object.isFrozen(primaryFiles.ignoreFiles), 'Ignore file metadata arrays should be frozen');
   assert(Object.isFrozen(primaryFiles.denyFiles), 'Deny file metadata arrays should be frozen');
@@ -204,15 +227,21 @@ async function testRejectsInvalidUtf8PolicyFile(): Promise<void> {
   await fs.writeFile(invalidPolicy, Buffer.from([0xc3, 0x28]));
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: { rootDir: { ignoreFiles: [invalidPolicy] } },
-    })],
+    workspaces: [
+      workspace({
+        fileAccess: { rootDir: { ignoreFiles: [invalidPolicy] } },
+      }),
+    ],
   });
 
   const error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} }),
   );
-  assertEqual(error.fieldPath, 'fileAccess.rootDir.ignoreFiles[0]', 'UTF-8 error should identify the policy array entry');
+  assertEqual(
+    error.fieldPath,
+    'fileAccess.rootDir.ignoreFiles[0]',
+    'UTF-8 error should identify the policy array entry',
+  );
   assertIncludes(error.message, 'strict UTF-8', 'Invalid UTF-8 must fail closed');
 }
 
@@ -221,27 +250,43 @@ async function testPolicyFileBoundaryDiagnosticsAndSymlinks(): Promise<void> {
   const missingPolicy = path.join(POLICIES_DIR, 'missing.ignore');
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: { rootDir: { ignoreFiles: [missingPolicy] } },
-    })],
+    workspaces: [
+      workspace({
+        fileAccess: { rootDir: { ignoreFiles: [missingPolicy] } },
+      }),
+    ],
   });
 
   let error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} }),
   );
-  assertEqual(error.fieldPath, 'fileAccess.rootDir.ignoreFiles[0]', 'Missing policy should identify its reference');
-  assertIncludes(error.message, 'must exist, be accessible', 'Missing policy should use the inaccessible-target diagnostic');
+  assertEqual(
+    error.fieldPath,
+    'fileAccess.rootDir.ignoreFiles[0]',
+    'Missing policy should identify its reference',
+  );
+  assertIncludes(
+    error.message,
+    'must exist, be accessible',
+    'Missing policy should use the inaccessible-target diagnostic',
+  );
 
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: { rootDir: { ignoreFiles: [POLICIES_DIR] } },
-    })],
+    workspaces: [
+      workspace({
+        fileAccess: { rootDir: { ignoreFiles: [POLICIES_DIR] } },
+      }),
+    ],
   });
   error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} }),
   );
-  assertIncludes(error.message, 'regular file', 'A policy directory should fail the regular-file boundary');
+  assertIncludes(
+    error.message,
+    'regular file',
+    'A policy directory should fail the regular-file boundary',
+  );
 
   const loopingPolicy = path.join(POLICIES_DIR, 'looping.ignore');
   try {
@@ -256,14 +301,20 @@ async function testPolicyFileBoundaryDiagnosticsAndSymlinks(): Promise<void> {
   }
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: { rootDir: { ignoreFiles: [loopingPolicy] } },
-    })],
+    workspaces: [
+      workspace({
+        fileAccess: { rootDir: { ignoreFiles: [loopingPolicy] } },
+      }),
+    ],
   });
   error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} }),
   );
-  assertIncludes(error.message, 'must exist, be accessible', 'A symlink loop should use the inaccessible-target diagnostic');
+  assertIncludes(
+    error.message,
+    'must exist, be accessible',
+    'A symlink loop should use the inaccessible-target diagnostic',
+  );
 
   await fs.rm(loopingPolicy);
   const targetPolicy = path.join(POLICIES_DIR, 'target.ignore');
@@ -272,9 +323,11 @@ async function testPolicyFileBoundaryDiagnosticsAndSymlinks(): Promise<void> {
   await fs.symlink(targetPolicy, linkedPolicy, 'file');
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: { rootDir: { ignoreFiles: [linkedPolicy] } },
-    })],
+    workspaces: [
+      workspace({
+        fileAccess: { rootDir: { ignoreFiles: [linkedPolicy] } },
+      }),
+    ],
   });
 
   const snapshot = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} });
@@ -288,36 +341,56 @@ async function testRejectsUnassociatedAdditionalRootKey(): Promise<void> {
   await resetFixtures();
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      fileAccess: {
-        otherRootDirs: {
-          [SECONDARY_DIR]: {},
+    workspaces: [
+      workspace({
+        fileAccess: {
+          otherRootDirs: {
+            [SECONDARY_DIR]: {},
+          },
         },
-      },
-    })],
+      }),
+    ],
   });
 
   const error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} }),
   );
-  assertIncludes(error.fieldPath ?? '', 'fileAccess.otherRootDirs', 'Additional root key error should identify the map');
-  assertIncludes(error.message, 'configured otherRootDirs entry', 'Unassociated key should fail lexical association');
+  assertIncludes(
+    error.fieldPath ?? '',
+    'fileAccess.otherRootDirs',
+    'Additional root key error should identify the map',
+  );
+  assertIncludes(
+    error.message,
+    'configured otherRootDirs entry',
+    'Unassociated key should fail lexical association',
+  );
 }
 
 async function testFileAccessCannotBeEnvOverridden(): Promise<void> {
   await resetFixtures();
   await writeConfig({
     version: 1,
-    workspaces: [workspace({
-      envOverrides: { allowedFields: ['fileAccess'] },
-    })],
+    workspaces: [
+      workspace({
+        envOverrides: { allowedFields: ['fileAccess'] },
+      }),
+    ],
   });
 
   const error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'primary', env: {} }),
   );
-  assertEqual(error.fieldPath, 'envOverrides.allowedFields[0]', 'Forbidden selector should identify its allowlist entry');
-  assertIncludes(error.message, 'forbidden field "fileAccess"', 'fileAccess must be forbidden from env overrides');
+  assertEqual(
+    error.fieldPath,
+    'envOverrides.allowedFields[0]',
+    'Forbidden selector should identify its allowlist entry',
+  );
+  assertIncludes(
+    error.message,
+    'forbidden field "fileAccess"',
+    'fileAccess must be forbidden from env overrides',
+  );
 }
 
 async function main(): Promise<void> {
@@ -325,12 +398,27 @@ async function main(): Promise<void> {
     title: 'Testing file access policy configuration',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'compiles root-specific queries and freezes snapshot', run: testCompilesRootSpecificQueriesAndFreezesSnapshot },
-      { name: 'only selected workspace policy files enter snapshot', run: testOnlySelectedWorkspacePolicyFilesEnterSnapshot },
-      { name: 'does not read unselected workspace policy files', run: testDoesNotReadUnselectedWorkspacePolicyFiles },
+      {
+        name: 'compiles root-specific queries and freezes snapshot',
+        run: testCompilesRootSpecificQueriesAndFreezesSnapshot,
+      },
+      {
+        name: 'only selected workspace policy files enter snapshot',
+        run: testOnlySelectedWorkspacePolicyFilesEnterSnapshot,
+      },
+      {
+        name: 'does not read unselected workspace policy files',
+        run: testDoesNotReadUnselectedWorkspacePolicyFiles,
+      },
       { name: 'rejects invalid UTF-8 policy file', run: testRejectsInvalidUtf8PolicyFile },
-      { name: 'enforces policy file boundary diagnostics and symlink behavior', run: testPolicyFileBoundaryDiagnosticsAndSymlinks },
-      { name: 'rejects unassociated additional root key', run: testRejectsUnassociatedAdditionalRootKey },
+      {
+        name: 'enforces policy file boundary diagnostics and symlink behavior',
+        run: testPolicyFileBoundaryDiagnosticsAndSymlinks,
+      },
+      {
+        name: 'rejects unassociated additional root key',
+        run: testRejectsUnassociatedAdditionalRootKey,
+      },
       { name: 'fileAccess cannot be env overridden', run: testFileAccessCannotBeEnvOverridden },
     ],
   });

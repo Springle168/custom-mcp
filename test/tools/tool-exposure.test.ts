@@ -17,13 +17,7 @@ import {
 } from '../../src/tools/index.js';
 import { TOOL_NAMES } from '../../src/tools/names.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  getResultText,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, getResultText, runTestSuite } from '../test-utils.js';
 
 function definitionNames(definitions: readonly { readonly name: string }[]): string[] {
   return definitions.map((definition) => definition.name);
@@ -75,14 +69,16 @@ function customDefinition(
   });
 }
 
-function createCatalog(options: {
-  builtInTools?: readonly CompiledBuiltInTool[];
-  customDefinitions?: readonly CompiledCustomToolDefinition[];
-  externalBindingsByDefinitionId?: ReadonlyMap<string, ExternalToolExecutor>;
-  exposure?:
-    | { readonly mode: 'all' }
-    | { readonly mode: 'enable' | 'disable'; readonly names: readonly string[] };
-} = {}) {
+function createCatalog(
+  options: {
+    builtInTools?: readonly CompiledBuiltInTool[];
+    customDefinitions?: readonly CompiledCustomToolDefinition[];
+    externalBindingsByDefinitionId?: ReadonlyMap<string, ExternalToolExecutor>;
+    exposure?:
+      | { readonly mode: 'all' }
+      | { readonly mode: 'enable' | 'disable'; readonly names: readonly string[] };
+  } = {},
+) {
   return compileWorkspaceToolCatalog({
     builtInTools: options.builtInTools ?? getCompiledBuiltInTools(),
     customDefinitions: options.customDefinitions ?? [],
@@ -96,7 +92,11 @@ function createCatalog(options: {
 
 function testRegistryMatchesCanonicalNames(): void {
   const names = definitionNames(getAllToolDefinitions());
-  assertEqual(names.join(','), TOOL_NAMES.join(','), 'Built-in registry order should remain canonical');
+  assertEqual(
+    names.join(','),
+    TOOL_NAMES.join(','),
+    'Built-in registry order should remain canonical',
+  );
   assertEqual(new Set(names).size, names.length, 'Built-in registry names should be unique');
 }
 
@@ -112,11 +112,27 @@ function testOverrideAndCustomOnlyOrdering(): void {
   const catalog = createCatalog({ customDefinitions: [readOverride, firstCustom, secondCustom] });
   const names = definitionNames(catalog.definitions);
 
-  assertEqual(names.slice(0, TOOL_NAMES.length).join(','), TOOL_NAMES.join(','), 'Override should retain the built-in position');
-  assertEqual(names.slice(TOOL_NAMES.length).join(','), 'custom.first,custom.second', 'Custom-only tools should append in reference order');
+  assertEqual(
+    names.slice(0, TOOL_NAMES.length).join(','),
+    TOOL_NAMES.join(','),
+    'Override should retain the built-in position',
+  );
+  assertEqual(
+    names.slice(TOOL_NAMES.length).join(','),
+    'custom.first,custom.second',
+    'Custom-only tools should append in reference order',
+  );
   const effectiveRead = catalog.definitions.find((definition) => definition.name === 'read_file');
-  assertEqual(effectiveRead?.description, 'Workspace read contract', 'Override should replace the public description');
-  assertEqual(effectiveRead?.inputSchema, readOverride.definition.inputSchema, 'Override should replace the public schema without merging');
+  assertEqual(
+    effectiveRead?.description,
+    'Workspace read contract',
+    'Override should replace the public description',
+  );
+  assertEqual(
+    effectiveRead?.inputSchema,
+    readOverride.definition.inputSchema,
+    'Override should replace the public schema without merging',
+  );
 }
 
 function testExposureFiltersWithoutReordering(): void {
@@ -135,8 +151,14 @@ function testExposureFiltersWithoutReordering(): void {
     customDefinitions: [custom],
     exposure: { mode: 'disable', names: ['read_file', 'custom_tool'] },
   });
-  assert(!definitionNames(disabled.definitions).includes('read_file'), 'Disabled built-in should be removed');
-  assert(!definitionNames(disabled.definitions).includes('custom_tool'), 'Disabled custom tool should be removed');
+  assert(
+    !definitionNames(disabled.definitions).includes('read_file'),
+    'Disabled built-in should be removed',
+  );
+  assert(
+    !definitionNames(disabled.definitions).includes('custom_tool'),
+    'Disabled custom tool should be removed',
+  );
 }
 
 async function testOverrideUsesBothContracts(): Promise<void> {
@@ -154,7 +176,11 @@ async function testOverrideUsesBothContracts(): Promise<void> {
     createContext(),
     createInvocationContext(),
   );
-  assertIncludes(getResultText(effectiveFailure), 'configured input schema', 'Effective schema should run first');
+  assertIncludes(
+    getResultText(effectiveFailure),
+    'configured input schema',
+    'Effective schema should run first',
+  );
   assert(
     !getResultText(effectiveFailure).includes('E:/tools/'),
     'Call validation errors should not expose local definition paths',
@@ -166,7 +192,11 @@ async function testOverrideUsesBothContracts(): Promise<void> {
     createContext(),
     createInvocationContext(),
   );
-  assertIncludes(getResultText(implementationFailure), 'not supported by its current executor', 'Built-in implementation contract should protect overridden executors');
+  assertIncludes(
+    getResultText(implementationFailure),
+    'not supported by its current executor',
+    'Built-in implementation contract should protect overridden executors',
+  );
 }
 
 async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
@@ -177,7 +207,9 @@ async function testCustomOnlyValidationAndUnavailableExecutor(): Promise<void> {
     additionalProperties: false,
   });
   const catalog = createCatalog({ customDefinitions: [custom] });
-  const entry = catalog.effectiveEntries.find((candidate) => candidate.definition.name === 'custom_tool');
+  const entry = catalog.effectiveEntries.find(
+    (candidate) => candidate.definition.name === 'custom_tool',
+  );
   assertEqual(
     entry?.binding,
     'unavailable',
@@ -262,8 +294,16 @@ async function testCustomOnlyExternalRoutesUseDefinitionBindings(): Promise<void
   const secondEntry = catalog.effectiveEntries.find(
     (candidate) => candidate.definition.name === 'custom.second',
   );
-  assertEqual(firstEntry?.binding, 'external', 'The first custom-only definition should bind its route');
-  assertEqual(secondEntry?.binding, 'external', 'The second custom-only definition should bind its route');
+  assertEqual(
+    firstEntry?.binding,
+    'external',
+    'The first custom-only definition should bind its route',
+  );
+  assertEqual(
+    secondEntry?.binding,
+    'external',
+    'The second custom-only definition should bind its route',
+  );
   if (firstEntry?.binding !== 'external' || secondEntry?.binding !== 'external') {
     throw new Error('Expected both custom-only definitions to bind external executors.');
   }
@@ -294,8 +334,16 @@ async function testCustomOnlyExternalRoutesUseDefinitionBindings(): Promise<void
     'configured input schema',
     'External routes should validate custom-only input before execution',
   );
-  assertEqual(firstInvocations.length, 0, 'Invalid external input must not reach the first executor');
-  assertEqual(secondInvocations.length, 0, 'Invalid external input must not reach the second executor');
+  assertEqual(
+    firstInvocations.length,
+    0,
+    'Invalid external input must not reach the first executor',
+  );
+  assertEqual(
+    secondInvocations.length,
+    0,
+    'Invalid external input must not reach the second executor',
+  );
 
   const firstArgs = { value: 'first' };
   const invocationContext = createInvocationContext('call_external_custom');
@@ -310,13 +358,37 @@ async function testCustomOnlyExternalRoutesUseDefinitionBindings(): Promise<void
     'First external custom tool completed.',
     'The first route-bound external executor result should be returned',
   );
-  assertEqual(firstInvocations.length, 1, 'Valid first custom-only input should invoke its executor once');
-  assertEqual(secondInvocations.length, 0, 'The second executor must not receive a call for the first definition');
+  assertEqual(
+    firstInvocations.length,
+    1,
+    'Valid first custom-only input should invoke its executor once',
+  );
+  assertEqual(
+    secondInvocations.length,
+    0,
+    'The second executor must not receive a call for the first definition',
+  );
   const firstInvocation = firstInvocations[0];
-  assertEqual(firstInvocation?.callId, 'call_external_custom', 'External executor should receive the call ID');
-  assertEqual(firstInvocation?.name, 'custom.first', 'External executor should receive the tool name');
-  assertEqual(firstInvocation?.arguments, firstArgs, 'External executor should receive validated arguments');
-  assertEqual(firstInvocation?.signal, invocationContext.signal, 'External executor should receive the call signal');
+  assertEqual(
+    firstInvocation?.callId,
+    'call_external_custom',
+    'External executor should receive the call ID',
+  );
+  assertEqual(
+    firstInvocation?.name,
+    'custom.first',
+    'External executor should receive the tool name',
+  );
+  assertEqual(
+    firstInvocation?.arguments,
+    firstArgs,
+    'External executor should receive validated arguments',
+  );
+  assertEqual(
+    firstInvocation?.signal,
+    invocationContext.signal,
+    'External executor should receive the call signal',
+  );
 
   const secondArgs = { value: 'second' };
   const secondResult = await service.routeToolCall(
@@ -330,8 +402,16 @@ async function testCustomOnlyExternalRoutesUseDefinitionBindings(): Promise<void
     'Second external custom tool completed.',
     'The second route-bound external executor result should be returned',
   );
-  assertEqual(secondInvocations.length, 1, 'Valid second custom-only input should invoke its executor once');
-  assertEqual(firstInvocations.length, 1, 'The first executor must not receive a call for the second definition');
+  assertEqual(
+    secondInvocations.length,
+    1,
+    'Valid second custom-only input should invoke its executor once',
+  );
+  assertEqual(
+    firstInvocations.length,
+    1,
+    'The first executor must not receive a call for the second definition',
+  );
 }
 
 async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
@@ -376,9 +456,7 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
   const catalog = createCatalog({
     builtInTools: [builtIn],
     customDefinitions: [override],
-    externalBindingsByDefinitionId: new Map([
-      [override.source.referenceId, externalExecutor],
-    ]),
+    externalBindingsByDefinitionId: new Map([[override.source.referenceId, externalExecutor]]),
   });
   const service = createWorkspaceToolService(catalog);
   const entry = catalog.effectiveEntries[0];
@@ -387,17 +465,20 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
   const context = createContext();
   const args = { value: 'ok' };
   const invocation = createInvocationContext('call_override');
-  const result = await service.routeToolCall(
-    'bound_tool',
-    args,
-    context,
-    invocation,
+  const result = await service.routeToolCall('bound_tool', args, context, invocation);
+  assertEqual(
+    getResultText(result),
+    'Built-in tool completed.',
+    'Override should return the built-in executor result',
   );
-  assertEqual(getResultText(result), 'Built-in tool completed.', 'Override should return the built-in executor result');
   assertEqual(builtInCalls, 1, 'Override should invoke its built-in executor');
   assertEqual(externalCalls, 0, 'Override must not invoke the external executor');
   assertEqual(receivedBuiltInArgs, args, 'Built-in executor should receive its tool arguments');
-  assertEqual(receivedBuiltInContext, context, 'Built-in executor should receive workspace runtime context');
+  assertEqual(
+    receivedBuiltInContext,
+    context,
+    'Built-in executor should receive workspace runtime context',
+  );
   assertEqual(
     receivedBuiltInInvocation,
     invocation,
@@ -436,10 +517,12 @@ async function testPreAbortedBuiltInCallsRespectValidationOrdering(): Promise<vo
     required: ['alias'],
     additionalProperties: false,
   });
-  const service = createWorkspaceToolService(createCatalog({
-    builtInTools: [builtIn],
-    customDefinitions: [override],
-  }));
+  const service = createWorkspaceToolService(
+    createCatalog({
+      builtInTools: [builtIn],
+      customDefinitions: [override],
+    }),
+  );
   const controller = new AbortController();
   controller.abort();
   const invocation = Object.freeze({
@@ -471,9 +554,11 @@ async function testPreAbortedBuiltInCallsRespectValidationOrdering(): Promise<vo
     'Implementation validation should run before the pre-admission cancellation check',
   );
 
-  const validService = createWorkspaceToolService(createCatalog({
-    builtInTools: [builtIn],
-  }));
+  const validService = createWorkspaceToolService(
+    createCatalog({
+      builtInTools: [builtIn],
+    }),
+  );
   const cancelled = await validService.routeToolCall(
     'cancelled_tool',
     { value: 'ok' },
@@ -508,13 +593,13 @@ async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
       return textResult('Unexpected external execution.');
     },
   };
-  const service = createWorkspaceToolService(createCatalog({
-    customDefinitions: [custom],
-    externalBindingsByDefinitionId: new Map([
-      [custom.source.referenceId, externalExecutor],
-    ]),
-    exposure: { mode: 'enable', names: ['read_file'] },
-  }));
+  const service = createWorkspaceToolService(
+    createCatalog({
+      customDefinitions: [custom],
+      externalBindingsByDefinitionId: new Map([[custom.source.referenceId, externalExecutor]]),
+      exposure: { mode: 'enable', names: ['read_file'] },
+    }),
+  );
 
   for (const name of ['write_file', 'never_registered']) {
     const result = await service.routeToolCall(
@@ -523,7 +608,11 @@ async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
       createContext(),
       createInvocationContext(),
     );
-    assertEqual(getResultText(result), `Unknown tool: ${name}`, 'Hidden and unknown tools should be indistinguishable');
+    assertEqual(
+      getResultText(result),
+      `Unknown tool: ${name}`,
+      'Hidden and unknown tools should be indistinguishable',
+    );
   }
   const hiddenCustom = await service.routeToolCall(
     'custom_tool',
@@ -548,7 +637,11 @@ function testCatalogAndServiceFacadesAreFrozen(): void {
   assert(Object.isFrozen(catalog.exposedEntries), 'Exposed entries should be frozen');
   assert(Object.isFrozen(catalog.definitions), 'Definitions view should be frozen');
   assert(Object.isFrozen(service), 'Workspace tool service should be frozen');
-  assertEqual(service.getDefinitions(), catalog.definitions, 'Service should expose the catalog-owned definitions view');
+  assertEqual(
+    service.getDefinitions(),
+    catalog.definitions,
+    'Service should expose the catalog-owned definitions view',
+  );
 }
 
 async function main(): Promise<void> {
@@ -558,13 +651,34 @@ async function main(): Promise<void> {
       { name: 'built-in registry remains canonical', run: testRegistryMatchesCanonicalNames },
       { name: 'override and custom-only ordering', run: testOverrideAndCustomOnlyOrdering },
       { name: 'exposure filters without reordering', run: testExposureFiltersWithoutReordering },
-      { name: 'override uses effective and implementation contracts', run: testOverrideUsesBothContracts },
-      { name: 'custom-only validation precedes unavailable executor', run: testCustomOnlyValidationAndUnavailableExecutor },
-      { name: 'custom-only external routes use definition bindings', run: testCustomOnlyExternalRoutesUseDefinitionBindings },
-      { name: 'override remains bound to its built-in executor', run: testOverrideRemainsBoundToBuiltInExecutor },
-      { name: 'pre-aborted built-in calls preserve validation ordering', run: testPreAbortedBuiltInCallsRespectValidationOrdering },
-      { name: 'hidden and unknown tools do not validate or execute', run: testHiddenAndUnknownDoNotValidateOrExecute },
-      { name: 'catalog and service facades are frozen', run: testCatalogAndServiceFacadesAreFrozen },
+      {
+        name: 'override uses effective and implementation contracts',
+        run: testOverrideUsesBothContracts,
+      },
+      {
+        name: 'custom-only validation precedes unavailable executor',
+        run: testCustomOnlyValidationAndUnavailableExecutor,
+      },
+      {
+        name: 'custom-only external routes use definition bindings',
+        run: testCustomOnlyExternalRoutesUseDefinitionBindings,
+      },
+      {
+        name: 'override remains bound to its built-in executor',
+        run: testOverrideRemainsBoundToBuiltInExecutor,
+      },
+      {
+        name: 'pre-aborted built-in calls preserve validation ordering',
+        run: testPreAbortedBuiltInCallsRespectValidationOrdering,
+      },
+      {
+        name: 'hidden and unknown tools do not validate or execute',
+        run: testHiddenAndUnknownDoNotValidateOrExecute,
+      },
+      {
+        name: 'catalog and service facades are frozen',
+        run: testCatalogAndServiceFacadesAreFrozen,
+      },
     ],
   });
 }

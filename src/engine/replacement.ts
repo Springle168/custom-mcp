@@ -55,11 +55,7 @@ function findLiteralRanges(content: string, target: string): MatchRange[] {
   return ranges;
 }
 
-function replaceLiteralRanges(
-  content: string,
-  ranges: MatchRange[],
-  replacement: string,
-): string {
+function replaceLiteralRanges(content: string, ranges: MatchRange[], replacement: string): string {
   let result = '';
   let cursor = 0;
 
@@ -97,15 +93,10 @@ function lineForRangeEnd(content: string, endOffset: number): number {
   return lineForOffset(content, endOffset - 1);
 }
 
-export function calculateMatchedSpan(
-  content: string,
-  ranges: MatchRange[],
-): MatchedSpan | null {
+export function calculateMatchedSpan(content: string, ranges: MatchRange[]): MatchedSpan | null {
   if (ranges.length === 0) return null;
 
-  const sortedRanges = [...ranges].sort(
-    (a, b) => a.startOffset - b.startOffset,
-  );
+  const sortedRanges = [...ranges].sort((a, b) => a.startOffset - b.startOffset);
   const firstRange = sortedRanges.at(0);
   const lastRange = sortedRanges.at(-1);
   if (firstRange === undefined || lastRange === undefined) return null;
@@ -116,10 +107,7 @@ export function calculateMatchedSpan(
   };
 }
 
-function exactMatch(
-  currentContent: string,
-  params: ReplaceParams,
-): ReplacementResult | null {
+function exactMatch(currentContent: string, params: ReplaceParams): ReplacementResult | null {
   const normalizedReplace = normalizeInput(params.replacement);
   const normalizedSearch = normalizeInput(params.target);
   const matchRanges = findLiteralRanges(currentContent, normalizedSearch);
@@ -131,11 +119,7 @@ function exactMatch(
   let replacementCount = 0;
 
   if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
-    newContent = replaceLiteralRanges(
-      currentContent,
-      matchRanges,
-      normalizedReplace,
-    );
+    newContent = replaceLiteralRanges(currentContent, matchRanges, normalizedReplace);
     newContent = restoreTrailingNewline(currentContent, newContent);
     replacementCount = matchedTargets;
   }
@@ -189,10 +173,7 @@ function expandRegexReplacement(
         continue;
       }
 
-      const groupNumber = Number.parseInt(
-        replacement.slice(index + 2, digitIndex),
-        10,
-      );
+      const groupNumber = Number.parseInt(replacement.slice(index + 2, digitIndex), 10);
       text += match[groupNumber] ?? '';
       index = digitIndex;
       continue;
@@ -271,10 +252,7 @@ export function calculateRegexReplacement(
       const match = regex.exec(currentContent);
       if (!match) break;
 
-      const expandedReplacement = expandRegexReplacement(
-        normalizedReplace,
-        match,
-      );
+      const expandedReplacement = expandRegexReplacement(normalizedReplace, match);
       invalidReplacementSyntax ||= expandedReplacement.invalidReplacementSyntax;
       result += currentContent.slice(cursor, match.index);
       result += expandedReplacement.text;
@@ -318,10 +296,12 @@ export function calculateReplacement(
     replacement: normalizedReplace,
   };
 
-  return exactMatch(currentContent, normalizedParams) ?? {
-    newContent: currentContent,
-    matchedTargets: 0,
-    replacementCount: 0,
-    matchRanges: [],
-  };
+  return (
+    exactMatch(currentContent, normalizedParams) ?? {
+      newContent: currentContent,
+      matchedTargets: 0,
+      replacementCount: 0,
+      matchRanges: [],
+    }
+  );
 }

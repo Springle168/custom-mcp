@@ -17,18 +17,24 @@ export class InitializationTrackingTransport extends StreamableHTTPServerTranspo
   constructor(options: StreamableHTTPServerTransportOptions, requestId?: RequestId) {
     super(options);
     this.#requestId = requestId;
-    this.#settled = new Promise((resolve) => { this.#resolveSettled = resolve; });
-    this.initializationSendRejected = new Promise((resolve) => { this.#resolveSendRejected = resolve; });
+    this.#settled = new Promise((resolve) => {
+      this.#resolveSettled = resolve;
+    });
+    this.initializationSendRejected = new Promise((resolve) => {
+      this.#resolveSendRejected = resolve;
+    });
   }
 
   override async send(
     message: JSONRPCMessage,
     options?: Parameters<StreamableHTTPServerTransport['send']>[1],
   ): Promise<void> {
-    const observed = this.#state === 'idle'
-      && this.#requestId !== undefined
-      && 'id' in message && message.id === this.#requestId
-      && ('result' in message || 'error' in message);
+    const observed =
+      this.#state === 'idle' &&
+      this.#requestId !== undefined &&
+      'id' in message &&
+      message.id === this.#requestId &&
+      ('result' in message || 'error' in message);
     if (observed) {
       this.#state = 'sending';
     }

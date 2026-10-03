@@ -3,16 +3,9 @@ import {
   MAX_GUIDELINE_NAME_CODE_POINTS,
   parseGuidelineFrontMatter,
 } from '../../src/engine/guideline-front-matter.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
-function parse(
-  source: string,
-  prefixContainsWholeFile = true,
-) {
+function parse(source: string, prefixContainsWholeFile = true) {
   return parseGuidelineFrontMatter(source, prefixContainsWholeFile);
 }
 
@@ -115,9 +108,7 @@ copy: *value
 function testEnforcesUnicodeCodePointLimits(): void {
   const maxName = '😀'.repeat(MAX_GUIDELINE_NAME_CODE_POINTS);
   const maxDescription = '界'.repeat(MAX_GUIDELINE_DESCRIPTION_CODE_POINTS);
-  const metadata = parse(
-    `---\nname: ${maxName}\ndescription: ${maxDescription}\n---\n`,
-  );
+  const metadata = parse(`---\nname: ${maxName}\ndescription: ${maxDescription}\n---\n`);
   assert(metadata !== null, 'Fields at Unicode code point limits should parse');
   assertEqual(
     parse(`---\nname: ${maxName}x\ndescription: ok\n---\n`),

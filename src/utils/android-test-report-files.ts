@@ -3,8 +3,7 @@ import path from 'node:path';
 import { globIterate } from 'glob';
 import type { AndroidTestReportFile } from '../engine/android-test-report.js';
 
-const TEST_REPORT_PATTERN =
-  '**/test-results/testDebugUnitTest/TEST-*.xml';
+const TEST_REPORT_PATTERN = '**/test-results/testDebugUnitTest/TEST-*.xml';
 const MAX_REPORT_FILES = 1000;
 const MAX_REPORT_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_REPORT_BYTES = 10 * 1024 * 1024;
@@ -14,10 +13,7 @@ export interface AndroidTestReportFileFingerprint {
   mtimeMs: number;
 }
 
-export type AndroidTestReportSnapshot = ReadonlyMap<
-  string,
-  AndroidTestReportFileFingerprint
->;
+export type AndroidTestReportSnapshot = ReadonlyMap<string, AndroidTestReportFileFingerprint>;
 
 export interface ChangedAndroidTestReportFiles {
   files: AndroidTestReportFile[];
@@ -66,14 +62,8 @@ export async function readChangedAndroidTestReportFiles(
     }
 
     try {
-      const remainingBytes = Math.min(
-        MAX_REPORT_FILE_BYTES,
-        MAX_TOTAL_REPORT_BYTES - totalBytes,
-      );
-      const content = await readBoundedReportFile(
-        absolutePath,
-        remainingBytes,
-      );
+      const remainingBytes = Math.min(MAX_REPORT_FILE_BYTES, MAX_TOTAL_REPORT_BYTES - totalBytes);
+      const content = await readBoundedReportFile(absolutePath, remainingBytes);
       if (!content) {
         unreadableFileCount += 1;
         continue;
@@ -89,9 +79,7 @@ export async function readChangedAndroidTestReportFiles(
     }
   }
 
-  files.sort((left, right) =>
-    left.relativePath.localeCompare(right.relativePath, 'en'),
-  );
+  files.sort((left, right) => left.relativePath.localeCompare(right.relativePath, 'en'));
 
   return {
     files,
@@ -128,15 +116,11 @@ async function discoverReportPaths(workspaceRoot: string): Promise<string[]> {
     }
 
     if (safePaths.length > MAX_REPORT_FILES) {
-      throw new Error(
-        `Android test report candidate limit exceeded (${MAX_REPORT_FILES}).`,
-      );
+      throw new Error(`Android test report candidate limit exceeded (${MAX_REPORT_FILES}).`);
     }
   }
 
-  return [...new Set(safePaths)].sort((left, right) =>
-    left.localeCompare(right, 'en'),
-  );
+  return [...new Set(safePaths)].sort((left, right) => left.localeCompare(right, 'en'));
 }
 
 async function readBoundedReportFile(
@@ -158,12 +142,7 @@ async function readBoundedReportFile(
     let bytesRead = 0;
 
     while (bytesRead < buffer.length) {
-      const result = await file.read(
-        buffer,
-        bytesRead,
-        buffer.length - bytesRead,
-        bytesRead,
-      );
+      const result = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
       if (result.bytesRead === 0) {
         break;
       }

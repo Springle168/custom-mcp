@@ -1,8 +1,4 @@
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 import {
   assertErrorResult,
   assertJsonNoteIncludes,
@@ -289,11 +285,7 @@ async function testRegexInvalidPatternFailsWithoutWriting(): Promise<void> {
   const json = assertErrorResult(result);
   assertEqual(json.matched_targets, 0, 'Invalid regex should report zero matches');
   assertNoSpan(json, 'Invalid regex should not report span');
-  await assertFixtureContent(
-    'invalid-pattern.txt',
-    'alpha\n',
-    'Invalid regex should not write',
-  );
+  await assertFixtureContent('invalid-pattern.txt', 'alpha\n', 'Invalid regex should not write');
 }
 
 async function testRegexEmptyTargetFailsWithoutCreating(): Promise<void> {
@@ -307,8 +299,16 @@ async function testRegexEmptyTargetFailsWithoutCreating(): Promise<void> {
   });
 
   const json = assertErrorResult(result);
-  assertEqual(json.file_line_count.previous, null, 'Regex empty target previous line count is unknown');
-  assertEqual(json.file_line_count.current, null, 'Regex empty target current line count is unknown');
+  assertEqual(
+    json.file_line_count.previous,
+    null,
+    'Regex empty target previous line count is unknown',
+  );
+  assertEqual(
+    json.file_line_count.current,
+    null,
+    'Regex empty target current line count is unknown',
+  );
   assertNoSpan(json, 'Regex empty target should not report span');
   assertEqual(
     await fixtureExists('regex-empty-target.txt'),
@@ -493,11 +493,7 @@ async function testRegexNoOpWholeMatchFails(): Promise<void> {
   assertEqual(json.matched_targets, 1, 'Regex no-op should report actual match count');
   assertEqual(json.replacement_count, 0, 'Regex no-op should not replace');
   assertSpan(json, 1, 1, 'Regex no-op should report actual span');
-  await assertFixtureContent(
-    'no-op-whole-match.txt',
-    'alpha\n',
-    'Regex no-op should not write',
-  );
+  await assertFixtureContent('no-op-whole-match.txt', 'alpha\n', 'Regex no-op should not write');
 }
 
 async function testRegexNoOpExpandedCaptureFails(): Promise<void> {
@@ -525,7 +521,8 @@ async function testRegexNoOpExpandedCaptureFails(): Promise<void> {
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 regex mode tests',
-    details: 'Covers explicit regex matching, default gms behavior, regex_flags, capture replacement syntax, no fallback, no-op, and zero-length safety.',
+    details:
+      'Covers explicit regex matching, default gms behavior, regex_flags, capture replacement syntax, no fallback, no-op, and zero-length safety.',
     afterAll: cleanupFixtures,
     tests: [
       { name: 'Regex single match replaces once', run: testRegexSingleMatch },
@@ -551,7 +548,10 @@ async function main(): Promise<void> {
         run: testRegexMultilineMatchWarns,
       },
       { name: 'Regex multiline anchors match per line', run: testRegexMultilineAnchors },
-      { name: 'Regex slash syntax is not /pattern/flags', run: testRegexSlashSyntaxIsLiteralPatternText },
+      {
+        name: 'Regex slash syntax is not /pattern/flags',
+        run: testRegexSlashSyntaxIsLiteralPatternText,
+      },
       {
         name: 'Regex mode does not use default literal matching',
         run: testRegexDoesNotUseDefaultLiteralMatching,
@@ -564,11 +564,26 @@ async function main(): Promise<void> {
         name: 'Regex allow_multiple replaces all matches',
         run: testRegexAllowMultipleReplacesAllMatches,
       },
-      { name: 'Regex invalid pattern fails without writing', run: testRegexInvalidPatternFailsWithoutWriting },
-      { name: 'Regex empty target fails without creating', run: testRegexEmptyTargetFailsWithoutCreating },
-      { name: 'Regex missing file fails without creating', run: testRegexMissingFileFailsWithoutCreating },
-      { name: 'Regex zero-length match fails without partial write', run: testRegexZeroLengthMatchFailsWithoutPartialWrite },
-      { name: 'Regex expands whole match and capture groups', run: testRegexCaptureGroupsAndWholeMatch },
+      {
+        name: 'Regex invalid pattern fails without writing',
+        run: testRegexInvalidPatternFailsWithoutWriting,
+      },
+      {
+        name: 'Regex empty target fails without creating',
+        run: testRegexEmptyTargetFailsWithoutCreating,
+      },
+      {
+        name: 'Regex missing file fails without creating',
+        run: testRegexMissingFileFailsWithoutCreating,
+      },
+      {
+        name: 'Regex zero-length match fails without partial write',
+        run: testRegexZeroLengthMatchFailsWithoutPartialWrite,
+      },
+      {
+        name: 'Regex expands whole match and capture groups',
+        run: testRegexCaptureGroupsAndWholeMatch,
+      },
       {
         name: 'Regex supports multi-digit and leading-zero captures',
         run: testRegexMultiDigitAndLeadingZeroCaptureGroups,

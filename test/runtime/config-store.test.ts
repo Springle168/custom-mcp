@@ -10,11 +10,7 @@ import {
   createTestRuntimeConfigIdentity,
   createTestRuntimeConfigSnapshot,
 } from '../helpers/runtime-config.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,10 +57,21 @@ async function testStoreReturnsInitialSnapshot(): Promise<void> {
   const store = createConfigStore(initialConfig);
   const logsRootStats = await fs.stat(initialConfig.snapshot.logsDir);
 
-  assertEqual(store.getSnapshot(), initialConfig.snapshot, 'ConfigStore should return the initial snapshot');
-  assertEqual(store.getIdentity(), initialConfig.identity, 'ConfigStore should return the initial runtime identity');
+  assertEqual(
+    store.getSnapshot(),
+    initialConfig.snapshot,
+    'ConfigStore should return the initial snapshot',
+  );
+  assertEqual(
+    store.getIdentity(),
+    initialConfig.identity,
+    'ConfigStore should return the initial runtime identity',
+  );
   assertEqual(store.getSnapshot().snapshotVersion, 1, 'Initial snapshot version should be 1');
-  assert(logsRootStats.isDirectory(), 'Test runtime snapshot helper should provide an existing logs root');
+  assert(
+    logsRootStats.isDirectory(),
+    'Test runtime snapshot helper should provide an existing logs root',
+  );
   assertEqual(store.getStatus().state, 'ok', 'Initial ConfigStore status should be ok');
   assert(Object.isFrozen(store), 'ConfigStore should freeze its public facade');
   assert(Object.isFrozen(store.getIdentity()), 'Runtime identity baseline should be frozen');
@@ -94,8 +101,16 @@ async function testToolRuntimeContextDerivesFromSnapshot(): Promise<void> {
     snapshot.pathSafetyContext,
     'ToolRuntimeContext should reuse the call snapshot path safety context',
   );
-  assertEqual(context.lineEnding, snapshot.lineEnding, 'ToolRuntimeContext should copy line ending');
-  assertEqual(context.android, snapshot.android, 'ToolRuntimeContext should expose snapshot Android config');
+  assertEqual(
+    context.lineEnding,
+    snapshot.lineEnding,
+    'ToolRuntimeContext should copy line ending',
+  );
+  assertEqual(
+    context.android,
+    snapshot.android,
+    'ToolRuntimeContext should expose snapshot Android config',
+  );
 }
 
 async function testSnapshotDeepFreeze(): Promise<void> {
@@ -106,7 +121,10 @@ async function testSnapshotDeepFreeze(): Promise<void> {
   assert(Object.isFrozen(snapshot.android), 'Snapshot android config should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext), 'PathSafetyContext should be frozen');
   assert(Object.isFrozen(snapshot.pathSafetyContext.primaryRoot), 'Primary root should be frozen');
-  assert(Object.isFrozen(snapshot.pathSafetyContext.allowedRoots), 'Allowed roots array should be frozen');
+  assert(
+    Object.isFrozen(snapshot.pathSafetyContext.allowedRoots),
+    'Allowed roots array should be frozen',
+  );
   for (const allowedRoot of snapshot.pathSafetyContext.allowedRoots) {
     assert(Object.isFrozen(allowedRoot), 'Each allowed root should be frozen');
   }
@@ -138,9 +156,7 @@ async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
     configStore: store,
     logger: {
       logToolCall(toolName, args) {
-        loggerEvents.push(
-          `call:${toolName}:${String((args as Record<string, unknown>).value)}`,
-        );
+        loggerEvents.push(`call:${toolName}:${String((args as Record<string, unknown>).value)}`);
       },
       logToolResult(toolName, toolResult, durationMs) {
         const firstContent = toolResult.content[0];
@@ -180,7 +196,11 @@ async function testToolCallHandlerReadsStoreOnce(): Promise<void> {
   assertEqual(actual, result, 'Handler should return the router result');
   assertEqual(getSnapshotCount, 1, 'Tool call handler should read the store once per tool call');
   assertEqual(loggerEvents[0], 'call:fake_tool:42', 'Handler should log the tool call');
-  assertEqual(loggerEvents[1], 'result:fake_tool:ok:25', 'Handler should log the tool result duration');
+  assertEqual(
+    loggerEvents[1],
+    'result:fake_tool:ok:25',
+    'Handler should log the tool result duration',
+  );
 }
 
 async function main(): Promise<void> {
@@ -191,8 +211,14 @@ async function main(): Promise<void> {
     afterAll: cleanupFixtures,
     tests: [
       { name: 'returns initial snapshot', run: testStoreReturnsInitialSnapshot },
-      { name: 'does not expose mutable snapshot writer', run: testStoreDoesNotExposeMutableSnapshotWriter },
-      { name: 'derives tool runtime context from snapshot', run: testToolRuntimeContextDerivesFromSnapshot },
+      {
+        name: 'does not expose mutable snapshot writer',
+        run: testStoreDoesNotExposeMutableSnapshotWriter,
+      },
+      {
+        name: 'derives tool runtime context from snapshot',
+        run: testToolRuntimeContextDerivesFromSnapshot,
+      },
       { name: 'deep-freezes snapshot graph', run: testSnapshotDeepFreeze },
       { name: 'tool call handler reads store once', run: testToolCallHandlerReadsStoreOnce },
     ],

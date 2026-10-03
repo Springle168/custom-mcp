@@ -40,13 +40,41 @@ async function testFormatsOnlySafeStructuredMetadata(): Promise<void> {
   });
 
   assertEqual(messages.length, 3, 'Each diagnostic should produce one logger message');
-  assertIncludes(messages[0] ?? '', 'kind=router_exception', 'Tool-call diagnostic should retain its stable kind');
-  assertIncludes(messages[0] ?? '', 'callId=call_test', 'Tool-call diagnostic should retain correlation');
-  assertIncludes(messages[1] ?? '', 'server=https://downstream.example/mcp', 'MCP diagnostic should retain the safe endpoint identity');
-  assertIncludes(messages[1] ?? '', 'classification=mcp_timeout', 'MCP diagnostic should retain stable classification');
-  assertIncludes(messages[2] ?? '', 'cleanupFailed=true', 'Processor diagnostic should retain degraded cleanup state');
-  assertNotIncludes(messages.join('\n'), 'stderr text', 'Diagnostics must not contain Processor stream contents');
-  assertNotIncludes(messages.join('\n'), 'Authorization', 'Diagnostics must not contain static header names');
+  assertIncludes(
+    messages[0] ?? '',
+    'kind=router_exception',
+    'Tool-call diagnostic should retain its stable kind',
+  );
+  assertIncludes(
+    messages[0] ?? '',
+    'callId=call_test',
+    'Tool-call diagnostic should retain correlation',
+  );
+  assertIncludes(
+    messages[1] ?? '',
+    'server=https://downstream.example/mcp',
+    'MCP diagnostic should retain the safe endpoint identity',
+  );
+  assertIncludes(
+    messages[1] ?? '',
+    'classification=mcp_timeout',
+    'MCP diagnostic should retain stable classification',
+  );
+  assertIncludes(
+    messages[2] ?? '',
+    'cleanupFailed=true',
+    'Processor diagnostic should retain degraded cleanup state',
+  );
+  assertNotIncludes(
+    messages.join('\n'),
+    'stderr text',
+    'Diagnostics must not contain Processor stream contents',
+  );
+  assertNotIncludes(
+    messages.join('\n'),
+    'Authorization',
+    'Diagnostics must not contain static header names',
+  );
 }
 
 async function testLoggerFailureNeverEscapesDiagnosticCallbacks(): Promise<void> {

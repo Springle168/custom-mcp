@@ -1,15 +1,10 @@
 import { parseAndroidTestReports } from '../../src/engine/android-test-report.js';
-import {
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 function testSingleFailureReport() {
   const result = parseAndroidTestReports([
     {
-      relativePath:
-        'app/build/test-results/testDebugUnitTest/TEST-ExampleTest.xml',
+      relativePath: 'app/build/test-results/testDebugUnitTest/TEST-ExampleTest.xml',
       xml: `<?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="ExampleTest" tests="2" skipped="0" failures="1" errors="0">
   <testcase name="passing test" classname="example.ExampleTest"/>
@@ -81,11 +76,7 @@ function testMultipleReportsAndDetailLimit() {
     'first',
     'Should use deterministic report path order',
   );
-  assertEqual(
-    result.summary.omittedFailedTests,
-    1,
-    'Should report omitted failure details',
-  );
+  assertEqual(result.summary.omittedFailedTests, 1, 'Should report omitted failure details');
 }
 
 function testMalformedReportFailsSafely() {

@@ -3,8 +3,7 @@ import type { MCPTool } from '../../types.js';
 
 /** Recommended maximum original file size for a content-returning shallow read. */
 export const SHALLOW_READ_BATCH_SIZE_BYTES = 50 * 1024;
-export const SHALLOW_READ_BATCH_SIZE_LABEL =
-  `${(SHALLOW_READ_BATCH_SIZE_BYTES / 1024).toFixed(1)} KB`;
+export const SHALLOW_READ_BATCH_SIZE_LABEL = `${(SHALLOW_READ_BATCH_SIZE_BYTES / 1024).toFixed(1)} KB`;
 
 export const READ_MANY_FILES_TOOL_DEFINITION = {
   name: 'read_many_files',
@@ -37,8 +36,7 @@ For broad file sets, use shallow_read first to inspect their size and truncation
       },
       shallow_read: {
         type: 'boolean',
-        description:
-          `If true, return the matched file list with per-file line counts and sizes, total line count and size, and whether content would be truncated. Use shallow_read_content_limit_bytes to also return contents for small selections. Keep content-return thresholds at or below the recommended ${SHALLOW_READ_BATCH_SIZE_LABEL} batch size unless larger output is intentional. Defaults to false.`,
+        description: `If true, return the matched file list with per-file line counts and sizes, total line count and size, and whether content would be truncated. Use shallow_read_content_limit_bytes to also return contents for small selections. Keep content-return thresholds at or below the recommended ${SHALLOW_READ_BATCH_SIZE_LABEL} batch size unless larger output is intentional. Defaults to false.`,
       },
       shallow_read_content_limit_bytes: {
         type: 'integer',

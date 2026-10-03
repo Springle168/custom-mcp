@@ -34,10 +34,7 @@ function ts(date: Date = new Date()): string {
 }
 
 function logFileTimestampStem(date: Date): string {
-  return ts(date)
-    .replace(/T/, '_')
-    .replace(/:/g, '-')
-    .replace(/\..+/, '');
+  return ts(date).replace(/T/, '_').replace(/:/g, '-').replace(/\..+/, '');
 }
 
 export interface LoggerOptions {
@@ -124,7 +121,7 @@ export class Logger {
           // Number
           return chalk.yellow(match);
         }
-      }
+      },
     );
   }
 
@@ -135,11 +132,7 @@ export class Logger {
     this.write(consoleText, fileText);
   }
 
-  logToolCall(
-    toolName: string,
-    args: unknown,
-    context: ToolCallLogContext,
-  ) {
+  logToolCall(toolName: string, args: unknown, context: ToolCallLogContext) {
     const timestamp = ts();
     const plainJson = JSON.stringify(args, null, 2);
     const fileBody = plainJson
@@ -173,9 +166,9 @@ export class Logger {
     const status = isError ? 'FAIL' : 'OK';
     const duration = durationMs !== undefined ? ` (${durationMs}ms)` : '';
     const text = result.content
-      .map((content) => content.type === 'text'
-        ? content.text
-        : `[image ${content.mimeType}]\n${content.data}`)
+      .map((content) =>
+        content.type === 'text' ? content.text : `[image ${content.mimeType}]\n${content.data}`,
+      )
       .filter(Boolean)
       .join('\n');
 
@@ -188,30 +181,28 @@ export class Logger {
       text
         .split('\n')
         .map((l) => '  ' + l)
-        .join('\n')
+        .join('\n'),
     );
 
     const statusColor = isError ? chalk.red : chalk.green;
     const consoleContext = this.formatToolCallConsoleContext(context);
     const fileContext = this.formatToolCallFileContext(context);
-    const consoleSummary = context.resultSummary === undefined ? '' : `  ${context.resultSummary.consoleText}\n`;
-    const fileSummary = context.resultSummary === undefined ? '' : `  ${context.resultSummary.fileText}\n`;
+    const consoleSummary =
+      context.resultSummary === undefined ? '' : `  ${context.resultSummary.consoleText}\n`;
+    const fileSummary =
+      context.resultSummary === undefined ? '' : `  ${context.resultSummary.fileText}\n`;
     const consoleText = `${chalk.gray(`[${timestamp}]`)} ${statusColor(`→ ${status}`)} ${chalk.yellow(toolName)}${chalk.gray(duration)}\n${consoleContext}${consoleSummary}${consoleBody}\n`;
     const fileText = `[${timestamp}] → ${status} ${toolName}${duration}\n${fileContext}${fileSummary}${fileBody}\n`;
 
     this.write(consoleText, fileText);
   }
 
-  private formatToolCallFileContext(
-    context: ToolCallLogContext,
-  ): string {
+  private formatToolCallFileContext(context: ToolCallLogContext): string {
     const sessionId = context.sessionId ?? 'unavailable (session ID missing)';
     return `  Session: ${sessionId}\n  Call ID: ${context.callId}\n`;
   }
 
-  private formatToolCallConsoleContext(
-    context: ToolCallLogContext,
-  ): string {
+  private formatToolCallConsoleContext(context: ToolCallLogContext): string {
     const sessionId = context.sessionId ?? 'unavailable (session ID missing)';
     return `  ${chalk.cyan('Session:')} ${chalk.magenta(sessionId)}\n  ${chalk.cyan('Call ID:')} ${chalk.magenta(context.callId)}\n`;
   }

@@ -119,17 +119,23 @@ export function startAndroidGradleExecution(
     retainOutput = false;
     clearTimeout(timeoutHandle);
     clearTimeout(terminationGraceHandle);
-    settleExecution(buildResult({
-      task,
-      command,
-      exitCode,
-      durationMs: Date.now() - startedAt,
-      timedOut: terminationReason === 'timeout',
-      cancelled: terminationReason === 'cancelled',
-      stdout,
-      stderr,
-      combinedOutput,
-    }, runtimeConfig, options.includeLogTail === true));
+    settleExecution(
+      buildResult(
+        {
+          task,
+          command,
+          exitCode,
+          durationMs: Date.now() - startedAt,
+          timedOut: terminationReason === 'timeout',
+          cancelled: terminationReason === 'cancelled',
+          stdout,
+          stderr,
+          combinedOutput,
+        },
+        runtimeConfig,
+        options.includeLogTail === true,
+      ),
+    );
   };
 
   const finalDetach = (): void => {
@@ -196,9 +202,7 @@ export function startAndroidGradleExecution(
     void terminateProcessTreeAttempt(child, cleanupController.signal);
     terminationGraceHandle = setTimeout(() => {
       if (childClosed) return;
-      appendSyntheticError(
-        'error: Gradle process did not exit after the termination request.',
-      );
+      appendSyntheticError('error: Gradle process did not exit after the termination request.');
       settle(null);
       startRecovery();
     }, TERMINATION_GRACE_PERIOD_MS);
@@ -206,14 +210,13 @@ export function startAndroidGradleExecution(
 
   const onAbort = (): void => beginTermination('cancelled');
   signal.addEventListener('abort', onAbort, { once: true });
-  void settled.finally(() => {
-    signal.removeEventListener('abort', onAbort);
-  }).catch(() => {});
+  void settled
+    .finally(() => {
+      signal.removeEventListener('abort', onAbort);
+    })
+    .catch(() => {});
 
-  const finishWithoutChild = (
-    message: string,
-    cancelled = false,
-  ): void => {
+  const finishWithoutChild = (message: string, cancelled = false): void => {
     if (cancelled) terminationReason = 'cancelled';
     appendSyntheticError(message);
     settle(null);
@@ -284,10 +287,7 @@ export function startAndroidGradleExecution(
       return;
     }
 
-    timeoutHandle = setTimeout(
-      () => beginTermination('timeout'),
-      runtimeConfig.buildTimeoutMs,
-    );
+    timeoutHandle = setTimeout(() => beginTermination('timeout'), runtimeConfig.buildTimeoutMs);
     timeoutHandle.unref?.();
   })().catch((error: unknown) => {
     finishWithoutChild(`error: Failed to start Gradle: ${errorMessage(error)}`);
@@ -325,10 +325,7 @@ export async function runAndroidGradle(
   return startAndroidGradleExecution(task, runtimeConfig, options, signal).settled;
 }
 
-function buildGradleArgs(
-  task: AndroidGradleTask,
-  options: RunAndroidGradleOptions,
-): string[] {
+function buildGradleArgs(task: AndroidGradleTask, options: RunAndroidGradleOptions): string[] {
   const args: string[] = [task];
   if (options.quiet !== false) args.push('-q');
   if (options.stacktrace === true) args.push('--stacktrace');
@@ -342,7 +339,9 @@ function formatDisplayCommand(args: string[]): string {
 }
 
 function buildWindowsCommandLine(args: string[]): string {
-  return [quoteWindowsArgument(GRADLE_WRAPPER_COMMAND), ...args.map(quoteWindowsArgument)].join(' ');
+  return [quoteWindowsArgument(GRADLE_WRAPPER_COMMAND), ...args.map(quoteWindowsArgument)].join(
+    ' ',
+  );
 }
 
 function quoteWindowsArgument(value: string): string {
@@ -380,12 +379,10 @@ async function terminateProcessTreeAttempt(
   }
 
   await new Promise<void>((resolve) => {
-    const spawnHelper: TerminationHelperSpawner = options.spawnHelper
-      ?? ((command, args, spawnOptions) => spawn(command, args, spawnOptions));
-    const attemptTimeoutMs =
-      options.attemptTimeoutMs ?? TERMINATION_ATTEMPT_TIMEOUT_MS;
-    const reapGraceMs =
-      options.reapGraceMs ?? TERMINATION_HELPER_REAP_GRACE_MS;
+    const spawnHelper: TerminationHelperSpawner =
+      options.spawnHelper ?? ((command, args, spawnOptions) => spawn(command, args, spawnOptions));
+    const attemptTimeoutMs = options.attemptTimeoutMs ?? TERMINATION_ATTEMPT_TIMEOUT_MS;
+    const reapGraceMs = options.reapGraceMs ?? TERMINATION_HELPER_REAP_GRACE_MS;
     let completed = false;
     let stopRequested = false;
     let helper: ChildProcess;

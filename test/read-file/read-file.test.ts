@@ -4,12 +4,7 @@ import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import readFileTool from '../../src/tools/built-in/files/read-file.js';
-import {
-  cleanupFixtures,
-  FIXTURES_DIR,
-  prepareFixtures,
-  withTempTextFile,
-} from './fixtures.js';
+import { cleanupFixtures, FIXTURES_DIR, prepareFixtures, withTempTextFile } from './fixtures.js';
 import {
   assert,
   assertEqual,
@@ -27,16 +22,20 @@ async function prepareTestContext(): Promise<void> {
 }
 
 async function testReadFullFile() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
-  assertEqual(result.content.length, 2, 'Should return one summary block and one file-content block');
+  assertEqual(
+    result.content.length,
+    2,
+    'Should return one summary block and one file-content block',
+  );
   const summaryBlock = result.content[0];
   assert(summaryBlock?.type === 'text', 'The first block should contain the summary');
   assertEqual(
@@ -47,53 +46,78 @@ async function testReadFullFile() {
   const contentBlock = result.content[1];
   assert(contentBlock?.type === 'text', 'The second block should contain the file content');
   assertIncludes(text, 'Read 15 of 15 line(s) from src\\Foo.kt.', 'Should report line count');
-  assertIncludes(text, 'No truncation: all returned file content is complete.', 'Should report no truncation');
+  assertIncludes(
+    text,
+    'No truncation: all returned file content is complete.',
+    'Should report no truncation',
+  );
   assertIncludes(contentBlock.text, 'data class Foo', 'Should include file content');
-  assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report truncation');
-
+  assertNotIncludes(
+    text,
+    'IMPORTANT: The file content has been truncated.',
+    'Should not report truncation',
+  );
 }
 
 async function testReadLineRange() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8 },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
-  assertIncludes(text, 'Read 3 of 15 line(s) from src\\Foo.kt.', 'Should report selected line count');
-  assertIncludes(text, 'Partial read: showing lines 6-8 of 15 total lines.', 'Should report partial range');
-  assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not call a range read truncation');
+  assertIncludes(
+    text,
+    'Read 3 of 15 line(s) from src\\Foo.kt.',
+    'Should report selected line count',
+  );
+  assertIncludes(
+    text,
+    'Partial read: showing lines 6-8 of 15 total lines.',
+    'Should report partial range',
+  );
+  assertNotIncludes(
+    text,
+    'IMPORTANT: The file content has been truncated.',
+    'Should not call a range read truncation',
+  );
   assertIncludes(text, 'data class Foo(', 'Should include start line');
   assertIncludes(text, '    val name: String', 'Should include end line');
   assertNotIncludes(text, 'package com.example.demo', 'Should omit lines before range');
-
 }
 
 async function testEndLineBeyondEofClipsToEof() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 13, end_line: 999 },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
-  assertIncludes(text, 'Read 3 of 15 line(s) from src\\Foo.kt.', 'Should report clipped line count');
-  assertIncludes(text, 'Partial read: showing lines 13-15 of 15 total lines.', 'Should report clipped range');
+  assertIncludes(
+    text,
+    'Read 3 of 15 line(s) from src\\Foo.kt.',
+    'Should report clipped line count',
+  );
+  assertIncludes(
+    text,
+    'Partial read: showing lines 13-15 of 15 total lines.',
+    'Should report clipped range',
+  );
   assertIncludes(text, '}', 'Should include EOF content');
   assertNotIncludes(text, 'truncated', 'Should not call clipped end_line truncation');
-
 }
 
 async function testShowLineNumbers() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 6, end_line: 8, show_line_numbers: true },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
@@ -101,38 +125,44 @@ async function testShowLineNumbers() {
 
   assertIncludes(text, '6: data class Foo(', 'Should prefix first selected line');
   assertIncludes(text, '8:     val name: String', 'Should preserve original line numbers');
-
 }
 
 async function testLargeFileReadsAllLines() {
-
   const content = Array.from({ length: 2105 }, (_, index) => `line-${index + 1}`).join('\n');
 
   await withTempTextFile('large-read-file-v2.tmp.txt', content, async (fileName) => {
     const result = await readFileTool.handler(
       { file_path: fileName },
-      testContext, createTestToolInvocationContext(),
+      testContext,
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError !== true, 'Should succeed');
     const text = getResultText(result);
 
     assertIncludes(text, `Read 2105 of 2105 line(s) from ${fileName}.`, 'Should report all lines');
-    assertIncludes(text, 'No truncation: all returned file content is complete.', 'Should report complete read');
+    assertIncludes(
+      text,
+      'No truncation: all returned file content is complete.',
+      'Should report complete read',
+    );
     assertIncludes(text, 'line-2105', 'Should include final line beyond old limit');
-    assertNotIncludes(text, 'IMPORTANT: The file content has been truncated.', 'Should not report line truncation');
+    assertNotIncludes(
+      text,
+      'IMPORTANT: The file content has been truncated.',
+      'Should not report line truncation',
+    );
   });
-
 }
 
 async function testLongLineIsNotShortened() {
-
   const longLine = 'x'.repeat(2010);
 
   await withTempTextFile('long-line-read-file-v2.tmp.txt', longLine, async (fileName) => {
     const result = await readFileTool.handler(
       { file_path: fileName },
-      testContext, createTestToolInvocationContext(),
+      testContext,
+      createTestToolInvocationContext(),
     );
 
     assert(result.isError !== true, 'Should succeed');
@@ -144,13 +174,15 @@ async function testLongLineIsNotShortened() {
     assertEqual(contentLine.length, 2010, 'Returned content line should not be shortened');
     assertEqual(contentLine, longLine, 'Returned content line should be complete');
     assertNotIncludes(text, '[truncated]', 'Should not add long-line truncation marker');
-    assertNotIncludes(text, 'Some returned lines were shortened', 'Should not explain long-line truncation');
+    assertNotIncludes(
+      text,
+      'Some returned lines were shortened',
+      'Should not explain long-line truncation',
+    );
   });
-
 }
 
 async function testRegexRange() {
-
   const result = await readFileTool.handler(
     {
       file_path: 'src/Foo.kt',
@@ -159,43 +191,58 @@ async function testRegexRange() {
       end_line: '^\\)',
       show_line_numbers: true,
     },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
-  assertIncludes(text, 'Read 5 of 15 line(s) from src\\Foo.kt.', 'Should report regex-selected line count');
-  assertIncludes(text, 'Partial read: showing lines 6-10 of 15 total lines.', 'Should report resolved line range');
+  assertIncludes(
+    text,
+    'Read 5 of 15 line(s) from src\\Foo.kt.',
+    'Should report regex-selected line count',
+  );
+  assertIncludes(
+    text,
+    'Partial read: showing lines 6-10 of 15 total lines.',
+    'Should report resolved line range',
+  );
   assertIncludes(text, '6: data class Foo(', 'Should include resolved start line');
   assertIncludes(text, '10: ) {', 'Should include resolved end line');
   assertNotIncludes(text, '11:     fun isValid()', 'Should stop at regex end line');
   assertNotIncludes(text, 'truncated', 'Should not call regex range truncation');
-
 }
 
 async function testRegexStartOnlyReadsToEof() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'fun isValid' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError !== true, 'Should succeed');
   const text = getResultText(result);
 
-  assertIncludes(text, 'Read 5 of 15 line(s) from src\\Foo.kt.', 'Should read from regex match to EOF');
-  assertIncludes(text, 'Partial read: showing lines 11-15 of 15 total lines.', 'Should report start-to-EOF range');
+  assertIncludes(
+    text,
+    'Read 5 of 15 line(s) from src\\Foo.kt.',
+    'Should read from regex match to EOF',
+  );
+  assertIncludes(
+    text,
+    'Partial read: showing lines 11-15 of 15 total lines.',
+    'Should report start-to-EOF range',
+  );
   assertIncludes(text, 'fun isValid(): Boolean', 'Should include matched start line');
   assertNotIncludes(text, 'data class Foo(', 'Should omit lines before regex start');
-
 }
 
 async function testRegexInvalidPattern() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: '[' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -203,26 +250,27 @@ async function testRegexInvalidPattern() {
 
   assertIncludes(text, 'Invalid start_line regex pattern:', 'Should explain invalid regex');
   assertIncludes(text, 'Check the pattern syntax', 'Should suggest a corrective action');
-
 }
 
 async function testRegexStartNoMatch() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 'NoSuchSymbol' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
   const text = getResultText(result);
 
-  assertIncludes(text, 'start_line regex pattern did not match any line', 'Should explain unmatched start pattern');
+  assertIncludes(
+    text,
+    'start_line regex pattern did not match any line',
+    'Should explain unmatched start pattern',
+  );
   assertIncludes(text, 'Check the pattern', 'Should suggest checking the pattern');
-
 }
 
 async function testRegexEndNoMatch() {
-
   const result = await readFileTool.handler(
     {
       file_path: 'src/Foo.kt',
@@ -230,22 +278,26 @@ async function testRegexEndNoMatch() {
       start_line: 'data class Foo',
       end_line: 'NoSuchSymbol',
     },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
   const text = getResultText(result);
 
-  assertIncludes(text, 'end_line regex pattern did not match any line at or after the resolved start line', 'Should explain unmatched end pattern');
+  assertIncludes(
+    text,
+    'end_line regex pattern did not match any line at or after the resolved start line',
+    'Should explain unmatched end pattern',
+  );
   assertIncludes(text, 'Check the pattern', 'Should suggest checking the pattern');
-
 }
 
 async function testModeSpecificRangeTypes() {
-
   const lineModeResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'line', start_line: '6' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(lineModeResult.isError === true, 'Line mode should reject string start_line');
@@ -257,7 +309,8 @@ async function testModeSpecificRangeTypes() {
 
   const lineModeEndResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'line', end_line: '8' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(lineModeEndResult.isError === true, 'Line mode should reject string end_line');
@@ -269,7 +322,8 @@ async function testModeSpecificRangeTypes() {
 
   const regexModeResult = await readFileTool.handler(
     { file_path: 'src/Foo.kt', read_mode: 'regex', start_line: 6 },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(regexModeResult.isError === true, 'Regex mode should reject numeric start_line');
@@ -278,11 +332,9 @@ async function testModeSpecificRangeTypes() {
     'In read_mode="regex", start_line must be a non-empty regex pattern string.',
     'Should explain regex mode type requirement',
   );
-
 }
 
 async function testInvalidReadMode() {
-
   const result = await callBuiltInTool(
     'read_file',
     { file_path: 'src/Foo.kt', read_mode: 'keyword' },
@@ -291,15 +343,18 @@ async function testInvalidReadMode() {
   );
 
   assert(result.isError === true, 'Should fail');
-  assertIncludes(getResultText(result), 'must be equal to one of the allowed values', 'Should report enum validation');
-
+  assertIncludes(
+    getResultText(result),
+    'must be equal to one of the allowed values',
+    'Should report enum validation',
+  );
 }
 
 async function testInvalidRange() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 10, end_line: 5 },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
@@ -308,31 +363,36 @@ async function testInvalidRange() {
     'start_line 10 cannot be greater than end_line 5.',
     'Should explain invalid range with actual values',
   );
-
 }
 
 async function testStartLineBeyondEof() {
-
   const result = await readFileTool.handler(
     { file_path: 'src/Foo.kt', start_line: 999 },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
-  assertIncludes(getResultText(result), 'start_line 999 exceeds file line count (15)', 'Should explain EOF range');
-
+  assertIncludes(
+    getResultText(result),
+    'start_line 999 exceeds file line count (15)',
+    'Should explain EOF range',
+  );
 }
 
 async function testBinaryFileRejected() {
-
   const result = await readFileTool.handler(
     { file_path: 'binary/fake.png' },
-    testContext, createTestToolInvocationContext(),
+    testContext,
+    createTestToolInvocationContext(),
   );
 
   assert(result.isError === true, 'Should fail');
-  assertIncludes(getResultText(result), 'Cannot display content of binary file', 'Should explain binary rejection');
-
+  assertIncludes(
+    getResultText(result),
+    'Cannot display content of binary file',
+    'Should explain binary rejection',
+  );
 }
 
 async function main(): Promise<void> {

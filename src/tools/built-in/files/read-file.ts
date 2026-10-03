@@ -5,10 +5,7 @@ import {
   resolveFileAccessPath,
   validateFileAccessReadTarget,
 } from '../../../utils/file-access-policy.js';
-import {
-  isBinaryFile,
-  readTextFile,
-} from '../../../utils/file-read.js';
+import { isBinaryFile, readTextFile } from '../../../utils/file-read.js';
 import { READ_FILE_TOOL_DEFINITION } from './read-file.definition.js';
 
 type ReadMode = 'line' | 'regex';
@@ -63,9 +60,7 @@ function validateLineRangeOrder(args: Record<string, unknown>): string | null {
   return null;
 }
 
-function validateRegexRangePatterns(
-  args: Record<string, unknown>,
-): string | null {
+function validateRegexRangePatterns(args: Record<string, unknown>): string | null {
   for (const paramName of ['start_line', 'end_line'] as const) {
     const pattern = args[paramName];
     if (pattern === undefined) continue;
@@ -80,10 +75,7 @@ function validateRegexRangePatterns(
   return null;
 }
 
-function validateReadSemantics(
-  args: Record<string, unknown>,
-  readMode: ReadMode,
-): string | null {
+function validateReadSemantics(args: Record<string, unknown>, readMode: ReadMode): string | null {
   const rangeTypeError = validateModeSpecificRangeTypes(args, readMode);
   if (rangeTypeError) {
     return rangeTypeError;
@@ -123,9 +115,7 @@ async function resolveRegexRange(
   let endLine: number | undefined;
   if (args.end_line !== undefined) {
     const endPattern = new RegExp(args.end_line as string);
-    const relativeEndIndex = lines
-      .slice(startIndex)
-      .findIndex((line) => endPattern.test(line));
+    const relativeEndIndex = lines.slice(startIndex).findIndex((line) => endPattern.test(line));
     if (relativeEndIndex === -1) {
       return 'end_line regex pattern did not match any line at or after the resolved start line. Check the pattern and choose text that appears on the intended end line.';
     }
@@ -163,19 +153,13 @@ async function handleReadFile(
 
   const filePath = args.file_path as string;
   const fileAccessPolicyContext = context.fileAccessPolicyContext;
-  const safePathResult = resolveFileAccessPath(
-    filePath,
-    fileAccessPolicyContext,
-  );
+  const safePathResult = resolveFileAccessPath(filePath, fileAccessPolicyContext);
   if (!safePathResult.ok) {
     return textErrorResult(safePathResult.reason);
   }
   const safePath = safePathResult.path;
 
-  const readTarget = await validateFileAccessReadTarget(
-    safePath,
-    fileAccessPolicyContext,
-  );
+  const readTarget = await validateFileAccessReadTarget(safePath, fileAccessPolicyContext);
   if (!readTarget.ok) {
     return textErrorResult(
       `Could not read file ${filePath}: ${readTarget.reason}. Check the path and ensure it is a readable text file.`,
@@ -197,9 +181,7 @@ async function handleReadFile(
 
   const lineRange = await resolveLineRange(readMode, realPath, args);
   if (typeof lineRange === 'string') {
-    return textErrorResult(
-      `Could not read file ${filePath}: ${lineRange}`,
-    );
+    return textErrorResult(`Could not read file ${filePath}: ${lineRange}`);
   }
 
   const result = await readTextFile(realPath, {

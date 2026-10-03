@@ -26,7 +26,11 @@ function testMcpEndpointUrls(): void {
 
 function testBindAddressFormatting(): void {
   assertEqual(formatHostPort('::', 3100), '[::]:3100', 'IPv6 bind addresses should be bracketed');
-  assertEqual(formatHostPort('0.0.0.0', 3100), '0.0.0.0:3100', 'IPv4 bind addresses should be preserved');
+  assertEqual(
+    formatHostPort('0.0.0.0', 3100),
+    '0.0.0.0:3100',
+    'IPv4 bind addresses should be preserved',
+  );
 }
 
 async function main(): Promise<void> {

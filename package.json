@@ -6,6 +6,8 @@
     "custom-mcp": "./dist/index.js"
   },
   "scripts": {
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" package.json tsconfig.json tsconfig.test.json .prettierrc.json",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" package.json tsconfig.json tsconfig.test.json .prettierrc.json",
     "build": "tsc",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "check": "npm run build && npm run typecheck:test",
@@ -27,6 +29,7 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
+    "prettier": "3.9.9",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },

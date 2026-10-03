@@ -17,30 +17,94 @@ export const MAX_FILE_SIZE_MB = 20;
  */
 const TEXT_EXTENSIONS = new Set([
   // TypeScript / JavaScript
-  '.ts', '.mts', '.cts', '.tsx',
-  '.js', '.mjs', '.cjs', '.jsx',
+  '.ts',
+  '.mts',
+  '.cts',
+  '.tsx',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.jsx',
   // JVM
-  '.kt', '.kts', '.java', '.scala', '.groovy', '.gradle',
+  '.kt',
+  '.kts',
+  '.java',
+  '.scala',
+  '.groovy',
+  '.gradle',
   // Systems
-  '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx',
-  '.cs', '.go', '.rs', '.swift',
+  '.c',
+  '.cpp',
+  '.cc',
+  '.cxx',
+  '.h',
+  '.hpp',
+  '.hxx',
+  '.cs',
+  '.go',
+  '.rs',
+  '.swift',
   // Scripting
-  '.py', '.rb', '.lua', '.pl', '.pm', '.php', '.r', '.dart',
+  '.py',
+  '.rb',
+  '.lua',
+  '.pl',
+  '.pm',
+  '.php',
+  '.r',
+  '.dart',
   // Web
-  '.html', '.htm', '.css', '.scss', '.sass', '.less', '.vue', '.svelte',
+  '.html',
+  '.htm',
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.vue',
+  '.svelte',
   // Data / Config
-  '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.properties',
-  '.xml', '.xsl', '.xslt', '.svg', '.plist',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.properties',
+  '.xml',
+  '.xsl',
+  '.xslt',
+  '.svg',
+  '.plist',
   // Documentation
-  '.md', '.markdown', '.txt', '.csv', '.tsv', '.rst',
+  '.md',
+  '.markdown',
+  '.txt',
+  '.csv',
+  '.tsv',
+  '.rst',
   // Shell
-  '.sh', '.bash', '.zsh', '.fish', '.bat', '.cmd', '.ps1',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.fish',
+  '.bat',
+  '.cmd',
+  '.ps1',
   // Build / Infra
-  '.cmake', '.tf', '.hcl',
+  '.cmake',
+  '.tf',
+  '.hcl',
   // Query / Schema
-  '.sql', '.graphql', '.gql', '.proto',
+  '.sql',
+  '.graphql',
+  '.gql',
+  '.proto',
   // Misc
-  '.lock', '.log', '.patch', '.diff',
+  '.lock',
+  '.log',
+  '.patch',
+  '.diff',
 ]);
 
 /**
@@ -49,30 +113,86 @@ const TEXT_EXTENSIONS = new Set([
  */
 export const BINARY_EXTENSIONS = new Set([
   // Executables & Libraries
-  '.exe', '.dll', '.so', '.dylib', '.bin',
-  '.obj', '.o', '.a', '.lib', '.wasm',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.bin',
+  '.obj',
+  '.o',
+  '.a',
+  '.lib',
+  '.wasm',
   // JVM bytecode
-  '.class', '.jar', '.war', '.ear',
+  '.class',
+  '.jar',
+  '.war',
+  '.ear',
   // Python bytecode
-  '.pyc', '.pyo',
+  '.pyc',
+  '.pyo',
   // Archives
-  '.zip', '.tar', '.gz', '.bz2', '.rar', '.7z', '.xz',
+  '.zip',
+  '.tar',
+  '.gz',
+  '.bz2',
+  '.rar',
+  '.7z',
+  '.xz',
   // Documents (binary formats)
-  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.odt', '.ods', '.odp', '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.odt',
+  '.ods',
+  '.odp',
+  '.pdf',
   // Images
-  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp',
-  '.ico', '.tiff', '.tif', '.heic', '.heif', '.avif',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.ico',
+  '.tiff',
+  '.tif',
+  '.heic',
+  '.heif',
+  '.avif',
   // Audio
-  '.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma',
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.aac',
+  '.ogg',
+  '.m4a',
+  '.wma',
   // Video
-  '.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm',
+  '.mp4',
+  '.avi',
+  '.mkv',
+  '.mov',
+  '.wmv',
+  '.flv',
+  '.webm',
   // Fonts
-  '.ttf', '.otf', '.woff', '.woff2', '.eot',
+  '.ttf',
+  '.otf',
+  '.woff',
+  '.woff2',
+  '.eot',
   // Database
-  '.sqlite', '.db', '.dat',
+  '.sqlite',
+  '.db',
+  '.dat',
   // Android
-  '.apk', '.aab', '.dex',
+  '.apk',
+  '.aab',
+  '.dex',
 ]);
 
 export interface TextFileContent {
@@ -113,9 +233,7 @@ export interface ReadTextFileOptions {
   maxLineLength?: number | null;
 }
 
-export type TextFileResult =
-  | ({ ok: true } & TextFileContent)
-  | { ok: false; reason: string };
+export type TextFileResult = ({ ok: true } & TextFileContent) | { ok: false; reason: string };
 
 /**
  * Determines whether a file is likely binary.
@@ -198,17 +316,11 @@ export async function readTextFile(
     const raw = await fs.readFile(filePath, 'utf-8');
     const lines = raw.split(/\r?\n/);
     const originalLineCount = lines.length;
-    const maxLines = options.maxLines === undefined
-      ? MAX_LINES_PER_FILE
-      : options.maxLines;
-    const maxLineLength = options.maxLineLength === undefined
-      ? MAX_LINE_LENGTH
-      : options.maxLineLength;
+    const maxLines = options.maxLines === undefined ? MAX_LINES_PER_FILE : options.maxLines;
+    const maxLineLength =
+      options.maxLineLength === undefined ? MAX_LINE_LENGTH : options.maxLineLength;
 
-    if (
-      options.startLine !== undefined &&
-      options.startLine > originalLineCount
-    ) {
+    if (options.startLine !== undefined && options.startLine > originalLineCount) {
       return {
         ok: false,
         reason: `start_line ${options.startLine} exceeds file line count (${originalLineCount})`,
@@ -220,20 +332,17 @@ export async function readTextFile(
 
     if (options.startLine !== undefined || options.endLine !== undefined) {
       sliceStart = options.startLine !== undefined ? options.startLine - 1 : 0;
-      sliceEnd = options.endLine !== undefined
-        ? Math.min(options.endLine, originalLineCount)
-        : originalLineCount;
+      sliceEnd =
+        options.endLine !== undefined
+          ? Math.min(options.endLine, originalLineCount)
+          : originalLineCount;
     }
 
     const actualStart = Math.min(sliceStart, originalLineCount);
     const requestedEnd = Math.max(actualStart, sliceEnd);
-    const lineLimitEnd = maxLines === null
-      ? requestedEnd
-      : Math.min(actualStart + maxLines, requestedEnd);
-    const actualEnd = Math.min(
-      lineLimitEnd,
-      originalLineCount,
-    );
+    const lineLimitEnd =
+      maxLines === null ? requestedEnd : Math.min(actualStart + maxLines, requestedEnd);
+    const actualEnd = Math.min(lineLimitEnd, originalLineCount);
     const selectedLines = lines.slice(actualStart, actualEnd);
     const isPartialRead = actualStart > 0 || actualEnd < originalLineCount;
     const lineLimitTruncated = actualEnd < requestedEnd;
@@ -241,23 +350,13 @@ export async function readTextFile(
     const truncationSuffix = '... [truncated]';
     let lineLengthTruncated = false;
     const formattedLines = selectedLines.map((line, index) => {
-      const lineNumberPrefix = options.showLineNumbers === true
-        ? `${actualStart + index + 1}: `
-        : '';
+      const lineNumberPrefix =
+        options.showLineNumbers === true ? `${actualStart + index + 1}: ` : '';
 
-      if (
-        maxLineLength !== null &&
-        line.length + lineNumberPrefix.length > maxLineLength
-      ) {
+      if (maxLineLength !== null && line.length + lineNumberPrefix.length > maxLineLength) {
         lineLengthTruncated = true;
-        const contentLengthLimit = Math.max(
-          0,
-          maxLineLength - lineNumberPrefix.length,
-        );
-        const prefixLength = Math.max(
-          0,
-          contentLengthLimit - truncationSuffix.length,
-        );
+        const contentLengthLimit = Math.max(0, maxLineLength - lineNumberPrefix.length);
+        const prefixLength = Math.max(0, contentLengthLimit - truncationSuffix.length);
         line = line.substring(0, prefixLength) + truncationSuffix;
         if (line.length > contentLengthLimit) {
           line = line.substring(0, contentLengthLimit);

@@ -1,9 +1,5 @@
 import { ConfigError } from './errors.js';
-import {
-  readToken,
-  readTypedString,
-  type ValuePolicyResult,
-} from './value-policy.js';
+import { readToken, readTypedString, type ValuePolicyResult } from './value-policy.js';
 
 export const REQUEST_FEATURES = ['structuredContentDup'] as const;
 export type RuntimeRequestFeature = (typeof REQUEST_FEATURES)[number];
@@ -159,9 +155,7 @@ function readRequestHeaderRules(
     fail(context, fieldPath, `${fieldPath} must be an array.`);
   }
 
-  return value.map((item, index) =>
-    readRequestHeaderRule(context, item, `${fieldPath}[${index}]`)
-  );
+  return value.map((item, index) => readRequestHeaderRule(context, item, `${fieldPath}[${index}]`));
 }
 
 function readRequestHeaderRule(
@@ -169,12 +163,7 @@ function readRequestHeaderRule(
   value: unknown,
   fieldPath: string,
 ): RuntimeRequestHeaderRule {
-  const rawRule = readObject(
-    context,
-    value,
-    fieldPath,
-    `${fieldPath} must be a JSON object.`,
-  );
+  const rawRule = readObject(context, value, fieldPath, `${fieldPath} must be a JSON object.`);
   assertKnownFields(context, rawRule, REQUEST_HEADER_RULE_FIELDS, fieldPath);
   assertRequired(context, rawRule, 'match', `${fieldPath}.match`);
   assertRequired(context, rawRule, 'enable', `${fieldPath}.enable`);
@@ -345,10 +334,7 @@ function assertRequired(
   }
 }
 
-function unwrapPolicy<T>(
-  context: RequestHeaderRulesParseContext,
-  result: ValuePolicyResult<T>,
-): T {
+function unwrapPolicy<T>(context: RequestHeaderRulesParseContext, result: ValuePolicyResult<T>): T {
   if (!result.ok) {
     fail(context, result.error.fieldPath, result.error.message);
   }
@@ -360,11 +346,7 @@ function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function fail(
-  context: RequestHeaderRulesParseContext,
-  fieldPath: string,
-  message: string,
-): never {
+function fail(context: RequestHeaderRulesParseContext, fieldPath: string, message: string): never {
   throw new ConfigError({
     code: 'config_validation_failed',
     configFilePath: context.configFilePath,

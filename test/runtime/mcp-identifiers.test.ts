@@ -1,11 +1,5 @@
-import {
-  generateMcpSessionId,
-  generateToolCallId,
-} from '../../src/runtime/mcp/mcp-identifiers.js';
-import {
-  assert,
-  runTestSuite,
-} from '../test-utils.js';
+import { generateMcpSessionId, generateToolCallId } from '../../src/runtime/mcp/mcp-identifiers.js';
+import { assert, runTestSuite } from '../test-utils.js';
 
 const PREFIXED_UUID_RE =
   /^(session|call)_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;

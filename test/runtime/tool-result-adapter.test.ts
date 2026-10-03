@@ -1,11 +1,7 @@
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { adaptToolCallResultForRequestPolicy } from '../../src/runtime/request/tool-result-adapter.js';
 import type { RequestHeaderPolicy } from '../../src/runtime/request/request-header-policy.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 function policy(enabled: boolean): RequestHeaderPolicy {
   return {
@@ -37,7 +33,11 @@ function testNoMatchReturnsOriginalObject(): void {
   const adapted = adaptToolCallResultForRequestPolicy(original, policy(false));
 
   assertEqual(adapted, original, 'No policy feature should return the original result object');
-  assertEqual(adapted.structuredContent, original.structuredContent, 'No policy feature should retain native structuredContent unchanged');
+  assertEqual(
+    adapted.structuredContent,
+    original.structuredContent,
+    'No policy feature should retain native structuredContent unchanged',
+  );
 }
 
 function testMatchedSuccessAddsWrapper(): void {
@@ -58,7 +58,11 @@ function testMatchedSuccessAddsWrapper(): void {
   assertEqual(wrapper.content, original.content, 'Wrapper should contain the result content');
   assertEqual(wrapper.isError, false, 'Successful wrapper should expose isError false');
   assertEqual(adapted._meta, original._meta, 'Matched policy should preserve top-level metadata');
-  assertEqual(adapted.extension, original.extension, 'Matched policy should preserve top-level extensions');
+  assertEqual(
+    adapted.extension,
+    original.extension,
+    'Matched policy should preserve top-level extensions',
+  );
   assertEqual(original.content[1]?.type, 'image', 'Adapter should preserve mixed content order');
 }
 
@@ -76,8 +80,16 @@ function testWrapperDoesNotCopyOtherExtensions(): void {
   const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
   const wrapper = getStructuredContent(adapted);
 
-  assertEqual(adapted.metadata, original.metadata, 'Top-level extensions should remain on the adapted result');
-  assertEqual(Object.keys(wrapper).sort().join(','), 'content,isError', 'Wrapper should only contain content and isError');
+  assertEqual(
+    adapted.metadata,
+    original.metadata,
+    'Top-level extensions should remain on the adapted result',
+  );
+  assertEqual(
+    Object.keys(wrapper).sort().join(','),
+    'content,isError',
+    'Wrapper should only contain content and isError',
+  );
 }
 
 function testExistingStructuredContentIsOverwrittenWithoutMutation(): void {
@@ -87,8 +99,16 @@ function testExistingStructuredContentIsOverwrittenWithoutMutation(): void {
   const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
   const wrapper = getStructuredContent(adapted);
 
-  assertEqual((original.structuredContent as { stale?: boolean }).stale, true, 'Original structuredContent extension should remain unchanged');
-  assertEqual(wrapper.content, original.content, 'Adapted result should overwrite structuredContent with the standard wrapper');
+  assertEqual(
+    (original.structuredContent as { stale?: boolean }).stale,
+    true,
+    'Original structuredContent extension should remain unchanged',
+  );
+  assertEqual(
+    wrapper.content,
+    original.content,
+    'Adapted result should overwrite structuredContent with the standard wrapper',
+  );
   assertEqual(wrapper.isError, false, 'Adapted wrapper should use the normalized error flag');
 }
 
@@ -98,8 +118,15 @@ function testAdapterDoesNotMutateHandlerResult(): void {
 
   adaptToolCallResultForRequestPolicy(original, policy(true));
 
-  assertEqual(Object.keys(original).join(','), beforeKeys, 'Adapter should not mutate the handler result keys');
-  assert(!('structuredContent' in original), 'Adapter should not attach structuredContent to the original result');
+  assertEqual(
+    Object.keys(original).join(','),
+    beforeKeys,
+    'Adapter should not mutate the handler result keys',
+  );
+  assert(
+    !('structuredContent' in original),
+    'Adapter should not attach structuredContent to the original result',
+  );
 }
 
 function testOnlyTrueIsErrorCountsAsError(): void {
@@ -120,9 +147,18 @@ async function main(): Promise<void> {
       { name: 'no match returns original object', run: testNoMatchReturnsOriginalObject },
       { name: 'matched success adds wrapper', run: testMatchedSuccessAddsWrapper },
       { name: 'matched error adds wrapper', run: testMatchedErrorAddsWrapper },
-      { name: 'wrapper does not copy other extensions', run: testWrapperDoesNotCopyOtherExtensions },
-      { name: 'existing structuredContent is overwritten without mutation', run: testExistingStructuredContentIsOverwrittenWithoutMutation },
-      { name: 'adapter does not mutate handler result', run: testAdapterDoesNotMutateHandlerResult },
+      {
+        name: 'wrapper does not copy other extensions',
+        run: testWrapperDoesNotCopyOtherExtensions,
+      },
+      {
+        name: 'existing structuredContent is overwritten without mutation',
+        run: testExistingStructuredContentIsOverwrittenWithoutMutation,
+      },
+      {
+        name: 'adapter does not mutate handler result',
+        run: testAdapterDoesNotMutateHandlerResult,
+      },
       { name: 'only true isError counts as error', run: testOnlyTrueIsErrorCountsAsError },
     ],
   });

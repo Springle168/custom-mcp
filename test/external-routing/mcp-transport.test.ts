@@ -1,5 +1,8 @@
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type {
+  Transport,
+  TransportSendOptions,
+} from '@modelcontextprotocol/sdk/shared/transport.js';
 import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { TrackedMcpTransport } from '../../src/tools/external-routing/mcp-transport.js';
 import { assert, assertEqual, runTestSuite } from '../test-utils.js';
@@ -17,7 +20,11 @@ class FakeTransport implements Transport {
 
   async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
     this.sent.push(message);
-    if ('method' in message && message.method === 'notifications/cancelled' && this.rejectCancellation) {
+    if (
+      'method' in message &&
+      message.method === 'notifications/cancelled' &&
+      this.rejectCancellation
+    ) {
       throw this.cancellationError;
     }
   }
@@ -37,13 +44,17 @@ await runTestSuite({
         const delegate = new FakeTransport();
         const tracked = new TrackedMcpTransport(delegate);
         let forwarded = 0;
-        tracked.onmessage = () => { forwarded++; };
-        const captured = tracked.captureCall(() => tracked.send({
-          jsonrpc: '2.0',
-          id: 41,
-          method: 'tools/call',
-          params: { name: 'test', arguments: {} },
-        }));
+        tracked.onmessage = () => {
+          forwarded++;
+        };
+        const captured = tracked.captureCall(() =>
+          tracked.send({
+            jsonrpc: '2.0',
+            id: 41,
+            method: 'tools/call',
+            params: { name: 'test', arguments: {} },
+          }),
+        );
         await captured.result;
         captured.exchange.markCallerSettled();
         await captured.exchange.drained;
@@ -53,7 +64,11 @@ await runTestSuite({
           id: 41,
           result: { content: [{ type: 'text', text: 'late secret payload' }] },
         });
-        assertEqual(forwarded, 0, 'A tombstoned late response must not reach the SDK Protocol handler.');
+        assertEqual(
+          forwarded,
+          0,
+          'A tombstoned late response must not reach the SDK Protocol handler.',
+        );
       },
     },
     {
@@ -62,14 +77,26 @@ await runTestSuite({
         const delegate = new FakeTransport();
         let protocolFailures = 0;
         const tracked = new TrackedMcpTransport(delegate, {
-          onProtocolError: () => { protocolFailures++; },
+          onProtocolError: () => {
+            protocolFailures++;
+          },
         });
         let forwardedErrors = 0;
-        tracked.onerror = () => { forwardedErrors++; };
+        tracked.onerror = () => {
+          forwardedErrors++;
+        };
 
         delegate.onerror?.(new SyntaxError('private downstream payload'));
-        assertEqual(protocolFailures, 1, 'Syntax failures should trigger safe protocol invalidation.');
-        assertEqual(forwardedErrors, 1, 'The SDK-owned error callback should remain transparently proxied.');
+        assertEqual(
+          protocolFailures,
+          1,
+          'Syntax failures should trigger safe protocol invalidation.',
+        );
+        assertEqual(
+          forwardedErrors,
+          1,
+          'The SDK-owned error callback should remain transparently proxied.',
+        );
       },
     },
     {
@@ -80,20 +107,24 @@ await runTestSuite({
         const tracked = new TrackedMcpTransport(delegate, {
           onTransportFailure: (requestId) => failedRequestIds.push(requestId),
         });
-        const captured = tracked.captureCall(() => tracked.send({
-          jsonrpc: '2.0',
-          id: 51,
-          method: 'tools/call',
-          params: { name: 'test', arguments: {} },
-        }));
+        const captured = tracked.captureCall(() =>
+          tracked.send({
+            jsonrpc: '2.0',
+            id: 51,
+            method: 'tools/call',
+            params: { name: 'test', arguments: {} },
+          }),
+        );
         await captured.result;
 
         delegate.rejectCancellation = true;
-        await tracked.send({
-          jsonrpc: '2.0',
-          method: 'notifications/cancelled',
-          params: { requestId: 51, reason: 'test cancellation' },
-        }).catch(() => undefined);
+        await tracked
+          .send({
+            jsonrpc: '2.0',
+            method: 'notifications/cancelled',
+            params: { requestId: 51, reason: 'test cancellation' },
+          })
+          .catch(() => undefined);
         const failingFetch = tracked.createFetch(async () => {
           throw new Error('cancel notification network failure');
         });
@@ -106,16 +137,26 @@ await runTestSuite({
           }),
         }).catch(() => undefined);
         delegate.cancellationError = new StreamableHTTPError(404, 'invalid session');
-        await tracked.send({
-          jsonrpc: '2.0',
-          method: 'notifications/cancelled',
-          params: { requestId: 51, reason: 'test cancellation' },
-        }).catch(() => undefined);
+        await tracked
+          .send({
+            jsonrpc: '2.0',
+            method: 'notifications/cancelled',
+            params: { requestId: 51, reason: 'test cancellation' },
+          })
+          .catch(() => undefined);
         captured.exchange.markCallerSettled();
         await captured.exchange.drained;
 
-        assertEqual(failedRequestIds.length, 1, 'Only an explicit invalid-session response should invalidate the connection.');
-        assertEqual(failedRequestIds[0], 51, 'Invalid-session cancellation failure should identify the affected request.');
+        assertEqual(
+          failedRequestIds.length,
+          1,
+          'Only an explicit invalid-session response should invalidate the connection.',
+        );
+        assertEqual(
+          failedRequestIds[0],
+          51,
+          'Invalid-session cancellation failure should identify the affected request.',
+        );
       },
     },
     {
@@ -124,15 +165,25 @@ await runTestSuite({
         const delegate = new FakeTransport();
         let sharedFailures = 0;
         const tracked = new TrackedMcpTransport(delegate, {
-          onSharedStreamTerminated: () => { sharedFailures++; },
+          onSharedStreamTerminated: () => {
+            sharedFailures++;
+          },
         });
         const trackedFetch = tracked.createFetch(async () => new Response(null, { status: 404 }));
         await trackedFetch('http://127.0.0.1/mcp', { method: 'GET' });
-        assertEqual(sharedFailures, 1, 'A session-invalid shared GET response should invalidate the session.');
+        assertEqual(
+          sharedFailures,
+          1,
+          'A session-invalid shared GET response should invalidate the session.',
+        );
 
         const optionalFetch = tracked.createFetch(async () => new Response(null, { status: 405 }));
         await optionalFetch('http://127.0.0.1/mcp', { method: 'GET' });
-        assertEqual(sharedFailures, 1, 'A 405 shared GET response is an allowed no-stream capability response.');
+        assertEqual(
+          sharedFailures,
+          1,
+          'A 405 shared GET response is an allowed no-stream capability response.',
+        );
       },
     },
     {
@@ -141,18 +192,23 @@ await runTestSuite({
         const delegate = new FakeTransport();
         const tracked = new TrackedMcpTransport(delegate);
         for (let id = 1; id <= 1_025; id++) {
-          const captured = tracked.captureCall(() => tracked.send({
-            jsonrpc: '2.0',
-            id,
-            method: 'tools/call',
-            params: { name: 'test', arguments: {} },
-          }));
+          const captured = tracked.captureCall(() =>
+            tracked.send({
+              jsonrpc: '2.0',
+              id,
+              method: 'tools/call',
+              params: { name: 'test', arguments: {} },
+            }),
+          );
           await captured.result;
           captured.exchange.markCallerSettled();
           await captured.exchange.drained;
         }
         await Promise.resolve();
-        assert(delegate.closeCount > 0, 'The transport should replace a session before tombstones grow without bound.');
+        assert(
+          delegate.closeCount > 0,
+          'The transport should replace a session before tombstones grow without bound.',
+        );
       },
     },
   ],

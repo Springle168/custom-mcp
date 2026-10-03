@@ -1,14 +1,5 @@
-import {
-  createServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from 'node:http';
-import {
-  createServer as createNetServer,
-  type Server as NetServer,
-  type Socket,
-} from 'node:net';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createNetServer, type Server as NetServer, type Socket } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import type { ExternalHttpEndpointConfig } from '../../src/tools/external-routing/config.js';
 import {
@@ -18,12 +9,7 @@ import {
   type ExternalHttpTransportOutcome,
   type ExternalHttpTransportSuccess,
 } from '../../src/tools/external-routing/http-transport.js';
-import {
-  assert,
-  assertEqual,
-  assertNotIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertNotIncludes, runTestSuite } from '../test-utils.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -53,7 +39,10 @@ async function startLoopbackServer(
   });
 
   const address = server.address();
-  assert(address !== null && typeof address !== 'string', 'Loopback server should expose a TCP port.');
+  assert(
+    address !== null && typeof address !== 'string',
+    'Loopback server should expose a TCP port.',
+  );
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     sockets,
@@ -61,9 +50,7 @@ async function startLoopbackServer(
   };
 }
 
-async function startRawLoopbackServer(
-  handler: (socket: Socket) => void,
-): Promise<LoopbackServer> {
+async function startRawLoopbackServer(handler: (socket: Socket) => void): Promise<LoopbackServer> {
   const server = createNetServer();
   const sockets = new Set<Socket>();
   server.on('connection', (socket) => {
@@ -81,7 +68,10 @@ async function startRawLoopbackServer(
   });
 
   const address = server.address();
-  assert(address !== null && typeof address !== 'string', 'Raw loopback server should expose a TCP port.');
+  assert(
+    address !== null && typeof address !== 'string',
+    'Raw loopback server should expose a TCP port.',
+  );
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     sockets,
@@ -94,7 +84,7 @@ async function closeServer(server: Server, sockets: ReadonlySet<Socket>): Promis
     socket.destroy();
   }
   await new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
+    server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 
@@ -103,7 +93,7 @@ async function closeRawServer(server: NetServer, sockets: ReadonlySet<Socket>): 
     socket.destroy();
   }
   await new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
+    server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 
@@ -129,10 +119,7 @@ function failure(outcome: ExternalHttpTransportOutcome): ExternalHttpTransportFa
   return outcome;
 }
 
-async function waitFor(
-  condition: () => boolean,
-  message: string,
-): Promise<void> {
+async function waitFor(condition: () => boolean, message: string): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (!condition()) {
     if (Date.now() >= deadline) {
@@ -172,12 +159,14 @@ async function testPostHeadersLengthAndRawBody(): Promise<void> {
     });
   });
   const requestBody = new Uint8Array([0, 1, 2, 255]);
-  const transport = createExternalHttpTransport(endpoint(server, {
-    headers: {
-      Authorization: 'Bearer configured-secret',
-      'X-Route': 'loopback',
-    },
-  }));
+  const transport = createExternalHttpTransport(
+    endpoint(server, {
+      headers: {
+        Authorization: 'Bearer configured-secret',
+        'X-Route': 'loopback',
+      },
+    }),
+  );
 
   try {
     const exchange = transport.exchange({
@@ -189,21 +178,52 @@ async function testPostHeadersLengthAndRawBody(): Promise<void> {
     await exchange.drained;
 
     assertEqual(method, 'POST', 'Transport must always use POST.');
-    assertEqual(url, '/external/tool?tenant=loopback', 'Endpoint path and query must reach the target.');
-    assertEqual(headers?.authorization, 'Bearer configured-secret', 'Configured static headers should be sent.');
+    assertEqual(
+      url,
+      '/external/tool?tenant=loopback',
+      'Endpoint path and query must reach the target.',
+    );
+    assertEqual(
+      headers?.authorization,
+      'Bearer configured-secret',
+      'Configured static headers should be sent.',
+    );
     assertEqual(headers?.['x-route'], 'loopback', 'Configured end-to-end headers should be sent.');
-    assertEqual(headers?.['content-type'], 'application/json; charset=utf-8', 'Strategy owns Content-Type.');
+    assertEqual(
+      headers?.['content-type'],
+      'application/json; charset=utf-8',
+      'Strategy owns Content-Type.',
+    );
     assertEqual(headers?.['content-length'], '4', 'Transport must send exact final byte length.');
-    assertEqual(headers?.['accept-encoding'], undefined, 'Transport must not negotiate response compression.');
-    assert(Buffer.from(body).equals(Buffer.from(requestBody)), 'Request body must retain its final raw bytes.');
-    assertEqual(outcome.statusCode, 201, 'Final non-redirect status should be returned without canonical parsing.');
+    assertEqual(
+      headers?.['accept-encoding'],
+      undefined,
+      'Transport must not negotiate response compression.',
+    );
+    assert(
+      Buffer.from(body).equals(Buffer.from(requestBody)),
+      'Request body must retain its final raw bytes.',
+    );
+    assertEqual(
+      outcome.statusCode,
+      201,
+      'Final non-redirect status should be returned without canonical parsing.',
+    );
     assertEqual(
       outcome.contentType,
       'Application/JSON; Charset="UTF-8"',
       'Content-Type metadata should be trimmed but preserve its validated field value.',
     );
-    assertEqual(outcome.contentEncoding, 'identity', 'Content-Encoding should be normalized for consumers.');
-    assertEqual(decoder.decode(outcome.body), '{"results":[]}', 'Response entity should be returned unchanged.');
+    assertEqual(
+      outcome.contentEncoding,
+      'identity',
+      'Content-Encoding should be normalized for consumers.',
+    );
+    assertEqual(
+      decoder.decode(outcome.body),
+      '{"results":[]}',
+      'Response entity should be returned unchanged.',
+    );
   } finally {
     await transport.close();
     await server.close();
@@ -239,7 +259,11 @@ async function testRawEncodedEntityAndBodyDecoderHeaders(): Promise<void> {
       'application/vnd.vendor+json; version=1',
       'Body decoders should receive validated arbitrary Content-Type metadata.',
     );
-    assertEqual(outcome.contentEncoding, 'gzip, br', 'Content-Encoding tokens should normalize for processors.');
+    assertEqual(
+      outcome.contentEncoding,
+      'gzip, br',
+      'Content-Encoding tokens should normalize for processors.',
+    );
   } finally {
     await transport.close();
     await server.close();
@@ -247,15 +271,19 @@ async function testRawEncodedEntityAndBodyDecoderHeaders(): Promise<void> {
 }
 
 async function testEarlyFinalResponseCannotWinOverPendingRequestFailure(): Promise<void> {
-  const responseBody = '{"results":[{"id":"call_1","status":"completed","content":[{"type":"text","text":"done"}]}]}';
-  const responseBytes = Buffer.from([
-    'HTTP/1.1 200 OK',
-    'Content-Type: application/json; charset=utf-8',
-    `Content-Length: ${Buffer.byteLength(responseBody)}`,
-    'Connection: keep-alive',
-    '',
-    responseBody,
-  ].join('\r\n'), 'utf-8');
+  const responseBody =
+    '{"results":[{"id":"call_1","status":"completed","content":[{"type":"text","text":"done"}]}]}';
+  const responseBytes = Buffer.from(
+    [
+      'HTTP/1.1 200 OK',
+      'Content-Type: application/json; charset=utf-8',
+      `Content-Length: ${Buffer.byteLength(responseBody)}`,
+      'Connection: keep-alive',
+      '',
+      responseBody,
+    ].join('\r\n'),
+    'utf-8',
+  );
   let responseSent = false;
   let resetIssued = false;
   let requestBytesBeforeResponse = 0;
@@ -304,7 +332,10 @@ async function testEarlyFinalResponseCannotWinOverPendingRequestFailure(): Promi
       'connection',
       'The winning outcome should identify the request connection failure.',
     );
-    await waitFor(() => server.sockets.size === 0, 'race failure should not leave a raw loopback socket open');
+    await waitFor(
+      () => server.sockets.size === 0,
+      'race failure should not leave a raw loopback socket open',
+    );
   } finally {
     if (resetTimer) {
       clearTimeout(resetTimer);
@@ -320,17 +351,22 @@ async function testRepresentationRulesAndDuplicateHeaders(): Promise<void> {
     const current = responseIndex++;
     if (current === 0) {
       response.writeHead(200, [
-        'Content-Type', 'application/json',
-        'Content-Type', 'application/json',
+        'Content-Type',
+        'application/json',
+        'Content-Type',
+        'application/json',
       ]);
       response.end('{}');
       return;
     }
     if (current === 1) {
       response.writeHead(200, [
-        'Content-Type', 'application/json',
-        'Content-Encoding', 'identity',
-        'Content-Encoding', 'identity',
+        'Content-Type',
+        'application/json',
+        'Content-Encoding',
+        'identity',
+        'Content-Encoding',
+        'identity',
       ]);
       response.end('{}');
       return;
@@ -374,7 +410,11 @@ async function testRepresentationRulesAndDuplicateHeaders(): Promise<void> {
       });
       const result = failure(await exchange.settled);
       await exchange.drained;
-      assertEqual(result.code, 'external_protocol_failed', `${path} must fail response representation validation.`);
+      assertEqual(
+        result.code,
+        'external_protocol_failed',
+        `${path} must fail response representation validation.`,
+      );
     }
   } finally {
     await transport.close();
@@ -438,28 +478,54 @@ async function testStatusAndUpgradeOutcomesWithoutRedirectFollowing(): Promise<v
   const transport = createExternalHttpTransport(endpoint(server));
 
   try {
-    const redirect = failure(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(redirect.code, 'external_transport_failed', 'A final 3xx must be a controlled redirect failure.');
-    assertEqual(redirect.diagnostics.statusCode, 302, 'Redirect diagnostics may retain only its status.');
-    assertEqual(redirectRequests, 1, 'Transport must never automatically follow redirects or retry.');
+    const redirect = failure(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      redirect.code,
+      'external_transport_failed',
+      'A final 3xx must be a controlled redirect failure.',
+    );
+    assertEqual(
+      redirect.diagnostics.statusCode,
+      302,
+      'Redirect diagnostics may retain only its status.',
+    );
+    assertEqual(
+      redirectRequests,
+      1,
+      'Transport must never automatically follow redirects or retry.',
+    );
 
-    const rejection = success(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(rejection.statusCode, 422, '4xx/5xx responses should reach the response strategy unchanged.');
+    const rejection = success(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      rejection.statusCode,
+      422,
+      '4xx/5xx responses should reach the response strategy unchanged.',
+    );
 
-    const upgrade = failure(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(upgrade.code, 'external_protocol_failed', '101/upgrade responses are not normal external responses.');
+    const upgrade = failure(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      upgrade.code,
+      'external_protocol_failed',
+      '101/upgrade responses are not normal external responses.',
+    );
   } finally {
     await transport.close();
     await server.close();
@@ -484,27 +550,45 @@ async function testRequestAndResponseBodyLimits(): Promise<void> {
   const transport = createExternalHttpTransport(endpoint(server));
 
   try {
-    const tooLargeRequest = failure(await transport.exchange({
-      body: new Uint8Array(MAX_EXTERNAL_HTTP_BODY_BYTES + 1),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(tooLargeRequest.code, 'external_request_too_large', 'Known oversized request bodies must not start HTTP.');
+    const tooLargeRequest = failure(
+      await transport.exchange({
+        body: new Uint8Array(MAX_EXTERNAL_HTTP_BODY_BYTES + 1),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      tooLargeRequest.code,
+      'external_request_too_large',
+      'Known oversized request bodies must not start HTTP.',
+    );
     assertEqual(requestCount, 0, 'Known oversized request bodies must not reach the endpoint.');
 
-    const knownResponse = failure(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(knownResponse.code, 'external_response_too_large', 'Oversized Content-Length should fail before body accumulation.');
+    const knownResponse = failure(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      knownResponse.code,
+      'external_response_too_large',
+      'Oversized Content-Length should fail before body accumulation.',
+    );
 
-    const streamingResponse = failure(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(streamingResponse.code, 'external_response_too_large', 'Streaming responses must enforce the same entity limit.');
+    const streamingResponse = failure(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      streamingResponse.code,
+      'external_response_too_large',
+      'Streaming responses must enforce the same entity limit.',
+    );
   } finally {
     await transport.close();
     await server.close();
@@ -527,9 +611,16 @@ async function testTimeoutAbortAndDedicatedAgentCleanup(): Promise<void> {
       responseMode: 'direct',
     });
     const timedOut = failure(await timeoutExchange.settled);
-    assertEqual(timedOut.code, 'external_timeout', 'Endpoint timeout must cover the whole active exchange.');
+    assertEqual(
+      timedOut.code,
+      'external_timeout',
+      'Endpoint timeout must cover the whole active exchange.',
+    );
     await timeoutExchange.drained;
-    await waitFor(() => server.sockets.size === 0, 'timeout should destroy the loopback request socket');
+    await waitFor(
+      () => server.sockets.size === 0,
+      'timeout should destroy the loopback request socket',
+    );
 
     const controller = new AbortController();
     const abortExchange = transport.exchange({
@@ -541,9 +632,16 @@ async function testTimeoutAbortAndDedicatedAgentCleanup(): Promise<void> {
     await waitFor(() => requests >= 2, 'abort test request should reach the loopback server');
     controller.abort();
     const aborted = failure(await abortExchange.settled);
-    assertEqual(aborted.code, 'cancelled', 'AbortSignal cancellation must use the local cancelled outcome.');
+    assertEqual(
+      aborted.code,
+      'cancelled',
+      'AbortSignal cancellation must use the local cancelled outcome.',
+    );
     await abortExchange.drained;
-    await waitFor(() => server.sockets.size === 0, 'abort should destroy the loopback request socket');
+    await waitFor(
+      () => server.sockets.size === 0,
+      'abort should destroy the loopback request socket',
+    );
   } finally {
     await transport.close();
     await server.close();
@@ -561,18 +659,26 @@ async function testIdempotentCloseAndSafeFailureDiagnostics(): Promise<void> {
     // Keep later requests pending to verify close waits for their local drain.
   });
   const transport = createExternalHttpTransport(endpoint(server));
-  const invalidTransport = createExternalHttpTransport(endpoint(server, {
-    url: `${server.baseUrl}/external/tool?query-secret=never-report`,
-    headers: { Host: 'forbidden-host', Authorization: 'header-secret' },
-  }));
+  const invalidTransport = createExternalHttpTransport(
+    endpoint(server, {
+      url: `${server.baseUrl}/external/tool?query-secret=never-report`,
+      headers: { Host: 'forbidden-host', Authorization: 'header-secret' },
+    }),
+  );
 
   try {
-    const initial = success(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(initial.statusCode, 200, 'Initial exchange should use the dedicated keep-alive Agent.');
+    const initial = success(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      initial.statusCode,
+      200,
+      'Initial exchange should use the dedicated keep-alive Agent.',
+    );
 
     const activeBeforeClose = transport.exchange({
       body: encoder.encode('{}'),
@@ -583,28 +689,55 @@ async function testIdempotentCloseAndSafeFailureDiagnostics(): Promise<void> {
 
     const firstClose = transport.close();
     const cancelled = failure(await activeBeforeClose.settled);
-    assertEqual(cancelled.code, 'cancelled', 'close must cancel active HTTP exchanges before agent shutdown.');
+    assertEqual(
+      cancelled.code,
+      'cancelled',
+      'close must cancel active HTTP exchanges before agent shutdown.',
+    );
     await activeBeforeClose.drained;
     await firstClose;
     await transport.close();
-    await waitFor(() => server.sockets.size === 0, 'close should destroy dedicated Agent sockets after drain');
+    await waitFor(
+      () => server.sockets.size === 0,
+      'close should destroy dedicated Agent sockets after drain',
+    );
 
-    const afterClose = failure(await transport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(afterClose.code, 'cancelled', 'Closed transport must not admit a new HTTP exchange.');
+    const afterClose = failure(
+      await transport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      afterClose.code,
+      'cancelled',
+      'Closed transport must not admit a new HTTP exchange.',
+    );
     assertEqual(requests, 2, 'Closed transport must not send additional requests.');
 
-    const safeFailure = failure(await invalidTransport.exchange({
-      body: encoder.encode('{}'),
-      contentType: 'application/json',
-      responseMode: 'direct',
-    }).settled);
-    assertEqual(safeFailure.code, 'external_transport_failed', 'Invalid defensive transport input should be controlled.');
-    assertNotIncludes(safeFailure.message, 'query-secret', 'Failure message must not expose URL query data.');
-    assertNotIncludes(safeFailure.message, 'header-secret', 'Failure message must not expose header values.');
+    const safeFailure = failure(
+      await invalidTransport.exchange({
+        body: encoder.encode('{}'),
+        contentType: 'application/json',
+        responseMode: 'direct',
+      }).settled,
+    );
+    assertEqual(
+      safeFailure.code,
+      'external_transport_failed',
+      'Invalid defensive transport input should be controlled.',
+    );
+    assertNotIncludes(
+      safeFailure.message,
+      'query-secret',
+      'Failure message must not expose URL query data.',
+    );
+    assertNotIncludes(
+      safeFailure.message,
+      'header-secret',
+      'Failure message must not expose header values.',
+    );
   } finally {
     await transport.close();
     await invalidTransport.close();
@@ -657,16 +790,46 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing HTTP transport',
     tests: [
-      { name: 'sends POST with owned headers, exact length, and raw body', run: testPostHeadersLengthAndRawBody },
-      { name: 'selects a route endpoint per exchange while sharing transport resources', run: testSelectsEndpointPerExchangeWithSharedAgents },
-      { name: 'preserves encoded response entities for body decoders', run: testRawEncodedEntityAndBodyDecoderHeaders },
-      { name: 'rejects early final responses when pending request writes fail', run: testEarlyFinalResponseCannotWinOverPendingRequestFailure },
-      { name: 'enforces representation metadata and duplicate field rules', run: testRepresentationRulesAndDuplicateHeaders },
-      { name: 'rejects empty final entities for every response mode', run: testEmptyFinalEntitiesAreProtocolFailures },
-      { name: 'handles final status classes without redirect or upgrade support', run: testStatusAndUpgradeOutcomesWithoutRedirectFollowing },
-      { name: 'enforces known and streaming request/response entity limits', run: testRequestAndResponseBodyLimits },
-      { name: 'settles timeout and abort while cleaning loopback sockets', run: testTimeoutAbortAndDedicatedAgentCleanup },
-      { name: 'destroys dedicated Agents idempotently without leaking diagnostics', run: testIdempotentCloseAndSafeFailureDiagnostics },
+      {
+        name: 'sends POST with owned headers, exact length, and raw body',
+        run: testPostHeadersLengthAndRawBody,
+      },
+      {
+        name: 'selects a route endpoint per exchange while sharing transport resources',
+        run: testSelectsEndpointPerExchangeWithSharedAgents,
+      },
+      {
+        name: 'preserves encoded response entities for body decoders',
+        run: testRawEncodedEntityAndBodyDecoderHeaders,
+      },
+      {
+        name: 'rejects early final responses when pending request writes fail',
+        run: testEarlyFinalResponseCannotWinOverPendingRequestFailure,
+      },
+      {
+        name: 'enforces representation metadata and duplicate field rules',
+        run: testRepresentationRulesAndDuplicateHeaders,
+      },
+      {
+        name: 'rejects empty final entities for every response mode',
+        run: testEmptyFinalEntitiesAreProtocolFailures,
+      },
+      {
+        name: 'handles final status classes without redirect or upgrade support',
+        run: testStatusAndUpgradeOutcomesWithoutRedirectFollowing,
+      },
+      {
+        name: 'enforces known and streaming request/response entity limits',
+        run: testRequestAndResponseBodyLimits,
+      },
+      {
+        name: 'settles timeout and abort while cleaning loopback sockets',
+        run: testTimeoutAbortAndDedicatedAgentCleanup,
+      },
+      {
+        name: 'destroys dedicated Agents idempotently without leaking diagnostics',
+        run: testIdempotentCloseAndSafeFailureDiagnostics,
+      },
     ],
   });
 }

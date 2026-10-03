@@ -4,12 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ConfigError, loadRuntimeConfig } from '../../src/config.js';
 import { parseGlobalConfig } from '../../src/config/global-config-schema.js';
 import { parseWorkspaceConfig } from '../../src/config/schema.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,22 +65,33 @@ function expectGlobalParseError(
   expectedMessage: string,
 ): void {
   const error = captureConfigError(() =>
-    parseGlobalConfig(config, { configFilePath: CONFIG_FILE })
+    parseGlobalConfig(config, { configFilePath: CONFIG_FILE }),
   );
-  assertEqual(error.configFilePath, CONFIG_FILE, 'Global schema errors should point to the global config');
+  assertEqual(
+    error.configFilePath,
+    CONFIG_FILE,
+    'Global schema errors should point to the global config',
+  );
   assertEqual(error.fieldPath, expectedFieldPath, 'Global schema error should identify its field');
   assertIncludes(error.message, expectedMessage, 'Global schema error should explain the failure');
 }
 
 function testAcceptsVersionTwoWorkspaceReferences(): void {
-  const parsed = parseGlobalConfig(globalConfig([
-    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
-    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
-  ]), { configFilePath: CONFIG_FILE });
+  const parsed = parseGlobalConfig(
+    globalConfig([
+      { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+      { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
+    ]),
+    { configFilePath: CONFIG_FILE },
+  );
 
   assertEqual(parsed.version, 2, 'Global schema should use version 2');
   assertEqual(parsed.workspaces.length, 2, 'Global schema should retain workspace references');
-  assertEqual(parsed.workspaces[0]?.configFile, WORKSPACE_CONFIG_A, 'Reference should retain its absolute config path');
+  assertEqual(
+    parsed.workspaces[0]?.configFile,
+    WORKSPACE_CONFIG_A,
+    'Reference should retain its absolute config path',
+  );
   assert(Object.isFrozen(parsed), 'Parsed global config should be frozen');
   assert(Object.isFrozen(parsed.workspaces), 'Parsed workspace references should be frozen');
 }
@@ -95,7 +101,11 @@ function testRejectsLegacyAndMalformedGlobalSchemas(): void {
   expectGlobalParseError(globalConfig(undefined, { version: '2' }), 'version', 'number 2');
   expectGlobalParseError({ version: 2 }, 'workspaces', 'non-empty array');
   expectGlobalParseError({ version: 2, workspaces: [] }, 'workspaces', 'at least one workspace');
-  expectGlobalParseError(globalConfig(undefined, { legacy: true }), 'legacy', 'Unknown config field');
+  expectGlobalParseError(
+    globalConfig(undefined, { legacy: true }),
+    'legacy',
+    'Unknown config field',
+  );
   expectGlobalParseError(globalConfig([42]), 'workspaces[0]', 'must be a JSON object');
   expectGlobalParseError(
     globalConfig([{ id: 'workspace-a', configFile: WORKSPACE_CONFIG_A, rootDir: ROOT_DIR }]),
@@ -155,12 +165,19 @@ function testValidatesConfigFileLexicallyWithoutReadingIt(): void {
 }
 
 function testAllowsDuplicateConfigFileReferences(): void {
-  const parsed = parseGlobalConfig(globalConfig([
-    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
-    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_A },
-  ]), { configFilePath: CONFIG_FILE });
+  const parsed = parseGlobalConfig(
+    globalConfig([
+      { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+      { id: 'workspace-b', configFile: WORKSPACE_CONFIG_A },
+    ]),
+    { configFilePath: CONFIG_FILE },
+  );
 
-  assertEqual(parsed.workspaces.length, 2, 'Different ids may intentionally share one workspace config file');
+  assertEqual(
+    parsed.workspaces.length,
+    2,
+    'Different ids may intentionally share one workspace config file',
+  );
 }
 
 function testWorkspaceSchemaHasIndependentVersionAndNoId(): void {
@@ -173,15 +190,23 @@ function testWorkspaceSchemaHasIndependentVersionAndNoId(): void {
   const versionError = captureConfigError(() =>
     parseWorkspaceConfig(workspaceConfig({ version: 1 }), {
       configFilePath: WORKSPACE_CONFIG_A,
-    })
+    }),
   );
-  assertEqual(versionError.fieldPath, 'version', 'Workspace version error should use file-local paths');
-  assertEqual(versionError.configFilePath, WORKSPACE_CONFIG_A, 'Workspace errors should point to the workspace file');
+  assertEqual(
+    versionError.fieldPath,
+    'version',
+    'Workspace version error should use file-local paths',
+  );
+  assertEqual(
+    versionError.configFilePath,
+    WORKSPACE_CONFIG_A,
+    'Workspace errors should point to the workspace file',
+  );
 
   const idError = captureConfigError(() =>
     parseWorkspaceConfig(workspaceConfig({ id: 'duplicated-id' }), {
       configFilePath: WORKSPACE_CONFIG_A,
-    })
+    }),
   );
   assertEqual(idError.fieldPath, 'id', 'Workspace id should be rejected as an unknown field');
 }
@@ -189,10 +214,13 @@ function testWorkspaceSchemaHasIndependentVersionAndNoId(): void {
 async function testLoadsOnlySelectedWorkspaceConfig(): Promise<void> {
   await resetFixtures();
   await writeJson(WORKSPACE_CONFIG_A, workspaceConfig());
-  await writeJson(CONFIG_FILE, globalConfig([
-    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
-    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
-  ]));
+  await writeJson(
+    CONFIG_FILE,
+    globalConfig([
+      { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+      { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
+    ]),
+  );
 
   const snapshot = loadRuntimeConfig({
     homeDir: HOME_DIR,
@@ -211,10 +239,13 @@ async function testAllowsRootAndPortReuseAcrossWorkspaceFiles(): Promise<void> {
   await resetFixtures();
   await writeJson(WORKSPACE_CONFIG_A, workspaceConfig());
   await writeJson(WORKSPACE_CONFIG_B, workspaceConfig());
-  await writeJson(CONFIG_FILE, globalConfig([
-    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
-    { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
-  ]));
+  await writeJson(
+    CONFIG_FILE,
+    globalConfig([
+      { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
+      { id: 'workspace-b', configFile: WORKSPACE_CONFIG_B },
+    ]),
+  );
 
   const first = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} });
   const second = loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-b', env: {} });
@@ -228,23 +259,40 @@ async function testSelectedWorkspaceFailuresPointToWorkspaceFile(): Promise<void
   await writeJson(CONFIG_FILE, globalConfig());
 
   const error = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} }),
   );
-  assertEqual(error.configFilePath, WORKSPACE_CONFIG_A, 'Selected workspace validation should point to its file');
-  assertEqual(error.fieldPath, 'rootDir', 'Selected workspace errors should use file-local field paths');
+  assertEqual(
+    error.configFilePath,
+    WORKSPACE_CONFIG_A,
+    'Selected workspace validation should point to its file',
+  );
+  assertEqual(
+    error.fieldPath,
+    'rootDir',
+    'Selected workspace errors should use file-local field paths',
+  );
 }
 
 async function testSelectedWorkspaceFileReadFailuresAreStructured(): Promise<void> {
   await resetFixtures();
-  await writeJson(CONFIG_FILE, globalConfig([
-    { id: 'workspace-a', configFile: WORKSPACE_CONFIG_A },
-  ]));
+  await writeJson(
+    CONFIG_FILE,
+    globalConfig([{ id: 'workspace-a', configFile: WORKSPACE_CONFIG_A }]),
+  );
 
   const missing = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} }),
   );
-  assertEqual(missing.code, 'config_file_not_found', 'Missing selected workspace file should have a precise code');
-  assertEqual(missing.configFilePath, WORKSPACE_CONFIG_A, 'Missing workspace error should point to the reference target');
+  assertEqual(
+    missing.code,
+    'config_file_not_found',
+    'Missing selected workspace file should have a precise code',
+  );
+  assertEqual(
+    missing.configFilePath,
+    WORKSPACE_CONFIG_A,
+    'Missing workspace error should point to the reference target',
+  );
   assertIncludes(
     missing.suggestion,
     'fix its configFile entry in the global config',
@@ -253,10 +301,18 @@ async function testSelectedWorkspaceFileReadFailuresAreStructured(): Promise<voi
 
   await fs.writeFile(WORKSPACE_CONFIG_A, Buffer.from([0xc3, 0x28]));
   const invalidUtf8 = captureConfigError(() =>
-    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} })
+    loadRuntimeConfig({ homeDir: HOME_DIR, workspaceId: 'workspace-a', env: {} }),
   );
-  assertEqual(invalidUtf8.code, 'config_file_read_failed', 'Invalid workspace UTF-8 should fail during file reading');
-  assertEqual(invalidUtf8.configFilePath, WORKSPACE_CONFIG_A, 'UTF-8 error should point to the selected workspace file');
+  assertEqual(
+    invalidUtf8.code,
+    'config_file_read_failed',
+    'Invalid workspace UTF-8 should fail during file reading',
+  );
+  assertEqual(
+    invalidUtf8.configFilePath,
+    WORKSPACE_CONFIG_A,
+    'UTF-8 error should point to the selected workspace file',
+  );
   assertIncludes(invalidUtf8.message, 'valid UTF-8', 'Workspace config decoding must fail closed');
 }
 
@@ -266,16 +322,40 @@ async function main(): Promise<void> {
     title: 'Testing global and workspace config schemas',
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'accepts version 2 workspace references', run: testAcceptsVersionTwoWorkspaceReferences },
-      { name: 'rejects legacy and malformed global schemas', run: testRejectsLegacyAndMalformedGlobalSchemas },
+      {
+        name: 'accepts version 2 workspace references',
+        run: testAcceptsVersionTwoWorkspaceReferences,
+      },
+      {
+        name: 'rejects legacy and malformed global schemas',
+        run: testRejectsLegacyAndMalformedGlobalSchemas,
+      },
       { name: 'validates reference ids', run: testValidatesReferenceIds },
-      { name: 'validates configFile lexically without reading it', run: testValidatesConfigFileLexicallyWithoutReadingIt },
-      { name: 'allows duplicate configFile references', run: testAllowsDuplicateConfigFileReferences },
-      { name: 'workspace schema has independent version and no id', run: testWorkspaceSchemaHasIndependentVersionAndNoId },
+      {
+        name: 'validates configFile lexically without reading it',
+        run: testValidatesConfigFileLexicallyWithoutReadingIt,
+      },
+      {
+        name: 'allows duplicate configFile references',
+        run: testAllowsDuplicateConfigFileReferences,
+      },
+      {
+        name: 'workspace schema has independent version and no id',
+        run: testWorkspaceSchemaHasIndependentVersionAndNoId,
+      },
       { name: 'loads only selected workspace config', run: testLoadsOnlySelectedWorkspaceConfig },
-      { name: 'allows root and port reuse across workspace files', run: testAllowsRootAndPortReuseAcrossWorkspaceFiles },
-      { name: 'selected workspace failures point to workspace file', run: testSelectedWorkspaceFailuresPointToWorkspaceFile },
-      { name: 'selected workspace file read failures are structured', run: testSelectedWorkspaceFileReadFailuresAreStructured },
+      {
+        name: 'allows root and port reuse across workspace files',
+        run: testAllowsRootAndPortReuseAcrossWorkspaceFiles,
+      },
+      {
+        name: 'selected workspace failures point to workspace file',
+        run: testSelectedWorkspaceFailuresPointToWorkspaceFile,
+      },
+      {
+        name: 'selected workspace file read failures are structured',
+        run: testSelectedWorkspaceFileReadFailuresAreStructured,
+      },
     ],
   });
 }

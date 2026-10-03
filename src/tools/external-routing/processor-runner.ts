@@ -11,12 +11,8 @@ export const PROCESSOR_STDERR_CAPTURE_LIMIT_BYTES = 1024 * 1024;
 const DEFAULT_TERMINATION_GRACE_PERIOD_MS = 250;
 const DEFAULT_FORCE_TERMINATION_GRACE_PERIOD_MS = 250;
 
-type RequestProcessorRole =
-  | 'request.canonical-filter'
-  | 'request.body-encoder';
-type ResponseProcessorRole =
-  | 'response.canonical-filter'
-  | 'response.body-decoder';
+type RequestProcessorRole = 'request.canonical-filter' | 'request.body-encoder';
+type ResponseProcessorRole = 'response.canonical-filter' | 'response.body-decoder';
 
 /**
  * Metadata explicitly supplied by a request-side strategy. Response-only
@@ -40,8 +36,7 @@ export interface ResponseProcessorInvocationEnvironment {
 }
 
 export type ProcessorInvocationEnvironment =
-  | RequestProcessorInvocationEnvironment
-  | ResponseProcessorInvocationEnvironment;
+  RequestProcessorInvocationEnvironment | ResponseProcessorInvocationEnvironment;
 
 /** A strategy-owned description of the one-shot subprocess to start. */
 export interface ProcessorInvocation {
@@ -205,8 +200,9 @@ export class ProcessorRunner {
       invocation.cancel();
     }
 
-    this.#closePromise = Promise.all(active.map((invocation) => invocation.drained))
-      .then(() => undefined);
+    this.#closePromise = Promise.all(active.map((invocation) => invocation.drained)).then(
+      () => undefined,
+    );
     return this.#closePromise;
   }
 }
@@ -333,9 +329,8 @@ class ActiveProcessorInvocation {
       return;
     }
 
-    const capturedChunk = chunk.byteLength <= remainingCaptureBytes
-      ? chunk
-      : chunk.subarray(0, remainingCaptureBytes);
+    const capturedChunk =
+      chunk.byteLength <= remainingCaptureBytes ? chunk : chunk.subarray(0, remainingCaptureBytes);
     this.#stderrChunks.push(Buffer.from(capturedChunk));
     this.#stderrCapturedBytes += capturedChunk.byteLength;
   };
@@ -692,9 +687,7 @@ function createImmediateFailure(
   };
 }
 
-function createInvocationEnvironment(
-  metadata: ProcessorInvocationEnvironment,
-): NodeJS.ProcessEnv {
+function createInvocationEnvironment(metadata: ProcessorInvocationEnvironment): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { ...process.env };
 
   for (const name of Object.keys(environment)) {
@@ -736,12 +729,7 @@ function ignoreError(): void {
 }
 
 function readPositiveDuration(value: number | undefined, fallback: number): number {
-  if (
-    value === undefined ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value <= 0
-  ) {
+  if (value === undefined || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
     return fallback;
   }
 

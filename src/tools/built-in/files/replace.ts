@@ -91,10 +91,7 @@ function normalizeTextLineEndings(text: string): string {
   return text.replace(/\r\n|\r/g, '\n');
 }
 
-function applyLineEnding(
-  content: string,
-  lineEnding: '\r\n' | '\n',
-): string {
+function applyLineEnding(content: string, lineEnding: '\r\n' | '\n'): string {
   if (lineEnding === '\r\n') {
     return content.replace(/\r\n|\r|\n/g, '\r\n');
   }
@@ -156,9 +153,7 @@ function formatFileReadinessError(filePath: string, reason: string): string {
   return `Could not prepare ${filePath}: ${reason}. Check the path, permissions, and file type before retrying.`;
 }
 
-function validateRegexFlagCharactersAndRepetition(
-  value: string,
-): ValidationResult {
+function validateRegexFlagCharactersAndRepetition(value: string): ValidationResult {
   const seenFlags = new Set<string>();
 
   for (const flag of value) {
@@ -189,8 +184,7 @@ function validateFileSemantics(file: FileInput): ValidationResult {
   if (getMatchMode(file) !== 'regex') {
     return {
       ok: false,
-      note:
-        "The 'regex_flags' parameter can be used only when match_mode is 'regex'.",
+      note: "The 'regex_flags' parameter can be used only when match_mode is 'regex'.",
     };
   }
 
@@ -264,14 +258,11 @@ function detectPotentialOmissionPlaceholders(text: string): string[] {
   return [...placeholders];
 }
 
-function getOmissionPlaceholderWarning(
-  target: string,
-  replacement: string,
-): string | null {
+function getOmissionPlaceholderWarning(target: string, replacement: string): string | null {
   const targetPlaceholders = new Set(detectPotentialOmissionPlaceholders(target));
-  const replacementPlaceholders = detectPotentialOmissionPlaceholders(
-    replacement,
-  ).filter((placeholder) => !targetPlaceholders.has(placeholder));
+  const replacementPlaceholders = detectPotentialOmissionPlaceholders(replacement).filter(
+    (placeholder) => !targetPlaceholders.has(placeholder),
+  );
 
   if (replacementPlaceholders.length === 0) return null;
 
@@ -292,15 +283,8 @@ function getInvalidRegexReplacementWarning(
   return "Warning: replacement contains '$!' not followed by digits. In regex mode only $!n capture references are expanded; the suspicious syntax was written literally. Verify the result with read_file.";
 }
 
-function getRegexFlagsWarning(
-  matchMode: MatchMode,
-  regexFlags: string | undefined,
-): string | null {
-  if (
-    matchMode !== 'regex' ||
-    regexFlags === undefined ||
-    !regexFlags.includes('g')
-  ) {
+function getRegexFlagsWarning(matchMode: MatchMode, regexFlags: string | undefined): string | null {
+  if (matchMode !== 'regex' || regexFlags === undefined || !regexFlags.includes('g')) {
     return null;
   }
   return "Warning: regex_flags includes 'g', but replace_text always enables global matching internally; you do not need to specify it.";
@@ -457,10 +441,7 @@ async function executeReplacement(
     return replacementResult(replacement, false, existingFile.error);
   }
 
-  const placeholderWarning = getOmissionPlaceholderWarning(
-    target,
-    replacementText,
-  );
+  const placeholderWarning = getOmissionPlaceholderWarning(target, replacementText);
 
   if (!existingFile.exists) {
     if (matchMode === 'default' && target === '') {
@@ -492,12 +473,9 @@ async function executeReplacement(
         context.fileAccessPolicyContext,
       );
       if (!postMkdirSafetyResult.ok) {
-        return replacementResult(
-          replacement,
-          false,
-          postMkdirSafetyResult.reason,
-          { file_line_count: { previous: 0, current: 0 } },
-        );
+        return replacementResult(replacement, false, postMkdirSafetyResult.reason, {
+          file_line_count: { previous: 0, current: 0 },
+        });
       }
 
       const writeError = await dependencies.writeTextContent(
@@ -506,11 +484,7 @@ async function executeReplacement(
         lineEnding,
       );
       if (writeError) {
-        const currentLineCount = await recoverCurrentLineCount(
-          safePath,
-          filePath,
-          context,
-        );
+        const currentLineCount = await recoverCurrentLineCount(safePath, filePath, context);
         return replacementResult(
           replacement,
           false,
@@ -572,9 +546,10 @@ async function executeReplacement(
   if (matchMode === 'regex') {
     const regexResult = calculateRegexReplacement(currentContent, params);
     if (!regexResult.ok) {
-      const note = regexResult.reason === 'invalid_regex'
-        ? `Invalid regex target: ${regexResult.message}. Provide a bare JavaScript RegExp pattern without slash delimiters or flags.`
-        : regexResult.message;
+      const note =
+        regexResult.reason === 'invalid_regex'
+          ? `Invalid regex target: ${regexResult.message}. Provide a bare JavaScript RegExp pattern without slash delimiters or flags.`
+          : regexResult.message;
       return replacementResult(replacement, false, note, {
         file_line_count: {
           previous: previousLineCount,
@@ -590,16 +565,11 @@ async function executeReplacement(
   }
 
   if (calculation.matchedTargets === 0) {
-    const note = matchMode === 'regex'
-      ? `No regex matches found for target in ${filePath}. Verify the JavaScript RegExp pattern against the file content.`
-      : `No matches found for target in ${filePath}. Use read_file to verify exact content, whitespace, indentation, and context.`;
-    return buildMatchedFailure(
-      replacement,
-      note,
-      previousLineCount,
-      calculation,
-      currentContent,
-    );
+    const note =
+      matchMode === 'regex'
+        ? `No regex matches found for target in ${filePath}. Verify the JavaScript RegExp pattern against the file content.`
+        : `No matches found for target in ${filePath}. Use read_file to verify exact content, whitespace, indentation, and context.`;
+    return buildMatchedFailure(replacement, note, previousLineCount, calculation, currentContent);
   }
 
   if (!allowMultiple && calculation.matchedTargets !== 1) {
@@ -623,10 +593,7 @@ async function executeReplacement(
   }
 
   const currentLineCount = countLines(calculation.newContent);
-  const lineEnding = resolveLineEnding(
-    context.lineEnding,
-    existingFile.detectedLineEnding,
-  );
+  const lineEnding = resolveLineEnding(context.lineEnding, existingFile.detectedLineEnding);
   const preWriteSafetyResult = await validateFileAccessWriteTarget(
     safePath,
     context.fileAccessPolicyContext,
@@ -634,10 +601,7 @@ async function executeReplacement(
   if (!preWriteSafetyResult.ok) {
     return replacementResult(replacement, false, preWriteSafetyResult.reason, {
       matched_targets: calculation.matchedTargets,
-      matched_span: calculateMatchedSpan(
-        currentContent,
-        calculation.matchRanges,
-      ),
+      matched_span: calculateMatchedSpan(currentContent, calculation.matchRanges),
       file_line_count: {
         previous: previousLineCount,
         current: null,
@@ -651,11 +615,7 @@ async function executeReplacement(
     lineEnding,
   );
   if (writeError) {
-    const recoveredLineCount = await recoverCurrentLineCount(
-      safePath,
-      filePath,
-      context,
-    );
+    const recoveredLineCount = await recoverCurrentLineCount(safePath, filePath, context);
     return replacementResult(
       replacement,
       false,
@@ -663,10 +623,7 @@ async function executeReplacement(
       {
         matched_targets: calculation.matchedTargets,
         replacement_count: 0,
-        matched_span: calculateMatchedSpan(
-          currentContent,
-          calculation.matchRanges,
-        ),
+        matched_span: calculateMatchedSpan(currentContent, calculation.matchRanges),
         file_line_count: {
           previous: previousLineCount,
           current: recoveredLineCount,
@@ -687,10 +644,7 @@ async function executeReplacement(
     {
       matched_targets: calculation.matchedTargets,
       replacement_count: calculation.replacementCount,
-      matched_span: calculateMatchedSpan(
-        currentContent,
-        calculation.matchRanges,
-      ),
+      matched_span: calculateMatchedSpan(currentContent, calculation.matchRanges),
       file_line_count: {
         previous: previousLineCount,
         current: currentLineCount,
@@ -714,10 +668,7 @@ async function executeFile(
     );
   }
 
-  const safePathResult = resolveFileAccessPath(
-    file.file_path,
-    context.fileAccessPolicyContext,
-  );
+  const safePathResult = resolveFileAccessPath(file.file_path, context.fileAccessPolicyContext);
   if (!safePathResult.ok) {
     return fileResult(
       file,
@@ -731,13 +682,7 @@ async function executeFile(
     const results: ReplaceTextReplacementResult[] = [];
     for (const replacement of file.replacements) {
       results.push(
-        await executeReplacement(
-          file,
-          replacement,
-          safePathResult.path,
-          context,
-          dependencies,
-        ),
+        await executeReplacement(file, replacement, safePathResult.path, context, dependencies),
       );
     }
     return fileResult(file, results);

@@ -13,12 +13,7 @@ import {
   type ProcessorRunOutcome,
   type ProcessorRunSuccess,
 } from '../../src/tools/external-routing/processor-runner.js';
-import {
-  assert,
-  assertEqual,
-  assertNotIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertNotIncludes, runTestSuite } from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,12 +45,7 @@ function fixtureInvocation(
 ): ProcessorInvocation {
   return {
     command: process.execPath,
-    arguments: [
-      '--import',
-      'tsx',
-      path.join(FIXTURES_DIR, fixtureName),
-      ...fixtureArguments,
-    ],
+    arguments: ['--import', 'tsx', path.join(FIXTURES_DIR, fixtureName), ...fixtureArguments],
     workingDirectory: PROJECT_ROOT,
     timeoutMs: 3_000,
     stdin: encoder.encode('processor input'),
@@ -139,7 +129,9 @@ async function createReadinessServer(): Promise<ReadinessServer> {
     socket.on('data', (chunk: string) => {
       payload += chunk;
       if (!READINESS_PAYLOAD.startsWith(payload)) {
-        settleReady(new Error(`Readiness server received invalid payload: ${JSON.stringify(payload)}`));
+        settleReady(
+          new Error(`Readiness server received invalid payload: ${JSON.stringify(payload)}`),
+        );
         socket.destroy();
         return;
       }
@@ -183,9 +175,9 @@ async function createReadinessServer(): Promise<ReadinessServer> {
   }
 
   watchdog = setTimeout(() => {
-    settleReady(new Error(
-      `Timed out after ${READINESS_WATCHDOG_MS}ms waiting for descendant readiness.`,
-    ));
+    settleReady(
+      new Error(`Timed out after ${READINESS_WATCHDOG_MS}ms waiting for descendant readiness.`),
+    );
   }, READINESS_WATCHDOG_MS);
 
   let disposed = false;
@@ -245,14 +237,21 @@ function installControlledTimeoutCapture(delayMs: number): ControlledTimeoutCapt
       };
     }
 
-    return Reflect.apply(originalSetTimeout, globalThis, [callback, delay, ...args]) as NodeJS.Timeout;
+    return Reflect.apply(originalSetTimeout, globalThis, [
+      callback,
+      delay,
+      ...args,
+    ]) as NodeJS.Timeout;
   }) as typeof globalThis.setTimeout;
 
   globalThis.setTimeout = wrappedSetTimeout;
 
   return {
     assertCaptured(): void {
-      assert(capturedCallback !== undefined, `Expected one controlled ${delayMs}ms timeout registration.`);
+      assert(
+        capturedCallback !== undefined,
+        `Expected one controlled ${delayMs}ms timeout registration.`,
+      );
     },
     restore(): void {
       if (restored) {
@@ -322,19 +321,29 @@ async function withEnvironment<T>(
 
 async function testRunsBytesAndSanitizesResponseEnvironment(): Promise<void> {
   const runner = new ProcessorRunner();
-  const outcome = await withEnvironment({
-    CUSTOM_MCP_PROCESSOR_ROLE: 'stale-role',
-    custom_mcp_external_call_id: 'stale-call-id',
-    CUSTOM_MCP_EXTERNAL_HTTP_STATUS: '599',
-    CUSTOM_MCP_EXTERNAL_UNRELATED: 'must-not-inherit',
-  }, async () => runner.run(fixtureInvocation('echo-environment.ts', responseEnvironment(), {
-    stdin: new Uint8Array([0, 1, 2, 253, 254, 255]),
-  })).settled);
+  const outcome = await withEnvironment(
+    {
+      CUSTOM_MCP_PROCESSOR_ROLE: 'stale-role',
+      custom_mcp_external_call_id: 'stale-call-id',
+      CUSTOM_MCP_EXTERNAL_HTTP_STATUS: '599',
+      CUSTOM_MCP_EXTERNAL_UNRELATED: 'must-not-inherit',
+    },
+    async () =>
+      runner.run(
+        fixtureInvocation('echo-environment.ts', responseEnvironment(), {
+          stdin: new Uint8Array([0, 1, 2, 253, 254, 255]),
+        }),
+      ).settled,
+  );
   const success = requireSuccess(outcome);
   const echo = JSON.parse(decoder.decode(success.stdout)) as EnvironmentEcho;
 
   assertEqual(echo.stdinBase64, 'AAEC/f7/', 'Processor should receive stdin bytes exactly once.');
-  assertEqual(echo.environment.role, 'response.body-decoder', 'Response role should override parent environment.');
+  assertEqual(
+    echo.environment.role,
+    'response.body-decoder',
+    'Response role should override parent environment.',
+  );
   assertEqual(echo.environment.callId, 'call_response_1', 'Response call ID should be injected.');
   assertEqual(echo.environment.httpStatus, '207', 'Response HTTP status should be injected.');
   assertEqual(
@@ -342,13 +351,21 @@ async function testRunsBytesAndSanitizesResponseEnvironment(): Promise<void> {
     'application/vnd.example+json; charset=utf-8',
     'Validated response content type should be injected.',
   );
-  assertEqual(echo.environment.contentEncoding, 'gzip, br', 'Validated content encoding should be injected.');
+  assertEqual(
+    echo.environment.contentEncoding,
+    'gzip, br',
+    'Validated content encoding should be injected.',
+  );
   assertEqual(
     echo.environment.inheritedExternalVariable,
     null,
     'Reserved external environment variables must be removed case-insensitively.',
   );
-  assertEqual(success.stderr.byteCount, 'processor diagnostic'.length, 'stderr bytes should be counted.');
+  assertEqual(
+    success.stderr.byteCount,
+    'processor diagnostic'.length,
+    'stderr bytes should be counted.',
+  );
   assertEqual(success.stderr.truncated, false, 'Small stderr should not be marked truncated.');
 
   await runner.close();
@@ -356,27 +373,42 @@ async function testRunsBytesAndSanitizesResponseEnvironment(): Promise<void> {
 
 async function testClearsResponseOnlyEnvironmentForRequestProcessor(): Promise<void> {
   const runner = new ProcessorRunner();
-  const outcome = await withEnvironment({
-    CUSTOM_MCP_EXTERNAL_HTTP_STATUS: '599',
-    custom_mcp_external_content_type: 'old-value',
-    CUSTOM_MCP_EXTERNAL_CONTENT_ENCODING: 'old-value',
-  }, async () => runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment())).settled);
+  const outcome = await withEnvironment(
+    {
+      CUSTOM_MCP_EXTERNAL_HTTP_STATUS: '599',
+      custom_mcp_external_content_type: 'old-value',
+      CUSTOM_MCP_EXTERNAL_CONTENT_ENCODING: 'old-value',
+    },
+    async () => runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment())).settled,
+  );
   const echo = JSON.parse(decoder.decode(requireSuccess(outcome).stdout)) as EnvironmentEcho;
 
   assertEqual(echo.environment.role, 'request.body-encoder', 'Request role should be injected.');
   assertEqual(echo.environment.callId, 'call_request_1', 'Request call ID should be injected.');
-  assertEqual(echo.environment.httpStatus, null, 'Request Processors must not inherit HTTP status.');
-  assertEqual(echo.environment.contentType, null, 'Request Processors must not inherit content type.');
-  assertEqual(echo.environment.contentEncoding, null, 'Request Processors must not inherit content encoding.');
+  assertEqual(
+    echo.environment.httpStatus,
+    null,
+    'Request Processors must not inherit HTTP status.',
+  );
+  assertEqual(
+    echo.environment.contentType,
+    null,
+    'Request Processors must not inherit content type.',
+  );
+  assertEqual(
+    echo.environment.contentEncoding,
+    null,
+    'Request Processors must not inherit content encoding.',
+  );
 
   await runner.close();
 }
 
 async function testBoundsStderrCaptureWhileContinuingToDrain(): Promise<void> {
   const runner = new ProcessorRunner();
-  const outcome = requireSuccess(await runner.run(
-    fixtureInvocation('stderr-over-limit.ts', requestEnvironment()),
-  ).settled);
+  const outcome = requireSuccess(
+    await runner.run(fixtureInvocation('stderr-over-limit.ts', requestEnvironment())).settled,
+  );
 
   assertEqual(
     decoder.decode(outcome.stdout),
@@ -400,9 +432,14 @@ async function testBoundsStderrCaptureWhileContinuingToDrain(): Promise<void> {
 
 async function testRejectsOversizeStdinWithoutStartingAProcess(): Promise<void> {
   const runner = new ProcessorRunner();
-  const outcome = requireFailure(await runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment(), {
-    stdin: new Uint8Array(PROCESSOR_STREAM_LIMIT_BYTES + 1),
-  })).settled, 'stdin_limit');
+  const outcome = requireFailure(
+    await runner.run(
+      fixtureInvocation('echo-environment.ts', requestEnvironment(), {
+        stdin: new Uint8Array(PROCESSOR_STREAM_LIMIT_BYTES + 1),
+      }),
+    ).settled,
+    'stdin_limit',
+  );
 
   assertEqual(outcome.stdoutBytes, 0, 'Rejected stdin must not produce output.');
   assertEqual(runner.activeInvocationCount, 0, 'Rejected stdin must not enter active tracking.');
@@ -414,9 +451,12 @@ async function testTerminatesOnOversizeStdout(): Promise<void> {
     terminationGracePeriodMs: 25,
     forceTerminationGracePeriodMs: 25,
   });
-  const outcome = requireFailure(await runner.run(
-    fixtureInvocation('stdout-over-limit.ts', requestEnvironment(), { timeoutMs: 5_000 }),
-  ).settled, 'stdout_limit');
+  const outcome = requireFailure(
+    await runner.run(
+      fixtureInvocation('stdout-over-limit.ts', requestEnvironment(), { timeoutMs: 5_000 }),
+    ).settled,
+    'stdout_limit',
+  );
 
   assert(
     outcome.stdoutBytes > PROCESSOR_STREAM_LIMIT_BYTES,
@@ -433,10 +473,13 @@ async function testTerminatesOnOversizeStdout(): Promise<void> {
 
 async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   const spawnRunner = new ProcessorRunner();
-  const spawnOutcome = requireFailure(await spawnRunner.run({
-    ...fixtureInvocation('echo-environment.ts', requestEnvironment()),
-    command: path.join(FIXTURES_DIR, 'missing-processor-command.exe'),
-  }).settled, 'spawn_error');
+  const spawnOutcome = requireFailure(
+    await spawnRunner.run({
+      ...fixtureInvocation('echo-environment.ts', requestEnvironment()),
+      command: path.join(FIXTURES_DIR, 'missing-processor-command.exe'),
+    }).settled,
+    'spawn_error',
+  );
   assertNotIncludes(
     JSON.stringify(spawnOutcome),
     'missing-processor-command.exe',
@@ -445,9 +488,10 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   await spawnRunner.close();
 
   const exitRunner = new ProcessorRunner();
-  const exitOutcome = requireFailure(await exitRunner.run(
-    fixtureInvocation('non-zero.ts', requestEnvironment()),
-  ).settled, 'exit_code');
+  const exitOutcome = requireFailure(
+    await exitRunner.run(fixtureInvocation('non-zero.ts', requestEnvironment())).settled,
+    'exit_code',
+  );
   assertNotIncludes(
     JSON.stringify(exitOutcome),
     'untrusted',
@@ -456,18 +500,24 @@ async function testClassifiesSpawnExitSignalAndStdioFailures(): Promise<void> {
   await exitRunner.close();
 
   const signalRunner = new ProcessorRunner();
-  requireFailure(await signalRunner.run(
-    fixtureInvocation('self-signal.ts', requestEnvironment()),
-  ).settled, process.platform === 'win32' ? 'exit_code' : 'signal');
+  requireFailure(
+    await signalRunner.run(fixtureInvocation('self-signal.ts', requestEnvironment())).settled,
+    process.platform === 'win32' ? 'exit_code' : 'signal',
+  );
   await signalRunner.close();
 
   const stdioRunner = new ProcessorRunner({
     terminationGracePeriodMs: 25,
     forceTerminationGracePeriodMs: 25,
   });
-  requireFailure(await stdioRunner.run(fixtureInvocation('close-stdin.ts', requestEnvironment(), {
-    stdin: new Uint8Array(8 * 1024 * 1024),
-  })).settled, 'stdio_error');
+  requireFailure(
+    await stdioRunner.run(
+      fixtureInvocation('close-stdin.ts', requestEnvironment(), {
+        stdin: new Uint8Array(8 * 1024 * 1024),
+      }),
+    ).settled,
+    'stdio_error',
+  );
   await stdioRunner.close();
 }
 
@@ -506,10 +556,7 @@ async function testTriggersTimeoutAfterDescendantReportsHeldStdio(): Promise<voi
     await readiness.ready;
     timeoutCapture.trigger();
 
-    requireFailure(
-      await exchange.settled,
-      'timeout',
-    );
+    requireFailure(await exchange.settled, 'timeout');
     assertEqual(
       runner.activeInvocationCount,
       1,
@@ -533,12 +580,21 @@ async function testTriggersTimeoutAfterDescendantReportsHeldStdio(): Promise<voi
       true,
       'Descendant-held stdio must reach bounded degraded cleanup rather than masquerading as a clean close.',
     );
-    assertEqual(unrefCalls, 1, 'Degraded cleanup must unref the unconfirmed direct Processor child.');
+    assertEqual(
+      unrefCalls,
+      1,
+      'Degraded cleanup must unref the unconfirmed direct Processor child.',
+    );
     await close;
-    assertEqual(runner.activeInvocationCount, 0, 'Bounded degraded drain must release local active tracking.');
-    requireFailure(await runner.run(
-      fixtureInvocation('echo-environment.ts', requestEnvironment()),
-    ).settled, 'runner_closed');
+    assertEqual(
+      runner.activeInvocationCount,
+      0,
+      'Bounded degraded drain must release local active tracking.',
+    );
+    requireFailure(
+      await runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment())).settled,
+      'runner_closed',
+    );
   } finally {
     ChildProcess.prototype.unref = originalUnref;
     try {
@@ -593,9 +649,17 @@ async function testHandlesTimeoutCancellationAndBoundedDegradedCleanup(): Promis
       'runner.close() must wait for timeout cleanup rather than only caller settlement.',
     );
     const timeoutDrain = await timeoutExchange.drained;
-    assertEqual(timeoutDrain.cleanupFailed, true, 'Unconfirmed timeout cleanup must be reported by drained.');
+    assertEqual(
+      timeoutDrain.cleanupFailed,
+      true,
+      'Unconfirmed timeout cleanup must be reported by drained.',
+    );
     await timeoutClose;
-    assertEqual(timeoutRunner.activeInvocationCount, 0, 'Drain completion must release the active timeout slot.');
+    assertEqual(
+      timeoutRunner.activeInvocationCount,
+      0,
+      'Drain completion must release the active timeout slot.',
+    );
 
     const cancellationRunner = new ProcessorRunner({
       terminationGracePeriodMs: 50,
@@ -603,7 +667,9 @@ async function testHandlesTimeoutCancellationAndBoundedDegradedCleanup(): Promis
     });
     const controller = new AbortController();
     const cancellationExchange = cancellationRunner.run(
-      fixtureInvocation('unconfirmed-child.ts', requestEnvironment(), { signal: controller.signal }),
+      fixtureInvocation('unconfirmed-child.ts', requestEnvironment(), {
+        signal: controller.signal,
+      }),
     );
     controller.abort();
     requireFailure(await cancellationExchange.settled, 'cancelled');
@@ -635,10 +701,16 @@ async function testHandlesTimeoutCancellationAndBoundedDegradedCleanup(): Promis
       0,
       'Drain completion must release the active cancellation slot.',
     );
-    assertEqual(unrefCalls, 2, 'Every unconfirmed direct child must be unrefed after local cleanup detaches.');
-    requireFailure(await cancellationRunner.run(
-      fixtureInvocation('echo-environment.ts', requestEnvironment()),
-    ).settled, 'runner_closed');
+    assertEqual(
+      unrefCalls,
+      2,
+      'Every unconfirmed direct child must be unrefed after local cleanup detaches.',
+    );
+    requireFailure(
+      await cancellationRunner.run(fixtureInvocation('echo-environment.ts', requestEnvironment()))
+        .settled,
+      'runner_closed',
+    );
   } finally {
     ChildProcess.prototype.kill = originalKill;
     ChildProcess.prototype.unref = originalUnref;
@@ -661,34 +733,70 @@ async function testWaitsForCompleteOutputAndClosesIdempotently(): Promise<void> 
     'Runner must wait for stdout EOF before returning a successful Processors result.',
   );
   const completeDrain = await completeExchange.drained;
-  assertEqual(completeDrain.cleanupFailed, false, 'Successful Processor cleanup should drain normally.');
+  assertEqual(
+    completeDrain.cleanupFailed,
+    false,
+    'Successful Processor cleanup should drain normally.',
+  );
 
   const active = runner.run(fixtureInvocation('wait-forever.ts', requestEnvironment()));
-  assertEqual(runner.activeInvocationCount, 1, 'Long-running Processor should be active before runner shutdown.');
+  assertEqual(
+    runner.activeInvocationCount,
+    1,
+    'Long-running Processor should be active before runner shutdown.',
+  );
   const firstClose = runner.close();
   const secondClose = runner.close();
   assert(Object.is(firstClose, secondClose), 'Processor runner close must be idempotent.');
   requireFailure(await active.settled, 'cancelled');
   await firstClose;
   assertEqual(runner.activeInvocationCount, 0, 'close() must wait for active local cleanup.');
-  requireFailure(await runner.run(
-    fixtureInvocation('echo-environment.ts', requestEnvironment()),
-  ).settled, 'runner_closed');
+  requireFailure(
+    await runner.run(fixtureInvocation('echo-environment.ts', requestEnvironment())).settled,
+    'runner_closed',
+  );
 }
 
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external-routing Processor runner',
     tests: [
-      { name: 'runs bytes and sanitizes response invocation metadata', run: testRunsBytesAndSanitizesResponseEnvironment },
-      { name: 'clears response-only metadata for request Processors', run: testClearsResponseOnlyEnvironmentForRequestProcessor },
-      { name: 'bounds stderr capture while continuing to drain', run: testBoundsStderrCaptureWhileContinuingToDrain },
-      { name: 'rejects oversize stdin before admission', run: testRejectsOversizeStdinWithoutStartingAProcess },
-      { name: 'terminates Processors that exceed stdout limit', run: testTerminatesOnOversizeStdout },
-      { name: 'classifies spawn, exit, signal, and stdio failures', run: testClassifiesSpawnExitSignalAndStdioFailures },
-      { name: 'triggers timeout after descendant reports held stdio', run: testTriggersTimeoutAfterDescendantReportsHeldStdio },
-      { name: 'handles timeout, cancellation, and bounded degraded cleanup', run: testHandlesTimeoutCancellationAndBoundedDegradedCleanup },
-      { name: 'waits for complete output and closes idempotently', run: testWaitsForCompleteOutputAndClosesIdempotently },
+      {
+        name: 'runs bytes and sanitizes response invocation metadata',
+        run: testRunsBytesAndSanitizesResponseEnvironment,
+      },
+      {
+        name: 'clears response-only metadata for request Processors',
+        run: testClearsResponseOnlyEnvironmentForRequestProcessor,
+      },
+      {
+        name: 'bounds stderr capture while continuing to drain',
+        run: testBoundsStderrCaptureWhileContinuingToDrain,
+      },
+      {
+        name: 'rejects oversize stdin before admission',
+        run: testRejectsOversizeStdinWithoutStartingAProcess,
+      },
+      {
+        name: 'terminates Processors that exceed stdout limit',
+        run: testTerminatesOnOversizeStdout,
+      },
+      {
+        name: 'classifies spawn, exit, signal, and stdio failures',
+        run: testClassifiesSpawnExitSignalAndStdioFailures,
+      },
+      {
+        name: 'triggers timeout after descendant reports held stdio',
+        run: testTriggersTimeoutAfterDescendantReportsHeldStdio,
+      },
+      {
+        name: 'handles timeout, cancellation, and bounded degraded cleanup',
+        run: testHandlesTimeoutCancellationAndBoundedDegradedCleanup,
+      },
+      {
+        name: 'waits for complete output and closes idempotently',
+        run: testWaitsForCompleteOutputAndClosesIdempotently,
+      },
     ],
   });
 }

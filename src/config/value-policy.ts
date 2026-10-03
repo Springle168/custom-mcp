@@ -38,7 +38,11 @@ export interface FreeFormStringOptions {
 
 export type LineEndingToken = 'auto' | 'lf' | 'crlf';
 
-export const LINE_ENDING_VALUES = ['auto', 'lf', 'crlf'] as const satisfies readonly LineEndingToken[];
+export const LINE_ENDING_VALUES = [
+  'auto',
+  'lf',
+  'crlf',
+] as const satisfies readonly LineEndingToken[];
 export const WORKSPACE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const WORKSPACE_ID_DESCRIPTION =
   '1-64 characters, start with a lowercase letter or digit, and contain only lowercase letters, digits, hyphens, or underscores';
@@ -198,10 +202,7 @@ function validatePositiveInteger(
   return ok(value);
 }
 
-function positiveIntegerMessage(
-  options: PositiveIntegerOptions,
-  kind: string,
-): string {
+function positiveIntegerMessage(options: PositiveIntegerOptions, kind: string): string {
   const label = options.label ?? options.fieldPath;
   return `${label} must be a ${kind}${describeRange(options)}.`;
 }

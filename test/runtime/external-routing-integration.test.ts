@@ -84,10 +84,10 @@ interface DownstreamMcpServer {
 
 function getTextContent(result: unknown): string {
   if (
-    typeof result !== 'object'
-    || result === null
-    || !('content' in result)
-    || !Array.isArray(result.content)
+    typeof result !== 'object' ||
+    result === null ||
+    !('content' in result) ||
+    !Array.isArray(result.content)
   ) {
     return '';
   }
@@ -125,89 +125,143 @@ async function writeExternalRoutingFixture(
     additionalProperties: false,
   };
   await Promise.all([
-    fs.writeFile(FIRST_TOOL_DEFINITION_FILE, JSON.stringify({
-      name: FIRST_TOOL_NAME,
-      description: 'Routes the first custom-only test tool.',
-      inputSchema,
-    }, null, 2), 'utf-8'),
-    fs.writeFile(SECOND_TOOL_DEFINITION_FILE, JSON.stringify({
-      name: SECOND_TOOL_NAME,
-      description: 'Routes the second custom-only test tool.',
-      inputSchema,
-    }, null, 2), 'utf-8'),
-    fs.writeFile(FIRST_ENDPOINT_CONFIG_FILE, JSON.stringify({
-      version: 1,
-      url: firstEndpointUrl,
-      timeoutMs: 1_000,
-      headers: {},
-    }, null, 2), 'utf-8'),
-    fs.writeFile(SECOND_ENDPOINT_CONFIG_FILE, JSON.stringify({
-      version: 1,
-      url: secondEndpointUrl,
-      timeoutMs: 1_000,
-      headers: {},
-    }, null, 2), 'utf-8'),
+    fs.writeFile(
+      FIRST_TOOL_DEFINITION_FILE,
+      JSON.stringify(
+        {
+          name: FIRST_TOOL_NAME,
+          description: 'Routes the first custom-only test tool.',
+          inputSchema,
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    ),
+    fs.writeFile(
+      SECOND_TOOL_DEFINITION_FILE,
+      JSON.stringify(
+        {
+          name: SECOND_TOOL_NAME,
+          description: 'Routes the second custom-only test tool.',
+          inputSchema,
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    ),
+    fs.writeFile(
+      FIRST_ENDPOINT_CONFIG_FILE,
+      JSON.stringify(
+        {
+          version: 1,
+          url: firstEndpointUrl,
+          timeoutMs: 1_000,
+          headers: {},
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    ),
+    fs.writeFile(
+      SECOND_ENDPOINT_CONFIG_FILE,
+      JSON.stringify(
+        {
+          version: 1,
+          url: secondEndpointUrl,
+          timeoutMs: 1_000,
+          headers: {},
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    ),
   ]);
-  await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
-    version: 2,
-    routes: [
+  await fs.writeFile(
+    EXTERNAL_ROUTING_CONFIG_FILE,
+    JSON.stringify(
       {
-        definitionId: 'external-custom-tool',
-        routingMode: 'http',
-        httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE,
-        routingStrategy: {
-          'request-to-external': [{ mode: 'direct' }],
-          'response-from-external': [{ mode: 'direct' }],
-        },
-      },
-      {
-        definitionId: 'second-external-custom-tool',
-        routingMode: 'http',
-        httpEndpointConfigFile: SECOND_ENDPOINT_CONFIG_FILE,
-        routingStrategy: {
-          'request-to-external': [{ mode: 'direct' }],
-          'response-from-external': [{ mode: 'direct' }],
-        },
-      },
-    ],
-  }, null, 2), 'utf-8');
-  await fs.writeFile(TOOL_CONFIG_FILE, JSON.stringify({
-    version: 2,
-    definitions: [
-      {
-        id: 'external-custom-tool',
-        toolDefinitionFile: FIRST_TOOL_DEFINITION_FILE,
-      },
-      {
-        id: 'second-external-custom-tool',
-        toolDefinitionFile: SECOND_TOOL_DEFINITION_FILE,
-      },
-    ],
-    externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
-  }, null, 2), 'utf-8');
-  await writeSplitConfigFixture(CONFIG_FILE, {
-    workspaces: [{
-      id: 'selected',
-      rootDir: ROOT_DIR,
-      host: '127.0.0.1',
-      port: 4914,
-      lineEnding: 'auto',
-      logsDir: LOGS_DIR,
-      ...(structuredContentDup ? {
-        rules: {
-          requestHeaders: {
-            onCallToolResult: [{
-              match: { 'x-client': 'canonical-content-test' },
-              enable: ['structuredContentDup'],
-            }],
+        version: 2,
+        routes: [
+          {
+            definitionId: 'external-custom-tool',
+            routingMode: 'http',
+            httpEndpointConfigFile: FIRST_ENDPOINT_CONFIG_FILE,
+            routingStrategy: {
+              'request-to-external': [{ mode: 'direct' }],
+              'response-from-external': [{ mode: 'direct' }],
+            },
           },
-        },
-      } : {}),
-      tools: {
-        toolConfigFile: TOOL_CONFIG_FILE,
-        enabled: [FIRST_TOOL_NAME, SECOND_TOOL_NAME],
+          {
+            definitionId: 'second-external-custom-tool',
+            routingMode: 'http',
+            httpEndpointConfigFile: SECOND_ENDPOINT_CONFIG_FILE,
+            routingStrategy: {
+              'request-to-external': [{ mode: 'direct' }],
+              'response-from-external': [{ mode: 'direct' }],
+            },
+          },
+        ],
       },
-    }],
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+  await fs.writeFile(
+    TOOL_CONFIG_FILE,
+    JSON.stringify(
+      {
+        version: 2,
+        definitions: [
+          {
+            id: 'external-custom-tool',
+            toolDefinitionFile: FIRST_TOOL_DEFINITION_FILE,
+          },
+          {
+            id: 'second-external-custom-tool',
+            toolDefinitionFile: SECOND_TOOL_DEFINITION_FILE,
+          },
+        ],
+        externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+  await writeSplitConfigFixture(CONFIG_FILE, {
+    workspaces: [
+      {
+        id: 'selected',
+        rootDir: ROOT_DIR,
+        host: '127.0.0.1',
+        port: 4914,
+        lineEnding: 'auto',
+        logsDir: LOGS_DIR,
+        ...(structuredContentDup
+          ? {
+              rules: {
+                requestHeaders: {
+                  onCallToolResult: [
+                    {
+                      match: { 'x-client': 'canonical-content-test' },
+                      enable: ['structuredContentDup'],
+                    },
+                  ],
+                },
+              },
+            }
+          : {}),
+        tools: {
+          toolConfigFile: TOOL_CONFIG_FILE,
+          enabled: [FIRST_TOOL_NAME, SECOND_TOOL_NAME],
+        },
+      },
+    ],
   });
 }
 
@@ -238,7 +292,10 @@ async function startLoopbackEndpoint(
   });
 
   const address = server.address();
-  assert(address !== null && typeof address !== 'string', 'Loopback endpoint should expose a TCP port.');
+  assert(
+    address !== null && typeof address !== 'string',
+    'Loopback endpoint should expose a TCP port.',
+  );
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     calls,
@@ -267,13 +324,17 @@ function handleEndpointRequest(
         request: canonicalRequest,
       });
       const call = canonicalRequest.calls[0];
-      const body = JSON.stringify(responseFor?.(canonicalRequest) ?? {
-        results: [{
-          id: call.id,
-          status: 'completed',
-          content: [{ type: 'text', text: completedMessage }],
-        }],
-      });
+      const body = JSON.stringify(
+        responseFor?.(canonicalRequest) ?? {
+          results: [
+            {
+              id: call.id,
+              status: 'completed',
+              content: [{ type: 'text', text: completedMessage }],
+            },
+          ],
+        },
+      );
       response.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': String(Buffer.byteLength(body)),
@@ -306,11 +367,16 @@ async function startDownstreamMcpServer(): Promise<DownstreamMcpServer> {
     const message = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
     if (message.method === 'initialize') {
       initializeCount++;
-      writeDownstreamJson(response, message.id, {
-        protocolVersion: '2025-06-18',
-        capabilities: { tools: {} },
-        serverInfo: { name: 'downstream-integration', version: '1' },
-      }, { 'Mcp-Session-Id': 'shared-downstream-session' });
+      writeDownstreamJson(
+        response,
+        message.id,
+        {
+          protocolVersion: '2025-06-18',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'downstream-integration', version: '1' },
+        },
+        { 'Mcp-Session-Id': 'shared-downstream-session' },
+      );
       return;
     }
     if (message.method === 'notifications/initialized') {
@@ -344,7 +410,10 @@ async function startDownstreamMcpServer(): Promise<DownstreamMcpServer> {
     });
   });
   const address = server.address();
-  assert(address !== null && typeof address !== 'string', 'Downstream MCP server should expose a port.');
+  assert(
+    address !== null && typeof address !== 'string',
+    'Downstream MCP server should expose a port.',
+  );
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
     calls,
@@ -369,15 +438,12 @@ function writeDownstreamJson(
   response.end(body);
 }
 
-async function closeHttpServer(
-  server: HttpServer,
-  sockets: ReadonlySet<Socket>,
-): Promise<void> {
+async function closeHttpServer(server: HttpServer, sockets: ReadonlySet<Socket>): Promise<void> {
   for (const socket of sockets) {
     socket.destroy();
   }
   await new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
+    server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 
@@ -393,7 +459,9 @@ async function connectMcpServer(
     configStore: createConfigStore(runtime),
     logger: {
       logToolCall() {},
-      logToolResult(_name, result) { options.onResult?.(result); },
+      logToolResult(_name, result) {
+        options.onResult?.(result);
+      },
     },
     toolService: options.toolService ?? createWorkspaceToolService(runtime.toolCatalog),
     prepareToolResult: prepareRequestHeaderToolResult,
@@ -401,10 +469,7 @@ async function connectMcpServer(
   const client = new Client({ name: 'external-routing-integration-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
-  await Promise.all([
-    server.connect(serverTransport),
-    client.connect(clientTransport),
-  ]);
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   if (options.rawHeaders !== undefined) {
     // Model the HTTP listener's request-scoped header context at the server boundary.
     const onmessage = serverTransport.onmessage;
@@ -444,11 +509,13 @@ async function testCanonicalContentThroughMcpAndPolicy(): Promise<void> {
     const endpoint = await startLoopbackEndpoint('', (request) => {
       const value = request.calls[0].arguments.value;
       return {
-        results: [{
-          id: request.calls[0].id,
-          status: typeof value === 'string' ? value.split(':')[0] : 'completed',
-          content: typeof value === 'string' && value.endsWith(':empty') ? [] : content,
-        }],
+        results: [
+          {
+            id: request.calls[0].id,
+            status: typeof value === 'string' ? value.split(':')[0] : 'completed',
+            content: typeof value === 'string' && value.endsWith(':empty') ? [] : content,
+          },
+        ],
       };
     });
     let runtime: LoadedApplicationRuntime | undefined;
@@ -462,17 +529,36 @@ async function testCanonicalContentThroughMcpAndPolicy(): Promise<void> {
         onResult: (result) => logged.push(result),
       });
       const invalid = await pair.client.callTool({ name: FIRST_TOOL_NAME, arguments: {} });
-      assertEqual(invalid.isError, true, 'External effective-schema rejection should remain a controlled tool error');
-      assertIncludes(JSON.stringify(invalid.content), 'configured input schema', 'External validation must precede execution');
+      assertEqual(
+        invalid.isError,
+        true,
+        'External effective-schema rejection should remain a controlled tool error',
+      );
+      assertIncludes(
+        JSON.stringify(invalid.content),
+        'configured input schema',
+        'External validation must precede execution',
+      );
       assertEqual(endpoint.requestCount(), 0, 'Rejected input must not reach the endpoint');
       const loggedInvalid = logged.at(-1);
       assert(loggedInvalid !== undefined, 'External validation error should use the result logger');
       if (duplicate) {
         const wrapper = { content: invalid.content, isError: true };
-        assertEqual(JSON.stringify(invalid.structuredContent), JSON.stringify(wrapper), 'External validation error must use captured adaptation');
-        assertEqual(JSON.stringify(loggedInvalid.structuredContent), JSON.stringify(wrapper), 'External validation error logging must use the adapted wrapper');
+        assertEqual(
+          JSON.stringify(invalid.structuredContent),
+          JSON.stringify(wrapper),
+          'External validation error must use captured adaptation',
+        );
+        assertEqual(
+          JSON.stringify(loggedInvalid.structuredContent),
+          JSON.stringify(wrapper),
+          'External validation error logging must use the adapted wrapper',
+        );
       } else {
-        assert(!('structuredContent' in invalid) && !('structuredContent' in loggedInvalid), 'Unmatched external validation error must remain unadapted');
+        assert(
+          !('structuredContent' in invalid) && !('structuredContent' in loggedInvalid),
+          'Unmatched external validation error must remain unadapted',
+        );
       }
       for (const status of ['completed', 'failed', 'cancelled'] as const) {
         for (const empty of [false, true]) {
@@ -481,24 +567,58 @@ async function testCanonicalContentThroughMcpAndPolicy(): Promise<void> {
             arguments: { value: `${status}:${empty ? 'empty' : 'mixed'}` },
           });
           const expected = empty ? [] : expectedContent;
-          assertEqual(JSON.stringify(result.content), JSON.stringify(expected), 'MCP Client should receive the exact mapped block order and values');
-          assertEqual(result.isError, status !== 'completed', 'MCP Client should receive the domain status without text prefixes');
+          assertEqual(
+            JSON.stringify(result.content),
+            JSON.stringify(expected),
+            'MCP Client should receive the exact mapped block order and values',
+          );
+          assertEqual(
+            result.isError,
+            status !== 'completed',
+            'MCP Client should receive the domain status without text prefixes',
+          );
           assert(!('_meta' in result), 'HTTP mapping must not introduce MCP metadata');
           const loggedResult = logged.at(-1);
           assert(loggedResult !== undefined, 'Validated results should reach the result logger');
-          assertEqual(JSON.stringify(loggedResult.content), JSON.stringify(expected), 'Logger should receive mapped MCP blocks, not canonical unknown values');
+          assertEqual(
+            JSON.stringify(loggedResult.content),
+            JSON.stringify(expected),
+            'Logger should receive mapped MCP blocks, not canonical unknown values',
+          );
           if (duplicate) {
             const expectedWrapper = { content: expected, isError: status !== 'completed' };
-            assertEqual(JSON.stringify(result.structuredContent), JSON.stringify(expectedWrapper), 'Matched policy must duplicate only final MCP content and status');
-            assertEqual(JSON.stringify(loggedResult.structuredContent), JSON.stringify(expectedWrapper), 'Logger should receive the same policy-adapted content');
+            assertEqual(
+              JSON.stringify(result.structuredContent),
+              JSON.stringify(expectedWrapper),
+              'Matched policy must duplicate only final MCP content and status',
+            );
+            assertEqual(
+              JSON.stringify(loggedResult.structuredContent),
+              JSON.stringify(expectedWrapper),
+              'Logger should receive the same policy-adapted content',
+            );
           } else {
-            assert(!('structuredContent' in result), 'Unmatched policy must not add structuredContent');
-            assert(!('structuredContent' in loggedResult), 'Unmatched logger result must not acquire structuredContent');
+            assert(
+              !('structuredContent' in result),
+              'Unmatched policy must not add structuredContent',
+            );
+            assert(
+              !('structuredContent' in loggedResult),
+              'Unmatched logger result must not acquire structuredContent',
+            );
           }
         }
       }
-      assertEqual(endpoint.failures.length, 0, 'Canonical endpoint should receive valid requests throughout the MCP path');
-      assertEqual(endpoint.requestCount(), 6, 'Each call should reach the endpoint once without retries');
+      assertEqual(
+        endpoint.failures.length,
+        0,
+        'Canonical endpoint should receive valid requests throughout the MCP path',
+      );
+      assertEqual(
+        endpoint.requestCount(),
+        6,
+        'Each call should reach the endpoint once without retries',
+      );
     } finally {
       await cleanupRuntimeResources({ pair, runtime, endpoints: [endpoint] });
     }
@@ -555,47 +675,77 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
       additionalProperties: false,
     };
     await Promise.all([
-      fs.writeFile(FIRST_TOOL_DEFINITION_FILE, JSON.stringify({
-        name: FIRST_TOOL_NAME,
-        description: 'First MCP routed tool.',
-        inputSchema,
-      }), 'utf8'),
-      fs.writeFile(SECOND_TOOL_DEFINITION_FILE, JSON.stringify({
-        name: SECOND_TOOL_NAME,
-        description: 'Second MCP routed tool.',
-        inputSchema,
-      }), 'utf8'),
-      fs.writeFile(MCP_SERVER_CONFIG_FILE, JSON.stringify({
-        version: 1,
-        url: downstream.url,
-        timeoutMs: 1_000,
-      }), 'utf8'),
+      fs.writeFile(
+        FIRST_TOOL_DEFINITION_FILE,
+        JSON.stringify({
+          name: FIRST_TOOL_NAME,
+          description: 'First MCP routed tool.',
+          inputSchema,
+        }),
+        'utf8',
+      ),
+      fs.writeFile(
+        SECOND_TOOL_DEFINITION_FILE,
+        JSON.stringify({
+          name: SECOND_TOOL_NAME,
+          description: 'Second MCP routed tool.',
+          inputSchema,
+        }),
+        'utf8',
+      ),
+      fs.writeFile(
+        MCP_SERVER_CONFIG_FILE,
+        JSON.stringify({
+          version: 1,
+          url: downstream.url,
+          timeoutMs: 1_000,
+        }),
+        'utf8',
+      ),
     ]);
-    await fs.writeFile(EXTERNAL_ROUTING_CONFIG_FILE, JSON.stringify({
-      version: 2,
-      routes: [
-        { definitionId: 'external-custom-tool', routingMode: 'mcp', mcpServerConfigFile: MCP_SERVER_CONFIG_FILE },
-        { definitionId: 'second-external-custom-tool', routingMode: 'mcp', mcpServerConfigFile: MCP_SERVER_CONFIG_FILE },
-      ],
-    }), 'utf8');
-    await fs.writeFile(TOOL_CONFIG_FILE, JSON.stringify({
-      version: 2,
-      definitions: [
-        { id: 'external-custom-tool', toolDefinitionFile: FIRST_TOOL_DEFINITION_FILE },
-        { id: 'second-external-custom-tool', toolDefinitionFile: SECOND_TOOL_DEFINITION_FILE },
-      ],
-      externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
-    }), 'utf8');
+    await fs.writeFile(
+      EXTERNAL_ROUTING_CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        routes: [
+          {
+            definitionId: 'external-custom-tool',
+            routingMode: 'mcp',
+            mcpServerConfigFile: MCP_SERVER_CONFIG_FILE,
+          },
+          {
+            definitionId: 'second-external-custom-tool',
+            routingMode: 'mcp',
+            mcpServerConfigFile: MCP_SERVER_CONFIG_FILE,
+          },
+        ],
+      }),
+      'utf8',
+    );
+    await fs.writeFile(
+      TOOL_CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        definitions: [
+          { id: 'external-custom-tool', toolDefinitionFile: FIRST_TOOL_DEFINITION_FILE },
+          { id: 'second-external-custom-tool', toolDefinitionFile: SECOND_TOOL_DEFINITION_FILE },
+        ],
+        externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
+      }),
+      'utf8',
+    );
     await writeSplitConfigFixture(CONFIG_FILE, {
-      workspaces: [{
-        id: 'selected',
-        rootDir: ROOT_DIR,
-        host: '127.0.0.1',
-        port: 4914,
-        lineEnding: 'auto',
-        logsDir: LOGS_DIR,
-        tools: { toolConfigFile: TOOL_CONFIG_FILE },
-      }],
+      workspaces: [
+        {
+          id: 'selected',
+          rootDir: ROOT_DIR,
+          host: '127.0.0.1',
+          port: 4914,
+          lineEnding: 'auto',
+          logsDir: LOGS_DIR,
+          tools: { toolConfigFile: TOOL_CONFIG_FILE },
+        },
+      ],
     });
 
     runtime = loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
@@ -605,11 +755,31 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
       pair.client.callTool({ name: FIRST_TOOL_NAME, arguments: { value: 'one' } }),
       pair.client.callTool({ name: SECOND_TOOL_NAME, arguments: { value: 'two' } }),
     ]);
-    assertEqual(getTextContent(first), `downstream:${FIRST_TOOL_NAME}`, 'First route should preserve its local Tool name.');
-    assertEqual(getTextContent(second), `downstream:${SECOND_TOOL_NAME}`, 'Second route should preserve its local Tool name.');
-    assertEqual(downstream.initializeCount(), 1, 'Routes sharing one server config should share one downstream session.');
-    assertEqual(downstream.listCount(), 0, 'External MCP routing must not call downstream tools/list.');
-    assertEqual(downstream.calls.length, 2, 'Each upstream call should be sent downstream exactly once.');
+    assertEqual(
+      getTextContent(first),
+      `downstream:${FIRST_TOOL_NAME}`,
+      'First route should preserve its local Tool name.',
+    );
+    assertEqual(
+      getTextContent(second),
+      `downstream:${SECOND_TOOL_NAME}`,
+      'Second route should preserve its local Tool name.',
+    );
+    assertEqual(
+      downstream.initializeCount(),
+      1,
+      'Routes sharing one server config should share one downstream session.',
+    );
+    assertEqual(
+      downstream.listCount(),
+      0,
+      'External MCP routing must not call downstream tools/list.',
+    );
+    assertEqual(
+      downstream.calls.length,
+      2,
+      'Each upstream call should be sent downstream exactly once.',
+    );
   } finally {
     await cleanupRuntimeResources({ pair, runtime, endpoints: [] });
     await downstream.close();
@@ -638,8 +808,16 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
     pair = await connectMcpServer(runtime, { toolService: sharedService });
     const listed = await pair.client.listTools();
     assertEqual(listed.tools.length, 2, 'tools/list should expose both routed custom-only tools.');
-    assertEqual(listed.tools[0]?.name, FIRST_TOOL_NAME, 'The first Tool should retain definition order.');
-    assertEqual(listed.tools[1]?.name, SECOND_TOOL_NAME, 'The second Tool should retain definition order.');
+    assertEqual(
+      listed.tools[0]?.name,
+      FIRST_TOOL_NAME,
+      'The first Tool should retain definition order.',
+    );
+    assertEqual(
+      listed.tools[1]?.name,
+      SECOND_TOOL_NAME,
+      'The second Tool should retain definition order.',
+    );
 
     const invalid = await pair.client.callTool({
       name: FIRST_TOOL_NAME,
@@ -651,40 +829,92 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
       'configured input schema',
       'Invalid custom arguments should fail before external execution.',
     );
-    assertEqual(firstEndpoint.requestCount(), 0, 'Invalid arguments must not request the first endpoint.');
-    assertEqual(secondEndpoint.requestCount(), 0, 'Invalid arguments must not request the second endpoint.');
+    assertEqual(
+      firstEndpoint.requestCount(),
+      0,
+      'Invalid arguments must not request the first endpoint.',
+    );
+    assertEqual(
+      secondEndpoint.requestCount(),
+      0,
+      'Invalid arguments must not request the second endpoint.',
+    );
 
     const firstArguments = { value: 'first MCP call' };
     const firstCompleted = await pair.client.callTool({
       name: FIRST_TOOL_NAME,
       arguments: firstArguments,
     });
-    assertEqual(firstCompleted.isError, false, 'The first route should return a successful MCP result.');
-    assertEqual(getTextContent(firstCompleted), FIRST_COMPLETED_MESSAGE, 'The first route should use the first endpoint.');
-    assertEqual(firstEndpoint.requestCount(), 1, 'The first route should request its endpoint exactly once.');
-    assertEqual(secondEndpoint.requestCount(), 0, 'The first route must not request the second endpoint.');
+    assertEqual(
+      firstCompleted.isError,
+      false,
+      'The first route should return a successful MCP result.',
+    );
+    assertEqual(
+      getTextContent(firstCompleted),
+      FIRST_COMPLETED_MESSAGE,
+      'The first route should use the first endpoint.',
+    );
+    assertEqual(
+      firstEndpoint.requestCount(),
+      1,
+      'The first route should request its endpoint exactly once.',
+    );
+    assertEqual(
+      secondEndpoint.requestCount(),
+      0,
+      'The first route must not request the second endpoint.',
+    );
 
     const secondArguments = { value: 'second MCP call' };
     const secondCompleted = await pair.client.callTool({
       name: SECOND_TOOL_NAME,
       arguments: secondArguments,
     });
-    assertEqual(secondCompleted.isError, false, 'The second route should return a successful MCP result.');
-    assertEqual(getTextContent(secondCompleted), SECOND_COMPLETED_MESSAGE, 'The second route should use the second endpoint.');
-    assertEqual(firstEndpoint.requestCount(), 1, 'The second route must not request the first endpoint.');
-    assertEqual(secondEndpoint.requestCount(), 1, 'The second route should request its endpoint exactly once.');
+    assertEqual(
+      secondCompleted.isError,
+      false,
+      'The second route should return a successful MCP result.',
+    );
+    assertEqual(
+      getTextContent(secondCompleted),
+      SECOND_COMPLETED_MESSAGE,
+      'The second route should use the second endpoint.',
+    );
+    assertEqual(
+      firstEndpoint.requestCount(),
+      1,
+      'The second route must not request the first endpoint.',
+    );
+    assertEqual(
+      secondEndpoint.requestCount(),
+      1,
+      'The second route should request its endpoint exactly once.',
+    );
 
     for (const [endpoint, toolName, expectedArguments] of [
       [firstEndpoint, FIRST_TOOL_NAME, firstArguments],
       [secondEndpoint, SECOND_TOOL_NAME, secondArguments],
     ] as const) {
-      assertEqual(endpoint.failures.length, 0, `${toolName} endpoint should receive valid canonical input.`);
-      assertEqual(endpoint.calls.length, 1, `${toolName} endpoint should receive exactly one request.`);
+      assertEqual(
+        endpoint.failures.length,
+        0,
+        `${toolName} endpoint should receive valid canonical input.`,
+      );
+      assertEqual(
+        endpoint.calls.length,
+        1,
+        `${toolName} endpoint should receive exactly one request.`,
+      );
       const captured = endpoint.calls[0];
       assert(captured !== undefined, `${toolName} call should be captured by its endpoint.`);
       assertEqual(captured.method, 'POST', 'External routing should use HTTP POST.');
       const canonicalCall = captured.request.calls[0];
-      assertEqual(canonicalCall.name, toolName, 'Canonical request should use the Tool definition MCP name.');
+      assertEqual(
+        canonicalCall.name,
+        toolName,
+        'Canonical request should use the Tool definition MCP name.',
+      );
       assertEqual(
         JSON.stringify(canonicalCall.arguments),
         JSON.stringify(expectedArguments),
@@ -701,23 +931,68 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
     });
     try {
       const limitedList = await restricted.client.listTools();
-      assertEqual(limitedList.tools.map((tool) => tool.name).join(','), FIRST_TOOL_NAME, 'Restricted view should preserve the custom-only tool call name and binding.');
+      assertEqual(
+        limitedList.tools.map((tool) => tool.name).join(','),
+        FIRST_TOOL_NAME,
+        'Restricted view should preserve the custom-only tool call name and binding.',
+      );
       const hidden = await restricted.client.callTool({ name: SECOND_TOOL_NAME, arguments: {} });
-      assertIncludes(getTextContent(hidden), `Unknown tool: ${SECOND_TOOL_NAME}`, 'Hidden tool should fail admission before schema validation or routing.');
-      assertEqual(secondEndpoint.requestCount(), 1, 'Hidden custom-only tool must not contact its endpoint.');
-      const invalidVisible = await restricted.client.callTool({ name: FIRST_TOOL_NAME, arguments: {} });
-      assertIncludes(getTextContent(invalidVisible), 'configured input schema', 'Restricted custom-only view must retain workspace validation.');
-      assertEqual(firstEndpoint.requestCount(), 1, 'Visible invalid arguments must not reach external execution.');
-      const routed = await restricted.client.callTool({ name: FIRST_TOOL_NAME, arguments: { value: 'restricted session call' } });
-      assertEqual(getTextContent(routed), FIRST_COMPLETED_MESSAGE, 'Restricted view must keep the original external binding and shared runtime.');
-      assertEqual(firstEndpoint.requestCount(), 2, 'Restricted valid call should execute its existing external route once.');
+      assertIncludes(
+        getTextContent(hidden),
+        `Unknown tool: ${SECOND_TOOL_NAME}`,
+        'Hidden tool should fail admission before schema validation or routing.',
+      );
+      assertEqual(
+        secondEndpoint.requestCount(),
+        1,
+        'Hidden custom-only tool must not contact its endpoint.',
+      );
+      const invalidVisible = await restricted.client.callTool({
+        name: FIRST_TOOL_NAME,
+        arguments: {},
+      });
+      assertIncludes(
+        getTextContent(invalidVisible),
+        'configured input schema',
+        'Restricted custom-only view must retain workspace validation.',
+      );
+      assertEqual(
+        firstEndpoint.requestCount(),
+        1,
+        'Visible invalid arguments must not reach external execution.',
+      );
+      const routed = await restricted.client.callTool({
+        name: FIRST_TOOL_NAME,
+        arguments: { value: 'restricted session call' },
+      });
+      assertEqual(
+        getTextContent(routed),
+        FIRST_COMPLETED_MESSAGE,
+        'Restricted view must keep the original external binding and shared runtime.',
+      );
+      assertEqual(
+        firstEndpoint.requestCount(),
+        2,
+        'Restricted valid call should execute its existing external route once.',
+      );
     } finally {
       await restricted.client.close();
       await restricted.server.close();
     }
-    const afterRestrictedClose = await pair.client.callTool({ name: SECOND_TOOL_NAME, arguments: { value: 'after restricted close' } });
-    assertEqual(getTextContent(afterRestrictedClose), SECOND_COMPLETED_MESSAGE, 'Closing a restricted session must not close workspace-owned external resources.');
-    assertEqual(secondEndpoint.requestCount(), 2, 'Other sessions must continue to use the shared runtime.');
+    const afterRestrictedClose = await pair.client.callTool({
+      name: SECOND_TOOL_NAME,
+      arguments: { value: 'after restricted close' },
+    });
+    assertEqual(
+      getTextContent(afterRestrictedClose),
+      SECOND_COMPLETED_MESSAGE,
+      'Closing a restricted session must not close workspace-owned external resources.',
+    );
+    assertEqual(
+      secondEndpoint.requestCount(),
+      2,
+      'Other sessions must continue to use the shared runtime.',
+    );
   } finally {
     await cleanupRuntimeResources({
       pair,
@@ -733,9 +1008,18 @@ async function main(): Promise<void> {
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
-      { name: 'preserves canonical content through validation, policy, logger and MCP Client', run: testCanonicalContentThroughMcpAndPolicy },
-      { name: 'routes two custom-only tools through independent loopback endpoints', run: testExternalRoutingThroughRuntimeAndMcp },
-      { name: 'shares one downstream MCP session across two routes', run: testMcpRoutesShareOneDownstreamSession },
+      {
+        name: 'preserves canonical content through validation, policy, logger and MCP Client',
+        run: testCanonicalContentThroughMcpAndPolicy,
+      },
+      {
+        name: 'routes two custom-only tools through independent loopback endpoints',
+        run: testExternalRoutingThroughRuntimeAndMcp,
+      },
+      {
+        name: 'shares one downstream MCP session across two routes',
+        run: testMcpRoutesShareOneDownstreamSession,
+      },
     ],
   });
 }

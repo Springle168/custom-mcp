@@ -1,8 +1,4 @@
-import type {
-  LineEnding,
-  RuntimeAndroidConfig,
-  RuntimeConfigSnapshot,
-} from '../../config.js';
+import type { LineEnding, RuntimeAndroidConfig, RuntimeConfigSnapshot } from '../../config.js';
 import type { PathSafetyContext } from '../../utils/paths.js';
 import type { FileAccessPolicyContext } from '../../utils/file-access-policy.js';
 
@@ -14,9 +10,7 @@ export interface ToolRuntimeContext {
   readonly missingAndroidConfigMessage: string;
 }
 
-export function createToolRuntimeContext(
-  snapshot: RuntimeConfigSnapshot,
-): ToolRuntimeContext {
+export function createToolRuntimeContext(snapshot: RuntimeConfigSnapshot): ToolRuntimeContext {
   return {
     pathSafetyContext: snapshot.pathSafetyContext,
     fileAccessPolicyContext: snapshot.fileAccessPolicyContext,

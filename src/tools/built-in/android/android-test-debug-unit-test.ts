@@ -9,12 +9,7 @@ async function handleAndroidTestDebugUnitTest(
   context: ToolRuntimeContext,
   invocation: ToolInvocationContext,
 ): Promise<ToolCallResult> {
-  return executeAndroidGradleTask(
-    'testDebugUnitTest',
-    args,
-    context,
-    invocation.signal,
-  );
+  return executeAndroidGradleTask('testDebugUnitTest', args, context, invocation.signal);
 }
 
 const androidTestDebugUnitTestTool: MCPTool = {

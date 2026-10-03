@@ -34,10 +34,7 @@ class ImmutableMapView<K, V> implements ReadonlyMap<K, V> {
     return this.#source.values();
   }
 
-  forEach(
-    callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void,
-    thisArg?: unknown,
-  ): void {
+  forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: unknown): void {
     this.#source.forEach((value, key) => callbackfn.call(thisArg, value, key, this));
   }
 

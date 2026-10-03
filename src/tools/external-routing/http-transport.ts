@@ -6,10 +6,7 @@ import {
   type ClientRequest,
   type IncomingMessage,
 } from 'node:http';
-import {
-  Agent as HttpsAgent,
-  request as httpsRequest,
-} from 'node:https';
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { MIMEType } from 'node:util';
 import type { Duplex } from 'node:stream';
 import type { ExternalHttpEndpointConfig } from './config.js';
@@ -17,10 +14,7 @@ import type { ExternalHttpEndpointConfig } from './config.js';
 /** The fixed v1 limit for both final request and external response entities. */
 export const MAX_EXTERNAL_HTTP_BODY_BYTES = 50 * 1024 * 1024;
 
-export type ExternalHttpResponseMode =
-  | 'direct'
-  | 'canonical-filter'
-  | 'body-decoder';
+export type ExternalHttpResponseMode = 'direct' | 'canonical-filter' | 'body-decoder';
 
 export type ExternalHttpTransportFailureCode =
   | 'external_request_too_large'
@@ -64,8 +58,7 @@ export interface ExternalHttpTransportFailure {
 }
 
 export type ExternalHttpTransportOutcome =
-  | ExternalHttpTransportSuccess
-  | ExternalHttpTransportFailure;
+  ExternalHttpTransportSuccess | ExternalHttpTransportFailure;
 
 export interface ExternalHttpTransportRequest {
   /** Startup-validated endpoint snapshot selected by the compiled route. */
@@ -124,8 +117,7 @@ const FAILURE_MESSAGES: Readonly<Record<ExternalHttpTransportFailureCode, string
     'The external HTTP exchange could not be completed. The external server might have performed the requested action; custom-mcp will not retry it.',
   external_timeout:
     'The external HTTP exchange timed out. The external server might have performed the requested action; custom-mcp will not retry it.',
-  external_response_too_large:
-    'The external HTTP response body exceeds the configured size limit.',
+  external_response_too_large: 'The external HTTP response body exceeds the configured size limit.',
   external_protocol_failed:
     'The external HTTP response did not satisfy the external routing protocol.',
   cancelled:
@@ -174,34 +166,22 @@ class NodeExternalHttpTransport implements ExternalHttpTransport {
 
   exchange(request: ExternalHttpTransportRequest): ExternalHttpTransportExchange {
     const configuredEndpoint = request.endpoint ?? this.#defaultEndpoint;
-    const endpoint = configuredEndpoint === undefined
-      ? undefined
-      : prepareEndpoint(configuredEndpoint);
+    const endpoint =
+      configuredEndpoint === undefined ? undefined : prepareEndpoint(configuredEndpoint);
     const requestBodyBytes = request.body instanceof Uint8Array ? request.body.byteLength : 0;
 
     if (this.#closed || request.signal?.aborted) {
-      return completedExchange(createFailure(
-        'cancelled',
-        'request',
-        requestBodyBytes,
-        0,
-      ));
+      return completedExchange(createFailure('cancelled', 'request', requestBodyBytes, 0));
     }
     if (!endpoint || !isValidTransportRequest(request)) {
-      return completedExchange(createFailure(
-        'external_transport_failed',
-        'request',
-        requestBodyBytes,
-        0,
-      ));
+      return completedExchange(
+        createFailure('external_transport_failed', 'request', requestBodyBytes, 0),
+      );
     }
     if (request.body.byteLength > MAX_EXTERNAL_HTTP_BODY_BYTES) {
-      return completedExchange(createFailure(
-        'external_request_too_large',
-        'request',
-        request.body.byteLength,
-        0,
-      ));
+      return completedExchange(
+        createFailure('external_request_too_large', 'request', request.body.byteLength, 0),
+      );
     }
 
     const exchange = new ActiveHttpExchange(this, endpoint, request);
@@ -523,7 +503,12 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
 
     const statusCode = response.statusCode;
     this.#responseStatusCode = typeof statusCode === 'number' ? statusCode : undefined;
-    if (typeof statusCode !== 'number' || statusCode === 101 || statusCode < 200 || statusCode > 599) {
+    if (
+      typeof statusCode !== 'number' ||
+      statusCode === 101 ||
+      statusCode < 200 ||
+      statusCode > 599
+    ) {
       this.fail('external_protocol_failed', 'response');
       return;
     }
@@ -578,13 +563,9 @@ class ActiveHttpExchange implements ExternalHttpTransportExchange {
     stage: ExternalHttpTransportStage,
     statusCode?: number,
   ): void {
-    this.settle(createFailure(
-      code,
-      stage,
-      this.#requestBodyBytes,
-      this.#responseBodyBytes,
-      statusCode,
-    ));
+    this.settle(
+      createFailure(code, stage, this.#requestBodyBytes, this.#responseBodyBytes, statusCode),
+    );
   }
 
   private settle(outcome: ExternalHttpTransportOutcome): void {
@@ -756,9 +737,11 @@ function isValidTransportRequest(request: ExternalHttpTransportRequest): boolean
   } catch {
     return false;
   }
-  return request.responseMode === 'direct' ||
+  return (
+    request.responseMode === 'direct' ||
     request.responseMode === 'canonical-filter' ||
-    request.responseMode === 'body-decoder';
+    request.responseMode === 'body-decoder'
+  );
 }
 
 function buildRequestHeaders(
@@ -797,16 +780,14 @@ function parseResponseMetadata(
     return undefined;
   }
 
-  const normalizedContentType = contentType === undefined
-    ? undefined
-    : parseContentType(contentType);
+  const normalizedContentType =
+    contentType === undefined ? undefined : parseContentType(contentType);
   if (contentType !== undefined && normalizedContentType === undefined) {
     return undefined;
   }
 
-  const normalizedContentEncoding = contentEncoding === undefined
-    ? undefined
-    : parseContentEncoding(contentEncoding);
+  const normalizedContentEncoding =
+    contentEncoding === undefined ? undefined : parseContentEncoding(contentEncoding);
   if (normalizedContentEncoding === null) {
     return undefined;
   }
@@ -815,10 +796,7 @@ function parseResponseMetadata(
     if (!normalizedContentType || !isUtf8JsonContentType(normalizedContentType)) {
       return undefined;
     }
-    if (
-      normalizedContentEncoding !== undefined &&
-      normalizedContentEncoding !== 'identity'
-    ) {
+    if (normalizedContentEncoding !== undefined && normalizedContentEncoding !== 'identity') {
       return undefined;
     }
   }
@@ -981,7 +959,9 @@ function createDiagnostics(
   responseBodyBytes: number,
   statusCode?: number,
 ): ExternalHttpTransportDiagnostics {
-  return Object.freeze(statusCode === undefined
-    ? { stage, requestBodyBytes, responseBodyBytes }
-    : { stage, requestBodyBytes, responseBodyBytes, statusCode });
+  return Object.freeze(
+    statusCode === undefined
+      ? { stage, requestBodyBytes, responseBodyBytes }
+      : { stage, requestBodyBytes, responseBodyBytes, statusCode },
+  );
 }

@@ -7,14 +7,8 @@ import {
   type CanonicalContentBlock,
   type JsonObject,
 } from './canonical-protocol.js';
-import type {
-  CompiledExternalRoutingConfig,
-  CompiledHttpRoute,
-} from './config.js';
-import {
-  createExternalHttpTransport,
-  type ExternalHttpTransport,
-} from './http-transport.js';
+import type { CompiledExternalRoutingConfig, CompiledHttpRoute } from './config.js';
+import { createExternalHttpTransport, type ExternalHttpTransport } from './http-transport.js';
 import {
   McpConnectionManager,
   type McpConnectionDiagnostic,
@@ -79,7 +73,8 @@ export class ExternalRoutingExecutor {
         definitionId: input.definitionId,
         invocation: input.invocation,
         signal,
-      }));
+      }),
+    );
     this.#warmUp = options.warmUp ?? (async () => undefined);
     this.#closeDrainingResources = options.closeDrainingResources ?? (async () => undefined);
     this.#closeResources = options.closeResources ?? (async () => undefined);
@@ -117,8 +112,9 @@ export class ExternalRoutingExecutor {
     // final drain barrier for request-scoped SSE and cancellation POST bodies.
     const runtimeClose = this.#runtime.close();
     const drainingResourceClose = this.#closeDrainingResources();
-    this.#closePromise = settleOrThrow([runtimeClose, drainingResourceClose])
-      .then(() => this.#closeResources());
+    this.#closePromise = settleOrThrow([runtimeClose, drainingResourceClose]).then(() =>
+      this.#closeResources(),
+    );
     return this.#closePromise;
   }
 }
@@ -132,8 +128,12 @@ export interface CreatedExternalRoutingExecutor {
 }
 
 export interface CreateExternalRoutingExecutorOptions {
-  readonly onProcessorDrain?: (diagnostic: ExternalRoutingProcessorDrainDiagnostic) => void | Promise<void>;
-  readonly onMcpConnectionDiagnostic?: (diagnostic: McpConnectionDiagnostic) => void | Promise<void>;
+  readonly onProcessorDrain?: (
+    diagnostic: ExternalRoutingProcessorDrainDiagnostic,
+  ) => void | Promise<void>;
+  readonly onMcpConnectionDiagnostic?: (
+    diagnostic: McpConnectionDiagnostic,
+  ) => void | Promise<void>;
 }
 
 /** Creates one shared admission runtime with route-specific resource adapters. */
@@ -146,11 +146,19 @@ export function createExternalRoutingExecutor(
     throw new Error('External routing resources require at least one compiled route.');
   }
 
-  const httpRoutes = routes.filter((route): route is CompiledHttpRoute => route.routingMode === 'http');
+  const httpRoutes = routes.filter(
+    (route): route is CompiledHttpRoute => route.routingMode === 'http',
+  );
   const needsProcessorRunner = httpRoutes.some(routeUsesProcessor);
   const processorRunner = needsProcessorRunner ? new ProcessorRunner() : undefined;
   const httpTransport = httpRoutes.length > 0 ? createExternalHttpTransport() : undefined;
-  const adapters = new Map<string, (invocation: ExternalToolInvocation, signal: AbortSignal) => ExternalRoutingOperationExchange<ExternalRouteOutcome>>();
+  const adapters = new Map<
+    string,
+    (
+      invocation: ExternalToolInvocation,
+      signal: AbortSignal,
+    ) => ExternalRoutingOperationExchange<ExternalRouteOutcome>
+  >();
 
   if (httpTransport !== undefined) {
     for (const route of httpRoutes) {
@@ -159,7 +167,9 @@ export function createExternalRoutingExecutor(
         processorsByName: config.processorsByName,
         ...(processorRunner === undefined ? {} : { processorRunner }),
         httpTransport,
-        ...(options.onProcessorDrain === undefined ? {} : { onProcessorDrain: options.onProcessorDrain }),
+        ...(options.onProcessorDrain === undefined
+          ? {}
+          : { onProcessorDrain: options.onProcessorDrain }),
       });
       adapters.set(route.definitionId, (invocation, signal) => {
         let request: ReturnType<typeof createCanonicalRequest>;
@@ -193,11 +203,13 @@ export function createExternalRoutingExecutor(
       });
       managers.set(route.server.identity, manager);
     }
-    adapters.set(route.definitionId, (invocation, signal) => manager.callTool({
-      name: invocation.name,
-      arguments: invocation.arguments,
-      signal,
-    }));
+    adapters.set(route.definitionId, (invocation, signal) =>
+      manager.callTool({
+        name: invocation.name,
+        arguments: invocation.arguments,
+        signal,
+      }),
+    );
   }
 
   const routeOperation: ExternalRouteOperation = {
@@ -211,19 +223,23 @@ export function createExternalRoutingExecutor(
     warmUp: async () => {
       await Promise.all([...managers.values()].map((manager) => manager.warmUp()));
     },
-    closeDrainingResources: () => settleOrThrow(
-      [...managers.values()].map((manager) => manager.close()),
-    ),
-    closeResources: () => settleOrThrow([
-      ...(processorRunner === undefined ? [] : [processorRunner.close()]),
-      ...(httpTransport === undefined ? [] : [httpTransport.close()]),
-    ]),
+    closeDrainingResources: () =>
+      settleOrThrow([...managers.values()].map((manager) => manager.close())),
+    closeResources: () =>
+      settleOrThrow([
+        ...(processorRunner === undefined ? [] : [processorRunner.close()]),
+        ...(httpTransport === undefined ? [] : [httpTransport.close()]),
+      ]),
   });
   const bindingsByDefinitionId = new Map<string, ExternalToolExecutor>();
   for (const route of routes) {
-    bindingsByDefinitionId.set(route.definitionId, Object.freeze({
-      execute: (invocation: ExternalToolInvocation) => executor.execute(route.definitionId, invocation),
-    }));
+    bindingsByDefinitionId.set(
+      route.definitionId,
+      Object.freeze({
+        execute: (invocation: ExternalToolInvocation) =>
+          executor.execute(route.definitionId, invocation),
+      }),
+    );
   }
 
   return Object.freeze({
@@ -239,14 +255,18 @@ function routeUsesProcessor(route: CompiledHttpRoute): boolean {
   return 'processor' in route.requestStage || 'processor' in route.responseStage;
 }
 
-function completedRouteFailure(code: ExternalRoutingLocalFailureCode): ExternalRoutingOperationExchange<ExternalRouteOutcome> {
+function completedRouteFailure(
+  code: ExternalRoutingLocalFailureCode,
+): ExternalRoutingOperationExchange<ExternalRouteOutcome> {
   return Object.freeze({
     settled: Promise.resolve(Object.freeze({ kind: 'failure' as const, code })),
     drained: Promise.resolve(),
   });
 }
 
-function mapRuntimeOutcome(outcome: ExternalRoutingRuntimeOutcome<ExternalRouteOutcome>): ToolCallResult {
+function mapRuntimeOutcome(
+  outcome: ExternalRoutingRuntimeOutcome<ExternalRouteOutcome>,
+): ToolCallResult {
   if ('outcome' in outcome) {
     return outcome.outcome.kind === 'result'
       ? outcome.outcome.result
@@ -301,23 +321,40 @@ export type ExternalRoutingLocalFailureCode =
   | McpFailureCode;
 
 const LOCAL_FAILURE_MESSAGES: Readonly<Record<ExternalRoutingLocalFailureCode, string>> = {
-  external_capacity_exceeded: 'External routing capacity is full. The tool call did not start external work; retry after other calls finish.',
-  external_request_too_large: 'External routing could not send the tool call because the encoded request exceeded the local size limit. No HTTP request was started.',
-  external_transport_failed: 'External routing could not confirm an HTTP result. The external server may have executed the tool; custom-mcp will not retry or accept a late result. Retry only if the tool is safe to run again.',
-  external_timeout: 'The external HTTP exchange timed out without a confirmed result. The external server may have executed the tool; custom-mcp will not retry or accept a late result. Retry only if the tool is safe to run again.',
-  external_response_too_large: 'External routing rejected the HTTP response because it exceeded the local size limit. No confirmed external tool result was obtained.',
-  external_protocol_failed: 'External routing rejected an invalid HTTP or canonical response. No confirmed external tool result was obtained.',
-  processor_failed: 'An external routing Processor failed or returned invalid output. No confirmed external tool result was obtained.',
-  processor_timeout: 'An external routing Processor timed out. If it was processing a response, the external server may already have executed the tool; retry only if the tool is safe to run again.',
-  mcp_connection_failed: 'External routing could not establish a downstream MCP session. No tool call was sent.',
-  mcp_capability_missing: 'The downstream MCP server did not advertise Tool capability. No tool call was sent.',
-  mcp_call_failed: 'The downstream MCP server rejected the tool call. No confirmed tool result was obtained.',
-  mcp_timeout: 'The downstream MCP operation timed out. The server may have executed the tool; custom-mcp will not retry or accept a late result.',
-  mcp_protocol_failed: 'External routing rejected an invalid downstream MCP response. No confirmed tool result was obtained.',
-  mcp_result_unsupported: 'The downstream MCP result uses content that custom-mcp does not support.',
-  mcp_transport_failed: 'The downstream MCP transport failed without a confirmed result. The server may have executed the tool; custom-mcp will not retry automatically.',
-  external_internal_failed: 'External routing encountered an internal failure and did not obtain a confirmed result. Retry only after checking server diagnostics and whether the tool is safe to run again.',
-  cancelled: 'The external tool call was cancelled locally. The external server may have executed the tool; custom-mcp will not accept a late result or retry automatically.',
+  external_capacity_exceeded:
+    'External routing capacity is full. The tool call did not start external work; retry after other calls finish.',
+  external_request_too_large:
+    'External routing could not send the tool call because the encoded request exceeded the local size limit. No HTTP request was started.',
+  external_transport_failed:
+    'External routing could not confirm an HTTP result. The external server may have executed the tool; custom-mcp will not retry or accept a late result. Retry only if the tool is safe to run again.',
+  external_timeout:
+    'The external HTTP exchange timed out without a confirmed result. The external server may have executed the tool; custom-mcp will not retry or accept a late result. Retry only if the tool is safe to run again.',
+  external_response_too_large:
+    'External routing rejected the HTTP response because it exceeded the local size limit. No confirmed external tool result was obtained.',
+  external_protocol_failed:
+    'External routing rejected an invalid HTTP or canonical response. No confirmed external tool result was obtained.',
+  processor_failed:
+    'An external routing Processor failed or returned invalid output. No confirmed external tool result was obtained.',
+  processor_timeout:
+    'An external routing Processor timed out. If it was processing a response, the external server may already have executed the tool; retry only if the tool is safe to run again.',
+  mcp_connection_failed:
+    'External routing could not establish a downstream MCP session. No tool call was sent.',
+  mcp_capability_missing:
+    'The downstream MCP server did not advertise Tool capability. No tool call was sent.',
+  mcp_call_failed:
+    'The downstream MCP server rejected the tool call. No confirmed tool result was obtained.',
+  mcp_timeout:
+    'The downstream MCP operation timed out. The server may have executed the tool; custom-mcp will not retry or accept a late result.',
+  mcp_protocol_failed:
+    'External routing rejected an invalid downstream MCP response. No confirmed tool result was obtained.',
+  mcp_result_unsupported:
+    'The downstream MCP result uses content that custom-mcp does not support.',
+  mcp_transport_failed:
+    'The downstream MCP transport failed without a confirmed result. The server may have executed the tool; custom-mcp will not retry automatically.',
+  external_internal_failed:
+    'External routing encountered an internal failure and did not obtain a confirmed result. Retry only after checking server diagnostics and whether the tool is safe to run again.',
+  cancelled:
+    'The external tool call was cancelled locally. The external server may have executed the tool; custom-mcp will not accept a late result or retry automatically.',
 };
 
 function localFailureResult(code: ExternalRoutingLocalFailureCode): ToolCallResult {
@@ -329,5 +366,6 @@ async function settleOrThrow(operations: readonly Promise<unknown>[]): Promise<v
   const failures = results
     .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     .map((result) => result.reason);
-  if (failures.length > 0) throw new AggregateError(failures, 'External routing resource shutdown failed.');
+  if (failures.length > 0)
+    throw new AggregateError(failures, 'External routing resource shutdown failed.');
 }

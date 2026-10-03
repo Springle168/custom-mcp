@@ -9,12 +9,7 @@ import {
   readWorkspaceIdToken,
   type ValuePolicyResult,
 } from '../../src/config/value-policy.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 function expectOk<T>(result: ValuePolicyResult<T>, message: string): T {
   if (!result.ok) {
@@ -66,7 +61,10 @@ function testTypedStringWhitespacePriority(): void {
   );
 
   assertEqual(
-    expectOk(readTypedString('value with internal spaces', { fieldPath: 'field' }), 'Internal spaces should be preserved'),
+    expectOk(
+      readTypedString('value with internal spaces', { fieldPath: 'field' }),
+      'Internal spaces should be preserved',
+    ),
     'value with internal spaces',
     'Typed strings should preserve the original legal value',
   );
@@ -74,7 +72,10 @@ function testTypedStringWhitespacePriority(): void {
 
 function testTokenGrammar(): void {
   assertEqual(
-    expectOk(readWorkspaceIdToken('workspace_0', { fieldPath: 'workspace.id' }), 'Valid workspace id should parse'),
+    expectOk(
+      readWorkspaceIdToken('workspace_0', { fieldPath: 'workspace.id' }),
+      'Valid workspace id should parse',
+    ),
     'workspace_0',
     'Workspace id should be returned unchanged',
   );
@@ -90,7 +91,10 @@ function testTokenGrammar(): void {
   );
 
   assertEqual(
-    expectOk(readLineEndingToken('crlf', { fieldPath: 'lineEnding' }), 'Valid lineEnding should parse'),
+    expectOk(
+      readLineEndingToken('crlf', { fieldPath: 'lineEnding' }),
+      'Valid lineEnding should parse',
+    ),
     'crlf',
     'lineEnding should preserve the exact token',
   );
@@ -191,7 +195,10 @@ function testJsonPositiveInteger(): void {
 
 function testEnvPositiveInteger(): void {
   assertEqual(
-    expectOk(readEnvPositiveInteger('1234', { fieldPath: 'ANDROID_BUILD_TIMEOUT_MS' }), 'Env positive integer should parse'),
+    expectOk(
+      readEnvPositiveInteger('1234', { fieldPath: 'ANDROID_BUILD_TIMEOUT_MS' }),
+      'Env positive integer should parse',
+    ),
     1234,
     'Env positive integer should return a number',
   );
@@ -218,12 +225,18 @@ function testEnvPositiveInteger(): void {
 
 function testFreeFormStringPreservesWhitespace(): void {
   assertEqual(
-    expectOk(readFreeFormString('  literal text  ', { fieldPath: 'prompt' }), 'Free-form strings should parse'),
+    expectOk(
+      readFreeFormString('  literal text  ', { fieldPath: 'prompt' }),
+      'Free-form strings should parse',
+    ),
     '  literal text  ',
     'Free-form strings should preserve leading and trailing whitespace',
   );
   assertEqual(
-    expectOk(readFreeFormString('', { fieldPath: 'prompt' }), 'Free-form strings may allow empty content by default'),
+    expectOk(
+      readFreeFormString('', { fieldPath: 'prompt' }),
+      'Free-form strings may allow empty content by default',
+    ),
     '',
     'Free-form empty strings should be controlled by the caller',
   );

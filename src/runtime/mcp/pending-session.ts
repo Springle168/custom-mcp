@@ -19,7 +19,9 @@ export function createPendingSession(
   let isClosed = false;
   let closePromise: Promise<void> | undefined;
   let resolveClosed!: () => void;
-  const closed = new Promise<void>((resolve) => { resolveClosed = resolve; });
+  const closed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
   transport.onclose = () => {
     isClosed = true;
     transport.stopInitializationTracking();
@@ -31,7 +33,9 @@ export function createPendingSession(
     server,
     transport,
     closed,
-    get isClosed() { return isClosed; },
+    get isClosed() {
+      return isClosed;
+    },
     async connect() {
       if (isClosed) {
         return;

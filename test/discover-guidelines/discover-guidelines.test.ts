@@ -33,18 +33,8 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const FIXTURES_DIR = path.join(
-  __dirname,
-  '..',
-  'fixtures',
-  'discover-guidelines',
-);
-const ADDITIONAL_ROOT = path.join(
-  __dirname,
-  '..',
-  'fixtures',
-  'discover-guidelines-additional',
-);
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'discover-guidelines');
+const ADDITIONAL_ROOT = path.join(__dirname, '..', 'fixtures', 'discover-guidelines-additional');
 
 function guideline(name: string, description = `Description for ${name}`): string {
   return `---
@@ -107,29 +97,26 @@ function query(patterns: readonly string[]): FileAccessPolicyQuery {
   });
 }
 
-function createContext(options: {
-  readonly ignore?: readonly string[];
-  readonly deny?: readonly string[];
-  readonly additionalRoot?: boolean;
-} = {}) {
+function createContext(
+  options: {
+    readonly ignore?: readonly string[];
+    readonly deny?: readonly string[];
+    readonly additionalRoot?: boolean;
+  } = {},
+) {
   const base = createTestToolRuntimeContext({
     rootDir: FIXTURES_DIR,
     otherRootDirs: options.additionalRoot ? [ADDITIONAL_ROOT] : [],
   });
-  const policies: RootFileAccessPolicy[] = base.pathSafetyContext.allowedRoots.map(
-    (root) => ({
-      rootDir: root.rootDir,
-      realRootDir: root.realRootDir ?? root.rootDir,
-      ignore: query(root.rootDir === FIXTURES_DIR ? options.ignore ?? [] : []),
-      deny: query(root.rootDir === FIXTURES_DIR ? options.deny ?? [] : []),
-    }),
-  );
+  const policies: RootFileAccessPolicy[] = base.pathSafetyContext.allowedRoots.map((root) => ({
+    rootDir: root.rootDir,
+    realRootDir: root.realRootDir ?? root.rootDir,
+    ignore: query(root.rootDir === FIXTURES_DIR ? (options.ignore ?? []) : []),
+    deny: query(root.rootDir === FIXTURES_DIR ? (options.deny ?? []) : []),
+  }));
   return {
     ...base,
-    fileAccessPolicyContext: createFileAccessPolicyContext(
-      base.pathSafetyContext,
-      policies,
-    ),
+    fileAccessPolicyContext: createFileAccessPolicyContext(base.pathSafetyContext, policies),
   };
 }
 
@@ -151,9 +138,7 @@ async function testDefinitionAndValidation(): Promise<void> {
     'Canonical tool names should include discover_guidelines',
   );
   assert(
-    getAllToolDefinitions().some(
-      (definition) => definition.name === 'discover_guidelines',
-    ),
+    getAllToolDefinitions().some((definition) => definition.name === 'discover_guidelines'),
     'The built-in registry should expose discover_guidelines',
   );
   const schema = discoverGuidelinesTool.definition.inputSchema;
@@ -199,9 +184,17 @@ async function testLiteralGlobSortingAndBodyPrivacy(): Promise<void> {
   const value = payload(result);
   assertEqual(value.guidelines.length, 2, 'Only valid Markdown metadata should be returned');
   assertEqual(value.guidelines[0]?.name, 'alpha', 'Results should follow stable real-path sorting');
-  assertEqual(value.guidelines[0]?.file_path, path.join('guides', 'a.MD'), 'Relative selectors should use relative display paths');
+  assertEqual(
+    value.guidelines[0]?.file_path,
+    path.join('guides', 'a.MD'),
+    'Relative selectors should use relative display paths',
+  );
   assertEqual(value.guidelines[1]?.name, 'beta', 'Second sorted guideline should be returned');
-  assertEqual(value.note, undefined, 'Invalid peer Markdown should not add noise when valid guides exist');
+  assertEqual(
+    value.note,
+    undefined,
+    'Invalid peer Markdown should not add noise when valid guides exist',
+  );
 }
 
 async function testAbsoluteAdditionalRootAndDeduplication(): Promise<void> {
@@ -213,7 +206,11 @@ async function testAbsoluteAdditionalRootAndDeduplication(): Promise<void> {
   );
   const value = payload(result);
   assertEqual(value.guidelines.length, 1, 'Real read paths should be deduplicated');
-  assertEqual(value.guidelines[0]?.file_path, additionalFile, 'Absolute selectors should retain absolute display paths');
+  assertEqual(
+    value.guidelines[0]?.file_path,
+    additionalFile,
+    'Absolute selectors should retain absolute display paths',
+  );
 }
 
 async function testExcludeAndIgnoreSemantics(): Promise<void> {
@@ -231,8 +228,16 @@ async function testExcludeAndIgnoreSemantics(): Promise<void> {
     createTestToolInvocationContext(),
   );
   const filteredPayload = payload(filtered);
-  assertEqual(filteredPayload.guidelines.length, 1, 'Glob ignore and exclude should filter discovered candidates');
-  assertEqual(filteredPayload.guidelines[0]?.name, 'secret', 'Only the unfiltered glob candidate should remain');
+  assertEqual(
+    filteredPayload.guidelines.length,
+    1,
+    'Glob ignore and exclude should filter discovered candidates',
+  );
+  assertEqual(
+    filteredPayload.guidelines[0]?.name,
+    'secret',
+    'Only the unfiltered glob candidate should remain',
+  );
   assertIncludes(
     filteredPayload.note,
     'filtered by configured ignoreFiles rules',
@@ -248,7 +253,11 @@ async function testExcludeAndIgnoreSemantics(): Promise<void> {
     ignoredContext,
     createTestToolInvocationContext(),
   );
-  assertEqual(payload(literal).guidelines.length, 1, 'Literal paths should bypass ignore and exclude');
+  assertEqual(
+    payload(literal).guidelines.length,
+    1,
+    'Literal paths should bypass ignore and exclude',
+  );
 }
 
 async function testDenyAndSkippedPrivacyNotes(): Promise<void> {
@@ -258,7 +267,11 @@ async function testDenyAndSkippedPrivacyNotes(): Promise<void> {
     createTestToolInvocationContext(),
   );
   const mixedText = getResultText(mixed);
-  assertIncludes(mixedText, 'blocked by the file access deny policy', 'Mixed deny should add a generic note');
+  assertIncludes(
+    mixedText,
+    'blocked by the file access deny policy',
+    'Mixed deny should add a generic note',
+  );
   assertNotIncludes(mixedText, 'secret.md', 'Denied paths must not be disclosed');
   assertNotIncludes(mixedText, 'secret', 'Denied metadata must not be returned');
 
@@ -319,9 +332,16 @@ async function testControlledInspectionFailuresRemainPartialResults(): Promise<v
     createTestToolInvocationContext(),
     async () => ({ ok: false as const }),
   );
-  assert(!allFailed.isError, 'A controlled single-file failure should remain a successful discovery');
+  assert(
+    !allFailed.isError,
+    'A controlled single-file failure should remain a successful discovery',
+  );
   const allFailedPayload = payload(allFailed);
-  assertEqual(allFailedPayload.guidelines.length, 0, 'Failed inspections should not invent metadata');
+  assertEqual(
+    allFailedPayload.guidelines.length,
+    0,
+    'Failed inspections should not invent metadata',
+  );
   assertIncludes(
     allFailedPayload.note,
     'none contained valid guideline Front Matter',
@@ -346,7 +366,11 @@ async function testControlledInspectionFailuresRemainPartialResults(): Promise<v
         : { ok: false as const },
   );
   const partialPayload = payload(partial);
-  assertEqual(partialPayload.guidelines.length, 1, 'Valid peers should survive a controlled inspection failure');
+  assertEqual(
+    partialPayload.guidelines.length,
+    1,
+    'Valid peers should survive a controlled inspection failure',
+  );
   assertIncludes(
     partialPayload.note,
     'selected files could not be inspected',
@@ -361,9 +385,17 @@ async function testFileLimit(): Promise<void> {
     createTestToolInvocationContext(),
   );
   const value = payload(result);
-  assertEqual(value.guidelines.length, MAX_GUIDELINE_FILES, 'Only the first 100 Markdown files should be inspected');
+  assertEqual(
+    value.guidelines.length,
+    MAX_GUIDELINE_FILES,
+    'Only the first 100 Markdown files should be inspected',
+  );
   assertEqual(value.guidelines[0]?.name, 'guide-0', 'The first sorted file should be inspected');
-  assertEqual(value.guidelines.at(-1)?.name, 'guide-99', 'The last inspected file should be index 99');
+  assertEqual(
+    value.guidelines.at(-1)?.name,
+    'guide-99',
+    'The last inspected file should be index 99',
+  );
   assertIncludes(value.note, 'Only the first 100', 'File limit should add a completeness note');
 }
 
@@ -433,12 +465,7 @@ async function testPrefixReadingStopsAfterClosingDelimiter(): Promise<void> {
   );
   let readCalls = 0;
   const fakeHandle = {
-    async read(
-      target: Buffer,
-      offset: number,
-      length: number,
-      position: number,
-    ) {
+    async read(target: Buffer, offset: number, length: number, position: number) {
       readCalls += 1;
       const bytesRead = Math.min(length, source.length - position);
       source.copy(target, offset, position, position + bytesRead);
@@ -477,7 +504,11 @@ async function testPreCancelledAndUnexpectedInspectorFailure(): Promise<void> {
     },
   );
   assert(failed.isError, 'Unexpected internal failures should be tool errors');
-  assertNotIncludes(getResultText(failed), 'private path', 'Internal exception detail should not leak');
+  assertNotIncludes(
+    getResultText(failed),
+    'private path',
+    'Internal exception detail should not leak',
+  );
 }
 
 await runTestSuite({
@@ -486,15 +517,36 @@ await runTestSuite({
   afterAll: cleanupFixtures,
   tests: [
     { name: 'Definition and executor validation are strict', run: testDefinitionAndValidation },
-    { name: 'Literal and glob discovery is sorted and body-private', run: testLiteralGlobSortingAndBodyPrivacy },
-    { name: 'Absolute additional roots and deduplication are preserved', run: testAbsoluteAdditionalRootAndDeduplication },
-    { name: 'Exclude and ignore semantics match shared selection', run: testExcludeAndIgnoreSemantics },
-    { name: 'Deny and skipped results preserve privacy semantics', run: testDenyAndSkippedPrivacyNotes },
+    {
+      name: 'Literal and glob discovery is sorted and body-private',
+      run: testLiteralGlobSortingAndBodyPrivacy,
+    },
+    {
+      name: 'Absolute additional roots and deduplication are preserved',
+      run: testAbsoluteAdditionalRootAndDeduplication,
+    },
+    {
+      name: 'Exclude and ignore semantics match shared selection',
+      run: testExcludeAndIgnoreSemantics,
+    },
+    {
+      name: 'Deny and skipped results preserve privacy semantics',
+      run: testDenyAndSkippedPrivacyNotes,
+    },
     { name: 'Empty discovery states are successful and explicit', run: testEmptyDiscoveryStates },
-    { name: 'Controlled inspection failures remain partial results', run: testControlledInspectionFailuresRemainPartialResults },
+    {
+      name: 'Controlled inspection failures remain partial results',
+      run: testControlledInspectionFailuresRemainPartialResults,
+    },
     { name: 'Markdown candidate limit is deterministic', run: testFileLimit },
     { name: 'Worker limit and cancellation stop scheduling', run: testWorkerLimitAndCancellation },
-    { name: 'Prefix reading stops after the closing delimiter', run: testPrefixReadingStopsAfterClosingDelimiter },
-    { name: 'Pre-cancellation and internal failures are errors', run: testPreCancelledAndUnexpectedInspectorFailure },
+    {
+      name: 'Prefix reading stops after the closing delimiter',
+      run: testPrefixReadingStopsAfterClosingDelimiter,
+    },
+    {
+      name: 'Pre-cancellation and internal failures are errors',
+      run: testPreCancelledAndUnexpectedInspectorFailure,
+    },
   ],
 });

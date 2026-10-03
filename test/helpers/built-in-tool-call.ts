@@ -1,10 +1,7 @@
 import type { ToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
 import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
-import {
-  createWorkspaceToolService,
-  getCompiledBuiltInTools,
-} from '../../src/tools/index.js';
+import { createWorkspaceToolService, getCompiledBuiltInTools } from '../../src/tools/index.js';
 import type { ToolName } from '../../src/tools/names.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 

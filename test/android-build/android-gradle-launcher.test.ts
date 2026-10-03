@@ -10,11 +10,7 @@ async function createFakeWorkspace(dirName: string): Promise<string> {
   const gradlewPath = path.join(workspaceRoot, 'gradlew.bat');
 
   await mkdir(workspaceRoot, { recursive: true });
-  await writeFile(
-    gradlewPath,
-    ['@echo off', 'echo BUILD SUCCESSFUL'].join('\r\n'),
-    'utf8',
-  );
+  await writeFile(gradlewPath, ['@echo off', 'echo BUILD SUCCESSFUL'].join('\r\n'), 'utf8');
 
   return workspaceRoot;
 }
@@ -83,7 +79,10 @@ async function main(): Promise<void> {
     title: 'Testing Android Gradle launcher',
     tests: [
       { name: 'workspace path with ampersand', run: testWorkspacePathWithAmpersand },
-      { name: 'workspace path with percent expansion syntax', run: testWorkspacePathWithPercentExpansionSyntax },
+      {
+        name: 'workspace path with percent expansion syntax',
+        run: testWorkspacePathWithPercentExpansionSyntax,
+      },
     ],
   });
 }

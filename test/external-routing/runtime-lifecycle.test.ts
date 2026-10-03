@@ -6,11 +6,7 @@ import {
   type ExternalRoutingRuntimeFailureKind,
   type ExternalRoutingRuntimeOutcome,
 } from '../../src/tools/external-routing/runtime.js';
-import {
-  assert,
-  assertEqual,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -91,7 +87,11 @@ async function requireOperation(
   if (outcome.kind !== 'operation') {
     throw new Error('Expected an operation outcome.');
   }
-  assertEqual(outcome.outcome, expected, 'Operation outcome should not be rewritten by runtime admission.');
+  assertEqual(
+    outcome.outcome,
+    expected,
+    'Operation outcome should not be rewritten by runtime admission.',
+  );
 }
 
 async function closeAndDrain(
@@ -113,29 +113,53 @@ async function testKeepsSlotsUntilDrainAndDoesNotPreExecuteQueuedWork(): Promise
   );
   const queued = runtime.exchange({ input: EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES });
 
-  assertEqual(operation.started.length, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'Only active slots may invoke the operation callback.');
-  assertEqual(runtime.activeExchangeCount, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'All initial admissions should be registered as active.');
-  assertEqual(runtime.pendingExchangeCount, 1,
-    'The overflow after active capacity should remain queued.');
+  assertEqual(
+    operation.started.length,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'Only active slots may invoke the operation callback.',
+  );
+  assertEqual(
+    runtime.activeExchangeCount,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'All initial admissions should be registered as active.',
+  );
+  assertEqual(
+    runtime.pendingExchangeCount,
+    1,
+    'The overflow after active capacity should remain queued.',
+  );
 
   const first = operation.exchangeFor(0);
   first.settled.resolve('first result');
   await requireOperation(active[0]!, 'first result');
-  assertEqual(runtime.activeExchangeCount, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'A settled operation must retain its slot until drain completes.');
-  assertEqual(operation.started.length, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'Settling alone must not start queued work.');
+  assertEqual(
+    runtime.activeExchangeCount,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'A settled operation must retain its slot until drain completes.',
+  );
+  assertEqual(
+    operation.started.length,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'Settling alone must not start queued work.',
+  );
 
   first.drained.resolve();
   await flushPromises();
-  assertEqual(operation.started.length, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES + 1,
-    'Draining one operation should admit exactly one queued operation.');
-  assertEqual(operation.exchangeFor(EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES).input,
+  assertEqual(
+    operation.started.length,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES + 1,
+    'Draining one operation should admit exactly one queued operation.',
+  );
+  assertEqual(
+    operation.exchangeFor(EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES).input,
     EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'The queued operation should receive its original input only after admission.');
-  assertEqual(runtime.pendingExchangeCount, 0, 'The newly admitted item should leave pending tracking.');
+    'The queued operation should receive its original input only after admission.',
+  );
+  assertEqual(
+    runtime.pendingExchangeCount,
+    0,
+    'The newly admitted item should leave pending tracking.',
+  );
 
   await closeAndDrain(runtime, operation);
   await requireFailure(queued, 'cancelled');
@@ -156,10 +180,16 @@ async function testPromotesQueuedWorkInFifoOrder(): Promise<void> {
   operation.exchangeFor(2).drained.resolve();
   await flushPromises();
 
-  assertEqual(startedInputs(operation).join(','), '0,1,2,3,4,5,6,7,8,9',
-    'Freed slots must promote pending operations in FIFO order, not by active completion order.');
-  assertEqual(runtime.pendingExchangeCount, 1,
-    'Only two of the three pending operations should have received freed slots.');
+  assertEqual(
+    startedInputs(operation).join(','),
+    '0,1,2,3,4,5,6,7,8,9',
+    'Freed slots must promote pending operations in FIFO order, not by active completion order.',
+  );
+  assertEqual(
+    runtime.pendingExchangeCount,
+    1,
+    'Only two of the three pending operations should have received freed slots.',
+  );
 
   await closeAndDrain(runtime, operation);
 }
@@ -183,12 +213,21 @@ async function testEnforcesEightActiveAndSixtyFourPendingSlots(): Promise<void> 
   });
 
   await requireFailure(overflow, 'capacity');
-  assertEqual(operation.started.length, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'Capacity overflow must not execute an operation callback.');
-  assertEqual(runtime.activeExchangeCount, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'The active registry must remain at its fixed maximum.');
-  assertEqual(runtime.pendingExchangeCount, EXTERNAL_ROUTING_MAX_PENDING_EXCHANGES,
-    'The pending registry must remain at its fixed maximum.');
+  assertEqual(
+    operation.started.length,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'Capacity overflow must not execute an operation callback.',
+  );
+  assertEqual(
+    runtime.activeExchangeCount,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'The active registry must remain at its fixed maximum.',
+  );
+  assertEqual(
+    runtime.pendingExchangeCount,
+    EXTERNAL_ROUTING_MAX_PENDING_EXCHANGES,
+    'The pending registry must remain at its fixed maximum.',
+  );
 
   await closeAndDrain(runtime, operation);
 }
@@ -209,12 +248,18 @@ async function testCancelsQueuedWorkBeforeItCanStart(): Promise<void> {
   cancelledController.abort();
   await requireFailure(cancelled, 'cancelled');
 
-  assertEqual(runtime.pendingExchangeCount, 1,
-    'Aborting a queued invocation must remove it from the pending registry.');
+  assertEqual(
+    runtime.pendingExchangeCount,
+    1,
+    'Aborting a queued invocation must remove it from the pending registry.',
+  );
   operation.exchangeFor(0).drained.resolve();
   await flushPromises();
-  assertEqual(startedInputs(operation).join(','), '0,1,2,3,4,5,6,7,9',
-    'A cancelled queued entry must never run and must not block following FIFO work.');
+  assertEqual(
+    startedInputs(operation).join(','),
+    '0,1,2,3,4,5,6,7,9',
+    'A cancelled queued entry must never run and must not block following FIFO work.',
+  );
 
   await closeAndDrain(runtime, operation);
   await requireFailure(retained, 'cancelled');
@@ -240,20 +285,31 @@ async function testCallerAbortWinsAgainstLateOperationCompletion(): Promise<void
   await requireFailure(result, 'cancelled');
   assertEqual(starts, 1, 'An invocation already admitted may start exactly once.');
   assert(operationSignal !== undefined, 'The operation should receive a runtime-owned signal.');
-  assert(operationSignal !== callerController.signal,
-    'The runtime must not pass the caller-owned signal directly to the operation.');
-  assert(operationSignal.aborted,
-    'Caller cancellation must abort the independent operation controller.');
+  assert(
+    operationSignal !== callerController.signal,
+    'The runtime must not pass the caller-owned signal directly to the operation.',
+  );
+  assert(
+    operationSignal.aborted,
+    'Caller cancellation must abort the independent operation controller.',
+  );
 
   settled.resolve('late success');
   await flushPromises();
   await requireFailure(result, 'cancelled');
-  assertEqual(runtime.activeExchangeCount, 1,
-    'Late completion must not release a slot before the operation drain completes.');
+  assertEqual(
+    runtime.activeExchangeCount,
+    1,
+    'Late completion must not release a slot before the operation drain completes.',
+  );
 
   drained.resolve();
   await flushPromises();
-  assertEqual(runtime.activeExchangeCount, 0, 'The active registry should release only after drain.');
+  assertEqual(
+    runtime.activeExchangeCount,
+    0,
+    'The active registry should release only after drain.',
+  );
   await runtime.close();
 }
 
@@ -270,12 +326,20 @@ async function testCloseCancelsAllWorkWaitsForDrainAndIsIdempotent(): Promise<vo
   assert(Object.is(firstClose, secondClose), 'close() must return the same in-flight promise.');
   await requireFailure(queued, 'cancelled');
   await Promise.all(active.map((result) => requireFailure(result, 'cancelled')));
-  assertEqual(operation.started.length, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'close() must never promote pending work.');
-  assert(operation.started.every((exchange) => exchange.signal.aborted),
-    'close() must abort every active operation-owned signal.');
-  assertEqual(runtime.activeExchangeCount, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'close() must retain active registry entries until their drains complete.');
+  assertEqual(
+    operation.started.length,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'close() must never promote pending work.',
+  );
+  assert(
+    operation.started.every((exchange) => exchange.signal.aborted),
+    'close() must abort every active operation-owned signal.',
+  );
+  assertEqual(
+    runtime.activeExchangeCount,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'close() must retain active registry entries until their drains complete.',
+  );
 
   let closeCompleted = false;
   void firstClose.then(() => {
@@ -294,8 +358,11 @@ async function testCloseCancelsAllWorkWaitsForDrainAndIsIdempotent(): Promise<vo
 
   const afterClose = runtime.exchange({ input: 99 });
   await requireFailure(afterClose, 'cancelled');
-  assertEqual(operation.started.length, EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
-    'Closed runtime must reject future admission without executing the operation.');
+  assertEqual(
+    operation.started.length,
+    EXTERNAL_ROUTING_MAX_ACTIVE_EXCHANGES,
+    'Closed runtime must reject future admission without executing the operation.',
+  );
 }
 
 async function testConvertsOperationExceptionsToInternalFailure(): Promise<void> {
@@ -304,8 +371,11 @@ async function testConvertsOperationExceptionsToInternalFailure(): Promise<void>
   });
 
   await requireFailure(runtime.exchange({ input: 1 }), 'internal');
-  assertEqual(runtime.activeExchangeCount, 0,
-    'A synchronous operation exception must not leak an active registry entry.');
+  assertEqual(
+    runtime.activeExchangeCount,
+    0,
+    'A synchronous operation exception must not leak an active registry entry.',
+  );
   await runtime.close();
 }
 
@@ -313,13 +383,31 @@ async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing external routing admission runtime lifecycle',
     tests: [
-      { name: 'keeps active slots until drain without pre-executing queued work', run: testKeepsSlotsUntilDrainAndDoesNotPreExecuteQueuedWork },
+      {
+        name: 'keeps active slots until drain without pre-executing queued work',
+        run: testKeepsSlotsUntilDrainAndDoesNotPreExecuteQueuedWork,
+      },
       { name: 'promotes queued work in FIFO order', run: testPromotesQueuedWorkInFifoOrder },
-      { name: 'enforces eight active and sixty-four pending slots', run: testEnforcesEightActiveAndSixtyFourPendingSlots },
-      { name: 'cancels queued work before it can start', run: testCancelsQueuedWorkBeforeItCanStart },
-      { name: 'lets caller abort win over late operation completion', run: testCallerAbortWinsAgainstLateOperationCompletion },
-      { name: 'closes idempotently after cancelling work and draining active operations', run: testCloseCancelsAllWorkWaitsForDrainAndIsIdempotent },
-      { name: 'converts operation exceptions to internal failure', run: testConvertsOperationExceptionsToInternalFailure },
+      {
+        name: 'enforces eight active and sixty-four pending slots',
+        run: testEnforcesEightActiveAndSixtyFourPendingSlots,
+      },
+      {
+        name: 'cancels queued work before it can start',
+        run: testCancelsQueuedWorkBeforeItCanStart,
+      },
+      {
+        name: 'lets caller abort win over late operation completion',
+        run: testCallerAbortWinsAgainstLateOperationCompletion,
+      },
+      {
+        name: 'closes idempotently after cancelling work and draining active operations',
+        run: testCloseCancelsAllWorkWaitsForDrainAndIsIdempotent,
+      },
+      {
+        name: 'converts operation exceptions to internal failure',
+        run: testConvertsOperationExceptionsToInternalFailure,
+      },
     ],
   });
 }

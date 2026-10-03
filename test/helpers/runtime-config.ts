@@ -90,9 +90,7 @@ export function createTestLoadedRuntimeConfig(
   });
 }
 
-export function createTestConfigStore(
-  options: TestRuntimeConfigOptions,
-): ConfigStore {
+export function createTestConfigStore(options: TestRuntimeConfigOptions): ConfigStore {
   return createConfigStore(createTestLoadedRuntimeConfig(options));
 }
 

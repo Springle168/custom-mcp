@@ -19,12 +19,7 @@ import {
   type WorkspaceToolService,
 } from '../../src/tools/index.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, runTestSuite } from '../test-utils.js';
 
 interface ConnectedPair {
   readonly client: Client;
@@ -35,10 +30,12 @@ function matchingRules(): RuntimeRulesConfig {
   return {
     requestHeaders: {
       onInitialize: [],
-      onCallToolResult: [{
-        match: [{ name: 'x-client', value: 'android-studio' }],
-        enable: ['structuredContentDup'],
-      }],
+      onCallToolResult: [
+        {
+          match: [{ name: 'x-client', value: 'android-studio' }],
+          enable: ['structuredContentDup'],
+        },
+      ],
     },
   };
 }
@@ -52,10 +49,10 @@ function textError(text: string): ToolCallResult {
 
 function getTextContent(result: unknown): string {
   if (
-    typeof result !== 'object'
-    || result === null
-    || !('content' in result)
-    || !Array.isArray(result.content)
+    typeof result !== 'object' ||
+    result === null ||
+    !('content' in result) ||
+    !Array.isArray(result.content)
   ) {
     return '';
   }
@@ -80,10 +77,10 @@ async function readPackageVersion(): Promise<string> {
   );
 
   if (
-    typeof manifest !== 'object'
-    || manifest === null
-    || !('version' in manifest)
-    || typeof manifest.version !== 'string'
+    typeof manifest !== 'object' ||
+    manifest === null ||
+    !('version' in manifest) ||
+    typeof manifest.version !== 'string'
   ) {
     throw new Error('package.json must define a string version.');
   }
@@ -159,11 +156,13 @@ function createCustomOnlyService(): WorkspaceToolService {
 function createRichResultService(): WorkspaceToolService {
   return Object.freeze({
     getDefinitions() {
-      return [{
-        name: 'read_file',
-        description: 'Rich result test tool',
-        inputSchema: { type: 'object' },
-      }];
+      return [
+        {
+          name: 'read_file',
+          description: 'Rich result test tool',
+          inputSchema: { type: 'object' },
+        },
+      ];
     },
     async routeToolCall() {
       return {
@@ -192,17 +191,16 @@ async function connectServer(
 ): Promise<ConnectedPair> {
   const server = createMCPServer({
     configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),
-    ...(rules.requestHeaders.onCallToolResult.length === 0 ? {} : { prepareToolResult: prepareRequestHeaderToolResult }),
+    ...(rules.requestHeaders.onCallToolResult.length === 0
+      ? {}
+      : { prepareToolResult: prepareRequestHeaderToolResult }),
     logger: createLogger(),
     toolService: service,
   });
   const client = new Client({ name: 'tool-exposure-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
-  await Promise.all([
-    server.connect(serverTransport),
-    client.connect(clientTransport),
-  ]);
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 
   return { client, server };
 }
@@ -220,17 +218,45 @@ async function testListAndCallUsePassedService(): Promise<void> {
     const listResult = await pair.client.listTools();
     assertEqual(spy.listCalls(), 1, 'tools/list should call the passed service getDefinitions()');
     assertEqual(listResult.tools.length, 1, 'tools/list should return the service definitions');
-    assertEqual(listResult.tools[0]?.name, 'read_file', 'tools/list should preserve definition contents');
-    assert(listResult.tools !== spy.service.getDefinitions(), 'Protocol response should not expose the internal readonly array');
+    assertEqual(
+      listResult.tools[0]?.name,
+      'read_file',
+      'tools/list should preserve definition contents',
+    );
+    assert(
+      listResult.tools !== spy.service.getDefinitions(),
+      'Protocol response should not expose the internal readonly array',
+    );
 
     const callResult = await pair.client.callTool({ name: 'write_file', arguments: {} });
-    assertEqual(spy.routeCalls(), 1, 'tools/call should call routeToolCall() on the same passed service');
-    assertEqual(callResult.isError, true, 'Excluded tool should remain an error through the MCP boundary');
-    assertEqual(getTextContent(callResult), 'Unknown tool: write_file', 'MCP call should return the service unknown-tool error');
+    assertEqual(
+      spy.routeCalls(),
+      1,
+      'tools/call should call routeToolCall() on the same passed service',
+    );
+    assertEqual(
+      callResult.isError,
+      true,
+      'Excluded tool should remain an error through the MCP boundary',
+    );
+    assertEqual(
+      getTextContent(callResult),
+      'Unknown tool: write_file',
+      'MCP call should return the service unknown-tool error',
+    );
     const invocation = spy.lastInvocation();
-    assert(invocation !== undefined, 'MCP tools/call should pass SDK metadata into the tool invocation');
-    assert(Object.isFrozen(invocation), 'MCP invocation context should be frozen at the handler boundary');
-    assert(invocation.callId.startsWith('call_'), 'MCP invocation should receive a server-generated call ID');
+    assert(
+      invocation !== undefined,
+      'MCP tools/call should pass SDK metadata into the tool invocation',
+    );
+    assert(
+      Object.isFrozen(invocation),
+      'MCP invocation context should be frozen at the handler boundary',
+    );
+    assert(
+      invocation.callId.startsWith('call_'),
+      'MCP invocation should receive a server-generated call ID',
+    );
     assert(
       typeof invocation.signal === 'object' && invocation.signal !== null,
       'MCP invocation should receive the SDK cancellation signal',
@@ -268,8 +294,16 @@ async function testTwoServersShareCallerOwnedService(): Promise<void> {
     await first.client.callTool({ name: 'hidden-one', arguments: {} });
     await second.client.callTool({ name: 'hidden-two', arguments: {} });
 
-    assertEqual(spy.listCalls(), 2, 'Both servers should read definitions from the caller-owned service');
-    assertEqual(spy.routeCalls(), 2, 'Both servers should route calls through the same caller-owned service');
+    assertEqual(
+      spy.listCalls(),
+      2,
+      'Both servers should read definitions from the caller-owned service',
+    );
+    assertEqual(
+      spy.routeCalls(),
+      2,
+      'Both servers should route calls through the same caller-owned service',
+    );
   } finally {
     await closePair(first);
     await closePair(second);
@@ -281,10 +315,18 @@ async function testCustomOnlyToolListsValidatesAndReturnsUnavailable(): Promise<
   try {
     const listResult = await pair.client.listTools();
     assertEqual(listResult.tools.length, 1, 'Exposure should list only the custom-only tool');
-    assertEqual(listResult.tools[0]?.name, 'custom_tool', 'tools/list should expose custom identity');
+    assertEqual(
+      listResult.tools[0]?.name,
+      'custom_tool',
+      'tools/list should expose custom identity',
+    );
 
     const invalid = await pair.client.callTool({ name: 'custom_tool', arguments: {} });
-    assertIncludes(getTextContent(invalid), 'configured input schema', 'MCP call should use effective validation');
+    assertIncludes(
+      getTextContent(invalid),
+      'configured input schema',
+      'MCP call should use effective validation',
+    );
 
     const unavailable = await pair.client.callTool({
       name: 'custom_tool',
@@ -324,8 +366,7 @@ async function testRichResultSurvivesMCPRoundTrip(): Promise<void> {
       'MCP round trip should preserve image metadata',
     );
     assert(
-      typeof result.structuredContent === 'object'
-      && result.structuredContent !== null,
+      typeof result.structuredContent === 'object' && result.structuredContent !== null,
       'MCP round trip should preserve structured content',
     );
     assertEqual(
@@ -333,7 +374,11 @@ async function testRichResultSurvivesMCPRoundTrip(): Promise<void> {
       800,
       'MCP round trip should preserve structured content values',
     );
-    assertEqual(result._meta?.['example.com/result-id'], 'result-1', 'MCP round trip should preserve result metadata');
+    assertEqual(
+      result._meta?.['example.com/result-id'],
+      'result-1',
+      'MCP round trip should preserve result metadata',
+    );
     assertEqual(
       (result.extension as { readonly retained?: unknown } | undefined)?.retained,
       true,
@@ -356,8 +401,7 @@ async function testStructuredContentDupRichResultSurvivesMCPRoundTrip(): Promise
       'MCP adapted rich result should use the standard content response shape',
     );
     assert(
-      typeof result.structuredContent === 'object'
-      && result.structuredContent !== null,
+      typeof result.structuredContent === 'object' && result.structuredContent !== null,
       'Matched rich result should include structuredContentDup wrapper',
     );
 
@@ -376,7 +420,11 @@ async function testStructuredContentDupRichResultSurvivesMCPRoundTrip(): Promise
     );
     assertEqual(wrapper.isError, false, 'Wire wrapper should preserve normalized success state');
     assert(!('width' in wrapper), 'Matched policy should overwrite tool-owned structured content');
-    assertEqual(result._meta?.['example.com/result-id'], 'result-1', 'Adaptation should preserve top-level metadata');
+    assertEqual(
+      result._meta?.['example.com/result-id'],
+      'result-1',
+      'Adaptation should preserve top-level metadata',
+    );
     assertEqual(
       (result.extension as { readonly retained?: unknown } | undefined)?.retained,
       true,
@@ -393,10 +441,19 @@ async function main(): Promise<void> {
     tests: [
       { name: 'list and call use passed service', run: testListAndCallUsePassedService },
       { name: 'server reports the package version', run: testServerReportsPackageVersion },
-      { name: 'two servers share caller-owned service', run: testTwoServersShareCallerOwnedService },
-      { name: 'custom-only tool lists, validates, and returns unavailable', run: testCustomOnlyToolListsValidatesAndReturnsUnavailable },
+      {
+        name: 'two servers share caller-owned service',
+        run: testTwoServersShareCallerOwnedService,
+      },
+      {
+        name: 'custom-only tool lists, validates, and returns unavailable',
+        run: testCustomOnlyToolListsValidatesAndReturnsUnavailable,
+      },
       { name: 'rich result survives MCP round trip', run: testRichResultSurvivesMCPRoundTrip },
-      { name: 'structuredContentDup rich result survives MCP round trip', run: testStructuredContentDupRichResultSurvivesMCPRoundTrip },
+      {
+        name: 'structuredContentDup rich result survives MCP round trip',
+        run: testStructuredContentDupRichResultSurvivesMCPRoundTrip,
+      },
     ],
   });
 }

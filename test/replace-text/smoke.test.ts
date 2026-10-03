@@ -1,10 +1,4 @@
-import {
-  assert,
-  assertEqual,
-  assertIncludes,
-  getResultText,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertIncludes, getResultText, runTestSuite } from '../test-utils.js';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
@@ -37,11 +31,7 @@ async function testWarnsButWritesPlaceholderReplacement(): Promise<void> {
   assertIncludes(payload.note, "'...'", 'Should name the placeholder');
   assertEqual(payload.matched_targets, 1, 'Should report one matched target');
   assertEqual(payload.replacement_count, 1, 'Should report one replacement');
-  assertEqual(
-    payload.matched_span?.start_line,
-    2,
-    'Should report matched start line',
-  );
+  assertEqual(payload.matched_span?.start_line, 2, 'Should report matched start line');
 
   const raw = await readFixture('warns.ts');
   assertEqual(

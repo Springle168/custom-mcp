@@ -1,16 +1,9 @@
 import type { ToolRuntimeContext } from '../runtime/invocation/tool-context.js';
 import type { ToolInvocationContext } from '../runtime/invocation/tool-invocation-context.js';
-import type {
-  CompiledBuiltInTool,
-  CompiledWorkspaceToolCatalog,
-} from './catalog.js';
+import type { CompiledBuiltInTool, CompiledWorkspaceToolCatalog } from './catalog.js';
 import { compileInputSchemaValidator } from './input-schema-validator.js';
 import { TOOL_NAMES, type ToolName } from './names.js';
-import type {
-  MCPTool,
-  ToolCallResult,
-  ToolDefinition,
-} from './types.js';
+import type { MCPTool, ToolCallResult, ToolDefinition } from './types.js';
 
 import replaceTool from './built-in/files/replace.js';
 import writeFileTool from './built-in/files/write-file.js';
@@ -41,9 +34,7 @@ const compiledBuiltInRegistry = Object.freeze(
     });
   }),
 );
-const builtInDefinitions = Object.freeze(
-  compiledBuiltInRegistry.map((tool) => tool.definition),
-);
+const builtInDefinitions = Object.freeze(compiledBuiltInRegistry.map((tool) => tool.definition));
 
 export interface WorkspaceToolService {
   getDefinitions(): readonly ToolDefinition[];
@@ -100,9 +91,7 @@ function buildCanonicalRegistry(tools: readonly MCPTool[]): readonly MCPTool[] {
   return Object.freeze(canonicalRegistry);
 }
 
-function cloneAndFreezeDefinition(
-  definition: MCPTool['definition'],
-): ToolDefinition {
+function cloneAndFreezeDefinition(definition: MCPTool['definition']): ToolDefinition {
   return deepFreeze({
     name: definition.name,
     description: definition.description,
@@ -110,9 +99,7 @@ function cloneAndFreezeDefinition(
   });
 }
 
-function cloneJsonObject(
-  value: Readonly<Record<string, unknown>>,
-): Record<string, unknown> {
+function cloneJsonObject(value: Readonly<Record<string, unknown>>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(value).map(([key, propertyValue]) => [key, cloneJsonValue(propertyValue)]),
   );

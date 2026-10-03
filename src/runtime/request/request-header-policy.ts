@@ -1,7 +1,4 @@
-import type {
-  RuntimeRequestFeature,
-  RuntimeRulesConfig,
-} from '../../config.js';
+import type { RuntimeRequestFeature, RuntimeRulesConfig } from '../../config.js';
 import type { StrictRequestHeaderView } from './request-header-view.js';
 
 export interface RequestHeaderPolicy {
@@ -65,9 +62,9 @@ export function evaluateRequestHeaderPolicy(
 export function toRequestHeaderPolicyLogMetadata(
   policy: RequestHeaderPolicy,
 ): RequestHeaderPolicyLogMetadata {
-  const matchedRuleLocations = policy.matchedRuleIndexes.map((index) => (
-    `rules.requestHeaders.onCallToolResult[${index}]`
-  ));
+  const matchedRuleLocations = policy.matchedRuleIndexes.map(
+    (index) => `rules.requestHeaders.onCallToolResult[${index}]`,
+  );
   const enabledFeatures = [...policy.enabledFeatures];
 
   Object.freeze(matchedRuleLocations);

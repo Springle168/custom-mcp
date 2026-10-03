@@ -10,10 +10,7 @@ const MAX_FAILURE_MESSAGE_CHARS = 1000;
 const MAX_SOURCE_LOCATION_CHARS = 500;
 const SOURCE_LOCATION_PATTERN = /\(([^()\r\n]+\.(?:kt|java):\d+)\)/g;
 
-export type TestReportStatus =
-  | 'generated'
-  | 'not_generated'
-  | 'parse_failed';
+export type TestReportStatus = 'generated' | 'not_generated' | 'parse_failed';
 
 export interface FailedTestDetail {
   className: string | null;
@@ -131,9 +128,7 @@ export function parseAndroidTestReports(
       testCases.filter((testCase) => testCase.skipped !== undefined).length,
     );
 
-    allFailedTests.push(
-      ...suiteFailures.map(({ detail }) => detail),
-    );
+    allFailedTests.push(...suiteFailures.map(({ detail }) => detail));
   }
 
   const detailLimit = Math.max(0, Math.floor(failedTestDetailsLimit));
@@ -154,10 +149,7 @@ export function parseAndroidTestReports(
 
   return {
     summary,
-    firstErrorBlock: formatFirstTestErrorBlock(
-      summary,
-      maxFirstErrorBlockChars,
-    ),
+    firstErrorBlock: formatFirstTestErrorBlock(summary, maxFirstErrorBlockChars),
   };
 }
 
@@ -179,9 +171,7 @@ export function formatFirstTestErrorBlock(
     [firstFailure.className, firstFailure.name].filter(Boolean).join(' > '),
   ];
 
-  const diagnostic = [firstFailure.type, firstFailure.message]
-    .filter(Boolean)
-    .join(': ');
+  const diagnostic = [firstFailure.type, firstFailure.message].filter(Boolean).join(': ');
   if (diagnostic) {
     lines.push(diagnostic);
   }
@@ -199,9 +189,7 @@ function extractSuites(parsed: unknown): XmlRecord[] {
 
   const directSuites = asRecordArray(parsed.testsuite);
   const containers = asRecordArray(parsed.testsuites);
-  const nestedSuites = containers.flatMap((container) =>
-    asRecordArray(container.testsuite),
-  );
+  const nestedSuites = containers.flatMap((container) => asRecordArray(container.testsuite));
 
   return [...directSuites, ...nestedSuites];
 }
@@ -229,10 +217,7 @@ function collectFailedTests(testCases: readonly XmlRecord[]): Array<{
   return failures;
 }
 
-function toFailedTestDetail(
-  testCase: XmlRecord,
-  failureNode: unknown,
-): FailedTestDetail {
+function toFailedTestDetail(testCase: XmlRecord, failureNode: unknown): FailedTestDetail {
   const failureRecord = isRecord(failureNode) ? failureNode : null;
   const failureText = readNodeText(failureNode);
   const className = truncateNullableText(
@@ -254,10 +239,7 @@ function toFailedTestDetail(
     type && rawMessage?.startsWith(`${type}:`)
       ? rawMessage.slice(type.length + 1).trim() || null
       : rawMessage;
-  const message = truncateNullableText(
-    normalizedMessage,
-    MAX_FAILURE_MESSAGE_CHARS,
-  );
+  const message = truncateNullableText(normalizedMessage, MAX_FAILURE_MESSAGE_CHARS);
 
   return {
     className,
@@ -279,18 +261,14 @@ function extractSourceLocation(
     return null;
   }
 
-  const matches = [...failureText.matchAll(SOURCE_LOCATION_PATTERN)].map(
-    (match) => match[1],
-  );
+  const matches = [...failureText.matchAll(SOURCE_LOCATION_PATTERN)].map((match) => match[1]);
   if (matches.length === 0) {
     return null;
   }
 
   const simpleClassName = className?.split('.').at(-1)?.split('$')[0];
   if (simpleClassName) {
-    const classLocation = matches.find((location) =>
-      location?.startsWith(`${simpleClassName}.`),
-    );
+    const classLocation = matches.find((location) => location?.startsWith(`${simpleClassName}.`));
     if (classLocation) {
       return classLocation;
     }
@@ -324,10 +302,12 @@ function firstNonBlankLine(text: string | null): string | null {
     return null;
   }
 
-  return text
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find(Boolean) ?? null;
+  return (
+    text
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null
+  );
 }
 
 function readCount(value: unknown, fallback: number): number {
@@ -351,10 +331,7 @@ function readOptionalString(value: unknown): string | null {
   return null;
 }
 
-function truncateNullableText(
-  value: string | null,
-  maxChars: number,
-): string | null {
+function truncateNullableText(value: string | null, maxChars: number): string | null {
   return value === null ? null : truncateText(value, maxChars);
 }
 

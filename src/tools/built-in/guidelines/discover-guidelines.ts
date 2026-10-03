@@ -1,14 +1,6 @@
 import { extname } from 'node:path';
-import {
-  constants as fsConstants,
-  type BigIntStats,
-} from 'node:fs';
-import {
-  lstat,
-  open,
-  realpath,
-  type FileHandle,
-} from 'node:fs/promises';
+import { constants as fsConstants, type BigIntStats } from 'node:fs';
+import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
 import type { ToolInvocationContext } from '../../../runtime/invocation/tool-invocation-context.js';
 import {
@@ -16,10 +8,7 @@ import {
   parseGuidelineFrontMatter,
   type GuidelineMetadata,
 } from '../../../engine/guideline-front-matter.js';
-import {
-  selectReadableFiles,
-  type SelectedReadableFile,
-} from '../../../utils/file-selection.js';
+import { selectReadableFiles, type SelectedReadableFile } from '../../../utils/file-selection.js';
 import {
   DISCOVER_GUIDELINES_TOOL_DEFINITION,
   MAX_GUIDELINE_FILES,
@@ -34,9 +23,7 @@ const INTERNAL_ERROR_MESSAGE =
   'Guideline discovery failed because of an unexpected internal error. Retry with narrower selectors.';
 const PREFIX_READ_CHUNK_BYTES = 4 * 1024;
 const SAFE_READ_OPEN_FLAGS =
-  fsConstants.O_RDONLY |
-  (fsConstants.O_NOFOLLOW ?? 0) |
-  (fsConstants.O_NONBLOCK ?? 0);
+  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
 
 interface DiscoveredGuideline extends GuidelineMetadata {
   readonly file_path: string;
@@ -58,8 +45,7 @@ interface OpenedSelectedFile {
 }
 
 type FileInspectionResult =
-  | { readonly ok: true; readonly metadata: GuidelineMetadata | null }
-  | { readonly ok: false };
+  { readonly ok: true; readonly metadata: GuidelineMetadata | null } | { readonly ok: false };
 
 type GuidelineFileInspector = (
   file: SelectedReadableFile,
@@ -108,19 +94,11 @@ async function readBoundedPrefix(
   };
 }
 
-function sameFileIdentity(
-  openedStats: BigIntStats,
-  pathStats: BigIntStats,
-): boolean {
-  return (
-    openedStats.dev === pathStats.dev &&
-    openedStats.ino === pathStats.ino
-  );
+function sameFileIdentity(openedStats: BigIntStats, pathStats: BigIntStats): boolean {
+  return openedStats.dev === pathStats.dev && openedStats.ino === pathStats.ino;
 }
 
-async function openSelectedRegularFile(
-  filePath: string,
-): Promise<OpenedSelectedFile | null> {
+async function openSelectedRegularFile(filePath: string): Promise<OpenedSelectedFile | null> {
   let fileHandle: FileHandle | undefined;
   try {
     const beforeOpenStats = await lstat(filePath, { bigint: true });
@@ -167,18 +145,11 @@ async function inspectGuidelineFile(
       return result;
     }
     fileHandle = openedFile.handle;
-    const prefix = await readBoundedPrefix(
-      fileHandle,
-      Number(openedFile.stats.size),
-      signal,
-    );
+    const prefix = await readBoundedPrefix(fileHandle, Number(openedFile.stats.size), signal);
     if (!signal.aborted) {
       result = {
         ok: true,
-        metadata: parseGuidelineFrontMatter(
-          prefix.text,
-          prefix.containsWholeFile,
-        ),
+        metadata: parseGuidelineFrontMatter(prefix.text, prefix.containsWholeFile),
       };
     }
   } catch {
@@ -200,9 +171,7 @@ async function inspectFilesWithWorkerLimit(
   signal: AbortSignal,
   inspector: GuidelineFileInspector,
 ): Promise<readonly (FileInspectionResult | undefined)[]> {
-  const results: Array<FileInspectionResult | undefined> = new Array(
-    files.length,
-  );
+  const results: Array<FileInspectionResult | undefined> = new Array(files.length);
   let nextIndex = 0;
 
   async function worker(): Promise<void> {
@@ -221,9 +190,7 @@ async function inspectFilesWithWorkerLimit(
   }
 
   const workerCount = Math.min(MAX_GUIDELINE_READ_WORKERS, files.length);
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => worker()),
-  );
+  await Promise.all(Array.from({ length: workerCount }, async () => worker()));
   return results;
 }
 
@@ -232,9 +199,7 @@ function successPayload(
   notes: readonly string[],
 ): ToolCallResult {
   const payload: DiscoveryPayload =
-    notes.length === 0
-      ? { guidelines }
-      : { guidelines, note: notes.join(' ') };
+    notes.length === 0 ? { guidelines } : { guidelines, note: notes.join(' ') };
   return {
     content: [{ type: 'text', text: JSON.stringify(payload) }],
     isError: false,
@@ -254,10 +219,8 @@ async function discoverGuidelines(
   try {
     const selectionResult = await selectReadableFiles({
       pathSelectors: args.include as string[],
-      discoveryExcludePatterns:
-        (args.exclude as string[] | undefined) ?? [],
-      respectIgnoreFiles:
-        (args.use_ignore_files as boolean | undefined) ?? false,
+      discoveryExcludePatterns: (args.exclude as string[] | undefined) ?? [],
+      respectIgnoreFiles: (args.use_ignore_files as boolean | undefined) ?? false,
       fileAccessPolicyContext: context.fileAccessPolicyContext,
     });
     if (!selectionResult.ok) {
@@ -267,12 +230,7 @@ async function discoverGuidelines(
       return textErrorResult(CANCELLED_MESSAGE);
     }
 
-    const {
-      files,
-      skipped,
-      blockedByDeny,
-      ignoredByPolicy,
-    } = selectionResult.selection;
+    const { files, skipped, blockedByDeny, ignoredByPolicy } = selectionResult.selection;
     const sortedFiles = [...files].sort((left, right) =>
       left.readPath.localeCompare(right.readPath),
     );
@@ -319,9 +277,7 @@ async function discoverGuidelines(
     } else if (markdownFiles.length === 0) {
       notes.push('Matched files were found, but none were Markdown files.');
     } else if (guidelines.length === 0) {
-      notes.push(
-        'Markdown files were found, but none contained valid guideline Front Matter.',
-      );
+      notes.push('Markdown files were found, but none contained valid guideline Front Matter.');
     }
     if (filesLimited) {
       notes.push(
@@ -332,14 +288,10 @@ async function discoverGuidelines(
       notes.push('Some paths were blocked by the file access deny policy.');
     }
     if (files.length > 0 && ignoredByPolicy) {
-      notes.push(
-        'Some glob-discovered paths were filtered by configured ignoreFiles rules.',
-      );
+      notes.push('Some glob-discovered paths were filtered by configured ignoreFiles rules.');
     }
     if (skipped.length > 0 || inspectionFailed) {
-      notes.push(
-        'Some include selectors or selected files could not be inspected.',
-      );
+      notes.push('Some include selectors or selected files could not be inspected.');
     }
 
     if (invocation.signal.aborted) {

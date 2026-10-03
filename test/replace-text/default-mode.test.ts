@@ -1,9 +1,4 @@
-import {
-  assert,
-  assertEqual,
-  assertNotIncludes,
-  runTestSuite,
-} from '../test-utils.js';
+import { assert, assertEqual, assertNotIncludes, runTestSuite } from '../test-utils.js';
 import {
   assertErrorResult,
   assertJsonNoteIncludes,
@@ -41,16 +36,8 @@ async function testExactSingleMatchCountsAndSpan(): Promise<void> {
   assertEqual(json.matched_targets, 1, 'Should match one target');
   assertEqual(json.replacement_count, 1, 'Should replace one target');
   assertSpan(json, 2, 2, 'Single-line exact match span');
-  assertEqual(
-    json.replacement_line_count,
-    1,
-    'Single-line replacement should count as one line',
-  );
-  assertEqual(
-    json.file_line_count.previous,
-    countSpecLines(before),
-    'Previous file line count',
-  );
+  assertEqual(json.replacement_line_count, 1, 'Single-line replacement should count as one line');
+  assertEqual(json.file_line_count.previous, countSpecLines(before), 'Previous file line count');
   assertEqual(
     json.file_line_count.current,
     countSpecLines('line1\nbeta target\nline3\n'),
@@ -353,11 +340,7 @@ async function testDefaultRejectsSmallTextDifference(): Promise<void> {
   const json = assertErrorResult(result);
   assertEqual(json.matched_targets, 0, 'Different text should not match');
   assertNoSpan(json, 'Different text should not have a span');
-  await assertFixtureContent(
-    'different-text.txt',
-    before,
-    'Different text should not write',
-  );
+  await assertFixtureContent('different-text.txt', before, 'Different text should not write');
 }
 
 async function testEndLineBelongsToLineBeforeMatchedNewline(): Promise<void> {
@@ -372,12 +355,7 @@ async function testEndLineBelongsToLineBeforeMatchedNewline(): Promise<void> {
   });
 
   const json = assertSuccessResult(result);
-  assertSpan(
-    json,
-    2,
-    2,
-    'Match ending on newline should end on the line before that newline',
-  );
+  assertSpan(json, 2, 2, 'Match ending on newline should end on the line before that newline');
   await assertFixtureContent(
     'newline-span.txt',
     'first\nSECOND\nthird\n',
@@ -465,7 +443,8 @@ async function testExistingPlaceholderDoesNotWarnAgain(): Promise<void> {
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 default mode tests',
-    details: 'Covers default matching, literal replacement behavior, counts, spans, creation, warnings, and no-op.',
+    details:
+      'Covers default matching, literal replacement behavior, counts, spans, creation, warnings, and no-op.',
     afterAll: cleanupFixtures,
     tests: [
       {
@@ -493,7 +472,10 @@ async function main(): Promise<void> {
         name: 'Default non-empty target rejects missing file',
         run: testDefaultMissingFileWithNonEmptyTargetFails,
       },
-      { name: 'Default no match fails without writing', run: testDefaultNoMatchFailsWithoutWriting },
+      {
+        name: 'Default no match fails without writing',
+        run: testDefaultNoMatchFailsWithoutWriting,
+      },
       {
         name: 'Default multiple matches rejected without allow_multiple',
         run: testDefaultMultipleMatchesRejectedWithoutAllowMultiple,

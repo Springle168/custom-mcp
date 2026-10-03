@@ -1,0 +1,17 @@
+# Dependencies, build output, and local working files
+node_modules/
+dist/
+build/
+.ruff_cache/
+
+# Generated test data; topic-local fixture scripts remain in scope
+test/fixtures/
+test/logs/
+
+# Documentation and configuration examples are maintained separately
+docs/
+examples/
+**/*.md
+
+# npm maintains the dependency lockfile
+package-lock.json
