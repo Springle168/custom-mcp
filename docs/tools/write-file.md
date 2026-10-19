@@ -72,7 +72,7 @@ test/write-file/
 Success: wrote nested/example.txt. Total lines: 2.
 ```
 
-这里的总行数口径与 `read_file` 保持一致，按最终写入内容的换行结构计算。
+这里的总行数口径与 [`read`](read.md) 保持一致，按最终写入内容的换行结构计算。
 
 ---
 

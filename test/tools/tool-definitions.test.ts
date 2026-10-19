@@ -96,37 +96,59 @@ function testBuiltInSchemasOwnStructuralContracts(): void {
     'write_file should accept empty content',
   );
 
-  assertInvalid('read_file', { file_path: '' }, 'read_file should reject an empty file_path');
+  assertInvalid('read', { include: [] }, 'read should require at least one selector');
+  assertInvalid('read', { include: [''] }, 'read should require non-empty string selectors');
   assertInvalid(
-    'read_file',
-    { file_path: 'a.txt', start_line: 0 },
-    'read_file should reject non-positive numeric ranges',
+    'read',
+    { include: [{ file_path: '' }] },
+    'read should require a literal object path',
   );
   assertInvalid(
-    'read_file',
-    { file_path: 'a.txt', read_mode: 'regex', start_line: '' },
-    'read_file should reject empty regex range patterns',
+    'read',
+    { include: [{ file_path: 'a.txt', start_line: 0 }] },
+    'read should require positive numeric ranges',
+  );
+  assertInvalid(
+    'read',
+    { include: [{ file_path: 'a.txt', read_mode: 'regex', start_line: '' }] },
+    'read should require non-empty regex patterns',
+  );
+  assertInvalid(
+    'read',
+    { include: [{ file_path: 'a.txt', read_mode: 'unknown' }] },
+    'read should validate the range mode',
+  );
+  assertInvalid(
+    'read',
+    { include: [{ file_path: 'a.txt', extra: true }] },
+    'read should reject unknown object options',
   );
   assertValid(
-    'read_file',
-    { file_path: 'a.txt', read_mode: 'line', start_line: '1' },
-    'read_file should leave mode-specific range types to the handler',
+    'read',
+    { include: ['*.txt', { file_path: 'a.txt', read_mode: 'line', start_line: '1' }] },
+    'read should leave mode-specific range relationships to per-request semantics',
   );
-
-  assertInvalid(
-    'read_many_files',
-    { include: [] },
-    'read_many_files should reject an empty include array',
-  );
-  assertInvalid(
-    'read_many_files',
-    { include: ['a.txt'], shallow_read_content_limit_bytes: Number.MAX_SAFE_INTEGER + 1 },
-    'read_many_files should reject unsafe integer limits',
-  );
+  for (const shallow_read of [false, true, 1, Number.MAX_SAFE_INTEGER]) {
+    assertValid(
+      'read',
+      { include: ['a.txt'], shallow_read },
+      'read should accept boolean or safe positive integer shallow_read',
+    );
+  }
+  for (const shallow_read of [0, -1, 1.5, '1024', Number.MAX_SAFE_INTEGER + 1]) {
+    assertInvalid(
+      'read',
+      { include: ['a.txt'], shallow_read },
+      'read should reject invalid shallow_read values',
+    );
+  }
   assertValid(
-    'read_many_files',
-    { include: ['a.txt'], shallow_read_content_limit_bytes: 1 },
-    'read_many_files should leave the shallow_read dependency to the handler',
+    'read',
+    {
+      include: ['a.txt', { file_path: 'a.txt', show_line_numbers: false }],
+      show_line_numbers: true,
+    },
+    'read should accept per-request line-number overrides',
   );
 
   assertInvalid(

@@ -202,14 +202,14 @@ function testStrictPayloadAndNameValidation(): void {
     1,
     {},
     { toolList: null },
-    { toolList: 'read_file' },
+    { toolList: 'read' },
     { toolList: [], secretKey: true },
     { toolList: [1] },
     { toolList: [''] },
     { toolList: ['has space'] },
-    { toolList: [' read_file'] },
+    { toolList: [' read'] },
     { toolList: ['x'.repeat(129)] },
-    { toolList: ['read_file', 'read_file'] },
+    { toolList: ['read', 'read'] },
     { toolList: ['secret\n\u001b[31m'] },
   ];
   for (const payload of invalidTools) {

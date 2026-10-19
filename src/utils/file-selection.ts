@@ -13,182 +13,144 @@ export interface SelectedReadableFile {
   readonly displayPath: string;
 }
 
-export interface SkippedFileSelection {
-  readonly path: string;
-  readonly reason: string;
-}
+export type ReadableFileSelectionEntry =
+  | {
+      readonly ok: true;
+      readonly includeIndex: number;
+      readonly file: SelectedReadableFile;
+    }
+  | {
+      readonly ok: false;
+      readonly includeIndex: number;
+      readonly path: string;
+      readonly reason: string;
+      readonly denied: boolean;
+    };
 
 export interface ReadableFileSelection {
-  readonly files: readonly SelectedReadableFile[];
-  readonly skipped: readonly SkippedFileSelection[];
+  readonly entries: readonly ReadableFileSelectionEntry[];
   readonly blockedByDeny: boolean;
   readonly ignoredByPolicy: boolean;
 }
 
 export interface ReadableFileSelectionRequest {
-  readonly pathSelectors: readonly string[];
+  readonly pathSelectors: readonly (string | { readonly file_path: string })[];
   readonly discoveryExcludePatterns: readonly string[];
   readonly respectIgnoreFiles: boolean;
   readonly fileAccessPolicyContext: FileAccessPolicyContext;
+  readonly signal?: AbortSignal;
 }
 
-export type ReadableFileSelectionResult =
-  | { readonly ok: true; readonly selection: ReadableFileSelection }
-  | { readonly ok: false; readonly reason: string };
-
-type LiteralDecision = 'added' | 'handled' | 'continue_to_glob';
-
-function fileKey(filePath: string): string {
-  return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
-}
-
-function addFile(fileMap: Map<string, SelectedReadableFile>, entry: SelectedReadableFile): void {
-  const key = fileKey(entry.readPath);
-  if (!fileMap.has(key)) {
-    fileMap.set(key, entry);
-  }
-}
-
-async function tryAddLiteralFile(
-  item: string,
-  itemHasGlobMagic: boolean,
-  fileAccessPolicyContext: FileAccessPolicyContext,
-  fileMap: Map<string, SelectedReadableFile>,
-  skipped: SkippedFileSelection[],
-): Promise<
-  | { readonly ok: true; readonly decision: LiteralDecision }
-  | { readonly ok: false; readonly reason: string }
-> {
-  const safePathResult = resolveFileAccessPath(item, fileAccessPolicyContext);
-  if (!safePathResult.ok) {
-    if (safePathResult.code === 'deny_policy') {
-      return { ok: false, reason: safePathResult.reason };
-    }
-    skipped.push({ path: item, reason: safePathResult.reason });
-    return { ok: true, decision: 'handled' };
-  }
-
-  const safePath = safePathResult.path;
-  const readTarget = await validateFileAccessReadTarget(safePath, fileAccessPolicyContext);
-  if (!readTarget.ok) {
-    if (readTarget.code === 'not_found' && itemHasGlobMagic) {
-      return { ok: true, decision: 'continue_to_glob' };
-    }
-    if (readTarget.code === 'deny_policy') {
-      return { ok: false, reason: readTarget.reason };
-    }
-    skipped.push({ path: item, reason: readTarget.reason });
-    return { ok: true, decision: 'handled' };
-  }
-
-  if (readTarget.target.kind !== 'file') {
-    if (itemHasGlobMagic) {
-      return { ok: true, decision: 'continue_to_glob' };
-    }
-    skipped.push({ path: item, reason: 'not a file' });
-    return { ok: true, decision: 'handled' };
-  }
-
-  addFile(fileMap, {
-    readPath: readTarget.target.realPath,
-    displayPath: safePath.displayPath,
-  });
-  return { ok: true, decision: 'added' };
-}
-
-async function addGlobFiles(
-  item: string,
-  request: ReadableFileSelectionRequest,
-  fileMap: Map<string, SelectedReadableFile>,
-  skipped: SkippedFileSelection[],
-): Promise<
-  | {
-      readonly ok: true;
-      readonly blockedByDeny: boolean;
-      readonly ignoredByPolicy: boolean;
-    }
-  | { readonly ok: false; readonly reason: string }
-> {
-  const result = await expandFileAccessGlob(item, request.fileAccessPolicyContext);
-  if (!result.ok) {
-    return { ok: false, reason: result.reason };
-  }
-
-  skipped.push(...result.expansion.skipped);
-  let ignoredByPolicy = false;
-  for (const target of result.expansion.files) {
-    if (
-      request.respectIgnoreFiles &&
-      isIgnoredByFileAccessPolicy(target.safePath, request.fileAccessPolicyContext)
-    ) {
-      ignoredByPolicy = true;
-      continue;
-    }
-    if (matchesExcludePattern(target.safePath, request.discoveryExcludePatterns)) {
-      continue;
-    }
-
-    addFile(fileMap, {
-      readPath: target.realPath,
-      displayPath: target.safePath.displayPath,
-    });
-  }
-
-  return {
-    ok: true,
-    blockedByDeny: result.expansion.blockedByDeny,
-    ignoredByPolicy,
-  };
+/** Compares validated real paths using the host filesystem's path casing convention. */
+export function fileIdentityKey(realPath: string): string {
+  return process.platform === 'win32' ? realPath.toLowerCase() : realPath;
 }
 
 /**
- * Resolves literal paths and glob expressions into readable files.
- *
- * Literal paths bypass discovery-only exclude and ignore filters. Access deny,
- * root containment, realpath, and controlled traversal remain mandatory.
+ * Preserves selector provenance and duplicates for the caller's own request semantics.
+ * Only glob discoveries receive ignore/exclude filtering; every path still passes
+ * through deny, root containment, realpath, and controlled traversal checks.
  */
 export async function selectReadableFiles(
   request: ReadableFileSelectionRequest,
-): Promise<ReadableFileSelectionResult> {
-  const fileMap = new Map<string, SelectedReadableFile>();
-  const skipped: SkippedFileSelection[] = [];
+): Promise<ReadableFileSelection> {
+  const entries: ReadableFileSelectionEntry[] = [];
   let blockedByDeny = false;
   let ignoredByPolicy = false;
 
-  for (const item of request.pathSelectors) {
-    const itemHasGlobMagic = hasGlobMagic(item);
+  for (const [includeIndex, selector] of request.pathSelectors.entries()) {
+    request.signal?.throwIfAborted();
+    const item = typeof selector === 'string' ? selector : selector.file_path;
+    const itemHasGlobMagic = typeof selector === 'string' && hasGlobMagic(item);
     const slashLeadingGlob =
       itemHasGlobMagic &&
       (item.startsWith('/') || item.startsWith('\\')) &&
       !(item.startsWith('//') || item.startsWith('\\\\'));
 
     if (!slashLeadingGlob) {
-      const literalResult = await tryAddLiteralFile(
-        item,
-        itemHasGlobMagic,
+      const safePathResult = resolveFileAccessPath(item, request.fileAccessPolicyContext);
+      if (!safePathResult.ok) {
+        const denied = safePathResult.code === 'deny_policy';
+        entries.push({
+          ok: false,
+          includeIndex,
+          path: item,
+          reason: safePathResult.reason,
+          denied,
+        });
+        continue;
+      }
+
+      const readTarget = await validateFileAccessReadTarget(
+        safePathResult.path,
         request.fileAccessPolicyContext,
-        fileMap,
-        skipped,
       );
-      if (!literalResult.ok) return literalResult;
-      if (literalResult.decision !== 'continue_to_glob') continue;
+      request.signal?.throwIfAborted();
+      if (readTarget.ok && readTarget.target.kind === 'file') {
+        entries.push({
+          ok: true,
+          includeIndex,
+          file: {
+            readPath: readTarget.target.realPath,
+            displayPath: safePathResult.path.displayPath,
+          },
+        });
+        continue;
+      }
+      if (!itemHasGlobMagic || (!readTarget.ok && readTarget.code !== 'not_found')) {
+        const denied = !readTarget.ok && readTarget.code === 'deny_policy';
+        entries.push({
+          ok: false,
+          includeIndex,
+          path: item,
+          reason: readTarget.ok ? 'not a file' : readTarget.reason,
+          denied,
+        });
+        continue;
+      }
     }
 
-    if (itemHasGlobMagic) {
-      const globResult = await addGlobFiles(item, request, fileMap, skipped);
-      if (!globResult.ok) return globResult;
-      blockedByDeny ||= globResult.blockedByDeny;
-      ignoredByPolicy ||= globResult.ignoredByPolicy;
+    const result = await expandFileAccessGlob(item, request.fileAccessPolicyContext);
+    request.signal?.throwIfAborted();
+    if (!result.ok) {
+      const denied = result.code === 'deny_policy';
+      entries.push({ ok: false, includeIndex, path: item, reason: result.reason, denied });
+      continue;
     }
+
+    blockedByDeny ||= result.expansion.blockedByDeny;
+    const globEntries: ReadableFileSelectionEntry[] = result.expansion.skipped.map((skipped) => ({
+      ok: false,
+      includeIndex,
+      path: skipped.path,
+      reason: skipped.reason,
+      denied: false,
+    }));
+    for (const target of result.expansion.files) {
+      request.signal?.throwIfAborted();
+      if (
+        request.respectIgnoreFiles &&
+        isIgnoredByFileAccessPolicy(target.safePath, request.fileAccessPolicyContext)
+      ) {
+        ignoredByPolicy = true;
+        continue;
+      }
+      if (matchesExcludePattern(target.safePath, request.discoveryExcludePatterns)) continue;
+
+      globEntries.push({
+        ok: true,
+        includeIndex,
+        file: { readPath: target.realPath, displayPath: target.safePath.displayPath },
+      });
+    }
+    globEntries.sort((left, right) =>
+      (left.ok ? left.file.displayPath : left.path).localeCompare(
+        right.ok ? right.file.displayPath : right.path,
+      ),
+    );
+    entries.push(...globEntries);
   }
 
-  return {
-    ok: true,
-    selection: {
-      files: Array.from(fileMap.values()),
-      skipped,
-      blockedByDeny,
-      ignoredByPolicy,
-    },
-  };
+  request.signal?.throwIfAborted();
+  return { entries, blockedByDeny, ignoredByPolicy };
 }

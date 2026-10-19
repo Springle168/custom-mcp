@@ -1,9 +1,8 @@
 export const TOOL_NAMES = Object.freeze([
   'replace_text',
   'write_file',
-  'read_many_files',
+  'read',
   'discover_guidelines',
-  'read_file',
   'android_assembleDebug',
   'android_testDebugUnitTest',
 ] as const);

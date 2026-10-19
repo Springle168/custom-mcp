@@ -2,8 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ignore from 'ignore';
-import readFileTool from '../../src/tools/built-in/files/read-file.js';
-import readManyFilesTool from '../../src/tools/built-in/files/read-many-files.js';
+import readTool from '../../src/tools/built-in/files/read.js';
 import replaceTool from '../../src/tools/built-in/files/replace.js';
 import writeFileTool from '../../src/tools/built-in/files/write-file.js';
 import {
@@ -102,8 +101,8 @@ async function testPolicyCandidateShape(): Promise<void> {
 }
 
 async function testDotDotPrefixedDirectoryRemainsInsideRoot(): Promise<void> {
-  const readResult = await readFileTool.handler(
-    { file_path: '..cache/valid.txt' },
+  const readResult = await readTool.handler(
+    { include: ['..cache/valid.txt'] },
     createContext(),
     createTestToolInvocationContext(),
   );
@@ -126,8 +125,8 @@ async function testDotDotPrefixedDirectoryRemainsInsideRoot(): Promise<void> {
 }
 
 async function testLiteralReadDenyAndIgnoreBypass(): Promise<void> {
-  const denied = await readFileTool.handler(
-    { file_path: 'denied/secret.txt' },
+  const denied = await readTool.handler(
+    { include: ['denied/secret.txt'] },
     createContext({ deny: ['denied/**'] }),
     createTestToolInvocationContext(),
   );
@@ -136,7 +135,7 @@ async function testLiteralReadDenyAndIgnoreBypass(): Promise<void> {
   assertIncludes(deniedText, 'file access deny policy', 'Deny should be explicit');
   assertNotIncludes(deniedText, 'secret-value', 'Denied content must not be returned');
 
-  const ignoredLiteral = await readManyFilesTool.handler(
+  const ignoredLiteral = await readTool.handler(
     {
       include: ['ignored/soft.txt'],
       exclude: ['ignored/**'],
@@ -157,8 +156,8 @@ async function testRealpathDenyCannotBeBypassedBySymlink(): Promise<void> {
     process.platform === 'win32' ? 'junction' : 'dir',
   );
 
-  const result = await readFileTool.handler(
-    { file_path: 'alias-dir/secret.txt' },
+  const result = await readTool.handler(
+    { include: ['alias-dir/secret.txt'] },
     createContext({ deny: ['denied/**'] }),
     createTestToolInvocationContext(),
   );
@@ -170,7 +169,7 @@ async function testRealpathDenyCannotBeBypassedBySymlink(): Promise<void> {
 }
 
 async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
-  const filtered = await readManyFilesTool.handler(
+  const filtered = await readTool.handler(
     { include: ['**/*.txt'], use_ignore_files: true },
     createContext({ ignore: ['ignored/**'] }),
     createTestToolInvocationContext(),
@@ -188,11 +187,11 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
   );
   assertIncludes(
     filteredText,
-    'NOTE: Some glob-discovered paths were filtered by configured ignoreFiles rules.',
+    'Some glob-discovered paths were filtered by configured ignoreFiles rules.',
     'Mixed results should disclose configured ignore filtering',
   );
 
-  const unfiltered = await readManyFilesTool.handler(
+  const unfiltered = await readTool.handler(
     { include: ['**/*.txt'], use_ignore_files: false },
     createContext({ ignore: ['ignored/**'] }),
     createTestToolInvocationContext(),
@@ -209,7 +208,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
     'Disabled ignore filtering should not emit the ignore note',
   );
 
-  const excluded = await readManyFilesTool.handler(
+  const excluded = await readTool.handler(
     {
       include: ['**/*.txt'],
       exclude: ['ignored/**'],
@@ -224,14 +223,18 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
     'Per-call excludes should not emit the ignore note',
   );
 
-  const onlyIgnored = await readManyFilesTool.handler(
+  const onlyIgnored = await readTool.handler(
     { include: ['ignored/**/*.txt'], use_ignore_files: true },
     createContext({ ignore: ['ignored/**'] }),
     createTestToolInvocationContext(),
   );
   assert(onlyIgnored.isError === true, 'An all-ignored glob should use the normal error');
   const onlyIgnoredText = getResultText(onlyIgnored);
-  assertIncludes(onlyIgnoredText, 'No files matched', 'All-ignored results should remain generic');
+  assertIncludes(
+    onlyIgnoredText,
+    'Selected content: 0 lines, 0 bytes.',
+    'All-ignored results should remain generic',
+  );
   assertNotIncludes(
     onlyIgnoredText,
     'filtered by configured ignoreFiles rules',
@@ -242,7 +245,7 @@ async function testGlobIgnoreToggleAndNoBuiltInDefaults(): Promise<void> {
 async function testLongBraceExcludePreservesFiltering(): Promise<void> {
   // Many literal brace groups inside a comma set previously overflowed parseCommaParts.
   const longExclude = `{${'{a}'.repeat(6000)},b}`;
-  const result = await readManyFilesTool.handler(
+  const result = await readTool.handler(
     {
       include: ['allowed/**/*.txt'],
       exclude: [longExclude, 'allowed/sub/*.{txt,md}'],
@@ -263,7 +266,7 @@ async function testLongBraceExcludePreservesFiltering(): Promise<void> {
 }
 
 async function testGlobDenyMixedResultPrivacy(): Promise<void> {
-  const result = await readManyFilesTool.handler(
+  const result = await readTool.handler(
     { include: ['**/*.txt'], use_ignore_files: false },
     createContext({ deny: ['denied/'] }),
     createTestToolInvocationContext(),
@@ -272,7 +275,7 @@ async function testGlobDenyMixedResultPrivacy(): Promise<void> {
   const text = getResultText(result);
   assertIncludes(
     text,
-    'NOTE: Some paths were blocked by the file access deny policy.',
+    'Some paths were blocked by the file access deny policy.',
     'Mixed results should contain the fixed disclosure',
   );
   assertNotIncludes(text, 'secret.txt', 'Denied paths must not be disclosed');
@@ -281,7 +284,7 @@ async function testGlobDenyMixedResultPrivacy(): Promise<void> {
 
 async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
   const context = createContext({ deny: ['denied/'] });
-  const automaticOnly = await readManyFilesTool.handler(
+  const automaticOnly = await readTool.handler(
     { include: ['**/secret.txt'] },
     context,
     createTestToolInvocationContext(),
@@ -289,7 +292,7 @@ async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
   assert(automaticOnly.isError === true, 'A zero-result glob should use the normal error');
   assertIncludes(
     getResultText(automaticOnly),
-    'No files matched',
+    'Selected content: 0 lines, 0 bytes.',
     'Zero result should remain generic',
   );
   assertNotIncludes(
@@ -298,7 +301,7 @@ async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
     'A zero-result glob should not disclose automatic deny state',
   );
 
-  const staticBase = await readManyFilesTool.handler(
+  const staticBase = await readTool.handler(
     { include: ['denied/**/*.txt'] },
     context,
     createTestToolInvocationContext(),
@@ -316,6 +319,111 @@ async function testGlobDenyZeroResultAndStaticBasePrivacy(): Promise<void> {
   );
 }
 
+async function testReadNotesAndFailureIsolation(): Promise<void> {
+  const context = createContext({ ignore: ['ignored/'], deny: ['denied/'] });
+  const result = await readTool.handler(
+    {
+      include: [
+        'denied/**/*.txt',
+        '**/*.txt',
+        { file_path: 'ignored/soft.txt' },
+        { file_path: 'denied/secret.txt' },
+      ],
+      shallow_read: true,
+    },
+    context,
+    createTestToolInvocationContext(),
+  );
+  assert(
+    result.isError === false,
+    'Denied selectors do not prevent unrelated successful fragments',
+  );
+  assertEqual(
+    result.content.length,
+    3,
+    'Shallow preserves both explicit failures and omits successful bodies',
+  );
+  const summary = result.content[0];
+  assert(summary?.type === 'text', 'The first block must be the read summary');
+  assertIncludes(summary.text, 'Notes:', 'Policy disclosures share one Notes section');
+  for (const note of [
+    'Some glob-discovered paths were filtered by configured ignoreFiles rules.',
+    'Some paths were blocked by the file access deny policy.',
+  ]) {
+    assertEqual(summary.text.split(note).length - 1, 1, 'Each policy note appears at most once');
+  }
+  assertIncludes(
+    summary.text,
+    'include[0] denied/**/*.txt: failed.',
+    'Static-base denial retains its selector index',
+  );
+  assertIncludes(
+    summary.text,
+    'include[2] ignored\\soft.txt: lines 1-1 of 1',
+    'Literal objects bypass configured ignore',
+  );
+  assertIncludes(
+    summary.text,
+    'include[3] denied/secret.txt: failed.',
+    'Explicit denied objects keep the caller-provided path',
+  );
+  assertNotIncludes(
+    getResultText(result),
+    'secret-value',
+    'Policy failures never disclose denied content',
+  );
+
+  const literalOnly = await readTool.handler(
+    { include: ['ignored/soft.txt', { file_path: 'ignored/soft.txt' }] },
+    context,
+    createTestToolInvocationContext(),
+  );
+  assert(literalOnly.isError === false, 'Ignored literals and objects remain readable');
+  assertNotIncludes(
+    getResultText(literalOnly),
+    'Notes:',
+    'Literal bypass does not query or report matching ignore rules',
+  );
+
+  const allFailed = await readTool.handler(
+    {
+      include: [
+        '**/soft.txt',
+        { file_path: 'allowed/visible.txt', start_line: 99 },
+        { file_path: 'denied/secret.txt' },
+      ],
+    },
+    context,
+    createTestToolInvocationContext(),
+  );
+  assert(allFailed.isError === true, 'All-failed fragments produce a read error');
+  assertNotIncludes(
+    getResultText(allFailed),
+    'filtered by configured ignoreFiles rules',
+    'Ignore disclosure requires a successful fragment',
+  );
+  assertIncludes(
+    getResultText(allFailed),
+    'Some paths were blocked by the file access deny policy.',
+    'Explicit deny remains disclosed without successes',
+  );
+
+  const hiddenAndFailed = await readTool.handler(
+    { include: ['**/secret.txt', { file_path: 'allowed/visible.txt', start_line: 99 }] },
+    context,
+    createTestToolInvocationContext(),
+  );
+  assert(
+    hiddenAndFailed.isError === true,
+    'Automatic deny with an invalid fragment still has no successes',
+  );
+  assertNotIncludes(
+    getResultText(hiddenAndFailed),
+    'Notes:',
+    'Automatic deny is not disclosed without successful content',
+  );
+}
+
 async function testGlobDoesNotFollowDiscoveredDirectoryLinks(): Promise<void> {
   const aliasPath = path.join(FIXTURES_DIR, 'alias-discovered');
   await fs.symlink(
@@ -324,7 +432,7 @@ async function testGlobDoesNotFollowDiscoveredDirectoryLinks(): Promise<void> {
     process.platform === 'win32' ? 'junction' : 'dir',
   );
 
-  const result = await readManyFilesTool.handler(
+  const result = await readTool.handler(
     { include: ['alias-*/visible.txt'] },
     createContext(),
     createTestToolInvocationContext(),
@@ -332,7 +440,7 @@ async function testGlobDoesNotFollowDiscoveredDirectoryLinks(): Promise<void> {
   assert(result.isError === true, 'A wildcard-discovered directory link should be pruned');
   assertIncludes(
     getResultText(result),
-    'No files matched',
+    'Selected content: 0 lines, 0 bytes.',
     'Pruned links should look like no match',
   );
   assertNotIncludes(getResultText(result), 'visible', 'The linked file must not be discovered');
@@ -346,7 +454,7 @@ async function testGlobAllowsLinksInExplicitStaticBasePrefix(): Promise<void> {
     process.platform === 'win32' ? 'junction' : 'dir',
   );
 
-  const result = await readManyFilesTool.handler(
+  const result = await readTool.handler(
     { include: ['alias-explicit/sub/**/*.txt'] },
     createContext(),
     createTestToolInvocationContext(),
@@ -465,6 +573,10 @@ async function main(): Promise<void> {
       {
         name: 'glob deny zero-result and static-base privacy',
         run: testGlobDenyZeroResultAndStaticBasePrivacy,
+      },
+      {
+        name: 'read Notes conditions, object bypass, and selector failure isolation',
+        run: testReadNotesAndFailureIsolation,
       },
       {
         name: 'glob does not follow discovered directory links',

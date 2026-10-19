@@ -747,7 +747,7 @@ async function testRuntimeOnlyMetadataStaysOutOfIdentityAndToolContext(): Promis
   await resetFixtures();
   await writeGlobalConfig(
     globalConfig({
-      tools: { enabled: ['read_file'] },
+      tools: { enabled: ['read'] },
     }),
   );
 

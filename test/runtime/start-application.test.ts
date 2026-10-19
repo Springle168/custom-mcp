@@ -58,7 +58,7 @@ async function testApplicationComposesSelectedServiceAndClosesResources(): Promi
         host: '127.0.0.1',
         port,
         lineEnding: 'auto',
-        tools: { enabled: ['read_file'] },
+        tools: { enabled: ['read'] },
       },
     ],
   });
@@ -87,7 +87,7 @@ async function testApplicationComposesSelectedServiceAndClosesResources(): Promi
       const listed = await client.listTools();
       assertEqual(
         listed.tools.map((tool) => tool.name).join(','),
-        'read_file',
+        'read',
         'Selected exposure must be shared by every session',
       );
       const hidden = await client.callTool({ name: 'write_file', arguments: {} });

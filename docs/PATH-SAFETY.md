@@ -18,7 +18,7 @@
 - Android 构建工具不使用 `otherRootDirs`；`android.workspaceRoot` 也不会自动加入 allowed roots。
 - 服务日志目录 `logsDir` 不属于 allowed roots，即使配置在 workspace 外也不会扩大文件工具访问边界。
 
-`src/utils/paths.ts` 负责路径分类、allowed-root lexical 匹配和 canonical root；`src/utils/file-access-policy.ts` 在其上组合 policy candidate、root-specific ignore/deny、realpath 检查和受控 glob 遍历。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；策略文件由 `src/config/file-access-policy.ts` 严格读取并编译。Runtime snapshot 为 selected workspace 保存统一的 `FileAccessPolicyContext`。四个文件工具只通过 `ToolRuntimeContext.fileAccessPolicyContext` 消费文件访问能力，不自行遍历 `otherRootDirs`、读取策略文件或组合 deny 顺序。
+`src/utils/paths.ts` 负责路径分类、allowed-root lexical 匹配和 canonical root；`src/utils/file-access-policy.ts` 在其上组合 policy candidate、root-specific ignore/deny、realpath 检查和受控 glob 遍历。配置文件中的 path-like 字段先由 `src/config/path-policy.ts` 执行 typed path existing-directory 输入校验；策略文件由 `src/config/file-access-policy.ts` 严格读取并编译。Runtime snapshot 为 selected workspace 保存统一的 `FileAccessPolicyContext`。文件类工具只通过 `ToolRuntimeContext.fileAccessPolicyContext` 消费文件访问能力，不自行遍历 `otherRootDirs`、读取策略文件或组合 deny 顺序。
 
 ---
 
@@ -82,7 +82,7 @@
 
 ## glob 流程
 
-`read_many_files` 的 include 项既可能是字面路径，也可能是 glob。处理顺序是：
+`read` 的字符串 `include` 项和 `discover_guidelines` 的 `include` 项可以是字面路径或 glob；`read` 的 object 请求始终按 literal 文件处理。字符串 selector 的处理顺序是：
 
 1. 先尝试作为字面路径进入普通路径安全流程。
 2. 已存在且是文件的字面路径按文件处理。
@@ -123,17 +123,18 @@ glob static base 通过后，glob segment 中仍不能包含会在展开后形�
 
 ### ignore / exclude 语义
 
-`read_many_files` 的软过滤只作用于 glob 自动发现结果：
+`read` 和 `discover_guidelines` 的软过滤只作用于 glob 自动发现结果：
 
-| 输入类型 | 是否受 exclude 影响 |
+| 输入类型 | 发现过滤 |
 |-|-|
 | relative literal | ignore：否；exclude：否 |
 | drive-absolute literal | ignore：否；exclude：否 |
+| `read` literal object | ignore：否；exclude：否 |
 | relative glob | ignore：由 `use_ignore_files` 控制；exclude：是 |
 | slash-leading glob | ignore：由 `use_ignore_files` 控制；exclude：是 |
 | drive-absolute glob | ignore：由 `use_ignore_files` 控制；exclude：是 |
 
-`ignoreFiles` 使用 Gitignore 语义并与 matched root 关联；`exclude` 使用 `glob` 包的 glob pattern 语义。两者都在 deny 后、去重和排序前执行。没有硬编码默认 ignore。
+`ignoreFiles` 使用 Gitignore 语义并与 matched root 关联；`exclude` 使用 `glob` 包的 glob pattern 语义。两者只过滤通过访问校验的自动候选，不抹去已产生的非 deny 选择失败。选择层按输入顺序保留候选与失败，每条 glob 内按显示路径排序，并保留 `includeIndex`；去重和 `read` 的 object 覆盖由对应工具负责。没有硬编码默认 ignore。
 
 ### deny 语义
 

@@ -78,7 +78,7 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
         host: '127.0.0.1',
         port,
         lineEnding: 'auto',
-        tools: { enabled: ['read_file', 'read_many_files'] },
+        tools: { enabled: ['read', 'write_file'] },
         rules: {
           requestHeaders: {
             onInitialize: [
@@ -118,7 +118,7 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
       },
       {
         'x-session-tools': JSON.stringify({
-          toolList: ['read_file', 'private-unexposed-tool-sentinel'],
+          toolList: ['read', 'private-unexposed-tool-sentinel'],
         }),
         'x-session-instructions': JSON.stringify({ instructions: INSTRUCTIONS }),
       },
@@ -145,14 +145,14 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
     const tools = ListToolsResultSchema.parse(responseResult(list.message)).tools;
     assertEqual(
       tools.map((tool) => tool.name).join(','),
-      'read_file',
+      'read',
       'Production prepare hook must restrict session view',
     );
 
     for (const [id, name, args] of [
-      [3, 'read_file', { file_path: path.join(ROOT_DIR, 'sample.txt') }],
-      [4, 'read_many_files', {}],
-      [5, 'read_file', {}],
+      [3, 'read', { include: [path.join(ROOT_DIR, 'sample.txt')] }],
+      [4, 'write_file', { file_path: 'sample.txt', content: 'not admitted' }],
+      [5, 'read', {}],
     ] as const) {
       const called = await post(
         url,
@@ -181,7 +181,7 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
       if (id === 4)
         assertIncludes(
           JSON.stringify(result.content),
-          'Unknown tool: read_many_files',
+          'Unknown tool: write_file',
           'Session restriction must apply to calls',
         );
     }
@@ -194,8 +194,8 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
         id: 6,
         method: 'tools/call',
         params: {
-          name: 'read_file',
-          arguments: { file_path: path.join(ROOT_DIR, 'sample.txt') },
+          name: 'read',
+          arguments: { include: [path.join(ROOT_DIR, 'sample.txt')] },
         },
       },
       { ...sessionHeaders, 'x-session-tools': '{broken' },

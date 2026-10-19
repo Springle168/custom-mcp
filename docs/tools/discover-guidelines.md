@@ -4,7 +4,7 @@
 
 `discover_guidelines` 从 Markdown 文件开头的 YAML Front Matter 返回指南名称、用途描述和文件路径，不读取或返回 Markdown 正文。调用方可以先用该工具发现候选指南，再通过环境中的文件读取工具读取需要使用的正文。
 
-工具复用 `src/utils/file-selection.ts` 的 literal path、glob、allowed roots、deny、ignore、exclude、realpath、去重和显示路径语义。Front Matter 解析由无文件 I/O 的 `src/engine/guideline-front-matter.ts` 承担。
+工具复用 `src/utils/file-selection.ts` 的 literal path、glob、allowed roots、deny、ignore、exclude、realpath 和显示路径语义。选择层保留带 `includeIndex` 的有序候选与失败，文件去重由工具自身负责；Front Matter 解析由无文件 I/O 的 `src/engine/guideline-front-matter.ts` 承担。
 
 ## Schema
 
@@ -37,9 +37,9 @@ Input Schema 拒绝未知字段，并保证 `include` 至少包含一个非空�
 
 ## 有界读取与并发
 
-文件选择完成后，工具按真实读取路径排序，再过滤 Markdown 候选。单次调用：
+工具按 `include` 声明顺序选择，每条 glob 内按显示路径排序；按安全检查后的真实文件身份去重，保留首次出现的位置和显示路径，再过滤 Markdown 候选，不执行全局路径排序。单次调用：
 
-- 最多检查排序后的前 100 个 Markdown 文件；
+- 最多检查前 100 个去重后的 Markdown 文件，失败不从后续候选补位，超限通过 `note` 报告；
 - 每个文件最多读取开头 64 KiB；
 - 以 4 KiB 块读取，识别 closing delimiter 后不再继续读取后续正文；
 - 最多使用 8 个 worker 并发检查；
@@ -48,7 +48,7 @@ Input Schema 拒绝未知字段，并保证 `include` 至少包含一个非空�
 
 closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指南。正文不会传给 YAML parser，也不会进入工具结果。
 
-调用取消后不再调度新文件；已开始的有界读取完成关闭流程后，调用返回工具错误，不返回可能被误认为完整结果的部分集合。
+并发调度使用 `src/utils/bounded-workers.ts` 的 `mapWithWorkers()`，按输入位置收集结果。取消或不可继续的内部异常后停止领取新任务，等待所有已启动任务完成关闭流程后再返回整次错误，不返回可能被误认为完整结果的部分集合。
 
 ## 返回值
 
@@ -71,7 +71,7 @@ closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指
 3. mixed deny、mixed ignore；
 4. selector-local skipped 或单文件检查失败。
 
-只要公共文件选择整体成功，selector-local skipped、单文件读取失败和空发现都返回 `isError: false`。参数错误、公共选择整体拒绝、取消和意外内部异常返回 `isError: true`。
+显式文件、glob static base 和 glob 成员的非 deny 选择失败按输入来源隔离，其他 selector 继续。正常完成时，选择失败、单文件检查失败和空发现都返回 `isError: false`，包括仅有显式 deny 的调用；参数错误、取消和不可继续的内部异常返回 `isError: true`。
 
 策略与读取失败说明使用固定通用文本，不泄露调用方没有显式提供的 real path。`exclude` 是调用方显式筛选，不额外生成说明。
 
@@ -80,9 +80,10 @@ closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指
 | 文件 | 职责 |
 |-|-|
 | `src/tools/built-in/guidelines/discover-guidelines.definition.ts` | 工具 description、Input Schema 和稳定资源上限 |
-| `src/tools/built-in/guidelines/discover-guidelines.ts` | 公共文件选择接入、有界读取、worker 调度、取消和结果汇总 |
+| `src/tools/built-in/guidelines/discover-guidelines.ts` | 公共选择接入、真实文件去重、Markdown 筛选、有界前缀读取、取消和结果汇总 |
 | `src/engine/guideline-front-matter.ts` | delimiter 提取、YAML AST 校验和元数据投影 |
-| `src/utils/file-selection.ts` | literal / glob 选择、allowed roots、deny、ignore、exclude、realpath、去重和显示路径 |
+| `src/utils/file-selection.ts` | 带输入下标的有序 literal / glob 候选与失败、allowed roots、deny、ignore、exclude、realpath 和显示路径 |
+| `src/utils/bounded-workers.ts` | 有限并发、稳定结果位置、取消/异常停止调度与 drain |
 | `test/discover-guidelines/guideline-front-matter.test.ts` | 纯 Front Matter 与 YAML 边界 |
 | `test/discover-guidelines/discover-guidelines.test.ts` | 工具契约、文件选择、资源上限、并发、取消和隐私 |
 

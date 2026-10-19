@@ -689,13 +689,13 @@ async function testLoadsExternalRoutingConfigFromV2ToolConfig(): Promise<void> {
 
 async function testRejectsExternalRouteForBuiltInOverride(): Promise<void> {
   await resetFixtures();
-  await writeJson(FIRST_DEFINITION_FILE, definition('read_file'));
+  await writeJson(FIRST_DEFINITION_FILE, definition('read'));
   await writeJson(ENDPOINT_CONFIG_FILE, externalEndpointConfig());
   await writeJson(
     EXTERNAL_ROUTING_CONFIG_FILE,
     externalRoutingConfig([
       {
-        definitionId: 'read-file-override',
+        definitionId: 'read-override',
         routingMode: 'http',
         httpEndpointConfigFile: ENDPOINT_CONFIG_FILE,
         routingStrategy: directRoutingStrategy(),
@@ -704,14 +704,12 @@ async function testRejectsExternalRouteForBuiltInOverride(): Promise<void> {
   );
   await writeJson(
     TOOL_CONFIG_FILE,
-    toolConfig([reference('read-file-override', FIRST_DEFINITION_FILE)], {
+    toolConfig([reference('read-override', FIRST_DEFINITION_FILE)], {
       externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,
     }),
   );
 
-  const error = captureConfigError(() =>
-    loadCustomToolConfig(TOOL_CONFIG_FILE, new Set(['read_file'])),
-  );
+  const error = captureConfigError(() => loadCustomToolConfig(TOOL_CONFIG_FILE, new Set(['read'])));
   assertEqual(
     error.configFilePath,
     EXTERNAL_ROUTING_CONFIG_FILE,

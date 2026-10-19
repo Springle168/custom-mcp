@@ -9,9 +9,8 @@
 ```text
 docs/tools/
 ├── replace-text.md      # replace_text 工具文档
-├── read-file.md         # read_file 工具文档
+├── read.md              # read 工具文档
 ├── write-file.md        # write_file 工具文档
-├── read-many-files.md   # read_many_files 工具文档
 ├── discover-guidelines.md # discover_guidelines 工具文档
 └── android-build.md     # Android 构建工具文档
 ```
@@ -23,9 +22,8 @@ docs/tools/
 | 工具名 | 功能 | 文档 |
 |-|-|-|
 | `replace_text` | 按输入顺序批量执行文件局部替换，支持 default 精确字面匹配与显式 JavaScript regex | [docs/tools/replace-text.md](tools/replace-text.md) |
-| `read_many_files` | 批量读取多个文本文件，支持相对路径、位于 allowed roots 内的 drive-absolute 路径和 glob 模式 | [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `read` | 按 literal 路径或 glob 读取文本，支持逐请求行号/正则范围、行号前缀和 shallow 统计 | [docs/tools/read.md](tools/read.md) |
 | `discover_guidelines` | 从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文 | [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
-| `read_file` | 读取单个文本文件，支持行号或逐行正则范围和可选行号前缀 | [docs/tools/read-file.md](tools/read-file.md) |
 | `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
 | `android_assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，支持 quiet/plain 控制和按需失败日志 | [docs/tools/android-build.md](tools/android-build.md) |
 | `android_testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，失败时可聚合本次生成的 JUnit XML | [docs/tools/android-build.md](tools/android-build.md) |
@@ -48,8 +46,7 @@ src/tools/
 ├── results.ts                       # textErrorResult 单文本块错误 helper
 ├── built-in/                        # 内置工具按功能分组，definition 与 handler 共置
 │   ├── files/                       # 文件读取、写入与替换
-│   │   ├── read-file.ts
-│   │   ├── read-many-files.ts
+│   │   ├── read.ts
 │   │   ├── replace.ts
 │   │   ├── write-file.ts
 │   │   └── *.definition.ts
@@ -78,8 +75,9 @@ src/tools/
 | `src/engine/android-gradle-output.ts` | Android Gradle 输出解析，细节见 [docs/tools/android-build.md](tools/android-build.md) |
 | `src/engine/guideline-front-matter.ts` | 指南 Front Matter delimiter、YAML AST 与元数据校验，见 [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
 | `src/utils/paths.ts` | 文件类工具共享路径安全层，细节见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) |
-| `src/utils/file-selection.ts` | literal / glob 可读文件集合选择、discovery exclude 与 ignoreFiles 开关语义，细节见 [docs/tools/read-many-files.md](tools/read-many-files.md) 和 [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
-| `src/utils/file-read.ts` | 文本读取、二进制检测和截断逻辑，细节见 read 文件类工具文档 |
+| `src/utils/file-selection.ts` | literal / glob 有序候选与失败、输入下标、discovery exclude 与 ignoreFiles 开关；去重由调用工具负责，见 [read](tools/read.md) 和 [指南发现](tools/discover-guidelines.md) |
+| `src/engine/read-range.ts`, `src/utils/file-read.ts` | 纯范围定位和格式化、完整文本读取与二进制/大小保护，见 [read](tools/read.md) |
+| `src/utils/bounded-workers.ts` | 有限并发、按输入位置收集结果、取消/异常停止调度与已启动任务 drain，见 [read](tools/read.md) 和 [指南发现](tools/discover-guidelines.md) |
 | `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
 | `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
 | `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
@@ -124,23 +122,25 @@ catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保
 
 ### 步骤 1：创建 Tool definition
 
-在 `src/tools/built-in/` 的对应功能目录下创建 definition 模块，例如 `src/tools/built-in/files/read-file.definition.ts`：
+在 `src/tools/built-in/` 的对应功能目录下创建 definition 模块，例如 `src/tools/built-in/files/read.definition.ts`。以下片段只演示模块结构，`read` 的完整参数契约见[工具文档](tools/read.md)：
 
 ```typescript
 import type { MCPTool } from '../../types.js';
 
-export const READ_FILE_TOOL_DEFINITION = {
-  name: 'read_file',
+export const READ_TOOL_DEFINITION = {
+  name: 'read',
   description: '工具描述，这段文字会直接进入 AI 的上下文，是 prompt engineering 的一部分。',
   inputSchema: {
     type: 'object',
     properties: {
-      file_path: {
-        type: 'string',
+      include: {
+        type: 'array',
+        minItems: 1,
+        items: { type: 'string', minLength: 1 },
         description: '参数描述，同样会被 AI 看到。',
       },
     },
-    required: ['file_path'],
+    required: ['include'],
     additionalProperties: false,
   },
 } as const satisfies MCPTool['definition'];
@@ -150,15 +150,15 @@ definition 只承载 `name`、`description` 与 `inputSchema`，不携带 execut
 
 ### 步骤 2：创建工具文件
 
-在 definition 所在的功能目录下创建 handler 模块，例如 `src/tools/built-in/files/read-file.ts`：
+在 definition 所在的功能目录下创建 handler 模块，例如 `src/tools/built-in/files/read.ts`：
 
 ```typescript
 import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
 import type { ToolInvocationContext } from '../../../runtime/invocation/tool-invocation-context.js';
-import { READ_FILE_TOOL_DEFINITION } from './read-file.definition.js';
+import { READ_TOOL_DEFINITION } from './read.definition.js';
 import type { MCPTool, ToolCallResult } from '../../types.js';
 
-async function handleReadFile(
+async function handleRead(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
   invocation: ToolInvocationContext,
@@ -173,12 +173,12 @@ async function handleReadFile(
   };
 }
 
-const readFileTool: MCPTool = {
-  definition: READ_FILE_TOOL_DEFINITION,
-  handler: handleReadFile,
+const readTool: MCPTool = {
+  definition: READ_TOOL_DEFINITION,
+  handler: handleRead,
 };
 
-export default readFileTool;
+export default readTool;
 ```
 
 ### 步骤 3：登记 canonical 工具名
@@ -191,13 +191,11 @@ export default readFileTool;
 
 ```typescript
 import replaceTool from './built-in/files/replace.js';
-import readManyFilesTool from './built-in/files/read-many-files.js';
-import readFileTool from './built-in/files/read-file.js';  // ← 加这行
+import readTool from './built-in/files/read.js';  // ← 加这行
 
 const importedTools: readonly MCPTool[] = [
   replaceTool,
-  readManyFilesTool,
-  readFileTool,  // ← 加这行
+  readTool,  // ← 加这行
 ];
 ```
 
@@ -242,7 +240,7 @@ Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 pro
 - 工具的功能边界（能做什么、不能做什么）。
 - 参数的格式要求和约束。
 - 常见错误的预防提示。
-- 与其他工具的配合建议（如“先用 `read_file` 查看内容”）。
+- 与其他工具的配合建议（如“先用 `read` 查看内容”）。
 
 **应该避免的内容：**
 
@@ -309,7 +307,7 @@ MCP 客户端可能并发发送多个 `tools/call` 请求。并发策略按资�
 
 `replace_text` 的每个文件项单独持有一次文件锁，该锁覆盖文件项中的全部 replacements；每个 replacement 都重新检查并读取磁盘状态。重复路径文件项之间会释放并重新获取锁，不构成跨文件项事务。批量执行、部分成功和逐项结果细节见 [replace_text 工具文档](tools/replace-text.md)。
 
-**重要：** 只有涉及文件写入的工具需要使用 `withFileLock()`。只读工具（如 `read_many_files`）不需要加锁。
+**重要：** 只有涉及文件写入的工具需要使用 `withFileLock()`。只读工具（如 `read`）不需要加锁。
 
 ---
 
@@ -317,7 +315,7 @@ MCP 客户端可能并发发送多个 `tools/call` 请求。并发策略按资�
 
 | 现象 | 可能原因 | 解决方案 |
 |-|-|-|
-| 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read_file` 确认内容；regex 模式检查 JavaScript 正则 pattern |
+| 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read` 确认内容；regex 模式检查 JavaScript 正则 pattern |
 | 替换失败 `expected 1` 或 `matched_targets=N` | `target` 匹配了多处但未允许多匹配 | AI 需要提供更多上下文，或设置 `allow_multiple=true` |
 | 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确；相对输入需位于 primary `rootDir`，drive-absolute 输入需位于 allowed roots 内 |
 | 编译报类型错误 | SDK 版本更新导致接口变化 | 检查 `ToolCallResult` 是否需要补充字段 |

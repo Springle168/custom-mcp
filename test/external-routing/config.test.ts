@@ -558,7 +558,7 @@ async function testRejectsInvalidDefinitionBindings(): Promise<void> {
   assertIncludes(error.message, 'already bound', 'Duplicate bindings should be actionable');
 
   const builtInDefinition: readonly ExternalToolDefinitionBinding[] = Object.freeze([
-    Object.freeze({ definitionId: 'built-in-override', toolName: 'read_file', builtIn: true }),
+    Object.freeze({ definitionId: 'built-in-override', toolName: 'read', builtIn: true }),
   ]);
   await writeJson(
     EXTERNAL_ROUTING_CONFIG_FILE,
@@ -1031,7 +1031,7 @@ async function testEnforcesRouteModesAndCrossModeBindings(): Promise<void> {
   );
   error = captureConfigError(() =>
     loadExternalRoutingConfig(EXTERNAL_ROUTING_CONFIG_FILE, [
-      { definitionId: 'built-in-override', toolName: 'read_file', builtIn: true },
+      { definitionId: 'built-in-override', toolName: 'read', builtIn: true },
     ]),
   );
   assertEqual(

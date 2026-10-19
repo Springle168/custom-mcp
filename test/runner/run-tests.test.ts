@@ -23,7 +23,7 @@ const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const SAMPLE_TESTS = [
   'test/config/value-policy.test.ts',
   'test/config/workspace-selection.test.ts',
-  'test/read-file/read-file.test.ts',
+  'test/read/selection.test.ts',
   'test/runtime/request-context.test.ts',
 ];
 
@@ -91,14 +91,10 @@ function testSelectsRelativePathWithEitherSeparator(): void {
 }
 
 function testSelectsFileNameAndMultipleSelectors(): void {
-  const byFileName = selectAutomatedTests(SAMPLE_TESTS, ['read-file.test.ts']);
+  const byFileName = selectAutomatedTests(SAMPLE_TESTS, ['selection.test.ts']);
   const combined = selectAutomatedTests(SAMPLE_TESTS, ['config', 'runtime']);
 
-  assertEqual(
-    byFileName.join(','),
-    'test/read-file/read-file.test.ts',
-    'Should select by file name',
-  );
+  assertEqual(byFileName.join(','), 'test/read/selection.test.ts', 'Should select by file name');
   assertEqual(combined.length, 3, 'Should combine multiple selectors with OR semantics');
 }
 

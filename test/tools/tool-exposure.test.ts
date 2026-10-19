@@ -102,7 +102,7 @@ function testRegistryMatchesCanonicalNames(): void {
 
 function testOverrideAndCustomOnlyOrdering(): void {
   const readOverride = customDefinition(
-    'read_file',
+    'read',
     { type: 'object', properties: { alias: { type: 'string' } }, required: ['alias'] },
     'Workspace read contract',
     0,
@@ -122,7 +122,7 @@ function testOverrideAndCustomOnlyOrdering(): void {
     'custom.first,custom.second',
     'Custom-only tools should append in reference order',
   );
-  const effectiveRead = catalog.definitions.find((definition) => definition.name === 'read_file');
+  const effectiveRead = catalog.definitions.find((definition) => definition.name === 'read');
   assertEqual(
     effectiveRead?.description,
     'Workspace read contract',
@@ -139,20 +139,20 @@ function testExposureFiltersWithoutReordering(): void {
   const custom = customDefinition('custom_tool');
   const enabled = createCatalog({
     customDefinitions: [custom],
-    exposure: { mode: 'enable', names: ['custom_tool', 'read_file', 'replace_text'] },
+    exposure: { mode: 'enable', names: ['custom_tool', 'read', 'replace_text'] },
   });
   assertEqual(
     definitionNames(enabled.definitions).join(','),
-    'replace_text,read_file,custom_tool',
+    'replace_text,read,custom_tool',
     'Enabled selector should filter canonical/effective order rather than selector order',
   );
 
   const disabled = createCatalog({
     customDefinitions: [custom],
-    exposure: { mode: 'disable', names: ['read_file', 'custom_tool'] },
+    exposure: { mode: 'disable', names: ['read', 'custom_tool'] },
   });
   assert(
-    !definitionNames(disabled.definitions).includes('read_file'),
+    !definitionNames(disabled.definitions).includes('read'),
     'Disabled built-in should be removed',
   );
   assert(
@@ -162,7 +162,7 @@ function testExposureFiltersWithoutReordering(): void {
 }
 
 async function testOverrideUsesBothContracts(): Promise<void> {
-  const override = customDefinition('read_file', {
+  const override = customDefinition('read', {
     type: 'object',
     properties: { alias: { type: 'string' } },
     required: ['alias'],
@@ -171,7 +171,7 @@ async function testOverrideUsesBothContracts(): Promise<void> {
   const service = createWorkspaceToolService(createCatalog({ customDefinitions: [override] }));
 
   const effectiveFailure = await service.routeToolCall(
-    'read_file',
+    'read',
     {},
     createContext(),
     createInvocationContext(),
@@ -187,7 +187,7 @@ async function testOverrideUsesBothContracts(): Promise<void> {
   );
 
   const implementationFailure = await service.routeToolCall(
-    'read_file',
+    'read',
     { alias: 'x' },
     createContext(),
     createInvocationContext(),
@@ -597,7 +597,7 @@ async function testHiddenAndUnknownDoNotValidateOrExecute(): Promise<void> {
     createCatalog({
       customDefinitions: [custom],
       externalBindingsByDefinitionId: new Map([[custom.source.referenceId, externalExecutor]]),
-      exposure: { mode: 'enable', names: ['read_file'] },
+      exposure: { mode: 'enable', names: ['read'] },
     }),
   );
 

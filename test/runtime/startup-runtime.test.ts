@@ -195,7 +195,7 @@ async function testStartupCompilesCustomCatalogAndExposure(): Promise<void> {
     workspaces: [
       workspace('selected', ROOT_DIR, {
         toolConfigFile: TOOL_CONFIG_FILE,
-        enabled: ['read_file', 'custom_tool'],
+        enabled: ['read', 'custom_tool'],
       }),
     ],
   });
@@ -203,7 +203,7 @@ async function testStartupCompilesCustomCatalogAndExposure(): Promise<void> {
   const runtime = loadSelected();
   assertEqual(
     runtime.toolCatalog.definitions.map((definition) => definition.name).join(','),
-    'read_file,custom_tool',
+    'read,custom_tool',
     'Startup should expose built-in and custom-only definitions from one catalog',
   );
   assert(!('toolExposure' in runtime.snapshot), 'Runtime snapshot should not own exposure');
@@ -341,7 +341,7 @@ async function testConfiguredExternalRouteRejectsBuiltInOverride(): Promise<void
       {
         id: 'custom-tool',
         toolDefinitionFile: DEFINITION_FILE,
-        name: 'read_file',
+        name: 'read',
       },
     ],
     externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE,

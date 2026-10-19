@@ -2,8 +2,8 @@
   "version": 2,
   "definitions": [
     {
-      "id": "read-file-override",
-      "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/read-file.override.json"
+      "id": "read-override",
+      "toolDefinitionFile": "C:/Users/username/.custom-mcp/tools/custom-mcp/read.override.json"
     },
     {
       "id": "external-echo",

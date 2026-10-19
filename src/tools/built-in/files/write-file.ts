@@ -65,7 +65,7 @@ function getOmissionPlaceholderWarning(content: string): string | null {
     .join(', ');
   const more = placeholders.length > 3 ? ' and more' : '';
 
-  return `Warning: content contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete file content.`;
+  return `Warning: content contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read to verify and provide complete file content.`;
 }
 
 function normalizeLineEndings(content: string, lineEnding: '\r\n' | '\n'): string {

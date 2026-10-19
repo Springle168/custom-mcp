@@ -22,14 +22,14 @@
 ```text
 custom-mcp/test/
 ├── android-build/              # Android 构建工具测试，见 docs/tools/android-build.md
+├── bounded-workers/            # 有限并发、取消/异常停止调度与 drain，见 docs/tools/read.md
 ├── config/                     # 全局配置、workspace selection、env override 和 snapshot 测试，见 docs/CONFIG.md
 ├── fixtures/                   # 测试数据与运行期生成的 fixture 目录
 ├── helpers/                    # 测试辅助函数，如 runtime-config.ts
 ├── logger/                     # 日志自动化测试与人工视觉验证，见 docs/LOGGING.md
 ├── logs/                       # 测试日志输出目录
 ├── path-safety/                # 路径安全横向回归，见 docs/PATH-SAFETY.md
-├── read-file/                  # read_file 工具测试，见 docs/tools/read-file.md
-├── read-many-files/            # read_many_files 工具测试，见 docs/tools/read-many-files.md
+├── read/                       # read 工具与范围引擎测试，见 docs/tools/read.md
 ├── replace-text/               # replace_text 工具测试，见 docs/tools/replace-text.md
 ├── runner/                     # 统一测试 runner 的发现、筛选与失败继续回归
 ├── runtime/                    # 应用启动/关闭、ConfigStore、request policy、tool-call handler 和 HTTP/MCP wiring 测试

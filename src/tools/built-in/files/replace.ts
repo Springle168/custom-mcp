@@ -271,7 +271,7 @@ function getOmissionPlaceholderWarning(target: string, replacement: string): str
     .join(', ');
   const more = replacementPlaceholders.length > 3 ? ' and more' : '';
 
-  return `Warning: replacement contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read_file to verify and provide complete replacement text.`;
+  return `Warning: replacement contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read to verify and provide complete replacement text.`;
 }
 
 function getInvalidRegexReplacementWarning(
@@ -279,7 +279,7 @@ function getInvalidRegexReplacementWarning(
   invalidReplacementSyntax: boolean,
 ): string | null {
   if (matchMode !== 'regex' || !invalidReplacementSyntax) return null;
-  return "Warning: replacement contains '$!' not followed by digits. In regex mode only $!n capture references are expanded; the suspicious syntax was written literally. Verify the result with read_file.";
+  return "Warning: replacement contains '$!' not followed by digits. In regex mode only $!n capture references are expanded; the suspicious syntax was written literally. Verify the result with read.";
 }
 
 function getRegexFlagsWarning(matchMode: MatchMode, regexFlags: string | undefined): string | null {
@@ -487,7 +487,7 @@ async function executeReplacement(
         return replacementResult(
           replacement,
           false,
-          `${writeError} The file may have been truncated, partially written, or fully written; use read_file to verify its actual content.`,
+          `${writeError} The file may have been truncated, partially written, or fully written; use read to verify its actual content.`,
           { file_line_count: { previous: 0, current: currentLineCount } },
         );
       }
@@ -508,7 +508,7 @@ async function executeReplacement(
     return replacementResult(
       replacement,
       false,
-      `File not found: ${filePath}. Verify the path with read_file, or in default mode use an empty target only when you intend to create a missing file.`,
+      `File not found: ${filePath}. Verify the path with read, or in default mode use an empty target only when you intend to create a missing file.`,
       { file_line_count: { previous: 0, current: 0 } },
     );
   }
@@ -567,7 +567,7 @@ async function executeReplacement(
     const note =
       matchMode === 'regex'
         ? `No regex matches found for target in ${filePath}. Verify the JavaScript RegExp pattern against the file content.`
-        : `No matches found for target in ${filePath}. Use read_file to verify exact content, whitespace, indentation, and context.`;
+        : `No matches found for target in ${filePath}. Use read to verify exact content, whitespace, indentation, and context.`;
     return buildMatchedFailure(replacement, note, previousLineCount, calculation, currentContent);
   }
 
@@ -618,7 +618,7 @@ async function executeReplacement(
     return replacementResult(
       replacement,
       false,
-      `${writeError} The file may have been truncated, partially written, or fully written; use read_file to verify its actual content.`,
+      `${writeError} The file may have been truncated, partially written, or fully written; use read to verify its actual content.`,
       {
         matched_targets: calculation.matchedTargets,
         replacement_count: 0,

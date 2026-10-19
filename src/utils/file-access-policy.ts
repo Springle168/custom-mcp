@@ -437,7 +437,13 @@ export async function expandFileAccessGlob(
       }
       continue;
     }
-    if (target.target.kind === 'file') files.push(target.target);
+    if (target.target.kind === 'file') {
+      files.push(target.target);
+    } else {
+      // A glob member can become a directory after nodir enumeration. Keep its
+      // failed file request rather than silently losing the selected candidate.
+      skipped.push({ path: safeEntry.path.displayPath, reason: 'not a file' });
+    }
   }
 
   return {

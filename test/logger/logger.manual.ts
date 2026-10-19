@@ -232,18 +232,18 @@ await withFixedNow(fixedNow, async () => {
   );
 
   // 测试 3: 失败结果
-  const readManyFilesContext = demoLogContext('call_read_many_files_demo');
+  const readContext = demoLogContext('call_read_demo');
   logger.logToolCall(
-    'read_many_files',
+    'read',
     {
       include: ['src/**/*.ts', 'config.json'],
       exclude: ['**/*.test.ts'],
     },
-    readManyFilesContext,
+    readContext,
   );
 
   logger.logToolResult(
-    'read_many_files',
+    'read',
     {
       content: [
         {
@@ -254,7 +254,7 @@ await withFixedNow(fixedNow, async () => {
       isError: true,
     },
     12,
-    readManyFilesContext,
+    readContext,
   );
 
   // 测试 4: 嵌套 JSON
