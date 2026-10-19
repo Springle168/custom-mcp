@@ -83,7 +83,8 @@ Each object keeps its declared position and replaces all default whole-file requ
 - true: Omit successful bodies.
 - positive integer: Include all successful bodies only when their combined UTF-8 size is at most this many bytes; otherwise omit them all.
 
-Statistics and per-request failures are always returned.`,
+Statistics and per-request failures are always returned.
+Keep numeric thresholds at or below the recommended 50 KiB batch size unless larger output is intentional.`,
       },
       show_line_numbers: {
         type: 'boolean',
