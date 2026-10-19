@@ -96,7 +96,7 @@ function createSpyService(): {
 } {
   const definitions = Object.freeze([
     {
-      name: 'read_file' as const,
+      name: 'read' as const,
       description: 'Spy read tool',
       inputSchema: { type: 'object' },
     },
@@ -158,7 +158,7 @@ function createRichResultService(): WorkspaceToolService {
     getDefinitions() {
       return [
         {
-          name: 'read_file',
+          name: 'read',
           description: 'Rich result test tool',
           inputSchema: { type: 'object' },
         },
@@ -220,7 +220,7 @@ async function testListAndCallUsePassedService(): Promise<void> {
     assertEqual(listResult.tools.length, 1, 'tools/list should return the service definitions');
     assertEqual(
       listResult.tools[0]?.name,
-      'read_file',
+      'read',
       'tools/list should preserve definition contents',
     );
     assert(
@@ -345,7 +345,7 @@ async function testCustomOnlyToolListsValidatesAndReturnsUnavailable(): Promise<
 async function testRichResultSurvivesMCPRoundTrip(): Promise<void> {
   const pair = await connectServer(createRichResultService());
   try {
-    const result = await pair.client.callTool({ name: 'read_file', arguments: {} });
+    const result = await pair.client.callTool({ name: 'read', arguments: {} });
     assert(
       'content' in result && Array.isArray(result.content),
       'MCP rich result should use the standard content response shape',
@@ -394,7 +394,7 @@ async function testStructuredContentDupRichResultSurvivesMCPRoundTrip(): Promise
   try {
     const result = await runWithRequestHeaderContext(
       createStrictRequestHeaderView(['X-Client', 'android-studio']),
-      () => pair.client.callTool({ name: 'read_file', arguments: {} }),
+      () => pair.client.callTool({ name: 'read', arguments: {} }),
     );
     assert(
       'content' in result && Array.isArray(result.content),

@@ -72,9 +72,10 @@ custom-mcp/
 | `src/engine/text-utils.ts` | 文本/行尾符共享语义见 [docs/TOOLS.md](TOOLS.md)，具体工具使用见对应单工具文档 |
 | `src/engine/android-gradle-output.ts` | [docs/tools/android-build.md](tools/android-build.md) |
 | `src/engine/guideline-front-matter.ts` | [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
-| `src/utils/paths.ts`, `src/utils/file-access-policy.ts`, `src/utils/file-selection.ts` | allowed-root 路径分类、统一 ignore/deny 文件访问策略与可读文件集合选择见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) 和 [docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `src/utils/paths.ts`, `src/utils/file-access-policy.ts`, `src/utils/file-selection.ts` | allowed-root 路径分类、统一 ignore/deny 文件访问策略与可读文件集合选择见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) 和 [docs/tools/read.md](tools/read.md) |
 | `src/utils/android-gradle-gate.ts`, `src/utils/android-gradle.ts` | Android workspace FIFO、queued/active cancellation、Gradle execution settle/drain 与 bounded recovery 见 [docs/tools/android-build.md](tools/android-build.md) |
-| `src/utils/file-read.ts` | [docs/tools/read-file.md](tools/read-file.md)、[docs/tools/read-many-files.md](tools/read-many-files.md) |
+| `src/engine/read-range.ts`, `src/utils/file-read.ts` | 纯文本范围定位与格式化、完整 UTF-8 文本读取和二进制/大小保护，见 [docs/tools/read.md](tools/read.md) |
+| `src/utils/bounded-workers.ts` | 有限并发、稳定结果顺序、取消/异常停止调度与 drain，见 [docs/tools/read.md](tools/read.md) 和 [指南发现](tools/discover-guidelines.md) |
 | `src/utils/file-lock.ts` | [docs/TOOLS.md](TOOLS.md) 的并发模型，以及写入类工具文档 |
 | `src/utils/http-url.ts` | HTTP bind host 的 IPv6 host:port 格式和 MCP endpoint URL 生成，见 [workspace 配置](config/workspace-config.md) |
 | `src/utils/logger.ts` | [docs/LOGGING.md](LOGGING.md) |

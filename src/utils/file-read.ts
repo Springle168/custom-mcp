@@ -1,13 +1,7 @@
 import * as fs from 'node:fs/promises';
 import { extname } from 'node:path';
 
-/** Maximum number of lines to include from a single text file. */
-export const MAX_LINES_PER_FILE = 2000;
-
-/** Maximum characters per line. Longer lines are truncated with a marker. */
-export const MAX_LINE_LENGTH = 2000;
-
-/** Maximum file size in megabytes. Larger files are skipped entirely. */
+/** Maximum source file size in MiB, including for range reads. */
 export const MAX_FILE_SIZE_MB = 20;
 
 /**
@@ -107,11 +101,8 @@ const TEXT_EXTENSIONS = new Set([
   '.diff',
 ]);
 
-/**
- * Known binary file extensions. Exported so the tool layer can generate
- * glob exclude patterns from them.
- */
-export const BINARY_EXTENSIONS = new Set([
+/** Known binary extensions are rejected without probing content. */
+const BINARY_EXTENSIONS = new Set([
   // Executables & Libraries
   '.exe',
   '.dll',
@@ -195,45 +186,9 @@ export const BINARY_EXTENSIONS = new Set([
   '.dex',
 ]);
 
-export interface TextFileContent {
-  /** File content (after truncation if applicable). */
-  content: string;
-  /** Original file size in bytes. */
-  sizeBytes: number;
-  /** Whether content was truncated by line-count or line-length limits. */
-  isTruncated: boolean;
-  /** Whether the selected line range intentionally excludes part of the file. */
-  isPartialRead: boolean;
-  /** Whether content was truncated by the configured line-count limit. */
-  lineLimitTruncated: boolean;
-  /** Backward-compatible alias for line-count limit truncation. */
-  lineCountTruncated: boolean;
-  /** Whether any returned line was shortened due to line length limits. */
-  lineLengthTruncated: boolean;
-  /** Total lines in the original file. */
-  originalLineCount: number;
-  /** Number of lines included in `content`. */
-  linesRead: number;
-  /** First original line number included in `content` (1-based). */
-  startLine: number;
-  /** Last original line number included in `content` (1-based). */
-  endLine: number;
-}
-
-export interface ReadTextFileOptions {
-  /** Optional 1-based line number to start reading from. */
-  startLine?: number;
-  /** Optional 1-based line number to end reading at, inclusive. */
-  endLine?: number;
-  /** Prefix each returned line with its original 1-based line number. */
-  showLineNumbers?: boolean;
-  /** Maximum number of lines to return. Use null to disable this limit. */
-  maxLines?: number | null;
-  /** Maximum characters per returned line. Use null to disable this limit. */
-  maxLineLength?: number | null;
-}
-
-export type TextFileResult = ({ ok: true } & TextFileContent) | { ok: false; reason: string };
+export type TextFileResult =
+  | { readonly ok: true; readonly lines: readonly string[] }
+  | { readonly ok: false; readonly reason: string };
 
 /**
  * Determines whether a file is likely binary.
@@ -286,109 +241,38 @@ export async function isBinaryFile(filePath: string): Promise<boolean> {
 }
 
 /**
- * Reads a text file with optional automatic truncation for large content.
- *
- * - Files exceeding {@link MAX_FILE_SIZE_MB} are rejected.
- * - Lines beyond the configured line limit are dropped.
- * - Individual lines longer than the configured line length are truncated with a marker.
- *
- * The caller should check {@link isBinaryFile} before calling this function.
+ * Loads one complete UTF-8 source for all requests in a call. Range selection and
+ * formatting are pure operations on these lines, never a second content read.
+ * The caller supplies a real path approved by the file access policy.
  */
-export async function readTextFile(
-  filePath: string,
-  options: ReadTextFileOptions = {},
-): Promise<TextFileResult> {
+export async function readTextFile(filePath: string, signal: AbortSignal): Promise<TextFileResult> {
+  signal.throwIfAborted();
   try {
     const stats = await fs.stat(filePath);
-
-    if (stats.isDirectory()) {
-      return { ok: false, reason: 'path is a directory' };
+    if (!stats.isFile()) {
+      return { ok: false, reason: 'not a regular file' };
     }
-
-    const sizeMB = stats.size / (1024 * 1024);
-    if (sizeMB > MAX_FILE_SIZE_MB) {
-      return {
-        ok: false,
-        reason: `exceeds ${MAX_FILE_SIZE_MB}MB size limit (${sizeMB.toFixed(1)}MB)`,
-      };
+    if (stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      return { ok: false, reason: `exceeds ${MAX_FILE_SIZE_MB} MiB size limit` };
     }
-
-    const raw = await fs.readFile(filePath, 'utf-8');
-    const lines = raw.split(/\r?\n/);
-    const originalLineCount = lines.length;
-    const maxLines = options.maxLines === undefined ? MAX_LINES_PER_FILE : options.maxLines;
-    const maxLineLength =
-      options.maxLineLength === undefined ? MAX_LINE_LENGTH : options.maxLineLength;
-
-    if (options.startLine !== undefined && options.startLine > originalLineCount) {
-      return {
-        ok: false,
-        reason: `start_line ${options.startLine} exceeds file line count (${originalLineCount})`,
-      };
+    signal.throwIfAborted();
+    if (await isBinaryFile(filePath)) {
+      return { ok: false, reason: 'binary file' };
     }
-
-    let sliceStart = 0;
-    let sliceEnd = originalLineCount;
-
-    if (options.startLine !== undefined || options.endLine !== undefined) {
-      sliceStart = options.startLine !== undefined ? options.startLine - 1 : 0;
-      sliceEnd =
-        options.endLine !== undefined
-          ? Math.min(options.endLine, originalLineCount)
-          : originalLineCount;
-    }
-
-    const actualStart = Math.min(sliceStart, originalLineCount);
-    const requestedEnd = Math.max(actualStart, sliceEnd);
-    const lineLimitEnd =
-      maxLines === null ? requestedEnd : Math.min(actualStart + maxLines, requestedEnd);
-    const actualEnd = Math.min(lineLimitEnd, originalLineCount);
-    const selectedLines = lines.slice(actualStart, actualEnd);
-    const isPartialRead = actualStart > 0 || actualEnd < originalLineCount;
-    const lineLimitTruncated = actualEnd < requestedEnd;
-
-    const truncationSuffix = '... [truncated]';
-    let lineLengthTruncated = false;
-    const formattedLines = selectedLines.map((line, index) => {
-      const lineNumberPrefix =
-        options.showLineNumbers === true ? `${actualStart + index + 1}: ` : '';
-
-      if (maxLineLength !== null && line.length + lineNumberPrefix.length > maxLineLength) {
-        lineLengthTruncated = true;
-        const contentLengthLimit = Math.max(0, maxLineLength - lineNumberPrefix.length);
-        const prefixLength = Math.max(0, contentLengthLimit - truncationSuffix.length);
-        line = line.substring(0, prefixLength) + truncationSuffix;
-        if (line.length > contentLengthLimit) {
-          line = line.substring(0, contentLengthLimit);
-        }
-      }
-
-      return `${lineNumberPrefix}${line}`;
-    });
-
-    const linesRead = selectedLines.length;
-    const startLine = linesRead > 0 ? actualStart + 1 : actualStart + 1;
-    const endLine = linesRead > 0 ? actualStart + linesRead : actualStart;
-
-    return {
-      ok: true,
-      content: formattedLines.join('\n'),
-      sizeBytes: stats.size,
-      isTruncated: lineLimitTruncated || lineLengthTruncated,
-      isPartialRead,
-      lineLimitTruncated,
-      lineCountTruncated: lineLimitTruncated,
-      lineLengthTruncated,
-      originalLineCount,
-      linesRead,
-      startLine,
-      endLine,
-    };
-  } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') {
-      return { ok: false, reason: 'file not found' };
-    }
-    return { ok: false, reason: error.message ?? String(err) };
+    signal.throwIfAborted();
+    const raw = await fs.readFile(filePath, { encoding: 'utf8', signal });
+    signal.throwIfAborted();
+    return { ok: true, lines: raw.split(/\r?\n/) };
+  } catch (error: unknown) {
+    signal.throwIfAborted();
+    // A real path can differ from the caller's display path; do not echo OS paths.
+    const code = (error as NodeJS.ErrnoException).code;
+    const reason =
+      code === 'ENOENT'
+        ? 'file not found'
+        : code === 'EACCES' || code === 'EPERM'
+          ? 'file access failed: permission denied'
+          : 'file could not be read';
+    return { ok: false, reason };
   }
 }

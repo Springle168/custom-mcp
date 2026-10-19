@@ -8,7 +8,12 @@ import {
   parseGuidelineFrontMatter,
   type GuidelineMetadata,
 } from '../../../engine/guideline-front-matter.js';
-import { selectReadableFiles, type SelectedReadableFile } from '../../../utils/file-selection.js';
+import {
+  fileIdentityKey,
+  selectReadableFiles,
+  type SelectedReadableFile,
+} from '../../../utils/file-selection.js';
+import { mapWithWorkers } from '../../../utils/bounded-workers.js';
 import {
   DISCOVER_GUIDELINES_TOOL_DEFINITION,
   MAX_GUIDELINE_FILES,
@@ -166,34 +171,6 @@ async function inspectGuidelineFile(
   return result;
 }
 
-async function inspectFilesWithWorkerLimit(
-  files: readonly SelectedReadableFile[],
-  signal: AbortSignal,
-  inspector: GuidelineFileInspector,
-): Promise<readonly (FileInspectionResult | undefined)[]> {
-  const results: Array<FileInspectionResult | undefined> = new Array(files.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (!signal.aborted) {
-      const index = nextIndex;
-      if (index >= files.length) {
-        return;
-      }
-      nextIndex += 1;
-      const file = files[index];
-      if (!file) {
-        return;
-      }
-      results[index] = await inspector(file, signal);
-    }
-  }
-
-  const workerCount = Math.min(MAX_GUIDELINE_READ_WORKERS, files.length);
-  await Promise.all(Array.from({ length: workerCount }, async () => worker()));
-  return results;
-}
-
 function successPayload(
   guidelines: readonly DiscoveredGuideline[],
   notes: readonly string[],
@@ -217,32 +194,35 @@ async function discoverGuidelines(
   }
 
   try {
-    const selectionResult = await selectReadableFiles({
+    const { entries, blockedByDeny, ignoredByPolicy } = await selectReadableFiles({
       pathSelectors: args.include as string[],
       discoveryExcludePatterns: (args.exclude as string[] | undefined) ?? [],
       respectIgnoreFiles: (args.use_ignore_files as boolean | undefined) ?? false,
       fileAccessPolicyContext: context.fileAccessPolicyContext,
+      signal: invocation.signal,
     });
-    if (!selectionResult.ok) {
-      return textErrorResult(selectionResult.reason);
-    }
     if (invocation.signal.aborted) {
       return textErrorResult(CANCELLED_MESSAGE);
     }
 
-    const { files, skipped, blockedByDeny, ignoredByPolicy } = selectionResult.selection;
-    const sortedFiles = [...files].sort((left, right) =>
-      left.readPath.localeCompare(right.readPath),
-    );
-    const markdownFiles = sortedFiles.filter(
-      (file) => extname(file.readPath).toLowerCase() === '.md',
-    );
+    const files: SelectedReadableFile[] = [];
+    const seenFiles = new Set<string>();
+    const skipped = entries.filter((entry) => !entry.ok);
+    for (const entry of entries) {
+      if (!entry.ok) continue;
+      const identity = fileIdentityKey(entry.file.readPath);
+      if (seenFiles.has(identity)) continue;
+      seenFiles.add(identity);
+      files.push(entry.file);
+    }
+    const markdownFiles = files.filter((file) => extname(file.readPath).toLowerCase() === '.md');
     const filesLimited = markdownFiles.length > MAX_GUIDELINE_FILES;
     const inspectedFiles = markdownFiles.slice(0, MAX_GUIDELINE_FILES);
-    const inspectionResults = await inspectFilesWithWorkerLimit(
+    const inspectionResults = await mapWithWorkers(
       inspectedFiles,
+      MAX_GUIDELINE_READ_WORKERS,
       invocation.signal,
-      inspector,
+      (file) => inspector(file, invocation.signal),
     );
     if (invocation.signal.aborted) {
       return textErrorResult(CANCELLED_MESSAGE);
@@ -284,7 +264,7 @@ async function discoverGuidelines(
         `Only the first ${MAX_GUIDELINE_FILES} matched Markdown files were inspected. Use more specific selectors for a complete result.`,
       );
     }
-    if (files.length > 0 && blockedByDeny) {
+    if ((files.length > 0 && blockedByDeny) || skipped.some((entry) => entry.denied)) {
       notes.push('Some paths were blocked by the file access deny policy.');
     }
     if (files.length > 0 && ignoredByPolicy) {
@@ -316,7 +296,6 @@ async function handleDiscoverGuidelines(
 export const discoverGuidelinesInternalForTests = Object.freeze({
   discoverGuidelines,
   inspectGuidelineFile,
-  inspectFilesWithWorkerLimit,
   readBoundedPrefix,
 });
 

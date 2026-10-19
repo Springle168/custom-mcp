@@ -1,0 +1,52 @@
+{
+  "name": "read",
+  "description": "Reads whole text files from literal paths and glob patterns. Use shallow_read to inspect selected content sizes before requesting bodies.",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "include": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "Literal file paths or glob patterns. This override accepts whole-file string requests only."
+      },
+      "exclude": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "Additional glob patterns that filter automatically discovered files, not literal paths."
+      },
+      "use_ignore_files": {
+        "type": "boolean",
+        "description": "Whether configured ignoreFiles rules filter glob results. Defaults to true; literal paths bypass ignore rules."
+      },
+      "shallow_read": {
+        "oneOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        ],
+        "description": "False includes successful bodies; true omits them. A positive integer includes all successful bodies only when their combined UTF-8 size is within that byte limit. Statistics and failures are always returned."
+      },
+      "show_line_numbers": {
+        "type": "boolean",
+        "description": "Prefix returned content lines with their original 1-based line numbers. Defaults to false."
+      }
+    },
+    "required": [
+      "include"
+    ],
+    "additionalProperties": false
+  }
+}

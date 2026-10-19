@@ -38,7 +38,7 @@ function testMissingAndEmptyDefaultToAll(): void {
 function testToolConfigAndSelectorsCanCoexist(): void {
   const enabled = parse({
     toolConfigFile: 'E:/config/tool-config.json',
-    enabled: ['read_file', 'workspace.custom-tool'],
+    enabled: ['read', 'workspace.custom-tool'],
   });
   assertEqual(
     enabled.toolConfigFile,
@@ -48,7 +48,7 @@ function testToolConfigAndSelectorsCanCoexist(): void {
   assertEqual(enabled.exposure.mode, 'enable', 'enabled should select enable mode');
   assertEqual(
     enabled.exposure.mode === 'all' ? '' : enabled.exposure.names.join(','),
-    'read_file,workspace.custom-tool',
+    'read,workspace.custom-tool',
     'Selectors should accept built-in and not-yet-loaded custom names',
   );
 
@@ -129,7 +129,7 @@ function testContainerAndArrayTypesAreStrict(): void {
     assertEqual(error.fieldPath, 'tools', 'Non-object tools should belong to tools');
   }
 
-  const error = captureError({ enabled: 'read_file' });
+  const error = captureError({ enabled: 'read' });
   assertEqual(error.fieldPath, 'tools.enabled', 'Non-array selector should identify enabled');
   assertIncludes(
     error.message,

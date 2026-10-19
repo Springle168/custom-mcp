@@ -144,7 +144,7 @@ Initialize policy rejected: rules.requestHeaders.onInitialize[0]; invalid_json
 命中规则时，文件日志格式为：
 
 ```text
-[2026-07-05T10:20:30.000+08:00] → OK read_file (12ms)
+[2026-07-05T10:20:30.000+08:00] → OK read (12ms)
   Session: session_13a09d50-0000-4000-8000-000000000000
   Call ID: call_7c2c62a1-0000-4000-8000-000000000000
   Rules: matched rules.requestHeaders.onCallToolResult[0]; enabled structuredContentDup

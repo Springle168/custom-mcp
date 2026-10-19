@@ -112,7 +112,7 @@ function countOccurrences(text: string, substring: string): number {
 async function testMatchedRulesLineIsWritten(): Promise<void> {
   const logText = await writeAndReadLog('rules-matched', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       successResult(),
       12,
       resultLogContext(
@@ -135,7 +135,7 @@ async function testMatchedRulesLineIsWritten(): Promise<void> {
 async function testNoMatchRulesLineIsWritten(): Promise<void> {
   const logText = await writeAndReadLog('rules-no-match', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       successResult(),
       12,
       resultLogContext(metadata({ rulesConfigured: true })),
@@ -161,7 +161,7 @@ async function testInitializeOnlyRulesDoNotWriteRulesLine(): Promise<void> {
   );
   const logText = await writeAndReadLog('rules-initialize-only', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       successResult(),
       12,
       resultLogContext(toRequestHeaderPolicyLogMetadata(policy)),
@@ -178,7 +178,7 @@ async function testInitializeOnlyRulesDoNotWriteRulesLine(): Promise<void> {
 async function testUnconfiguredRulesDoNotWriteRulesLine(): Promise<void> {
   const logText = await writeAndReadLog('rules-unconfigured', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       successResult(),
       12,
       resultLogContext(metadata({ rulesConfigured: false })),
@@ -222,7 +222,7 @@ async function testSuccessAndFailureBothWriteRulesLine(): Promise<void> {
 async function testFileLogDoesNotContainAnsiEscapeCodes(): Promise<void> {
   const logText = await writeAndReadLog('rules-no-ansi', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       successResult(),
       12,
       resultLogContext(
@@ -274,7 +274,7 @@ async function testRulesLogDoesNotContainHeaderNamesOrValues(): Promise<void> {
 
   const logText = await writeAndReadLog('rules-privacy', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       successResult('safe result'),
       12,
       resultLogContext(toRequestHeaderPolicyLogMetadata(policy)),
@@ -369,7 +369,7 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
       }) as typeof process.stdout.write;
       const logger = new Logger(TEST_LOGS_DIR, { workspaceId: `rules-golden-${level}` });
       try {
-        logger.logToolResult('read_file', successResult(), 12, {
+        logger.logToolResult('read', successResult(), 12, {
           sessionId: 'session_golden',
           callId: 'call_golden',
           resultSummary: summary,
@@ -381,7 +381,7 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
       const normalizeTimestamp = (text: string) =>
         text.replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]/gu, '[timestamp]');
       const plainLog = [
-        '[timestamp] → OK read_file (12ms)',
+        '[timestamp] → OK read (12ms)',
         '  Session: session_golden',
         '  Call ID: call_golden',
         `  ${plainRules}`,
@@ -389,7 +389,7 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
         '',
       ].join('\n');
       const coloredLog = [
-        '\x1b[90m[timestamp]\x1b[39m \x1b[32m→ OK\x1b[39m \x1b[33mread_file\x1b[39m\x1b[90m (12ms)\x1b[39m',
+        '\x1b[90m[timestamp]\x1b[39m \x1b[32m→ OK\x1b[39m \x1b[33mread\x1b[39m\x1b[90m (12ms)\x1b[39m',
         '  \x1b[36mSession:\x1b[39m \x1b[35msession_golden\x1b[39m',
         '  \x1b[36mCall ID:\x1b[39m \x1b[35mcall_golden\x1b[39m',
         `  ${coloredRules}`,
@@ -432,7 +432,7 @@ async function testFormatterAndLoggerGoldenChannels(): Promise<void> {
 async function testStructuredContentProtocolFieldIsNotLogged(): Promise<void> {
   const logText = await writeAndReadLog('rules-structured-content', (logger) => {
     logger.logToolResult(
-      'read_file',
+      'read',
       {
         ...successResult('safe result text'),
         structuredContent: {
@@ -558,8 +558,8 @@ async function testToolCallIdentityIsWrittenForCallAndResult(): Promise<void> {
     resultSummary: formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })),
   };
   const logText = await writeAndReadLog('tool-call-identity', (logger) => {
-    logger.logToolCall('read_file', { file_path: 'src/index.ts' }, context);
-    logger.logToolResult('read_file', successResult(), 12, context);
+    logger.logToolCall('read', { include: ['src/index.ts'] }, context);
+    logger.logToolResult('read', successResult(), 12, context);
   });
 
   assertEqual(
@@ -581,8 +581,8 @@ async function testMissingSessionIsExplicitlyWritten(): Promise<void> {
     resultSummary: formatRequestHeaderPolicyLogSummary(metadata({ rulesConfigured: false })),
   };
   const logText = await writeAndReadLog('missing-session', (logger) => {
-    logger.logToolCall('read_file', {}, context);
-    logger.logToolResult('read_file', successResult(), 12, context);
+    logger.logToolCall('read', {}, context);
+    logger.logToolResult('read', successResult(), 12, context);
   });
 
   assertEqual(

@@ -20,7 +20,7 @@ function rules(initialization: boolean, results: boolean): RuntimeRulesConfig {
 
 const service: WorkspaceToolService = {
   getDefinitions: () => [
-    { name: 'read_file', description: 'Test tool', inputSchema: { type: 'object' } },
+    { name: 'read', description: 'Test tool', inputSchema: { type: 'object' } },
   ],
   routeToolCall: async () => ({ content: [{ type: 'text', text: 'ok' }], isError: false }),
 };

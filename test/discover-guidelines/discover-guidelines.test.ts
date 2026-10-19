@@ -18,6 +18,7 @@ import {
   type FileAccessPolicyQuery,
   type RootFileAccessPolicy,
 } from '../../src/utils/file-access-policy.js';
+import { mapWithWorkers } from '../../src/utils/bounded-workers.js';
 import type { SelectedReadableFile } from '../../src/utils/file-selection.js';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
@@ -183,7 +184,11 @@ async function testLiteralGlobSortingAndBodyPrivacy(): Promise<void> {
   assertNotIncludes(text, 'PRIVATE BODY CONTENT', 'Markdown body must not be returned');
   const value = payload(result);
   assertEqual(value.guidelines.length, 2, 'Only valid Markdown metadata should be returned');
-  assertEqual(value.guidelines[0]?.name, 'alpha', 'Results should follow stable real-path sorting');
+  assertEqual(
+    value.guidelines[0]?.name,
+    'alpha',
+    'Each glob should follow stable display-path sorting',
+  );
   assertEqual(
     value.guidelines[0]?.file_path,
     path.join('guides', 'a.MD'),
@@ -211,6 +216,20 @@ async function testAbsoluteAdditionalRootAndDeduplication(): Promise<void> {
     additionalFile,
     'Absolute selectors should retain absolute display paths',
   );
+}
+
+async function testIncludeOrderAndFirstIdentityWins(): Promise<void> {
+  const absoluteBeta = path.join(FIXTURES_DIR, 'guides', 'b.md');
+  const result = await discoverGuidelinesTool.handler(
+    { include: [absoluteBeta, 'guides/*', 'guides/b.md'] },
+    createContext(),
+    createTestToolInvocationContext(),
+  );
+  const value = payload(result);
+  assertEqual(value.guidelines.length, 2, 'Repeated identities should be inspected once');
+  assertEqual(value.guidelines[0]?.name, 'beta', 'The first selector wins over global sorting');
+  assertEqual(value.guidelines[0]?.file_path, absoluteBeta, 'The first display path is retained');
+  assertEqual(value.guidelines[1]?.name, 'alpha', 'A later glob expands at its own position');
 }
 
 async function testExcludeAndIgnoreSemantics(): Promise<void> {
@@ -292,7 +311,26 @@ async function testDenyAndSkippedPrivacyNotes(): Promise<void> {
     createContext({ deny: ['denied/**'] }),
     createTestToolInvocationContext(),
   );
-  assert(deniedLiteral.isError, 'A public selection-layer deny failure should remain an error');
+  assert(!deniedLiteral.isError, 'An explicit deny should be a successful empty discovery');
+  assertEqual(payload(deniedLiteral).guidelines.length, 0, 'Denied files cannot yield metadata');
+  assertIncludes(
+    payload(deniedLiteral).note,
+    'selected files could not be inspected',
+    'An explicit deny should retain a selector failure note',
+  );
+
+  const deniedAndValid = await discoverGuidelinesTool.handler(
+    { include: ['denied/secret.md', 'guides/b.md'] },
+    createContext({ deny: ['denied/**'] }),
+    createTestToolInvocationContext(),
+  );
+  assert(!deniedAndValid.isError, 'A denied selector should not fail readable peers');
+  assertEqual(payload(deniedAndValid).guidelines[0]?.name, 'beta', 'Readable peers survive deny');
+  assertNotIncludes(
+    getResultText(deniedAndValid),
+    'secret.md',
+    'Notes do not enumerate denied paths',
+  );
 }
 
 async function testEmptyDiscoveryStates(): Promise<void> {
@@ -397,6 +435,20 @@ async function testFileLimit(): Promise<void> {
     'The last inspected file should be index 99',
   );
   assertIncludes(value.note, 'Only the first 100', 'File limit should add a completeness note');
+
+  const ordered = await discoverGuidelinesTool.handler(
+    { include: ['guides/plain.txt', 'many/100.md', 'many/100.md', 'many/*.md'] },
+    createContext(),
+    createTestToolInvocationContext(),
+  );
+  const orderedValue = payload(ordered);
+  assertEqual(
+    orderedValue.guidelines.length,
+    MAX_GUIDELINE_FILES,
+    'The limit follows dedup and Markdown filtering',
+  );
+  assertEqual(orderedValue.guidelines[0]?.name, 'guide-100', 'An explicit first file stays first');
+  assertEqual(orderedValue.guidelines.at(-1)?.name, 'guide-98', 'Glob order fills remaining slots');
 }
 
 async function testWorkerLimitAndCancellation(): Promise<void> {
@@ -410,8 +462,9 @@ async function testWorkerLimitAndCancellation(): Promise<void> {
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const inspection = discoverGuidelinesInternalForTests.inspectFilesWithWorkerLimit(
+  const inspection = mapWithWorkers(
     files,
+    MAX_GUIDELINE_READ_WORKERS,
     new AbortController().signal,
     async () => {
       active += 1;
@@ -450,12 +503,72 @@ async function testWorkerLimitAndCancellation(): Promise<void> {
     },
   );
   await inspectionsStartedPromise;
+  let settled = false;
+  void resultPromise.then(() => {
+    settled = true;
+  });
   controller.abort();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assertEqual(settled, false, 'Cancellation must wait for already-started inspections to finish');
   releaseCancelled?.();
   const result = await resultPromise;
   assert(result.isError, 'Cancellation after reads start should be an error');
   assertIncludes(getResultText(result), 'cancelled', 'Cancellation should use stable error text');
   assertEqual(started, MAX_GUIDELINE_READ_WORKERS, 'Cancellation should stop scheduling new files');
+}
+
+async function testInternalFailureDrainsStartedInspections(): Promise<void> {
+  let releaseFailure!: () => void;
+  const failureGate = new Promise<void>((resolve) => {
+    releaseFailure = resolve;
+  });
+  let releasePeers!: () => void;
+  const peersGate = new Promise<void>((resolve) => {
+    releasePeers = resolve;
+  });
+  let allStarted!: () => void;
+  const startedGate = new Promise<void>((resolve) => {
+    allStarted = resolve;
+  });
+  let started = 0;
+  let cleaned = 0;
+  let settled = false;
+  const resultPromise = discoverGuidelinesInternalForTests.discoverGuidelines(
+    { include: ['many/*.md'] },
+    createContext(),
+    createTestToolInvocationContext(),
+    async () => {
+      const index = started++;
+      if (started === MAX_GUIDELINE_READ_WORKERS) allStarted();
+      try {
+        if (index === 0) {
+          await failureGate;
+          throw new Error('private internal detail');
+        }
+        await peersGate;
+        return { ok: true as const, metadata: null };
+      } finally {
+        cleaned += 1;
+      }
+    },
+  );
+  void resultPromise.then(() => {
+    settled = true;
+  });
+  await startedGate;
+  releaseFailure();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assertEqual(started, MAX_GUIDELINE_READ_WORKERS, 'Internal failure stops claiming files');
+  assertEqual(settled, false, 'The tool must not return before peer cleanup');
+  releasePeers();
+  const result = await resultPromise;
+  assertEqual(cleaned, MAX_GUIDELINE_READ_WORKERS, 'Every started inspector must settle');
+  assert(result.isError, 'Unexpected errors remain whole-call errors after drain');
+  assertNotIncludes(
+    getResultText(result),
+    'private internal detail',
+    'Internal details remain private',
+  );
 }
 
 async function testPrefixReadingStopsAfterClosingDelimiter(): Promise<void> {
@@ -526,6 +639,10 @@ await runTestSuite({
       run: testAbsoluteAdditionalRootAndDeduplication,
     },
     {
+      name: 'Include order and first actual identity win',
+      run: testIncludeOrderAndFirstIdentityWins,
+    },
+    {
       name: 'Exclude and ignore semantics match shared selection',
       run: testExcludeAndIgnoreSemantics,
     },
@@ -540,6 +657,10 @@ await runTestSuite({
     },
     { name: 'Markdown candidate limit is deterministic', run: testFileLimit },
     { name: 'Worker limit and cancellation stop scheduling', run: testWorkerLimitAndCancellation },
+    {
+      name: 'Internal failure drains started inspections',
+      run: testInternalFailureDrainsStartedInspections,
+    },
     {
       name: 'Prefix reading stops after the closing delimiter',
       run: testPrefixReadingStopsAfterClosingDelimiter,
