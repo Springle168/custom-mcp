@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import ignore from 'ignore';
 import {
   createFileAccessPolicyContext,
+  resolveFileAccessPath,
+  validateFileAccessReadTarget,
   type FileAccessPolicyQuery,
 } from '../../src/utils/file-access-policy.js';
 import {
@@ -288,6 +290,47 @@ async function testCancellationBoundaries(): Promise<void> {
   assert(checked > 0, 'The cancellation probe actually ran inside selection');
 }
 
+async function testLargeGlobRetainsCandidates(): Promise<void> {
+  const selectionRequest = request(['files/c.md', 'files/*.md', 'files/a.md']);
+  const policy = selectionRequest.fileAccessPolicyContext;
+  const safePath = resolveFileAccessPath('files/a.md', policy);
+  assert(safePath.ok, 'The controlled glob target passes lexical validation');
+  const target = await validateFileAccessReadTarget(safePath.path, policy);
+  assert(target.ok, 'The controlled glob target passes access validation');
+
+  // Model a large expansion without creating hundreds of thousands of disk files.
+  // Selection retains all occurrences; caller-specific limits apply afterwards.
+  const candidateCount = 150_000;
+  const result = await selectReadableFiles(selectionRequest, async (pattern, context) => {
+    assertEqual(pattern, 'files/*.md', 'Only the glob selector invokes the expander');
+    assertEqual(context, policy, 'The expander receives the original access policy');
+    return {
+      ok: true,
+      expansion: {
+        files: Array.from({ length: candidateCount }, () => target.target),
+        skipped: [],
+        blockedByDeny: false,
+      },
+    };
+  });
+
+  assertEqual(
+    result.entries.length,
+    candidateCount + 2,
+    'Large glob results remain intact for the caller to deduplicate and limit',
+  );
+  assertEqual(result.entries[0]?.includeIndex, 0, 'The preceding literal retains its position');
+  assert(
+    result.entries.slice(1, -1).every((entry) => entry.ok && entry.includeIndex === 1),
+    'All glob candidates retain their selector provenance',
+  );
+  assertEqual(
+    result.entries.at(-1)?.includeIndex,
+    2,
+    'A large glob does not prevent subsequent selectors from being processed',
+  );
+}
+
 await runTestSuite({
   title: 'Readable File Selection Tests',
   beforeAll: setup,
@@ -320,5 +363,9 @@ await runTestSuite({
       run: testIdentityAndAliasDisplayPaths,
     },
     { name: 'Cancellation is observed at selection boundaries', run: testCancellationBoundaries },
+    {
+      name: 'Large glob expansions do not exceed the function argument limit',
+      run: testLargeGlobRetainsCandidates,
+    },
   ],
 });

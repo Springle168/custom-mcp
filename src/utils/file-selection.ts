@@ -53,6 +53,7 @@ export function fileIdentityKey(realPath: string): string {
  */
 export async function selectReadableFiles(
   request: ReadableFileSelectionRequest,
+  expandGlob: typeof expandFileAccessGlob = expandFileAccessGlob,
 ): Promise<ReadableFileSelection> {
   const entries: ReadableFileSelectionEntry[] = [];
   let blockedByDeny = false;
@@ -110,7 +111,7 @@ export async function selectReadableFiles(
       }
     }
 
-    const result = await expandFileAccessGlob(item, request.fileAccessPolicyContext);
+    const result = await expandGlob(item, request.fileAccessPolicyContext);
     request.signal?.throwIfAborted();
     if (!result.ok) {
       const denied = result.code === 'deny_policy';
@@ -148,7 +149,8 @@ export async function selectReadableFiles(
         right.ok ? right.file.displayPath : right.path,
       ),
     );
-    entries.push(...globEntries);
+    // Broad globs can exceed V8's function argument limit when spread into push.
+    for (const entry of globEntries) entries.push(entry);
   }
 
   request.signal?.throwIfAborted();
