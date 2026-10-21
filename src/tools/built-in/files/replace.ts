@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
+import { classifyFileContent } from '../../../engine/file-content.js';
 import {
   calculateMatchedSpan,
   calculateRegexReplacement,
@@ -14,7 +15,7 @@ import {
   resolveLineEnding,
   detectOmissionPlaceholders,
 } from '../../../engine/text-utils.js';
-import { MAX_FILE_SIZE_MB, isBinaryFile } from '../../../utils/file-read.js';
+import { MAX_FILE_SIZE_MB } from '../../../utils/file-read.js';
 import {
   resolveFileAccessPath,
   validateFileAccessWriteTarget,
@@ -71,6 +72,7 @@ interface ValidationResult {
 }
 
 interface ReplaceDependencies {
+  classifyFileContent: typeof classifyFileContent;
   writeTextContent: (
     resolved: string,
     content: string,
@@ -300,6 +302,7 @@ function getRegexMultilineMatchWarning(
 async function readExistingTextFile(
   resolved: string,
   filePath: string,
+  dependencies: ReplaceDependencies,
 ): Promise<
   | {
       exists: true;
@@ -310,6 +313,7 @@ async function readExistingTextFile(
   | { exists: false }
   | { exists: null; error: string }
 > {
+  let bytes: Buffer;
   try {
     const stats = await fs.stat(resolved);
 
@@ -317,6 +321,13 @@ async function readExistingTextFile(
       return {
         exists: null,
         error: `Path ${filePath} is a directory. Provide a text file path instead.`,
+      };
+    }
+
+    if (!stats.isFile()) {
+      return {
+        exists: null,
+        error: `Path ${filePath} is not a regular file. Provide a text file path instead.`,
       };
     }
 
@@ -328,21 +339,7 @@ async function readExistingTextFile(
       };
     }
 
-    if (await isBinaryFile(resolved)) {
-      return {
-        exists: null,
-        error: `Cannot modify binary file: ${filePath}. Provide a text file path instead.`,
-      };
-    }
-
-    const raw = await fs.readFile(resolved, 'utf-8');
-    const content = normalizeTextLineEndings(raw);
-    return {
-      exists: true,
-      content,
-      detectedLineEnding: detectLineEnding(raw),
-      lineCount: countLines(content),
-    };
+    bytes = await fs.readFile(resolved);
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
     if (error.code === 'ENOENT') {
@@ -353,6 +350,33 @@ async function readExistingTextFile(
       error: formatFileReadinessError(filePath, error.message),
     };
   }
+
+  // Only filesystem operations can establish absence. A detector may also throw
+  // an ENOENT-shaped error, which must never authorize creation or report zero lines.
+  try {
+    const classification = await dependencies.classifyFileContent(bytes);
+    if (classification.kind !== 'text') {
+      return {
+        exists: null,
+        error: `Cannot modify non-text file: ${filePath} (content type: ${classification.kind}). Provide a text file path instead.`,
+      };
+    }
+  } catch {
+    // Detector errors may contain a real path; expose only the caller's path.
+    return {
+      exists: null,
+      error: formatFileReadinessError(filePath, 'file content classification failed'),
+    };
+  }
+
+  const raw = bytes.toString('utf-8');
+  const content = normalizeTextLineEndings(raw);
+  return {
+    exists: true,
+    content,
+    detectedLineEnding: detectLineEnding(raw),
+    lineCount: countLines(content),
+  };
 }
 
 async function writeTextContent(
@@ -392,6 +416,7 @@ async function recoverCurrentLineCount(
   safePath: SafePath,
   filePath: string,
   context: ToolRuntimeContext,
+  dependencies: ReplaceDependencies,
 ): Promise<number | null> {
   const safetyResult = await validateFileAccessWriteTarget(
     safePath,
@@ -399,7 +424,7 @@ async function recoverCurrentLineCount(
   );
   if (!safetyResult.ok) return null;
 
-  const recovered = await readExistingTextFile(safePath.resolvedPath, filePath);
+  const recovered = await readExistingTextFile(safePath.resolvedPath, filePath, dependencies);
   if (recovered.exists === true) return recovered.lineCount;
   if (recovered.exists === false) return 0;
   return null;
@@ -435,7 +460,7 @@ async function executeReplacement(
     return replacementResult(replacement, false, safetyResult.reason);
   }
 
-  const existingFile = await readExistingTextFile(safePath.resolvedPath, filePath);
+  const existingFile = await readExistingTextFile(safePath.resolvedPath, filePath, dependencies);
   if (existingFile.exists === null) {
     return replacementResult(replacement, false, existingFile.error);
   }
@@ -444,15 +469,6 @@ async function executeReplacement(
 
   if (!existingFile.exists) {
     if (matchMode === 'default' && target === '') {
-      if (await isBinaryFile(safePath.resolvedPath)) {
-        return replacementResult(
-          replacement,
-          false,
-          `Cannot create text content at binary-looking path: ${filePath}. Provide a text file path instead.`,
-          { file_line_count: { previous: 0, current: 0 } },
-        );
-      }
-
       const normalizedReplacement = normalizeTextLineEndings(replacementText);
       const lineEnding = resolveLineEnding(context.lineEnding, null);
       try {
@@ -483,7 +499,12 @@ async function executeReplacement(
         lineEnding,
       );
       if (writeError) {
-        const currentLineCount = await recoverCurrentLineCount(safePath, filePath, context);
+        const currentLineCount = await recoverCurrentLineCount(
+          safePath,
+          filePath,
+          context,
+          dependencies,
+        );
         return replacementResult(
           replacement,
           false,
@@ -614,7 +635,12 @@ async function executeReplacement(
     lineEnding,
   );
   if (writeError) {
-    const recoveredLineCount = await recoverCurrentLineCount(safePath, filePath, context);
+    const recoveredLineCount = await recoverCurrentLineCount(
+      safePath,
+      filePath,
+      context,
+      dependencies,
+    );
     return replacementResult(
       replacement,
       false,
@@ -692,6 +718,7 @@ export function createReplaceTextHandler(
   dependencies: Partial<ReplaceDependencies> = {},
 ): MCPTool['handler'] {
   const resolvedDependencies: ReplaceDependencies = {
+    classifyFileContent,
     writeTextContent,
     ...dependencies,
   };

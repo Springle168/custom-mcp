@@ -149,7 +149,7 @@ async function testDirectoryPathRejectedWithoutWriting(): Promise<void> {
   assertEqual(stat.isDirectory(), true, 'Directory target should remain a directory');
 }
 
-async function testKnownBinaryExtensionRejectedWithoutWriting(): Promise<void> {
+async function testNonTextContentRejectedWithoutWriting(): Promise<void> {
   await resetFixtures();
   const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
   const absolutePath = await writeFixture('image.png', bytes);
@@ -161,11 +161,11 @@ async function testKnownBinaryExtensionRejectedWithoutWriting(): Promise<void> {
   });
 
   const json = assertErrorResult(result);
-  assertNoSpan(json, 'Known binary extension should not have matched span');
+  assertNoSpan(json, 'Non-text content should not have matched span');
   await assertBinaryFileUnchanged(
     absolutePath,
     bytes,
-    'Known binary extension should remain byte-for-byte unchanged',
+    'Non-text content should remain byte-for-byte unchanged',
   );
 }
 
@@ -265,8 +265,8 @@ async function main(): Promise<void> {
         run: testDirectoryPathRejectedWithoutWriting,
       },
       {
-        name: 'Known binary extension rejected without writing',
-        run: testKnownBinaryExtensionRejectedWithoutWriting,
+        name: 'Non-text content rejected without writing',
+        run: testNonTextContentRejectedWithoutWriting,
       },
       {
         name: 'Binary content rejected without writing',

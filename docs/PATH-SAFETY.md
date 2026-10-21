@@ -76,7 +76,7 @@
 4. 匹配唯一 allowed root：relative 只允许 matched root 为 primary root；drive-absolute 可匹配 primary 或 additional root。
 5. 返回 `SafePath`，工具层使用 `SafePath.resolvedPath` 进行后续 I/O。
 
-第 4 步之前禁止执行文件系统 I/O，包括 `fs.stat()`、`fs.lstat()`、`fs.realpath()`、`fs.readFile()`、`fs.writeFile()`、`isBinaryFile()` 和 `glob()`。
+第 4 步之前禁止执行文件系统 I/O，包括 `fs.stat()`、`fs.lstat()`、`fs.realpath()`、`fs.readFile()`、`fs.writeFile()` 和 `glob()`。
 
 ---
 
@@ -171,7 +171,7 @@ lexical 校验只能保证路径字符串位于 matched root 内，不能保证�
 1. 做 lexical 路径安全与文件 candidate deny，得到 `SafePath.matchedRoot`。
 2. 对目标执行 `fs.realpath()` 并校验仍位于同一个 real root。
 3. 确认实际类型，按实际类型重新查询 lexical/real deny。
-4. 再执行工具自身的目录错误、二进制检测和文本读取。
+4. 再执行工具自身的文件类型、大小、完整字节读取及内容分类准入；共享[分类器](tools/read.md#内容分类规则)不自行打开路径。
 
 如果目标不存在，按工具语义返回不存在，不需要读取真实路径。
 

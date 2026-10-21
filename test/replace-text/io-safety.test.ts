@@ -78,7 +78,7 @@ async function testDirectoryPathRejected(): Promise<void> {
   assertJsonNoteIncludes(json, 'directory', 'Directory path note should explain the issue');
 }
 
-async function testKnownBinaryExtensionRejected(): Promise<void> {
+async function testNonTextContentWithPngExtensionRejected(): Promise<void> {
   await resetFixtures();
   const binaryContent = Buffer.from([0, 1, 2, 3, 4]);
   await writeFixture('image.png', binaryContent);
@@ -90,8 +90,8 @@ async function testKnownBinaryExtensionRejected(): Promise<void> {
   });
 
   const json = assertErrorResult(result);
-  assertNoSpan(json, 'Known binary path should have no span');
-  assertJsonNoteIncludes(json, 'binary', 'Known binary note should explain rejection');
+  assertNoSpan(json, 'Non-text content should have no span');
+  assertJsonNoteIncludes(json, 'non-text', 'Non-text note should explain rejection');
   const raw = await fs.readFile(fixturePath('image.png'));
   assertEqual(Buffer.compare(raw, binaryContent), 0, 'Binary file should remain unchanged');
 }
@@ -108,7 +108,7 @@ async function testContentDetectedBinaryRejected(): Promise<void> {
   });
 
   const json = assertErrorResult(result);
-  assertJsonNoteIncludes(json, 'binary', 'Content-detected binary note should explain rejection');
+  assertJsonNoteIncludes(json, 'non-text', 'Non-text note should explain rejection');
   const raw = await fs.readFile(fixturePath('binary.unknown'));
   assertEqual(
     Buffer.compare(raw, binaryContent),
@@ -242,7 +242,10 @@ async function main(): Promise<void> {
       },
       { name: 'Outside root path is rejected', run: testOutsideRootPathRejected },
       { name: 'Directory path is rejected', run: testDirectoryPathRejected },
-      { name: 'Known binary extension is rejected', run: testKnownBinaryExtensionRejected },
+      {
+        name: 'Non-text content with PNG extension is rejected',
+        run: testNonTextContentWithPngExtensionRejected,
+      },
       { name: 'Content-detected binary is rejected', run: testContentDetectedBinaryRejected },
       {
         name: 'Oversized file is rejected before write',

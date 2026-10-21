@@ -24,6 +24,7 @@ custom-mcp/test/
 ├── android-build/              # Android 构建工具测试，见 docs/tools/android-build.md
 ├── bounded-workers/            # 有限并发、取消/异常停止调度与 drain，见 docs/tools/read.md
 ├── config/                     # 全局配置、workspace selection、env override 和 snapshot 测试，见 docs/CONFIG.md
+├── file-content/               # 共享字节分类与格式样本，见 docs/tools/read.md
 ├── fixtures/                   # 测试数据与运行期生成的 fixture 目录
 ├── helpers/                    # 测试辅助函数，如 runtime-config.ts
 ├── logger/                     # 日志自动化测试与人工视觉验证，见 docs/LOGGING.md

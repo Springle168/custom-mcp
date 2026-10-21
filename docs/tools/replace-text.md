@@ -58,11 +58,11 @@ files[1].replacements[0]
 
 不同文件项不会在同一次 handler 调用内并行。每个文件项单独解析路径并获取一次 `withFileLock()` 文件锁，锁覆盖该项中的全部 replacements；文件项结束后释放锁。重复路径文件项分别获取锁，因此其它同路径调用可能在两个文件项之间执行。
 
-每个 replacement 都在文件项锁内重新执行写入目标安全校验、文件类型和大小检查、二进制检测与文本读取。成功 replacement 立即写回；后项从文件系统重新读取，不使用前项的内存内容。该边界保证：
+每个 replacement 都在文件项锁内重新执行写入目标安全校验、文件类型和大小检查、完整字节读取与共享[内容分类](read.md#内容分类规则)。只有 `text` 可以解码和修改，分类与解码复用同一份字节。成功 replacement 立即写回；后项从文件系统重新读取，不使用前项的内存内容。该边界保证：
 
 - 后项能看到前项实际写入的内容；
 - 前项计算或写入失败后，后项不会用陈旧缓存覆盖未知磁盘状态；
-- 前项把文件写成二进制或超过 `20MB` 后，后项会在自己的读取入口拒绝该文件；
+- 前项写出的内容不参与分类；若其包含 NUL 等非文本内容或超过 `20MB`，该项可成功，后项会在自己的读取入口拒绝；
 - 其它同路径调用不能插入一个文件项的两个 replacements 之间。
 
 整批调用不持有多个文件锁，不提供跨文件或跨文件项事务隔离。不同文件上的独立工具调用仍可并行。
@@ -75,7 +75,7 @@ files[1].replacements[0]
 
 `default` 把 `target` 和 `replacement` 作为普通文本处理。输入在匹配前规范化为 LF；缩进、空白和文本必须精确一致，不解释 replacement 特殊语法。
 
-空 `target` 仅在目标文件不存在时表示创建文本文件。文件已经存在时，空 target 失败。创建成功的 replacement 返回 `matched_targets=0`、`replacement_count=0`，并在 `note` 中说明文件已创建。
+空 `target` 仅在文件系统明确确认目标不存在时表示创建文件，允许任意后缀，不对输入字符串或写出字节分类。文件已经存在时，空 target 失败。创建成功的 replacement 返回 `matched_targets=0`、`replacement_count=0`，并在 `note` 中说明文件已创建。
 
 ### regex
 
@@ -153,7 +153,9 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 
 - 恢复读取成功时，`current` 返回实际行数；
 - 确认文件缺失时，`current=0`；
-- 无法安全读取时，`current=null`。
+- 无法安全读取、内容不是文本或分类异常时，`current=null`。
+
+分类与文件系统的缺失判断分离，探测器异常即使携带 `ENOENT` 也不能授权创建或使恢复状态成为 `0`。分类错误只报告受控文案，不暴露原始探测异常中的 realpath。
 
 恢复读取只报告状态，不把失败写入重新分类为成功。后续 replacement 仍从正常入口重新检查并读取文件。
 
@@ -163,7 +165,7 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 
 无匹配、多匹配但未启用 `allow_multiple`、no-op、非法正则和零长度 regex 匹配都不写入。单项失败后继续处理后续输入。
 
-文件级共享条件失败时，例如 lexical 路径解析失败、`regex_flags` 与模式冲突或 flags 非法，该文件项的每个 replacement 都生成失败结果。目录、二进制、超限、缺失和读取错误在每个 replacement 开始时重新判断。
+文件级共享条件失败时，例如 lexical 路径解析失败、`regex_flags` 与模式冲突或 flags 非法，该文件项的每个 replacement 都生成失败结果。目录、非文本内容、超限、缺失、读取错误和分类异常在每个 replacement 开始时重新判断。
 
 警告只附加到产生它的成功 replacement，不提升或跨项合并：
 
@@ -178,7 +180,7 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 - 所有 I/O 在 lexical 路径检查之后执行；
 - 每个 replacement 在读取入口和正式写入前检查目标；
 - 创建父目录后再次检查 same-root、deny 和实际目标；
-- 目录、符号链接、二进制路径/内容和初始大小超过 `20MB` 的文件被拒绝；
+- 目录、非普通文件、符号链接、已有非文本内容和初始大小超过 `20MB` 的文件被拒绝；实际文本使用 `.png`、`.bin` 等后缀也允许修改；
 - 一个 replacement 可以把小文件写到超过限制，后项会在下一次读取时拒绝；
 - 写回行尾符由 `ToolRuntimeContext.lineEnding` 决定，`auto` 保留已有主要行尾符，新文件使用 LF。
 
@@ -231,6 +233,7 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 ```text
 test/replace-text/
 ├── batch.test.ts                    # 顺序、部分成功、状态刷新、恢复读取和文件项锁
+├── content-classification.test.ts   # 内容准入、任意后缀、探测异常、非文本落盘与恢复
 ├── smoke.test.ts                    # 轻量回归入口
 ├── helpers.ts                       # fixture、批量结果断言和单项测试构造器
 ├── schema.test.ts                   # 嵌套 Schema、分层 description 和输出外壳
