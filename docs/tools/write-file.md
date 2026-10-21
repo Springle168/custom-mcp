@@ -6,7 +6,7 @@
 
 `write_file` 用于将完整的文本内容写入目标文件，支持自动创建缺失的父目录，并覆盖已存在文件。它适合新建文件或整文件重写；如果只是局部修改，仍应优先使用 `replace_text`。
 
-该工具只处理文本，不负责二进制文件写入。写入路径必须位于当前 `ToolRuntimeContext` 的 allowed roots 范围内；相对路径基于 primary `rootDir`，additional root 必须通过 drive-absolute 路径访问。
+该工具接受字符串内容，已有目标只允许覆盖符合共享[内容分类规则](read.md#内容分类规则)的文本；缺失目标可使用任意后缀创建。写入路径必须位于 `ToolRuntimeContext` 的 allowed roots 范围内；相对路径基于 primary `rootDir`，additional root 必须通过 drive-absolute 路径访问。
 
 ---
 
@@ -14,7 +14,7 @@
 
 ```text
 test/write-file/
-└── write-file.test.ts   # 创建、覆盖、行尾符、二进制拒绝、placeholder warning 和 symlink 写入保护
+└── write-file.test.ts   # 任意后缀创建/覆盖、内容准入、探测异常、行尾符、placeholder warning 和路径保护
 ```
 
 写入类工具的跨 root 和路径安全回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)；`replace_text` 的写入锁与行尾符并发回归见 [docs/tools/replace-text.md](replace-text.md)。
@@ -59,10 +59,12 @@ test/write-file/
 - 锁内查找最近存在祖先，将其 `realpath` 与剩余 lexical 路径组合为预计 real target，并执行 same-root 与 deny。
 - 已存在目标先按实际类型执行 lexical/realpath deny，再处理 symbolic link、目录和文件类型错误。
 - 创建缺失父目录后和正式写入前都重新执行写入安全与 deny。
-- 目标路径已存在时，会先读取文件并检测原始行尾；`lineEnding=auto` 时保留原始行尾风格。
-- 目标路径不存在时，`lineEnding=auto` 默认使用 LF。
+- 已有普通文件在锁内完整读取字节，按共享规则分类，仅 `text` 可继续；同一份字节用于 UTF-8 解码和行尾检测，`lineEnding=auto` 时保留原始行尾风格。
+- 文件不存在须由文件系统操作明确确认；该分支不分类路径或后缀，`lineEnding=auto` 默认使用 LF。分类异常即使携带 `ENOENT` 也只导致失败，不授权创建或覆盖。
+- `write_file` 没有 `read` / `replace_text` 的 20 MiB 读取上限。
+- 输入字符串和最终写出字节不参与分类，允许写出 NUL 等非文本内容；成功保持有效，后续调用按磁盘实际内容重新分类并可能拒绝。
 - 内容中如果包含疑似省略占位符，会继续写入并在成功消息后追加 Warning，提醒调用方确认是否为有意的文档或示例文本。
-- 目标路径是目录、二进制文件，或无法读取/写入时都会返回错误。
+- 目标不是普通文件、已有内容属于 `image` / `other` / `unknown`、分类异常，或无法读取/写入时返回错误。内容准入失败不修改目标；分类异常不回显探测器原始错误。
 
 ### 成功输出
 
@@ -87,4 +89,4 @@ Success: wrote nested/example.txt. Total lines: 2.
 | `src/utils/file-access-policy.ts` | policy candidate、预计 real target、deny 与写入安全复检 |
 | `src/utils/file-lock.ts` | `withFileLock()` 文件级并发锁 |
 | `src/engine/text-utils.ts` | 行尾符检测与解析 |
-| `src/utils/file-read.ts` | 二进制文件识别 |
+| `src/engine/file-content.ts` | 完整字节内容分类与文本准入规则 |

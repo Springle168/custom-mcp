@@ -6,7 +6,7 @@ import {
   resolveLineEnding,
   detectOmissionPlaceholders,
 } from '../../../engine/text-utils.js';
-import { isBinaryFile } from '../../../utils/file-read.js';
+import { classifyFileContent } from '../../../engine/file-content.js';
 import { withFileLock } from '../../../utils/file-lock.js';
 import {
   resolveFileAccessPath,
@@ -86,6 +86,7 @@ function appendWarning(message: string, warning: string | null): string {
 async function handleWriteFile(
   args: Record<string, unknown>,
   context: ToolRuntimeContext,
+  classify: typeof classifyFileContent,
 ): Promise<ToolCallResult> {
   const filePath = args.file_path as string;
   const content = args.content as string;
@@ -102,6 +103,7 @@ async function handleWriteFile(
     if (!safetyResult.ok) return textErrorResult(safetyResult.reason);
 
     let detectedLineEnding: '\r\n' | '\n' | null = null;
+    let existingBytes: Buffer | undefined;
 
     try {
       const stat = await fs.stat(safePath.resolvedPath);
@@ -111,26 +113,33 @@ async function handleWriteFile(
         );
       }
 
-      if (await isBinaryFile(safePath.resolvedPath)) {
-        return textErrorResult(
-          `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
-        );
+      if (!stat.isFile()) {
+        return textErrorResult(`Could not write file ${filePath}: target is not a regular file.`);
       }
 
-      const raw = await fs.readFile(safePath.resolvedPath, 'utf-8');
-      detectedLineEnding = detectLineEnding(raw);
+      existingBytes = await fs.readFile(safePath.resolvedPath);
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
-      if (error.code === 'ENOENT') {
-        if (await isBinaryFile(safePath.resolvedPath)) {
-          return textErrorResult(
-            `Cannot write text content to binary file: ${filePath}. Provide a text file path instead.`,
-          );
-        }
-      } else if (error.code !== 'ENOENT') {
+      if (error.code !== 'ENOENT') {
         return textErrorResult(
           `Could not prepare file ${filePath}: ${error.message}. Check the path and permissions.`,
         );
+      }
+    }
+
+    // Only filesystem failures above may confirm absence. Detector errors, even
+    // those carrying ENOENT, must never authorize creating or overwriting a file.
+    if (existingBytes !== undefined) {
+      try {
+        const classification = await classify(existingBytes);
+        if (classification.kind !== 'text') {
+          return textErrorResult(
+            `Cannot write text content to non-text file: ${filePath} (${classification.kind}).`,
+          );
+        }
+        detectedLineEnding = detectLineEnding(existingBytes.toString('utf8'));
+      } catch {
+        return textErrorResult(`Could not classify file content: ${filePath}.`);
       }
     }
 
@@ -163,9 +172,15 @@ async function handleWriteFile(
   });
 }
 
+export function createWriteFileHandler(
+  classify: typeof classifyFileContent = classifyFileContent,
+): MCPTool['handler'] {
+  return (args, context) => handleWriteFile(args, context, classify);
+}
+
 const writeFileTool: MCPTool = {
   definition: WRITE_FILE_TOOL_DEFINITION,
-  handler: handleWriteFile,
+  handler: createWriteFileHandler(),
 };
 
 export default writeFileTool;

@@ -5,8 +5,19 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
-import writeFileTool from '../../src/tools/built-in/files/write-file.js';
-import { assert, assertEqual, assertIncludes, getResultText, runTestSuite } from '../test-utils.js';
+import writeFileTool, {
+  createWriteFileHandler,
+} from '../../src/tools/built-in/files/write-file.js';
+import { supportedImages, recognizedBinary, unsupportedImage } from '../file-content/fixtures.js';
+import { createFileAccessPolicyContext } from '../../src/utils/file-access-policy.js';
+import {
+  assert,
+  assertEqual,
+  assertIncludes,
+  assertNotIncludes,
+  getResultText,
+  runTestSuite,
+} from '../test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -104,18 +115,163 @@ async function testRejectOutsideWorkspace() {
 }
 
 async function testRejectBinaryTarget() {
-  const result = await writeFileTool.handler(
-    { file_path: 'binary/fake.png', content: 'nope' },
+  const contents = [
+    ...supportedImages.map((image) => image.bytes),
+    recognizedBinary,
+    unsupportedImage,
+    Buffer.from([0, 1, 2, 3]),
+    Buffer.concat([Buffer.alloc(5000, 0x61), Buffer.from([0xff])]),
+    Buffer.concat([Buffer.alloc(5000, 0x61), Buffer.from([0])]),
+  ];
+  for (const [index, bytes] of contents.entries()) {
+    const file_path = `non-text-${index}.txt`;
+    const target = path.join(FIXTURES_DIR, file_path);
+    await fs.writeFile(target, bytes);
+    const result = await writeFileTool.handler(
+      { file_path, content: 'nope' },
+      createToolContext(),
+      createTestToolInvocationContext(),
+    );
+
+    assert(result.isError === true, 'Existing non-text content must fail regardless of suffix');
+    assertIncludes(getResultText(result), 'non-text', 'Should explain content rejection');
+    assertEqual((await fs.readFile(target)).equals(bytes), true, 'Rejected bytes remain unchanged');
+  }
+}
+
+async function testArbitrarySuffixAndUnrestrictedOutput() {
+  for (const suffix of ['png', 'bin']) {
+    const file_path = `new/deep/file.${suffix}`;
+    const target = path.join(FIXTURES_DIR, file_path);
+    const create = await writeFileTool.handler(
+      { file_path, content: '\uFEFFold\r\ntext' },
+      createToolContext(),
+      createTestToolInvocationContext(),
+    );
+    assertEqual(create.isError, false, 'Missing files may be created at any suffix');
+    await fs.writeFile(target, '\uFEFFold\r\ntext');
+    const overwrite = await writeFileTool.handler(
+      { file_path, content: '\uFEFFnew\ntext' },
+      createToolContext(),
+      createTestToolInvocationContext(),
+    );
+    assertEqual(overwrite.isError, false, 'Actual text at a binary suffix may be overwritten');
+    assertEqual(
+      await fs.readFile(target, 'utf8'),
+      '\uFEFFnew\r\ntext',
+      'Validated bytes retain BOM and line endings',
+    );
+  }
+
+  for (const existing of [false, true]) {
+    const file_path = `nul-output-${existing}.png`;
+    const target = path.join(FIXTURES_DIR, file_path);
+    if (existing) await fs.writeFile(target, 'old');
+    const first = await writeFileTool.handler(
+      { file_path, content: 'new\0content' },
+      createToolContext(),
+      createTestToolInvocationContext(),
+    );
+    assertEqual(first.isError, false, 'New and overwritten output strings are not classified');
+    const second = await writeFileTool.handler(
+      { file_path, content: 'repair' },
+      createToolContext(),
+      createTestToolInvocationContext(),
+    );
+    assertEqual(second.isError, true, 'A later call reclassifies the non-text target');
+    assertEqual(
+      await fs.readFile(target, 'utf8'),
+      'new\0content',
+      'Later rejection preserves successful output',
+    );
+  }
+}
+
+async function testDetectorErrorsAndMissingTargets() {
+  const target = path.join(FIXTURES_DIR, 'detector.txt');
+  await fs.writeFile(target, 'original');
+  let calls = 0;
+  const handler = createWriteFileHandler(async () => {
+    calls++;
+    throw Object.assign(new Error('private-detector-realpath'), { code: 'ENOENT' });
+  });
+  const failed = await handler(
+    { file_path: 'detector.txt', content: 'overwrite' },
     createToolContext(),
     createTestToolInvocationContext(),
   );
-
-  assert(result.isError === true, 'Should fail');
-  assertIncludes(
-    getResultText(result),
-    'Cannot write text content to binary file',
-    'Should reject binary files',
+  assertEqual(failed.isError, true, 'Detector ENOENT cannot authorize creation or overwrite');
+  assertIncludes(getResultText(failed), 'Could not classify', 'Detector failure stays distinct');
+  assertNotIncludes(
+    getResultText(failed),
+    'private-detector',
+    'Raw detector details are not exposed',
   );
+  assertEqual(
+    await fs.readFile(target, 'utf8'),
+    'original',
+    'Detector failure leaves original bytes intact',
+  );
+  const created = await handler(
+    { file_path: 'missing-detector.png', content: 'created' },
+    createToolContext(),
+    createTestToolInvocationContext(),
+  );
+  assertEqual(created.isError, false, 'Confirmed missing targets do not require classification');
+  assertEqual(calls, 1, 'Classifier is never called on a missing target');
+}
+
+async function testNoExtraSizeLimit() {
+  const target = path.join(FIXTURES_DIR, 'over-20MiB.bin');
+  await fs.writeFile(target, 'a'.repeat(20 * 1024 * 1024 + 1));
+  const result = await writeFileTool.handler(
+    { file_path: 'over-20MiB.bin', content: 'small' },
+    createToolContext(),
+    createTestToolInvocationContext(),
+  );
+  assertEqual(result.isError, false, 'write_file has no read/replace 20MiB admission limit');
+  assertEqual(await fs.readFile(target, 'utf8'), 'small', 'Large text can be overwritten');
+}
+
+async function testSafetyBeforeClassification() {
+  const base = createToolContext();
+  const root = base.pathSafetyContext.primaryRoot;
+  const guarded = {
+    ...base,
+    fileAccessPolicyContext: createFileAccessPolicyContext(base.pathSafetyContext, [
+      {
+        rootDir: root.rootDir,
+        realRootDir: root.realRootDir ?? root.rootDir,
+        ignore: { isIgnored: () => false },
+        deny: { isIgnored: (candidate: string) => candidate === 'denied.txt' },
+      },
+    ]),
+  };
+  await fs.writeFile(path.join(FIXTURES_DIR, 'denied.txt'), 'denied');
+  const link = path.join(FIXTURES_DIR, 'unsafe-content-link');
+  await fs.symlink(
+    path.dirname(FIXTURES_DIR),
+    link,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  let calls = 0;
+  const handler = createWriteFileHandler(async () => {
+    calls++;
+    return { kind: 'text' };
+  });
+  try {
+    for (const file_path of ['denied.txt', '../outside.txt', 'unsafe-content-link/outside.txt']) {
+      const result = await handler(
+        { file_path, content: 'never' },
+        guarded,
+        createTestToolInvocationContext(),
+      );
+      assertEqual(result.isError, true, 'Unsafe targets fail before classification');
+    }
+    assertEqual(calls, 0, 'Denied and escaped targets never reach classification');
+  } finally {
+    await fs.unlink(link);
+  }
 }
 
 async function testWarnButWritePlaceholderContent() {
@@ -203,6 +359,16 @@ async function main(): Promise<void> {
       },
       { name: 'Reject path outside workspace', run: testRejectOutsideWorkspace },
       { name: 'Reject binary target', run: testRejectBinaryTarget },
+      {
+        name: 'Arbitrary suffixes and unrestricted output',
+        run: testArbitrarySuffixAndUnrestrictedOutput,
+      },
+      {
+        name: 'Detector errors cannot imply missing targets',
+        run: testDetectorErrorsAndMissingTargets,
+      },
+      { name: 'No extra 20MiB limit for write_file', run: testNoExtraSizeLimit },
+      { name: 'Safety checks precede content classification', run: testSafetyBeforeClassification },
       { name: 'Warn but write placeholder content', run: testWarnButWritePlaceholderContent },
       { name: 'Reject symlink escaping workspace', run: testRejectSymlinkEscapingWorkspace },
     ],

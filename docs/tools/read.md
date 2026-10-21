@@ -64,9 +64,24 @@ Schema 拒绝未知字段，行号值域为正整数，pattern 为非空字符�
 
 每个实际源文件在单次调用中只执行一次完整文本读取，各选入请求使用同一份文本独立定位和格式化。这不构成跨文件快照，也没有跨调用缓存。
 
-文本使用 UTF-8，单文件大小上限为 `20 * 1024 * 1024` bytes（20 MiB），范围读取同样受该限制。二进制检测先使用已知文本/二进制扩展名；未知扩展名检查开头 4 KiB 的 null 字节与不可打印字符比例。`.ts`、`.mts`、`.cts` 显式按文本扩展名处理。
+文本入口只接受共享[内容分类规则](#内容分类规则)中的 `text`，分类和解码使用同一次完整读取的字节。文件后缀不影响准入：实际文本可使用 `.png`、`.bin` 等后缀，`.txt`、`.ts` 等后缀也不能绕过内容检查。
+
+单文件大小上限为 `20 * 1024 * 1024` bytes（20 MiB），范围读取同样受该限制。图片返回逐文件失败并说明不支持图片读取，不进入解码、范围定位或成功统计；其他非文本内容与分类异常也按源文件隔离，不影响同批有效文本。
 
 正文不限制行数或单行长度。文本按 `split(/\r?\n/)` 拆行，片段使用 LF 连接；空文件计为一个空行，末尾换行保留末尾空行。行号前缀形如 `12: content`，使用源文件的原始行号。
+
+### 内容分类规则
+
+`src/engine/file-content.ts` 接收调用方已通过路径安全校验并完整读取的字节，不接收路径，不管理文件大小、锁或工具结果。`read`、`write_file` 和 `replace_text` 复用这一规则：
+
+1. 空内容为 `text`。
+2. 使用单次调用的 `fileTypeFromBuffer()` 探测格式；只有 MIME 为 `image/png`、`image/jpeg`、`image/webp` 时优先归为 `image`，格式标识分别为 `png`、`jpeg`、`webp`。
+3. 其余内容检查完整字节：严格合法 UTF-8、不含 NUL，且控制字节比例不超过 30% 时为 `text`。控制字节定义为 `byte < 9 || (byte > 13 && byte < 32)`，分母为完整字节数。
+4. 未通过文本检查时，有格式结果为 `other`，无格式结果为 `unknown`。非目标图片格式也遵循此规则，不按 `image/*` 放行。
+
+非目标格式探测结果不能抢占文本分类，因此 XML、SVG 等满足规则时可作为原始文本操作。分类完成后才解码，不剥离 BOM 或转换编码；格式签名不保证文件完整或可解码，分类也不保证修改后原格式有效。
+
+分类器不吞探测异常，也不把异常转换为上述四类。调用方的文件不存在、权限、大小、读取错误和取消均属于操作失败；有取消信号时向检测器传递，`read` 的取消仍按整次调用处理。分类错误文案不回显原始探测异常，以免暴露 realpath。
 
 ### `read_mode="line"`
 
@@ -132,7 +147,7 @@ beta
 ```text
 --- include[1] logo.png: failed ---
 
-binary file
+image reading is not supported (png)
 ```
 
 摘要按需附带 shallow 与 100 requests 限制说明，以及 `Notes:`：
@@ -157,9 +172,11 @@ binary file
 | `src/tools/built-in/files/read.ts` | 默认请求去重、object 覆盖、前 100 请求、源文件分组、结果与策略提示。 |
 | `src/engine/read-range.ts` | 无 I/O 的范围校验、行号/正则定位、片段选择和行号格式化。 |
 | `src/utils/file-selection.ts` | 带 `includeIndex` 的有序候选与失败、每条 glob 内排序、过滤与选择阶段策略状态；不执行去重。 |
-| `src/utils/file-read.ts` | 二进制检测、20 MiB 保护与完整 UTF-8 文本读取。 |
+| `src/engine/file-content.ts` | 无文件系统 I/O 的共享字节分类、严格 UTF-8 与全文文本检查。 |
+| `src/utils/file-read.ts` | 20 MiB 保护、完整字节读取、文本分类准入、解码与逐文件错误转换。 |
 | `src/utils/bounded-workers.ts` | 有限并发、输入位置结果收集、取消/异常停止调度与 drain。 |
-| `test/read/` | 请求覆盖/顺序/限制、范围语义、正文与 shallow 统计、失败隔离和工具结果。 |
+| `test/file-content/` | 分类规则、格式样本、严格全文 UTF-8、控制字节阈值与取消传播。 |
+| `test/read/` | 请求覆盖/顺序/限制、范围语义、正文与 shallow 统计、内容准入、失败隔离和工具结果。 |
 | `test/bounded-workers/` | 有限并发、稳定顺序、取消/异常停止调度和已启动任务收尾。 |
 | `test/path-safety/`, `test/file-access-policy/` | allowed roots、literal/glob、deny/ignore、symlink 与跨工具隐私边界。 |
 

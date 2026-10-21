@@ -138,8 +138,8 @@ async function testLaterReplacementRechecksBinaryState(): Promise<void> {
   assertEqual(batch.files[0]?.replacements[1]?.success, false, 'Second should reject binary state');
   assertIncludes(
     batch.files[0]?.replacements[1]?.note,
-    'binary',
-    'Second replacement should report binary readiness failure',
+    'non-text',
+    'Second replacement should report non-text readiness failure',
   );
 }
 

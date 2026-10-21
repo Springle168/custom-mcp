@@ -162,8 +162,8 @@ async function testFileFailures(): Promise<void> {
       'Missing files, directories, binaries, and oversize sources fail independently',
     );
   }
-  assertIncludes(block(result, 4), 'binary', 'Known binary extensions are rejected');
-  assertIncludes(block(result, 5), 'binary', 'Unknown extensions still use content detection');
+  assertIncludes(block(result, 4), 'binary', 'Non-text bytes are rejected regardless of suffix');
+  assertIncludes(block(result, 5), 'binary', 'Unknown extensions use the same content rules');
   assertIncludes(block(result, 6), '20', 'A tiny range cannot bypass the source size bound');
 }
 
