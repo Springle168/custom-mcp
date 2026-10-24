@@ -28,6 +28,6 @@ wrapper 只包含原始 `content` 数组的引用和规范化的 `isError`，保
 
 功能不解析文本 payload，只复制最终 MCP content 与 `isError`。外部 HTTP route 的 canonical unknown 值已[映射为 text](../../external-routing/http-route.md#canonical-to-mcp-映射)，不会从中恢复原 JSON 值。
 
-包含图片时，序列化后的 JSON 会在顶层 `content` 和 `structuredContent.content` 中各包含一份 base64。RESULT 日志只记录一次顶层 content，见[日志正文](../../LOGGING.md#工具结果正文)。
+包含图片时，序列化后的 JSON 会在顶层 `content` 和 `structuredContent.content` 中各包含一份 base64。RESULT 日志只记录一次顶层 content，见[日志正文](../../logging/tool-calls.md#工具结果正文)。
 
 功能不为 `tools/list` 的 definition 添加 `outputSchema`；项目的公共 definition 与结果字段契约见[工具返回结果](../../TOOL-RESULTS.md#结果契约)。

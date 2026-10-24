@@ -2,7 +2,7 @@
 
 请求头策略由 selected workspace 显式配置，分为会话初始化与单次工具结果两个阶段。本文承接阶段配置、公共输入边界、跨层数据流、会话资源所有权、错误与隐私边界；具体功能的参数与效果由下列子专题维护。
 
-workspace 的其他字段见 [workspace 配置](config/workspace-config.md)，结果字段所有权见 [工具返回结果](TOOL-RESULTS.md)，日志格式见 [日志](LOGGING.md)。
+workspace 的其他字段见 [workspace 配置](config/workspace-config.md)，结果字段所有权见 [工具返回结果](TOOL-RESULTS.md)，日志格式见[请求头策略日志](logging/request-header-policy.md)。
 
 ## 职责与边界
 
@@ -158,7 +158,7 @@ Application lifecycle 在 shutdown 中关闭 pending 与 published 会话以释�
 
 参数错误分类为 `invalid_header_view`、`duplicate_header`、`invalid_json`、`invalid_payload`。响应仅使用配置规则位置、安全分类和内置字段名；不插入未知 JSON key、无效工具名或 JSON.parse 异常文本。参数错误与 transport 错误同时存在时，不承诺跨边界错误优先级。
 
-初始化成功日志只接收 session ID、应用规则位置与 feature；参数失败只接收规则位置与安全分类，不记录临时 SDK session ID。结果 metadata 只包含结果阶段是否配置规则、命中位置和 enabled feature。两阶段摘要分开，只有结果阶段规则控制工具日志的 `Rules:` 行；格式见 [日志](LOGGING.md)。
+初始化成功日志只接收 session ID、应用规则位置与 feature；参数失败只接收规则位置与安全分类，不记录临时 SDK session ID。结果 metadata 只包含结果阶段是否配置规则、命中位置和 enabled feature。两阶段摘要分开，只有结果阶段规则控制工具日志的 `Rules:` 行；格式见[请求头策略日志](logging/request-header-policy.md)。
 
 策略日志与参数错误响应不包含 header name/value、instructions 文本、客户端工具列表、原始 JSON 或异常对象。成功初始化响应按功能契约提供 instructions，并声明 `tools: {}` capability；工具列表通过该会话的 `tools/list` 提供。日志失败不改变有效策略、不阻止成功握手或工具调用，也不触发重复响应。这一边界不对工具参数和业务结果进行通用脱敏；既有工具日志仍按自己的契约记录内容。
 

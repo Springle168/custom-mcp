@@ -82,7 +82,7 @@ workspace 配置文件名和扩展名没有额外要求。被选中后，文件�
 - `fileAccess.otherRootDirs` 的每个 key 必须 lexical 关联本 workspace 的一个 configured additional root；primary root、未关联 key、仅 realpath 相等的 alias 或关联同一 additional root 的重复 key 都无效。
 - 只编译 selected workspace 的策略。snapshot 保存不可变 query facade 与用于启动日志的 lexical policy file metadata，不暴露 matcher mutation API。
 
-Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny 始终应用。root-specific policy 的路径安全与匹配顺序见 [路径安全](../PATH-SAFETY.md)，启动时的 policy file 摘要见 [日志](../LOGGING.md)。
+Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny 始终应用。root-specific policy 的路径安全与匹配顺序见 [路径安全](../PATH-SAFETY.md)，启动时的 policy file 摘要见[启动日志](../logging/startup-and-diagnostics.md#文件访问策略)。
 
 ---
 

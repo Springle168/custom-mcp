@@ -52,7 +52,7 @@ Binding 使用 `definitions[].id`，不是 Tool `name`。Custom-only definition 
 | 实现或维护 canonical endpoint、Processor stage 和结果映射 | [HTTP route](external-routing/http-route.md) |
 | 排查下游连接、warm-up、调用取消或 session drain | [MCP route](external-routing/mcp-route.md) |
 | 修改共享容量、字节限制、失败分类、取消、资源关闭或诊断隐私边界 | [运行时边界](external-routing/runtime.md) |
-| 查看启动摘要和诊断日志格式 | [日志](LOGGING.md) |
+| 查看启动摘要和诊断日志格式 | [启动与诊断日志](logging/startup-and-diagnostics.md) |
 | 定位源码职责和测试目录 | [项目结构](PROJECT-STRUCTURE.md) |
 | 理解应用组装与全局关闭顺序 | [架构](ARCHITECTURE.md) |
 | 独立编写 custom-only Tool definition 或 Processor | [自定义 Tool 编写契约](CUSTOM-TOOL-AUTHORING.md) |
