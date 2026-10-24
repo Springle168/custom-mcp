@@ -39,7 +39,9 @@ http://127.0.0.1:3100/mcp
 
 ## 文档
 
-- [开发文档与项目结构](docs/DEVELOPMENT.md)
+- [开发文档入口](docs/DEVELOPMENT.md)
+- [系统架构](docs/ARCHITECTURE.md)
+- [项目结构与文件职责](docs/PROJECT-STRUCTURE.md)
 - [运行配置](docs/CONFIG.md)
 - [工具开发与工具索引](docs/TOOLS.md)
 - [路径安全](docs/PATH-SAFETY.md)

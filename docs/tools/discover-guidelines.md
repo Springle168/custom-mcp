@@ -4,7 +4,7 @@
 
 `discover_guidelines` 从 Markdown 文件开头的 YAML Front Matter 返回指南名称、用途描述和文件路径，不读取或返回 Markdown 正文。调用方可以先用该工具发现候选指南，再通过环境中的文件读取工具读取需要使用的正文。
 
-工具复用 `src/utils/file-selection.ts` 的 literal path、glob、allowed roots、deny、ignore、exclude、realpath 和显示路径语义。选择层保留带 `includeIndex` 的有序候选与失败，文件去重由工具自身负责；Front Matter 解析由无文件 I/O 的 `src/engine/guideline-front-matter.ts` 承担。
+工具复用共享文件选择层的 literal / glob、过滤和显示路径语义，安全边界见[路径安全](../PATH-SAFETY.md)。选择层保留带 `includeIndex` 的有序候选与失败，文件去重由工具自身负责；Front Matter 解析与文件 I/O 分离。
 
 ## Schema
 
@@ -75,17 +75,11 @@ closing delimiter 未在 64 KiB 内完整出现时，该文件不构成有效指
 
 策略与读取失败说明使用固定通用文本，不泄露调用方没有显式提供的 real path。`exclude` 是调用方显式筛选，不额外生成说明。
 
-## 涉及文件
+## 验证重点
 
-| 文件 | 职责 |
-|-|-|
-| `src/tools/built-in/guidelines/discover-guidelines.definition.ts` | 工具 description、Input Schema 和稳定资源上限 |
-| `src/tools/built-in/guidelines/discover-guidelines.ts` | 公共选择接入、真实文件去重、Markdown 筛选、有界前缀读取、取消和结果汇总 |
-| `src/engine/guideline-front-matter.ts` | delimiter 提取、YAML AST 校验和元数据投影 |
-| `src/utils/file-selection.ts` | 带输入下标的有序 literal / glob 候选与失败、allowed roots、deny、ignore、exclude、realpath 和显示路径 |
-| `src/utils/bounded-workers.ts` | 有限并发、稳定结果位置、取消/异常停止调度与 drain |
-| `test/discover-guidelines/guideline-front-matter.test.ts` | 纯 Front Matter 与 YAML 边界 |
-| `test/discover-guidelines/discover-guidelines.test.ts` | 工具契约、文件选择、资源上限、并发、取消和隐私 |
+运行 `npm test -- discover-guidelines`，重点验证严格 Front Matter / YAML 边界、同名指南与真实文件去重、100 文件和 64 KiB 上限、closing delimiter 后停止读取，以及并发取消时关闭已打开的 handle。
+
+选择失败与空发现保持成功，参数错误和整次取消返回错误；策略提示不能泄露未显式提供的 realpath。共享选择与 worker 行为分别见[路径安全](../PATH-SAFETY.md)和 [read](read.md#数量调度与取消)，通用测试约定见[测试](../TESTING.md)。
 
 ## 维护边界
 

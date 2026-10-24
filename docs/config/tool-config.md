@@ -35,16 +35,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 `toolDefinitionFile` 和 `externalRoutingConfigFile` 都遵循与 `toolConfigFile` 相同的本地绝对路径边界。引用文件不要求位于 workspace allowed roots 内。
 
-`examples/` 提供相关配置的独立参考片段：
-
-- [Tool config](../../examples/tool-config.example.json)
-- [direct custom-only Tool definition](../../examples/tool-definition.example.json)
-- [External routing config](../../examples/external-routing-config.example.json)
-- [Processor registry](../../examples/processor-config.example.json)
-- [direct HTTP endpoint config](../../examples/http-endpoint-config.example.json)
-- [MCP server config](../../examples/mcp-server-config.example.json)
-
-使用示例前应替换其中的本地绝对路径和值。External routing config、Processor registry、HTTP endpoint config、MCP server config 与外部调用行为见 [External routing](../EXTERNAL-ROUTING.md)。
+最小示例见 [Tool config](../../examples/tool-config.example.json) 和 [custom-only Tool definition](../../examples/tool-definition.example.json)；使用前替换其中的本地绝对路径和值。External routing 的配置、示例与执行契约见 [External routing](../EXTERNAL-ROUTING.md)。
 
 ---
 
@@ -60,7 +51,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 `inputSchema` 使用 JSON Schema Draft 2020-12，根 `type` 必须精确为 `"object"`。`$schema` 可省略；出现时必须精确为 `https://json-schema.org/draft/2020-12/schema`。若包含 `properties`，其每个直接 property schema 都必须使用 object 形式，不能使用 boolean schema。
 
-每份 schema 在隔离 resolver context 中同步编译，不读取网络、文件或其它 definition 来解析 references。Tool config 中不能有两个 definition 声明同一个 `name`。
+Schema 的隔离编译、引用解析与校验行为见[工具校验分工](../TOOLS.md#schema-与-handler-的校验分工)。Tool config 中不能有两个 definition 声明同一个 `name`。
 
 内置工具 override 示例见 [read definition](../../examples/read.override.example.json)。该示例使用 `read` 名称覆盖对外定义，并将 `include` 收窄为字符串数组；它只允许整文件 literal/glob 请求，调用仍需通过内置 implementation schema。
 
@@ -84,21 +75,12 @@ effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](.
 
 ---
 
-## 错误与维护入口
+## 错误归属
 
 Tool config、Tool definition、External routing config、Processor registry、HTTP endpoint config 或 MCP server config 的文件读取、JSON、严格外壳和 schema 错误归属实际出错的 referenced 文件；definition 诊断会附带对应 reference `id`。route union、binding、重复 binding 和 Processor reference 错误归属 External routing config。workspace `enabled` / `disabled` selector 不存在的错误仍归属 workspace 配置。
 
-| 区域 | 职责 |
-|-|-|
-| `src/config/tool-exposure.ts` | workspace `tools` 外壳、Tool config 路径与未决 exposure selector。 |
-| `src/tools/custom-tool-config.ts` | Tool config v2 / definition 加载、严格外壳、source metadata，以及 External routing config 加载入口。 |
-| `src/tools/input-schema-validator.ts` | 隔离的 Draft 2020-12 schema 编译与 validator facade。 |
-| `src/tools/catalog.ts` | effective catalog 合并、selector 成员校验、exposed catalog，以及按 definition reference id 注入 external binding。 |
-| `src/tools/external-routing/config.ts` | External routing config v2、HTTP/MCP route union、Processor registry、HTTP endpoint / MCP server config 与跨文件 binding 校验。 |
-| `src/runtime/application/startup-runtime.ts` | 全部纯配置 / catalog 校验后创建共享 external runtime，暴露 MCP warm-up 与空 route 的无资源 close。 |
-| `src/tools/external-routing/executor.ts` | workspace 共享 admission、route-bound executor facade 与资源 close。 |
-| `src/tools/external-routing/strategy-adapter.ts` | HTTP route-specific stage 编排、endpoint dispatch 与 Processor drain metadata。 |
-| `test/tools/custom-tool-config.test.ts` | Tool config / definition 外壳、schema dialect 与 validator。 |
-| `test/tools/tool-exposure.test.ts` | effective/exposed catalog、override、definition-id external binding 与 unavailable executor。 |
-| `test/external-routing/config.test.ts` | External routing config、Processor registry、endpoint config、route / Processor reference 校验。 |
-| `test/runtime/external-routing-integration.test.ts` | selected workspace 到 MCP / loopback endpoint 的完整 custom-only route。 |
+## 验证重点
+
+运行 `npm test -- tools external-routing runtime`，重点验证严格外壳与隔离 schema 编译、built-in override 的双层输入校验、effective / exposed catalog、definition id binding 和 unavailable route。
+
+跨文件集成应覆盖 selected workspace 到真实 MCP / loopback HTTP endpoint 的调用链；隐藏 definition 和空 route 仍需通过配置校验，空 route 不创建外部运行资源。External routing 的传输与生命周期验证由其[专题文档](../EXTERNAL-ROUTING.md)承接，通用测试约定见 [测试](../TESTING.md)。

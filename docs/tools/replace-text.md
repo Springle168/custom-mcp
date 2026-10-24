@@ -1,7 +1,5 @@
 # replace_text 工具文档
 
-版本：v3
-
 ## 概述
 
 `replace_text` 在一次调用中按顺序执行一个或多个文件项，每个文件项包含一个或多个局部文本替换。工具在 MCP 标准 `content[0].text` 中返回可解析的批量 JSON 结果。
@@ -133,7 +131,7 @@ interface ReplaceTextBatchPayload {
 
 handler 直接构造单文本块结果，并根据 payload 的 `success` 设置相反的 `isError`：所有 replacement 成功时返回 `isError=false`，任一失败时返回 `isError=true`。`isError=true` 不表示没有写入。Schema validation 或 executor 前取消由 catalog 返回标准错误文本，不返回批量 JSON。
 
-工具不声明 `outputSchema`，handler 不构造 `structuredContent`。运行时通用 request policy adapter 仍可按统一规则复制标准结果壳。
+工具不声明 `outputSchema`，handler 不构造 `structuredContent`。运行时 [structuredContentDup](../request-header-policy/on-call-tool-result/structured-content-dup.md) 可复制最终 MCP 结果，不解析批量 JSON 文本。
 
 ### Replacement 字段
 
@@ -186,63 +184,14 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 
 ---
 
-## 示例
+## 验证重点
 
-### 同文件有序修改
+运行 `npm test -- replace-text`，重点验证：
 
-```json
-{
-  "files": [
-    {
-      "file_path": "src/example.ts",
-      "replacements": [
-        { "target": "const value = 1;", "replacement": "const value = 2;" },
-        { "target": "return value;", "replacement": "return value * 2;" }
-      ]
-    }
-  ]
-}
-```
+- 嵌套 schema 与文件级参数关系、default / regex 匹配和 `$!n` / `$$` 语法，零长度匹配与 no-op 不写入。
+- 文件项内锁与跨调用 FIFO、同路径多阶段顺序、部分成功，以及每项重新读取实际落盘状态。
+- 写入失败后的安全恢复读取：可能已修改文件但仍判失败，无法确认内容时返回 `current=null`。
+- 内容分类与文件不存在分离；非文本写出可成功但后项必须重新拒绝，探测器 `ENOENT` 不能授权创建。
+- LF / CRLF、`auto` 行尾保留与跨调用并发，不能把配置或其它调用的行尾策略串入本次修改。
 
-### 同路径的 default 与 regex 阶段
-
-```json
-{
-  "files": [
-    {
-      "file_path": "src/example.ts",
-      "replacements": [
-        { "target": "enabled = false", "replacement": "enabled = true" }
-      ]
-    },
-    {
-      "file_path": "src/example.ts",
-      "match_mode": "regex",
-      "replacements": [
-        { "target": "version=(\\d+)", "replacement": "version=$!1-next" }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## 测试文件
-
-```text
-test/replace-text/
-├── batch.test.ts                    # 顺序、部分成功、状态刷新、恢复读取和文件项锁
-├── content-classification.test.ts   # 内容准入、任意后缀、探测异常、非文本落盘与恢复
-├── smoke.test.ts                    # 轻量回归入口
-├── helpers.ts                       # fixture、批量结果断言和单项测试构造器
-├── schema.test.ts                   # 嵌套 Schema、分层 description 和输出外壳
-├── runtime-validation.test.ts       # catalog 结构校验与文件级参数关系
-├── default-mode.test.ts             # default 匹配、创建、行数与 no-op
-├── regex-mode.test.ts               # regex、捕获组、美元语法和零长度保护
-├── io-safety.test.ts                # 路径、二进制、大小、行尾符和文件锁
-├── output-safety.test.ts            # JSON 失败形状和安全写入
-└── line-ending-concurrency.test.ts  # LF/CRLF 与跨调用并发回归
-```
-
-`src/tools/built-in/files/replace.ts` 负责批量编排和 I/O 边界；`src/engine/replacement.ts` 只负责单次 replacement 的纯计算；`src/utils/file-lock.ts` 提供单 lexical resolved path 的进程内 FIFO 锁。
+批量编排和 I/O 边界由 handler 持有，`src/engine/replacement.ts` 只执行单次 replacement 的纯计算。文件锁以 lexical resolved path 为 key，只提供进程内 FIFO，不构成跨进程锁或 realpath alias 互斥。共享路径与策略验证见[路径安全](../PATH-SAFETY.md)，通用测试约定见[测试](../TESTING.md)。

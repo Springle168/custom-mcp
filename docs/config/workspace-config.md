@@ -185,25 +185,13 @@ selected workspace 文件的读取、JSON、schema、path、env override 和 pol
 
 ---
 
-## 源码与测试
+## 验证重点
 
-| 区域 | 职责 |
-|-|-|
-| `src/config/schema.ts` | `version: 2` workspace schema、path-like 字段、Android 与 env override allowlist。 |
-| `src/config/file-access-policy.ts` | selected workspace policy 文件的验证、读取、编译与只读 facade。 |
-| `src/config/env-overrides.ts` | selected workspace allowlist 与环境变量读取。 |
-| `src/config/runtime-snapshot.ts` | canonical roots、runtime snapshot 与 deep-freeze。 |
-| `src/config/request-header-rules.ts` | 两阶段 `rules.requestHeaders` schema 与 runtime rules，跨层行为见 [请求头策略](../REQUEST-HEADER-POLICY.md)。 |
-| `src/config/tool-exposure.ts` | `tools` 外壳、tool config path 与未决 exposure selector。 |
-| `src/config/strict-utf8-file.ts` | 配置文本共享的同一 descriptor 普通文件检查、读取与 strict UTF-8 边界。 |
-| `src/config/json-file.ts` | 全局、workspace 与 referenced JSON 的解析和 JSON-oriented 诊断边界。 |
-| `src/runtime/application/startup-runtime.ts` | snapshot 与 tool catalog 的启动期组合。 |
-| `test/config/load-runtime-config.test.ts` | 两层配置加载集成行为。 |
-| `test/config/file-access-policy.test.ts` | selected-only policy 编译与 file access schema。 |
-| `test/config/env-overrides.test.ts` | allowlist、值 grammar 与选择边界。 |
-| `test/config/runtime-snapshot.test.ts` | canonical roots、snapshot 与 immutable graph。 |
-| `test/config/request-header-rules.test.ts` | request header rules schema 与 snapshot 接入。 |
-| `test/config/tool-exposure.test.ts` | workspace `tools` 结构、path、selector grammar 与重复项。 |
-| `test/runtime/startup-runtime.test.ts` | selected-only 加载、启动期 catalog 组合与运行期不重读。 |
+运行 `npm test -- config runtime`，重点验证：
 
-测试组织和命令见 [测试](../TESTING.md)。
+- selected-only 配置与策略加载；未选中 workspace 的无效文件不影响启动。
+- path / numeric grammar、allowed-root 的 lexical 与 realpath 约束，以及 env allowlist 不能扩大边界或创建缺失的 Android 配置。
+- snapshot 的不可变对象图、identity 稳定性，以及启动期 catalog 组合后运行期不重新读取配置。
+- `tools` selector 的结构校验与 catalog 成员校验分属不同阶段；请求头规则的跨层验证见 [请求头策略](../REQUEST-HEADER-POLICY.md#验证重点)。
+
+测试约定见 [测试](../TESTING.md)。

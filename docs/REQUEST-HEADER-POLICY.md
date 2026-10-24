@@ -1,17 +1,29 @@
 # 请求头策略开发说明
 
-请求头策略由 selected workspace 显式配置，分为会话初始化与单次工具结果两个阶段。本文承接配置契约、客户端参数、跨层数据流、会话资源所有权、错误与隐私边界；workspace 的其他字段见 [workspace 配置](config/workspace-config.md)，结果字段所有权见 [工具返回结果](TOOL-RESULTS.md)，日志格式见 [日志](LOGGING.md)。
+请求头策略由 selected workspace 显式配置，分为会话初始化与单次工具结果两个阶段。本文承接阶段配置、公共输入边界、跨层数据流、会话资源所有权、错误与隐私边界；具体功能的参数与效果由下列子专题维护。
+
+workspace 的其他字段见 [workspace 配置](config/workspace-config.md)，结果字段所有权见 [工具返回结果](TOOL-RESULTS.md)，日志格式见 [日志](LOGGING.md)。
 
 ## 职责与边界
 
 | 阶段 | 功能 | 生命周期 |
 |-|-|-|
-| `onInitialize` | `setToolList`、`setInstructions` | 在新会话初始化时读取参数，设置在会话内固定。 |
+| `onInitialize` | `setToolList`<br>`setInstructions` | 在新会话初始化时读取参数，设置在会话内固定。 |
 | `onCallToolResult` | `structuredContentDup` | 每次 `tools/call` 开始时按该 POST 的请求头计算，执行完成后适配结果。 |
+
+### 阶段与功能专题
+
+- `onInitialize` 阶段：
+  - [setToolList](request-header-policy/on-initialize/set-tool-list.md)
+  - [setInstructions](request-header-policy/on-initialize/set-instructions.md)
+- `onCallToolResult` 阶段：
+  - [structuredContentDup](request-header-policy/on-call-tool-result/structured-content-dup.md)
+
+### 边界约束
 
 请求头是客户端自报数据，不是身份认证。策略不能选择 workspace、扩大文件权限、修改工具参数、选择 executor、重编译 catalog 或把 header 转发到下游。
 
-初始化设置只减少 workspace 已暴露工具集合，并可指定该会话 initialize response 的说明文本。MCP Server 始终声明 `tools: {}` capability，空工具集合也不撤销此声明。服务不提供任意 capabilities 改写、会话内设置更新或 `tools/list_changed` 通知。
+初始化设置作用于本会话的工具视图与说明，不修改共享 catalog 或工具实现，也不提供任意 capabilities 改写。具体参数、空值和响应行为见各功能专题。
 
 结果策略不缓存到会话、不继承初始化请求头，也不干预业务执行。GET / DELETE 不应用这两个阶段；工具结果策略归属于触发调用的 POST，而不是接收结果的 GET SSE 通道。
 
@@ -69,33 +81,7 @@ workspace 配置要求 JSON number `version: 2`。全局索引、Tool config 与
 
 参数先经过标准 `JSON.parse`，再校验内置契约；不另行检测重复 JSON 属性，采用 `JSON.parse` 的最后同名属性语义。全部参数验证成功后才返回不可变设置，不产生部分成功会话。
 
-策略不增加可配置 header 大小上限，也不扩容 Node HTTP 的 header 总大小限制。换行应通过单行 JSON 中的 `\n` 表达；非 ASCII 文本可用 JSON Unicode escape，避免客户端对 header 编码的限制。长说明不适合经请求头传输。
-
-## 初始化功能参数
-
-### `setToolList`
-
-绑定的请求头值必须是 JSON object，顶层仅允许必填 `toolList`，类型为 string 数组。名称 grammar 是 `^[A-Za-z0-9._-]{1,128}$`，区分大小写、不 trim；重复名称无效。空数组合法。
-
-设 workspace 已暴露集合为 `W`，客户端请求集合为 `H`，会话集合为 `S`：
-
-- header 缺失时，`S = W`。
-- header 合法时，`S = W ∩ H`。
-- `toolList: []` 或所有名称均被过滤时，`S` 为空。
-
-grammar 合法但未在 `W` 中暴露的名称正常过滤，不透露它属于未定义还是被禁用。列表顺序按 workspace definitions view 保留，客户端数组不控制排序。
-
-选择依据是调用名称而非 definition reference id，适用于内置与 custom-only 工具。不能重新启用 workspace 禁用工具、替换 definition 或改变 external binding。
-
-会话视图的同一集合同时约束 `tools/list` 与 `tools/call`。不在集合内的调用返回标准 `Unknown tool: <name>` 错误结果，不进入 validator 或 executor；该结果仍经过本次工具结果策略。会话只持有受限视图，validators、executors 与共享运行资源继续归 workspace service 所有。
-
-### `setInstructions`
-
-绑定的请求头值必须是 JSON object，顶层仅允许必填 `instructions`，类型为 string。文本原样保留，不 trim、不追加默认文本、不模板展开。
-
-缺失 header 或空字符串都不在 initialize response 中发送 instructions。metadata 能区分未应用与主动设置空值。非空文本通过 Server options 交给 SDK 序列化。
-
-instructions 是本会话的说明数据，不是服务端命令或权限指令。服务端不执行文本、不传给 executor 或下游；客户端如何展示或交给模型使用由客户端决定。后续请求不能修改说明，重新选择设置需要新会话。
+策略不增加可配置 header 大小上限，也不扩容 Node HTTP 的 header 总大小限制。换行应通过单行 JSON 中的 `\n` 表达；非 ASCII 文本可用 JSON Unicode escape，避免客户端对 header 编码的限制。
 
 ## 数据流与会话生命周期
 
@@ -124,7 +110,7 @@ POST rawHeaders → context 桥接 / strict view / AsyncLocalStorage
 
 `AsyncLocalStorage` 只传播单次 POST 的 strict header view，不保存会话 policy。调用开始时计算一次结果 policy，跨异步执行保留局部值，结束时不重算。并发请求上下文隔离，会话工具视图隔离，workspace 运行资源共享。
 
-`structuredContentDup` 在工具执行与 JSON / MCP 结果校验之后应用。成功、会话准入失败、catalog 校验错误、executor 错误和受控 malformed-result 都经过同一返回管线；SDK 协议级错误不是 ToolCallResult，不进入 adapter。具体字段覆盖、对象身份与图片序列化代价由 [工具返回结果](TOOL-RESULTS.md#structuredcontent-适配) 承接。
+结果阶段功能在工具执行与 JSON / MCP 结果校验之后应用。成功、会话准入失败、catalog 校验错误、executor 错误和受控 malformed-result 都经过同一返回管线；SDK 协议级错误不是 ToolCallResult，不进入 adapter。具体字段覆盖、对象身份与序列化影响由各结果阶段功能专题维护。
 
 ### 初始化入口与发布
 
@@ -155,7 +141,7 @@ session ID 可能早于成功响应分配，HTTP 200 也可能承载 JSON-RPC er
 
 会话工厂同步创建未连接资源，入口登记所有权后才开始 connect。已创建会话因 connect、handleRequest、协议拒绝、中断或 shutdown 不能发布时，入口负责最终关闭；工厂与入口的内部异常使用安全错误路径。关闭操作幂等；SDK 已持有 transport 时通过 `server.close()` 释放，否则由所有者关闭 transport，不无条件分别关闭两次。关闭会话不关闭共享 workspace service 或 external runtime。
 
-shutdown 先停止新准入和 listener 的新连接准入，并启动 Android runtime 取消。pending 与 published 会话随后关闭以释放请求，listener drain 在会话关闭后等待；Android settle、external runtime 与 logger 的关闭由 application lifecycle 继续完成。
+Application lifecycle 在 shutdown 中关闭 pending 与 published 会话以释放请求；等待 listener drain 前必须先启动会话清理。全局关闭顺序与跨阶段失败隔离见[系统架构](ARCHITECTURE.md#关闭与失败隔离)。
 
 发布前再次检查 admission，并同步完成 pending 到 published 的转移。清理失败不能改写已发送响应或阻止其他会话清理。
 
@@ -176,49 +162,14 @@ shutdown 先停止新准入和 listener 的新连接准入，并启动 Android r
 
 策略日志与参数错误响应不包含 header name/value、instructions 文本、客户端工具列表、原始 JSON 或异常对象。成功初始化响应按功能契约提供 instructions，并声明 `tools: {}` capability；工具列表通过该会话的 `tools/list` 提供。日志失败不改变有效策略、不阻止成功握手或工具调用，也不触发重复响应。这一边界不对工具参数和业务结果进行通用脱敏；既有工具日志仍按自己的契约记录内容。
 
-## 源码与测试索引
+## 验证重点
 
-| 源码 | 职责 |
-|-|-|
-| `src/config/request-header-rules.ts` | 两阶段静态 schema、功能名称和 runtime rules。 |
-| `src/config/schema.ts`、`runtime-snapshot.ts` | workspace v2 接入、snapshot 复制与冻结。 |
-| `src/runtime/request/request-header-view.ts` | raw 输入与 duplicate 状态。 |
-| `src/runtime/runtime-extensions.ts` | 会话准备、POST context 桥接与本次结果方案的内部契约。 |
-| `src/runtime/request/request-header-extensions.ts` | 按配置安装阶段实现；由应用启动组装层接入。 |
-| `src/runtime/request/request-context.ts` | 本次 POST 的 AsyncLocalStorage 生命周期。 |
-| `src/runtime/request/initialize-header-policy.ts` | 初始化 JSON 参数、不可变设置、安全错误与 metadata。 |
-| `src/runtime/request/initialize-header-extension.ts` | 最终会话选项、安全拒绝和发布后策略摘要。 |
-| `src/runtime/request/request-header-policy.ts` | 工具结果匹配、feature 并集与脱敏 metadata。 |
-| `src/runtime/mcp/session-tool-service.ts` | 会话列表与准入共用的受限工具视图。 |
-| `src/runtime/mcp/mcp-post-handler.ts`、`http-app.ts` | 核心阶段接线、HTTP 响应、session 工厂与发布；不解释策略规则。 |
-| `src/runtime/mcp/initialization-tracking-transport.ts` | 公开 send 的初始化 result 成功观测。 |
-| `src/runtime/mcp/initialization-http-completion.ts` | HTTP 正常完成与提前中断的公共事件观测。 |
-| `src/runtime/mcp/pending-session.ts` | connect 前资源所有权、幂等关闭与关闭信号。 |
-| `src/runtime/mcp/mcp-server.ts` | Server options、tools/list 与 tools/call 接线。 |
-| `src/runtime/invocation/tool-call-handler.ts` | 本次结果方案捕获、结果校验后应用和日志错误隔离。 |
-| `src/runtime/request/tool-result-header-extension.ts`、`tool-result-adapter.ts` | 本次规则求值、结果适配闭包与字段覆盖。 |
-| `src/runtime/request/request-header-policy-logging.ts` | 安全的文件/终端结果摘要格式化。 |
-| `src/runtime/application/`、`src/utils/logger.ts` | pending / published 生命周期与日志输出。 |
+运行 `npm test -- config runtime logger`，按以下边界验证，而不是只检查规则匹配：
 
-| 测试 | 关注点 |
-|-|-|
-| `test/config/request-header-rules.test.ts` | workspace 版本、两阶段 schema、绑定唯一性、selected-only snapshot 与冻结、env 禁止覆盖。 |
-| `test/runtime/initialize-header-policy.test.ts` | 参数 grammar、缺失与显式空值、原样说明、安全错误与 metadata、整体失败。 |
-| `test/runtime/initialize-header-extension.test.ts` | 默认会话选项、交集 service、说明和安全策略摘要。 |
-| `test/runtime/request-header-view.test.ts` | rawHeaders 输入、重复状态与名称大小写。 |
-| `test/runtime/request-header-policy.test.ts` | 精确匹配、AND / 并集、重复 header 和上下文缺失。 |
-| `test/runtime/session-tool-service.test.ts` | 工具交集、顺序、列表与准入一致、独立会话、共享 validator / binding，以及 catalog 校验、取消、业务错误和准入失败的结果适配。 |
-| `test/runtime/initialization-tracking-transport.test.ts` | 公开 send 的对应 request ID、fulfilled result / error / rejection 与停止等待。 |
-| `test/runtime/pending-session.test.ts` | connect 前、期间及失败时的资源所有权与幂等 close。 |
-| `test/runtime/mcp-post-request-context.test.ts` | POST 上下文、合法 envelope、双完成条件、提前中断、connect / shutdown 与日志失败隔离。 |
-| `test/runtime/request-header-integration.test.ts` | 真实 HTTP 初始化 object / 单元素数组、instructions、会话交集与准入、参数错误隐私、SDK 拒绝、pending shutdown。 |
-| `test/runtime/http-app.test.ts` | 真实 HTTP 接线、会话隔离与 session 路由。 |
-| `test/runtime/application-lifecycle.test.ts` | shutdown 顺序、即时停止准入、幂等关闭与多资源失败隔离。 |
-| `test/runtime/mcp-server-tool-exposure.test.ts` | SDK list / call 接线、共享 service 与结果往返。 |
-| `test/runtime/tool-call-handler.test.ts` | 阶段顺序、调用方案捕获、默认/替代 hook、返回管线与日志失败隔离。 |
-| `test/runtime/runtime-extensions.test.ts` | 配置阶段组合、POST bridge、捕获方案与核心依赖边界。 |
-| `test/runtime/request-header-start-application.test.ts` | 真实启动组装、初始化参数、成功/错误适配和生产日志隐私。 |
-| `test/runtime/tool-result-adapter.test.ts` | 条件覆盖、不修改原对象、扩展字段与 wrapper。 |
-| `test/logger/request-header-rules-logging.test.ts` | Rules 行、纯文本日志、结果正文与隐私边界。 |
+- 配置与输入：selected-only snapshot、冻结和 env 禁止覆盖；header 名称大小写、raw duplicate 状态、精确匹配、AND / 并集，以及缺失与显式空值的区别。
+- 会话隔离：工具交集的顺序、list / call 准入一致、instructions 原样传递；会话受限视图隔离，validator、binding 和 workspace 资源共享。
+- 初始化发布：合法 object / 单元素数组 envelope、对应 request ID 的公开 send 结果、HTTP 完成双条件；提前中断、connect 失败、协议拒绝与 shutdown 均不能留下可路由的未发布会话。
+- 调用管线：POST 上下文并发隔离，调用开始时捕获结果方案，业务成功、准入失败、catalog 错误和受控 malformed-result 均在校验后适配；SDK 协议错误不进入 adapter。
+- 隐私与恢复：真实 HTTP 与生产启动组装下，参数错误响应和策略日志均不含 header name/value、客户端工具列表、instructions 或异常对象；日志失败不能破坏握手、工具调用或多资源清理。
 
-测试组织和命令见 [测试](TESTING.md)。维护新增功能时，先确定所属阶段、输入契约、生命周期和权限边界；配置层不依赖 HTTP / catalog，executor 不依赖请求头策略模块。
+测试约定见[测试](TESTING.md)。维护新增功能时，先确定所属阶段、输入契约、生命周期和权限边界；配置层不依赖 HTTP / catalog，executor 不依赖请求头策略模块。
