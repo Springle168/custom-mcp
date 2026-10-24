@@ -124,10 +124,14 @@ call ID 由服务端工具调用入口生成，不复用客户端提供的 JSON-
 会话成功发布后，`mcp-post-handler.ts` 通过安全的 `info` 调用写入 `New session: <session-id>`，随后触发初始化准备阶段提供的发布观察。请求头策略观察在存在初始化绑定时写入独立摘要：
 
 ```text
-Session policy: session_13a09d50-0000-4000-8000-000000000000; rules.requestHeaders.onInitialize[0]: setToolList, rules.requestHeaders.onInitialize[1]: setInstructions
+[2026-10-21T10:20:30.000+08:00] Session policy:
+  Session: session_13a09d50-0000-4000-8000-000000000000
+  Applied:
+    rules.requestHeaders.onInitialize[0]: setToolList
+    rules.requestHeaders.onInitialize[1]: setInstructions
 ```
 
-绑定存在但请求中对应 header 全缺失时，摘要末尾为 `none`。显式空 toolList 或 instructions 仍算应用功能；无初始化绑定时不写 `Session policy:`。规则顺序按配置保留，不输出请求名称集合或说明文本。
+绑定存在但请求中对应 header 全缺失时，输出 `Applied: none`。显式空 toolList 或 instructions 仍列出对应功能；无初始化绑定时不写 `Session policy:`。
 
 客户端参数失败发生在会话资源构造之前，安全摘要例如：
 

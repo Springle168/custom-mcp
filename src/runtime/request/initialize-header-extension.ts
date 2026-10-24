@@ -44,9 +44,12 @@ export function createInitializeHeaderExtension(
                 const applied = policy.metadata.appliedRules;
                 const summary =
                   applied.length === 0
-                    ? 'none'
-                    : applied.map((rule) => `${rule.ruleLocation}: ${rule.feature}`).join(', ');
-                return `Session policy: ${sessionId}; ${summary}`;
+                    ? '  Applied: none'
+                    : [
+                        '  Applied:',
+                        ...applied.map((rule) => `    ${rule.ruleLocation}: ${rule.feature}`),
+                      ].join('\n');
+                return `Session policy:\n  Session: ${sessionId}\n${summary}`;
               });
             },
           }

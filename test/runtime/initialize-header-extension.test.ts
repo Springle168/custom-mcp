@@ -83,10 +83,16 @@ async function testFinalOptionsAndLazyPublicationSummary() {
   );
   await prepared.onPublished('published-id');
   assertEqual(messages.length, 1, 'Publication should write one policy summary');
-  assertIncludes(
+  assertEqual(
     messages[0]!,
-    'Session policy: published-id; rules.requestHeaders.onInitialize[0]: setToolList, rules.requestHeaders.onInitialize[1]: setInstructions',
-    'Summary should preserve rule ordering and features',
+    [
+      'Session policy:',
+      '  Session: published-id',
+      '  Applied:',
+      '    rules.requestHeaders.onInitialize[0]: setToolList',
+      '    rules.requestHeaders.onInitialize[1]: setInstructions',
+    ].join('\n'),
+    'Summary should use indented lines and preserve rule ordering and features',
   );
   for (const secret of [
     'x-tools',
@@ -124,7 +130,7 @@ async function testMissingEmptyAndUnconfiguredParameters() {
   await missing.onPublished?.('missing-id');
   assertEqual(
     messages[0],
-    'Session policy: missing-id; none',
+    'Session policy:\n  Session: missing-id\n  Applied: none',
     'Configured but unapplied rules should report none',
   );
 
@@ -142,6 +148,32 @@ async function testMissingEmptyAndUnconfiguredParameters() {
     empty.options.instructions,
     '',
     'Explicit empty instructions should replace defaults and let Server omit the field',
+  );
+  await empty.onPublished?.('empty-id');
+  assertEqual(
+    messages[1],
+    [
+      'Session policy:',
+      '  Session: empty-id',
+      '  Applied:',
+      '    rules.requestHeaders.onInitialize[0]: setToolList',
+      '    rules.requestHeaders.onInitialize[1]: setInstructions',
+    ].join('\n'),
+    'Explicit empty values should still list applied features',
+  );
+
+  const partial = prepare(['x-instructions', '{"instructions":"private text"}'], base.options);
+  assert(partial.accepted, 'A single supplied parameter should be accepted');
+  await partial.onPublished?.('partial-id');
+  assertEqual(
+    messages[2],
+    [
+      'Session policy:',
+      '  Session: partial-id',
+      '  Applied:',
+      '    rules.requestHeaders.onInitialize[1]: setInstructions',
+    ].join('\n'),
+    'A single applied rule should retain its configuration index and omit missing features',
   );
 
   const unconfigured = createInitializeHeaderExtension(
@@ -257,7 +289,11 @@ async function testAsyncLoggerDoesNotDelayPreparationOrPublication(): Promise<vo
     undefined,
     'Publication observer must not return or wait for asynchronous logger completion',
   );
-  assertEqual(messages[1], 'Session policy: published-id; none', 'Publication summary stays safe');
+  assertEqual(
+    messages[1],
+    'Session policy:\n  Session: published-id\n  Applied: none',
+    'Publication summary stays safe',
+  );
   assert(resolveLogger !== undefined, 'Asynchronous logger should expose its completion');
   resolveLogger();
   await loggerCompletion;
