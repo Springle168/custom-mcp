@@ -1,321 +1,78 @@
 # 工具开发说明
 
-本文记录 `custom-mcp` 的工具注册流程、工具设计约定、并发模型，以及已实现工具索引。单个工具的参数契约和实现细节优先参考 `docs/tools/` 下对应文档。
+本文说明工具 definition、executor、catalog 与 workspace service 的契约，以及工具特有的校验和并发约束。源码定位见[项目结构](PROJECT-STRUCTURE.md#工具目录与执行)，应用接线见[系统架构](ARCHITECTURE.md)。
 
----
+## 工具索引
 
-## 单工具文档目录
-
-```text
-docs/tools/
-├── replace-text.md      # replace_text 工具文档
-├── read.md              # read 工具文档
-├── write-file.md        # write_file 工具文档
-├── discover-guidelines.md # discover_guidelines 工具文档
-└── android-build.md     # Android 构建工具文档
-```
-
----
-
-## 已实现工具
-
-| 工具名 | 功能 | 文档 |
+| 工具名 | 功能 | 契约与机制 |
 |-|-|-|
-| `replace_text` | 按输入顺序批量执行文件局部替换，支持 default 精确字面匹配与显式 JavaScript regex | [docs/tools/replace-text.md](tools/replace-text.md) |
-| `read` | 按 literal 路径或 glob 读取文本，支持逐请求行号/正则范围、行号前缀和 shallow 统计 | [docs/tools/read.md](tools/read.md) |
-| `discover_guidelines` | 从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文 | [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
-| `write_file` | 写入完整文本文件，自动创建父目录，成功时返回英文消息并包含路径和总行数 | [docs/tools/write-file.md](tools/write-file.md) |
-| `android_assembleDebug` | 在固定 Android 工作目录执行 `./gradlew.bat assembleDebug`，支持 quiet/plain 控制和按需失败日志 | [docs/tools/android-build.md](tools/android-build.md) |
-| `android_testDebugUnitTest` | 在固定 Android 工作目录执行 `./gradlew.bat testDebugUnitTest`，失败时可聚合本次生成的 JUnit XML | [docs/tools/android-build.md](tools/android-build.md) |
-| configured custom-only Tool | 通过 Tool config v2 的 definitionId binding 调用 route-specific Processor / HTTP route | [docs/EXTERNAL-ROUTING.md](EXTERNAL-ROUTING.md) |
-
----
-
-## 源码布局
-
-工具层只负责工具定义、参数校验、业务编排和结果返回。配置来源由 `ToolRuntimeContext` 提供；文件路径、安全边界、日志、进程执行等共享能力应复用已有基础设施。
-
-```text
-src/tools/
-├── names.ts                         # built-in canonical 工具名与顺序
-├── index.ts                         # built-in registry 编译与 workspace service facade
-├── catalog.ts                       # effective/exposed catalog、exposure 与调用路由
-├── custom-tool-config.ts            # custom tool config / definition 加载
-├── input-schema-validator.ts        # Draft 2020-12 validator facade
-├── types.ts                         # definition、executor 与 ToolCallResult 类型
-├── results.ts                       # textErrorResult 单文本块错误 helper
-├── built-in/                        # 内置工具按功能分组，definition 与 handler 共置
-│   ├── files/                       # 文件读取、写入与替换
-│   │   ├── read.ts
-│   │   ├── replace.ts
-│   │   ├── write-file.ts
-│   │   └── *.definition.ts
-│   ├── guidelines/                  # 指南发现
-│   │   ├── discover-guidelines.ts
-│   │   └── discover-guidelines.definition.ts
-│   └── android/                     # Android 工具及共享编排
-│       ├── android-assemble-debug.ts
-│       ├── android-test-debug-unit-test.ts
-│       ├── android-build-shared.ts
-│       └── android-build.definition.ts
-└── external-routing/                 # custom-only 外部路由的 config、协议和运行时组件
-```
-
-### 共享实现归属
-
-| 区域 | 归属 |
-|-|-|
-| `src/runtime/application/start-application.ts` | 应用资源组装；创建一个 workspace tool service，并将其传入 HTTP 接线 |
-| `src/runtime/mcp/http-app.ts` | `/mcp` POST / GET / DELETE 路由、transport 创建与 session 接线；session admission 和关闭委托应用 lifecycle |
-| `src/runtime/mcp/mcp-server.ts` | MCP server factory；使用调用方传入的同一 workspace tool service 接入 `tools/list` / `tools/call` |
-| `src/runtime/invocation/tool-call-handler.ts`、`src/runtime/invocation/tool-result-validation.ts` | 统一工具调用出口、结果校验与内部结果阶段接线，契约见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)；请求头适配实现见 [请求头策略](REQUEST-HEADER-POLICY.md) |
-| `src/runtime/invocation/tool-context.ts` | 工具 handler 的运行时输入类型；配置派生语义见 [docs/CONFIG.md](CONFIG.md) |
-| `src/engine/text-utils.ts` | 文本行尾符检测与解析，供写入类工具复用 |
-| `src/engine/replacement.ts` | `replace_text` 的核心匹配算法，细节见 [docs/tools/replace-text.md](tools/replace-text.md) |
-| `src/engine/android-gradle-output.ts` | Android Gradle 输出解析，细节见 [docs/tools/android-build.md](tools/android-build.md) |
-| `src/engine/guideline-front-matter.ts` | 指南 Front Matter delimiter、YAML AST 与元数据校验，见 [docs/tools/discover-guidelines.md](tools/discover-guidelines.md) |
-| `src/utils/paths.ts` | 文件类工具共享路径安全层，细节见 [docs/PATH-SAFETY.md](PATH-SAFETY.md) |
-| `src/utils/file-selection.ts` | literal / glob 有序候选与失败、输入下标、discovery exclude 与 ignoreFiles 开关；去重由调用工具负责，见 [read](tools/read.md) 和 [指南发现](tools/discover-guidelines.md) |
-| `src/engine/read-range.ts`, `src/utils/file-read.ts` | 纯范围定位和格式化、完整文本读取与二进制/大小保护，见 [read](tools/read.md) |
-| `src/utils/bounded-workers.ts` | 有限并发、按输入位置收集结果、取消/异常停止调度与已启动任务 drain，见 [read](tools/read.md) 和 [指南发现](tools/discover-guidelines.md) |
-| `src/utils/file-lock.ts` | 写入类工具的文件级并发锁，见本文“并发模型” |
-| `src/utils/logger.ts` | 工具调用日志，细节见 [docs/LOGGING.md](LOGGING.md) |
-| `src/utils/android-gradle.ts` | Android Gradle 进程执行和超时控制，细节见 [docs/tools/android-build.md](tools/android-build.md) |
-| `src/utils/android-gradle-gate.ts` | Android workspace-scoped FIFO、调用取消、active ownership 与 shutdown drain，细节见 [docs/tools/android-build.md](tools/android-build.md) |
-| `src/tools/external-routing/` | custom-only definitionId binding、External routing config、Processor registry、route-specific endpoint / stage、canonical protocol、共享 HTTP / subprocess lifecycle，见 [external routing](EXTERNAL-ROUTING.md) |
-
-通用检查脚本位于 `test/tools/inspect-tools.ts`，可用于查看完整 canonical registry 的 definition 结构；selected workspace 的实际 `tools/list` 还会应用 exposure 过滤：
-
-```bash
-node --import tsx test/tools/inspect-tools.ts
-```
-
-### Built-in registry、catalog 与 workspace tool service
-
-`src/tools/` 顶层承载 registry、catalog、配置加载、schema validator 和公共契约。`src/tools/built-in/` 按 files、guidelines、android 功能分组；各组的 `*.definition.ts` 与 handler 共置，分别维护工具契约和业务实现。`src/tools/external-routing/` 承载 custom-only 工具的外部执行能力。
-
-definition 模块定义 built-in Tool 的 `name`、`description` 与 Draft 2020-12 `inputSchema`，可以复用实现常量，并通过 `satisfies MCPTool['definition']` 保留 built-in identity 与 schema 的静态类型约束。handler 模块绑定 definition 与 executor；共置不改变两者的职责边界。
-
-`src/tools/names.ts` 的 `TOOL_NAMES` 只定义内置工具名称和 canonical 顺序。`src/tools/index.ts` 按该目录检查缺失、额外和重复实现，深冻结内置 definitions，并把每份原始 `inputSchema` 编译为 built-in implementation validator。
-
-selected workspace 的 tool config 由 `src/tools/custom-tool-config.ts` 在启动期加载。Tool config / definition 的文件格式、路径边界和示例见 [自定义 Tool 配置](config/tool-config.md)。每份 definition 只描述 `name`、`description` 与 Draft 2020-12 `inputSchema`；它不携带 executor。schema 使用 `src/tools/input-schema-validator.ts` 在隔离 resolver context 中同步编译，validator 不执行类型转换、default 注入或字段删除。
-
-`compileWorkspaceToolCatalog()` 形成 exposure 前的 effective catalog：
-
-- 未覆盖的内置工具使用内置 definition、executor 与 implementation contract；
-- 同名 custom definition 完整替换对外 description/input schema，保留内置 executor 和 implementation contract；
-- custom-only definition 按 Tool config reference 顺序追加；External routing config 为其 reference `id` 声明 route 时绑定对应的 route-bound external executor，否则绑定 unavailable executor；
-- built-in 工具保持 canonical 顺序，override 保持原位置；
-- selector 在 effective names 构建后执行成员校验和过滤，过滤不重排。
-
-exposed catalog 同时派生 definitions view 与 route lookup。`createWorkspaceToolService()` 只包装调用方传入的 compiled catalog；`tools/list` 与 `tools/call` 因此共享完全相同的 exposure 边界。隐藏和未知名称统一返回 `Unknown tool`，不会运行 schema validator 或 executor。
-
-`startApplication()` 在 listener 启动前创建一次 workspace tool service。`createMcpHttpApp()` 将该 service 传给每个 session 的 MCP server；HTTP 层不重新编译 catalog，也不直接使用未经过 exposure 过滤的 registry。
-
-调用路由按以下顺序执行：effective input validation → built-in implementation validation（适用时）→ executor。未覆盖的内置工具复用同一 validator；override 必须同时满足 workspace 对外 contract 与内置实现 contract；custom-only 工具通过 effective validation 后，按 catalog binding 调用 route-bound external executor 或返回未配置 execution route 的标准工具错误。route-bound executor 共享 workspace external runtime 的 admission、Processor runner（需要时）和 HTTP Agents。所有这些结果继续通过 runtime result adapter 与 logger。
-
-catalog 与 runtime snapshot 都在启动期创建并在服务生命周期内保持固定，但职责独立。snapshot 只为 handler 提供 workspace runtime 能力；definitions、validators、executor bindings、source metadata 与 exposure 由 catalog 持有。修改 Tool config、definition 或 external routing 配置文件后需要重启服务。
-
----
-
-## 添加新工具
-
-### 步骤 1：创建 Tool definition
-
-在 `src/tools/built-in/` 的对应功能目录下创建 definition 模块，例如 `src/tools/built-in/files/read.definition.ts`。以下片段只演示模块结构，`read` 的完整参数契约见[工具文档](tools/read.md)：
-
-```typescript
-import type { MCPTool } from '../../types.js';
-
-export const READ_TOOL_DEFINITION = {
-  name: 'read',
-  description: '工具描述，这段文字会直接进入 AI 的上下文，是 prompt engineering 的一部分。',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      include: {
-        type: 'array',
-        minItems: 1,
-        items: { type: 'string', minLength: 1 },
-        description: '参数描述，同样会被 AI 看到。',
-      },
-    },
-    required: ['include'],
-    additionalProperties: false,
-  },
-} as const satisfies MCPTool['definition'];
-```
+| `replace_text` | 按输入顺序批量替换，支持 default 精确字面匹配与显式 JavaScript regex | [replace_text](tools/replace-text.md) |
+| `read` | literal/glob 文本读取、行号/正则范围、行号前缀和 shallow 统计 | [read](tools/read.md) |
+| `discover_guidelines` | 从 Markdown Front Matter 发现指南元数据，不返回正文 | [discover_guidelines](tools/discover-guidelines.md) |
+| `write_file` | 完整文本写入、自动创建父目录与内容警告 | [write_file](tools/write-file.md) |
+| `android_assembleDebug` | Android Debug 构建 | [Android 工具](tools/android-build.md) |
+| `android_testDebugUnitTest` | Android Debug 单元测试与本次 JUnit 报告聚合 | [Android 工具](tools/android-build.md) |
+| configured custom-only Tool | 通过 definition reference id 绑定 HTTP/Processor 或下游 MCP route | [外部路由](EXTERNAL-ROUTING.md) |
 
-definition 只承载 `name`、`description` 与 `inputSchema`，不携带 executor。描述或 schema 需要与实现共享稳定常量时，由 definition 模块导出该常量供 handler 使用，或导入已有共享基础设施常量；不要在 handler 与 definition 中重复维护同一值。
+## Definition 与 executor
 
-### 步骤 2：创建工具文件
+built-in definition 定义 `name`、`description` 与 Draft 2020-12 `inputSchema`，通过 `satisfies MCPTool['definition']` 保留 identity 与 schema 的静态约束。handler 模块绑定 definition 与 executor；两者共置但责任分离。共享稳定常量由 definition 或已有基础设施提供，不在 schema 与 handler 中重复维护。
 
-在 definition 所在的功能目录下创建 handler 模块，例如 `src/tools/built-in/files/read.ts`：
+`TOOL_NAMES` 定义 built-in identity 与 canonical 顺序。名称目录和实现 registry 必须一一对应；registry 构建会拒绝缺失、额外或重复实现，深冻结 definitions，并编译各自的 implementation validator。
 
-```typescript
-import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
-import type { ToolInvocationContext } from '../../../runtime/invocation/tool-invocation-context.js';
-import { READ_TOOL_DEFINITION } from './read.definition.js';
-import type { MCPTool, ToolCallResult } from '../../types.js';
+workspace custom definition 只描述对外契约，不携带 executor。文件格式、引用路径和 definitionId binding 见[自定义 Tool 配置](config/tool-config.md)。
 
-async function handleRead(
-  args: Record<string, unknown>,
-  context: ToolRuntimeContext,
-  invocation: ToolInvocationContext,
-): Promise<ToolCallResult> {
-  // inputSchema 之后仍需处理的参数关系与运行时语义
-  // 业务逻辑；文件类工具从 context.fileAccessPolicyContext 使用统一文件访问策略
-  // 需要响应单次调用取消时使用 invocation.signal；不需要时可以省略该形参
-  // 返回结果
-  return {
-    content: [{ type: 'text', text: '结果文本' }],
-    isError: false,
-  };
-}
+handler 接收两类独立输入：workspace `ToolRuntimeContext` 与单次 `ToolInvocationContext`。后者承载调用 identity 和 `AbortSignal`，不消费调用信息的 handler 可以省略第三个形参。工具不读取配置文件、解析全局配置或自行应用环境变量；能力来源见[系统架构](ARCHITECTURE.md#会话与单次工具调用)。
 
-const readTool: MCPTool = {
-  definition: READ_TOOL_DEFINITION,
-  handler: handleRead,
-};
+## Catalog、exposure 与调用
 
-export default readTool;
-```
+`compileWorkspaceToolCatalog()` 构建 exposure 前的 effective catalog：
 
-### 步骤 3：登记 canonical 工具名
+- 未覆盖 built-in 使用内置 definition、executor 与 implementation contract。
+- 同名 custom definition 完整替换对外 description/input schema，保留 built-in executor 与 implementation contract。
+- custom-only definition 按 Tool config reference 顺序追加；有 route 时绑定 external executor，没有 route 时绑定 unavailable executor。
+- built-in 保持 canonical 顺序，override 保持原位置；selector 在 effective names 构建后校验和过滤，过滤不重排。
 
-编辑 `src/tools/names.ts`，把工具名加入 `TOOL_NAMES`。该数组只定义 built-in identity 与 canonical registry 顺序；workspace selector 的合法成员由 effective catalog 决定。
+exposed catalog 同时派生 definitions view 与 route lookup。`createWorkspaceToolService()` 包装已编译 catalog，`tools/list` 与 `tools/call` 因此共享 exposure 边界。隐藏与未知名称统一返回 `Unknown tool`，不运行 validator 或 executor。会话工具视图只能进一步收窄这个边界，见 [setToolList](request-header-policy/on-initialize/set-tool-list.md)。
 
-### 步骤 4：注册工具
+调用顺序为 effective input validation → built-in implementation validation（适用时）→ executor：
 
-编辑 `src/tools/index.ts`，导入工具并把实现加入 `importedTools`：
+- 未覆盖 built-in 复用同一 validator，不重复执行相同校验。
+- override 同时满足 workspace 对外 contract 和 built-in implementation contract。
+- custom-only 通过 configured contract 后进入绑定的外部 route；没有 route 时返回标准 unavailable 工具错误。
 
-```typescript
-import replaceTool from './built-in/files/replace.js';
-import readTool from './built-in/files/read.js';  // ← 加这行
+catalog 固定性、snapshot 分工与共享 service 生命周期见[系统架构](ARCHITECTURE.md#启动与固定运行时)。
 
-const importedTools: readonly MCPTool[] = [
-  replaceTool,
-  readTool,  // ← 加这行
-];
-```
+## Schema 与 handler 的校验分工
 
-名称目录与实现 registry 必须一一对应；缺失、额外或重复实现会在 registry 构建时失败。`src/index.ts`、日志系统和路由逻辑不需要为单个工具改动。
+每份 schema 在隔离 resolver context 中同步编译，references 必须在自身 document 内解析，不读取网络、文件或其他 definition。validator 不执行类型转换、default 注入或字段删除，不启用 `format` 校验，并拒绝 `$async` schema。
 
-工具 handler 接收稳定的 workspace `ToolRuntimeContext` 与单次调用的 `ToolInvocationContext`。调用级 identity 和 `AbortSignal` 属于 invocation context；不消费调用级信息的 handler 可以省略第三个形参。不要在工具层读取配置文件或解析全局配置结构。配置来源、workspace 选择和运行时快照归一化由配置层/运行时层负责。
+built-in `inputSchema` 是参数结构的校验边界，表达 required、类型、枚举、简单值域、集合数量与未知字段策略；不接受未知字段时使用 `additionalProperties: false`。handler 在 schema 成功后运行，不重复检查这些结构约束，只处理路径、文件状态、正则可编译性、参数关系与环境条件等运行时语义。
 
-### 步骤 5：编译测试
+结构负例测试通过 workspace service 或 implementation validator 进入 schema 边界；直接调用 handler 的测试传入满足 schema 的参数。
 
-```bash
-npm run build
-npm run start
-```
+项目定义的工具名、`inputSchema` 属性名和工具返回 JSON 字段名默认使用 `snake_case`，嵌套属性相同。外部协议、领域固有标识和其他明确约束按各自语义命名；该约定不约束 MCP/JSON Schema 标准字段或内部 TypeScript 标识符。
 
-### 步骤 6：编写工具文档
+`description` 直接进入调用 Agent 的上下文，应表达功能边界、输入格式和必要的纠错提示，不放内部实现知识。详细维护说明留在开发文档，不复制进 Tool description。
 
-在 `docs/tools/` 下新建对应的 markdown 文件，记录 Schema 设计意图、实现细节、设计边界、涉及文件和参考来源。然后在本文的“已实现工具”表格中添加条目。
+## 结果与文件能力
 
-工具暴露机制的回归入口：
+结果构造、显式 `isError`、text/image 内容块、`textErrorResult()`、稳定 JSON 约束和字段所有权统一由[工具返回结果](TOOL-RESULTS.md)维护。错误文本应提供安全且可操作的修正方向，不暴露底层敏感信息。
 
-- `test/config/tool-exposure.test.ts`：workspace `tools` 外壳、tool config path 与 selector grammar。
-- `test/tools/custom-tool-config.test.ts`：referenced files、strict definition 外壳与 Draft 2020-12 validator。
-- `test/tools/tool-exposure.test.ts`：effective/exposed catalog、override、双重 contract、definitionId external binding 与 unavailable executor。
-- `test/runtime/startup-runtime.test.ts`：selected-only 加载、启动期组合与运行期固定 catalog。
-- `test/runtime/mcp-server-tool-exposure.test.ts`：真实 `tools/list` / `tools/call` 接线、custom-only 路由和 service 复用。
-- `test/runtime/http-app.test.ts`：loopback HTTP 上的 session 注册、共享 service、请求 policy 隔离、GET / DELETE 接线、stale session 与 admission 拒绝。
-- `test/runtime/start-application.test.ts`：应用资源组装、跨 session 的 selected exposure、listener 启动、幂等关闭与日志收尾。
-- `test/runtime/external-routing-integration.test.ts`：selected workspace、custom-only definition、MCP 调用和 loopback endpoint 的完整 route。
+文件工具消费 `ToolRuntimeContext.fileAccessPolicyContext`，遵守[路径安全接入要求](PATH-SAFETY.md#工具接入要求)，不自行实现 allowed roots、glob、ignore/deny 或 realpath 边界。
 
----
+已有内容按完整字节分类，只对 `text` 解码并执行文本操作；后缀不参与准入。缺失文件与分类异常分开处理，分类失败不授予文本访问。共享分类规则见[内容分类](tools/read.md#内容分类规则)。写入类工具使用 `resolveLineEnding()` 解析 workspace 行尾符策略；保留尾换行、遗漏占位符警告与写入恢复由单工具契约约束。
 
-## 编写工具时的注意事项
+## 并发与共享资源
 
-### Schema 设计
+写入类工具通过 `withFileLock()` 按文件路径 FIFO 串行化，不同文件互不阻塞；只读工具不获取写锁。锁 registry 清理 idle entry。批次是否构成事务、锁持有范围与失败后的继续行为见[replace_text](tools/replace-text.md#执行顺序与锁)和[write_file](tools/write-file.md#写入策略)。
 
-Schema 中的 `description` 字段不仅仅是文档，**它是给 AI 看的 prompt**。
+Android 工具按 workspace 共享可取消 FIFO gate，不同 workspace 独立。active lease 持有到 Gradle drain 与报告后处理结束，不能在返回执行结果时提前转交。queued cancellation、恢复期限和迟到事件隔离见[Android 工具](tools/android-build.md#workspace-gate-与取消)。
 
-项目定义的 MCP 工具名称、`inputSchema` 属性名和工具返回 JSON 字段名默认使用 `snake_case`，嵌套属性遵循同一规则。外部协议、领域固有标识或其他明确约束可以使用符合其语义的命名。该约定不适用于 MCP、JSON Schema 等标准规定的字段，也不约束内部 TypeScript 标识符。
+外部 HTTP/MCP route 共享 workspace admission 与容量，但各自拥有对应 transport 资源；容量释放依赖 exchange drain，而非 caller-visible settled。细节见[外部路由运行时](external-routing/runtime.md)。
 
-**应该包含的内容：**
+## 验证入口
 
-- 工具的功能边界（能做什么、不能做什么）。
-- 参数的格式要求和约束。
-- 常见错误的预防提示。
-- 与其他工具的配合建议（如“先用 `read` 查看内容”）。
+`npm test -- tools config runtime` 覆盖 definition 加载、双重 contract、catalog/exposure 与 HTTP/MCP 接线；外部执行另运行 `npm test -- external-routing`。验证命令和类型检查要求见[测试](TESTING.md)。
 
-**应该避免的内容：**
-
-- 内部实现细节（AI 不需要知道你用了什么算法）。
-- 过长的描述（增加 token 消耗，降低 AI 注意力）。
-
-参考已实现工具的 description，它们在简洁和完整之间做了平衡。
-
-所有内置 `inputSchema` 同时作为 executor implementation contract，并在 catalog 编译时使用 Draft 2020-12 validator 编译。schema 是 built-in 参数结构的唯一校验边界，应完整表达 required、类型、枚举、简单值域、集合数量和未知字段策略；不接受未知字段的 executor 使用 `additionalProperties: false`。handler 在 schema 校验成功后运行，不重复检查这些结构约束，只负责路径、文件状态、正则可编译性、参数关系和环境条件等业务或运行时语义。结构负例测试应通过 workspace tool service 或 implementation validator 进入 schema 边界；直接调用 handler 的测试只传入满足 schema 的参数。
-
-### 返回值设计
-
-Tool 直接构造成功结果并显式填写 `isError`。简单单文本块错误可以使用 `src/tools/results.ts` 的 `textErrorResult()`：
-
-```typescript
-// 成功
-return {
-  content: [{ type: 'text', text: '给 AI 看的结果描述' }],
-  isError: false,
-};
-
-// 简单文本错误
-return textErrorResult('错误描述 + 引导 AI 下一步怎么做');
-```
-
-成功/失败共用同一内容结构，或者结果需要图片、多个内容块、顶层 `_meta` 或 `structuredContent` 时，直接构造 `ToolCallResult`，并根据业务状态填写 `isError`：
-
-```typescript
-const result = {
-  content: [
-    { type: 'text', text: 'Generated preview:' },
-    { type: 'image', data: pngBase64, mimeType: 'image/png' },
-  ],
-  isError: false,
-} satisfies ToolCallResult;
-
-return result;
-```
-
-图片 `data` 使用裸 base64，而非 data URI；Tool 决定 text/image 块的数量和顺序。`structuredContent` 可由 Tool 构造，但命中 `structuredContentDup` request policy 时会由统一出口覆盖。完整字段所有权、稳定 JSON 与 SDK schema 校验、适配规则见 [docs/TOOL-RESULTS.md](TOOL-RESULTS.md)。
-
-**错误消息应该引导 AI 自我纠正**，说明失败原因和修正方式。
-
-### 文件操作类工具的通用考虑
-
-1. **路径安全**：所有文件 I/O 必须先通过 `src/utils/paths.ts` 的统一路径安全层；写入工具还必须使用共享写入安全校验。详细语义见 [docs/PATH-SAFETY.md](PATH-SAFETY.md)。
-2. **并发安全**：涉及文件写入的操作应使用 `withFileLock()` 包裹。只读工具不需要加锁。
-3. **行尾符**：读取时统一转为 `\n` 处理，写入时根据 `context.lineEnding` 用 `resolveLineEnding()` 恢复。
-4. **错误处理**：区分 `ENOENT`（文件不存在）和其他文件系统错误，给出不同的错误消息。
-5. **内容分类**：安全校验后完整读取已有目标字节，使用 `classifyFileContent()` 分类，只对 `text` 解码和执行文本操作。后缀不参与判定，具体规则见 [read 文档](tools/read.md#内容分类规则)；文件系统的缺失判断与分类异常分离。
-
----
-
-## 并发模型
-
-MCP 客户端可能并发发送多个 `tools/call` 请求。并发策略按资源类型划分：
-
-- **不同文件**：完全并行，互不阻塞。
-- **同一文件**：通过 `withFileLock()` 串行化，FIFO 顺序。
-- **不同 Android workspace**：Gradle execution 可以并行。
-- **同一 Android workspace**：`android_assembleDebug` 与 `android_testDebugUnitTest` 共享可取消的 FIFO gate；gate 持有到进程 confirmed/optimistic drain 和报告后处理都完成。
-
-文件锁基于 Promise 链（`src/utils/file-lock.ts`）；Android gate 使用显式 waiter queue，以便 queued cancellation 原子移除。两类 registry 都会清理 idle entry。
-
-`replace_text` 的每个文件项单独持有一次文件锁，该锁覆盖文件项中的全部 replacements；每个 replacement 都重新检查并读取磁盘状态。重复路径文件项之间会释放并重新获取锁，不构成跨文件项事务。批量执行、部分成功和逐项结果细节见 [replace_text 工具文档](tools/replace-text.md)。
-
-**重要：** 只有涉及文件写入的工具需要使用 `withFileLock()`。只读工具（如 `read`）不需要加锁。
-
----
-
-## 故障排查
-
-| 现象 | 可能原因 | 解决方案 |
-|-|-|-|
-| 替换失败且 `matched_targets=0` | AI 给的 `target` 与文件实际内容不匹配，或 regex pattern 未命中 | default 模式先用 `read` 确认内容；regex 模式检查 JavaScript 正则 pattern |
-| 替换失败 `expected 1` 或 `matched_targets=N` | `target` 匹配了多处但未允许多匹配 | AI 需要提供更多上下文，或设置 `allow_multiple=true` |
-| 批量读取返回空 | `include` 模式未匹配任何文件 | 检查路径 / glob 是否正确；相对输入需位于 primary `rootDir`，drive-absolute 输入需位于 allowed roots 内 |
-| 编译报类型错误 | SDK 版本更新导致接口变化 | 检查 `ToolCallResult` 是否需要补充字段 |
+查看 canonical built-in definitions 可显式运行 `node --import tsx test/tools/inspect-tools.ts`；该输出不代表 selected workspace 经 override、custom-only 与 exposure 后的实际工具列表。

@@ -10,34 +10,6 @@
 
 文本块使用 `type: 'text'` 和 `text: string`；图片块使用 `type: 'image'`、裸 base64 `data: string` 和独立的 `mimeType: string`，不用 data URI。两类块都保留 SDK 的可选 `annotations`、`_meta` 字段。`audio`、`resource`、`resource_link` 等其他块不属于项目结果契约。
 
-普通文本成功结果：
-
-```json
-{
-  "content": [
-    {
-      "type": "text",
-      "text": "Operation completed."
-    }
-  ],
-  "isError": false
-}
-```
-
-普通文本错误结果：
-
-```json
-{
-  "content": [
-    {
-      "type": "text",
-      "text": "Failed because ..."
-    }
-  ],
-  "isError": true
-}
-```
-
 字段所有权如下：
 
 | 字段 | 所有者 | 规则 |
@@ -45,8 +17,10 @@
 | `content` | Tool | 决定内容块、数量和顺序。 |
 | `isError` | Tool | 显式表示业务状态；简单文本错误可以由 `textErrorResult()` 代为填写。 |
 | `_meta` | Tool | 按 MCP 契约返回 metadata，具体语义由工具定义。 |
-| `structuredContent` | Tool；命中 policy 时由 adapter 覆盖 | Tool 可以自行构造；`structuredContentDup` 有意覆盖该字段。 |
+| `structuredContent` | Tool；结果阶段功能可以覆盖 | Tool 可以自行构造；覆盖语义见 [structuredContentDup](request-header-policy/on-call-tool-result/structured-content-dup.md)。 |
 | 其他顶层扩展字段 | Tool | 沿用 SDK `CallToolResult` 的扩展边界。 |
+
+项目 Tool definition 不提供 `outputSchema`；返回 `structuredContent` 不改变 `tools/list` 的 definition。
 
 Tool 不读取 request headers，也不判断 request policy；统一出口在工具执行后负责结果校验和适配。策略分阶段配置、初始化会话准入与单次调用数据流见 [请求头策略](REQUEST-HEADER-POLICY.md)。
 
@@ -107,26 +81,6 @@ return result;
 
 ---
 
-## `structuredContent` 适配
-
-`rules.requestHeaders.onCallToolResult` 按本次工具调用 POST 的请求头决定是否启用 `structuredContentDup`；初始化参数不决定此字段。配置与匹配细节见 [请求头策略](REQUEST-HEADER-POLICY.md#oncalltoolresult)。
-
-Tool 可以自行返回 `structuredContent`。未命中 `structuredContentDup` 时，adapter 在项目 handler 边界直接返回原始 Tool result，不增加或覆盖字段；后续 SDK 仍会再次 parse 结果。命中时，adapter 创建新对象并有意覆盖 Tool 自有 `structuredContent`：
-
-```typescript
-return {
-  ...result,
-  structuredContent: {
-    content: result.content,
-    isError: result.isError === true,
-  },
-};
-```
-
-wrapper 只包含原始 `content` 数组的引用（保留 text/image 字段与顺序）和规范化的 `isError`，不解析文本 payload。Tool 自有的 `structuredContent` 被覆盖，原对象不变；顶层 `_meta` 及其他扩展字段由对象展开保留。包含图片时，序列化后的 JSON 会在顶层 `content` 和 `structuredContent.content` 中各包含一份 base64。`tools/list` 的 definition 不因此添加 `outputSchema`；项目 Tool definition 也不提供 `outputSchema` 能力。
-
----
-
 ## 工具准入与输入校验错误
 
 会话工具视图与 workspace tool catalog 在 executor 前产生的可恢复失败也使用标准 `ToolCallResult`：
@@ -145,29 +99,11 @@ Built-in pre-admission cancellation 使用稳定文本 `The tool call was cancel
 
 ## External routing 结果
 
-External routing config 为 definition reference `id` 声明 route 的 custom-only Tool，在 configured input schema 校验通过后进入该 route-bound external executor。每个 route 选择自己的 endpoint 与 stage，但 route-bound executor 共享 workspace external runtime。
+custom-only Tool 的 HTTP 与 MCP route 都返回统一 `ToolCallResult`，继续经过 runtime 校验、request policy adapter 与 result logger。
 
-HTTP canonical result 使用有序 `content`，executor 为三种 status 共用逐块映射：
+HTTP route 将已校验 canonical content 逐块映射为 MCP text/image；`unknown` JSON 值在最终适配时转成 text，status 派生 `isError`。严格协议、块顺序、空内容、错误文本与映射规则由 [HTTP route](external-routing/http-route.md)维护。MCP route 不使用 canonical wrapper，下游结果支持范围与归一化由 [MCP route](external-routing/mcp-route.md)维护。
 
-- `text` 保留 text；
-- `image` 原样保留 data，将 `mime_type` 改名为 MCP `mimeType`；
-- `unknown` 对已校验 JSON value 执行紧凑 `JSON.stringify`，映射为一个 text 块。
-
-映射保留全部块的数量、顺序、相邻文本边界、空 text 和空 content，不合并、分组或补充状态文本。
-Unknown string 包含 JSON 引号，`null`、`false` 和 `0` 分别成为对应 JSON 文本；内部 `type` 或 URL 不被识别为 MCP 内容。
-`completed` 派生 `isError: false`，`failed` 与 `cancelled` 派生 `isError: true`，业务文本不添加 `External tool failed:` 或 `External tool reported cancellation:` 前缀。
-任一 content 不合法使整个 canonical response 失败，不返回部分结果。
-
-顶层 canonical `error` 通过 `textErrorResult()` 返回 `External endpoint rejected the tool call (<code>): <message>`。
-HTTP 映射不生成 annotations、`_meta` 或 `structuredContent`；命中 `structuredContentDup` 时，统一 adapter 复制映射后的 MCP content 与 isError，不恢复 unknown JSON 值。
-MCP route 不使用 canonical content，继续按下游 MCP 结果的 text/image、annotations、`_meta` 和 `structuredContent` 契约返回。
-
-容量、取消、HTTP / Processor timeout、大小限制、transport、canonical protocol 与内部失败也都映射为 `textErrorResult()`。本地失败文本只说明稳定的失败类别和安全的下一步：不包含 endpoint URL 或 query、header、request / response entity、Processor stdout / stderr、executable path、argv 或底层异常。外部服务器可能已执行而未获得确认结果时，文本明确说明服务不会自动重试；调用方只应在操作可安全重复时自行重试。
-
-业务 content（包括图片与 unknown JSON 文本）和 canonical `error.message` 可能进入既有 Tool result logger，不经过通用脱敏、HTML 转义或指令过滤。
-本地失败文本的敏感信息边界不用于过滤 endpoint / Processor 的业务内容。
-
-HTTP canonical 的严格块规则、result `message` 结构不兼容要求、response filter 契约，以及外部 route 的限制见 [external routing](EXTERNAL-ROUTING.md#http-canonical-protocol-与-stage-编排)。
+容量、取消、timeout、transport 与协议失败也进入同一结果管线；本地失败与远端业务内容的敏感信息边界见[外部路由运行时](external-routing/runtime.md)。
 
 ---
 
@@ -189,15 +125,3 @@ return {
 - 保留工具既有 `JSON.stringify` 格式，避免改变客户端或测试依赖的文本内容。
 - Android 构建失败结果使用 `JSON.stringify(failure)` 输出紧凑 JSON，后续维护时应保持该格式。
 - JSON payload 内部的 `success` 字段和 MCP 返回壳的 `isError` 字段应表达同一语义：成功时 `success: true` / `isError: false`，失败时 `success: false` / `isError: true`。
-
----
-
-## 新增工具 checklist
-
-新增或修改工具返回结果时，检查以下事项：
-
-1. Tool 是否直接构造成功结果并显式填写 `isError`；简单单文本块错误是否适合使用 `textErrorResult()`。
-2. 图文块是否按业务需要排列；图片 `data` 是否为裸 base64，`mimeType` 是否与图片内容一致。
-3. 错误文本是否包含失败原因和可操作的修正建议；JSON payload 是否保持既有 stringify 格式。
-4. `_meta`、`structuredContent` 或扩展字段是否确由该 Tool 拥有；是否考虑 `structuredContentDup` 对 `structuredContent` 的条件覆盖。
-5. 返回的完整结果是否满足 runtime 的稳定 JSON 与 SDK schema 约束。

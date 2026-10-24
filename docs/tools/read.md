@@ -164,20 +164,15 @@ image reading is not supported (png)
 
 整次拒绝、取消或内部异常可以返回单错误块，不伪装成已完成的逐请求结果。逐请求错误与显示路径遵循路径安全层的隐私边界，不泄露调用方未显式提供的 denied realpath。
 
-## 实现与测试归属
+## 验证重点
 
-| 入口 | 职责 |
-|-|-|
-| `src/tools/built-in/files/read.definition.ts` | 对外 description、input schema 与请求上限。 |
-| `src/tools/built-in/files/read.ts` | 默认请求去重、object 覆盖、前 100 请求、源文件分组、结果与策略提示。 |
-| `src/engine/read-range.ts` | 无 I/O 的范围校验、行号/正则定位、片段选择和行号格式化。 |
-| `src/utils/file-selection.ts` | 带 `includeIndex` 的有序候选与失败、每条 glob 内排序、过滤与选择阶段策略状态；不执行去重。 |
-| `src/engine/file-content.ts` | 无文件系统 I/O 的共享字节分类、严格 UTF-8 与全文文本检查。 |
-| `src/utils/file-read.ts` | 20 MiB 保护、完整字节读取、文本分类准入、解码与逐文件错误转换。 |
-| `src/utils/bounded-workers.ts` | 有限并发、输入位置结果收集、取消/异常停止调度与 drain。 |
-| `test/file-content/` | 分类规则、格式样本、严格全文 UTF-8、控制字节阈值与取消传播。 |
-| `test/read/` | 请求覆盖/顺序/限制、范围语义、正文与 shallow 统计、内容准入、失败隔离和工具结果。 |
-| `test/bounded-workers/` | 有限并发、稳定顺序、取消/异常停止调度和已启动任务收尾。 |
-| `test/path-safety/`, `test/file-access-policy/` | allowed roots、literal/glob、deny/ignore、symlink 与跨工具隐私边界。 |
+运行 `npm test -- read file-content bounded-workers`，重点验证：
+
+- object 覆盖、去重与最终顺序，100 请求限制在覆盖之后执行，失败不补位。
+- 同一源文件只读取一次，范围失败与源文件失败的隔离，以及正文与 shallow 统计按片段计算。
+- 全文字节分类、严格 UTF-8、控制字节阈值与探测异常，不能按后缀或片段内容放行。
+- 有限并发不改变结果顺序，取消或内部异常停止调度并等待已启动任务收尾。
+
+跨工具路径与策略验证见[路径安全](../PATH-SAFETY.md)，通用测试约定见[测试](../TESTING.md)。
 
 `discover_guidelines` 复用文件选择和 worker helper，但自己执行文件去重、Markdown 筛选与有界前缀读取，不复用 `read` 的全文读取、object、范围或 shallow 结果协议，详见[指南发现](discover-guidelines.md)。

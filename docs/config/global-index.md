@@ -77,14 +77,8 @@ CLI 参数形式与 workspace id lexical grammar 在读取配置前以 `CliError
 
 ---
 
-## 源码与测试
+## 验证重点
 
-| 区域 | 职责 |
-|-|-|
-| `src/config/global-config-path.ts` | home-level 全局索引与默认日志目录的位置解析。 |
-| `src/config/global-config-schema.ts` | `version: 2` 全局索引与 reference schema。 |
-| `src/cli.ts` | `--workspace <id>` CLI 解析。 |
-| `src/config/workspace-selection.ts` | reference 选择与 `RuntimeConfigIdentity` 创建。 |
-| `test/config/global-config-path.test.ts` | 全局路径解析。 |
-| `test/config/global-config-schema.test.ts` | 全局 schema、selected-only 读取与跨 workspace 复用边界。 |
-| `test/config/workspace-selection.test.ts` | CLI 与显式 workspace 选择。 |
+运行 `npm test -- config`，重点验证全局路径解析、reference schema 与 id 唯一性、CLI 显式选择，以及未选中 workspace 不触发文件读取。不同 id 复用同一配置文件、不同 workspace 复用 root 或端口均应保持合法。
+
+测试约定见 [测试](../TESTING.md)。

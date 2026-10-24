@@ -1,7 +1,5 @@
 # write_file 工具文档
 
-版本：v1.1
-
 ## 概述
 
 `write_file` 用于将完整的文本内容写入目标文件，支持自动创建缺失的父目录，并覆盖已存在文件。它适合新建文件或整文件重写；如果只是局部修改，仍应优先使用 `replace_text`。
@@ -10,22 +8,7 @@
 
 ---
 
-## 测试文件
-
-```text
-test/write-file/
-└── write-file.test.ts   # 任意后缀创建/覆盖、内容准入、探测异常、行尾符、placeholder warning 和路径保护
-```
-
-写入类工具的跨 root 和路径安全回归另见 [docs/PATH-SAFETY.md](../PATH-SAFETY.md)；`replace_text` 的写入锁与行尾符并发回归见 [docs/tools/replace-text.md](replace-text.md)。
-
----
-
 ## Schema
-
-### 工具名称
-
-`write_file`
 
 ### 参数
 
@@ -36,14 +19,7 @@ test/write-file/
 
 `inputSchema` 设置 `additionalProperties: false`，未知字段会在进入 handler 前由 built-in implementation validator 拒绝。
 
-### description 设计意图
-
-工具与参数 description 按职责分层：
-
-- **主 description**：说明整文件文本写入、自动创建缺失父目录、覆盖现有文件，以及与局部修改工具 `replace_text` 的分工。
-- **并行批次**：以最佳实践而非硬性限制的方式，建议新建或重写多个大文件时每次写一个文件，或每个并行批次最多写两个彼此独立的文件；小型独立文件可正常并行。
-- **路径契约**：由 `file_path` 参数说明 relative 和 drive-absolute 路径的 workspace root 语义。
-- **内容契约**：由 `content` 参数强调必须提供完整文件内容，并说明疑似省略占位符会写入但触发 Warning。
+Tool description 对多个大文件的新建或整文件重写建议每次处理一个文件，或每个并行批次最多两个独立文件；小型独立文件可正常并行。这是调用建议，不是 handler 的批次硬限制。
 
 ---
 
@@ -51,7 +27,7 @@ test/write-file/
 
 ### 路径安全
 
-`file_path` 统一通过 `src/utils/paths.ts` 的路径安全层处理：先按原始输入分类，再解析和做 lexical root 边界校验。相对路径只基于 primary `rootDir`；drive-absolute 路径可位于 primary 或 additional root 内，并会命中唯一 matched root。drive-relative（如 `C:foo.txt`）、rooted without drive（如 `/foo.txt`、`\\foo.txt`）、UNC、Windows namespace 路径都会在文件系统 I/O 前被拒绝。
+`file_path` 的输入分类、allowed-root 与 realpath 规则由[路径安全](../PATH-SAFETY.md)承接；写入策略区分锁前预检与锁内复检，后者不能被首次路径解析替代。
 
 ### 写入策略
 
@@ -78,15 +54,8 @@ Success: wrote nested/example.txt. Total lines: 2.
 
 ---
 
-## 涉及文件
+## 验证重点
 
-| 文件 | 职责 |
-|-|-|
-| `src/tools/built-in/files/write-file.definition.ts` | Tool description 与 Draft 2020-12 input schema |
-| `src/tools/built-in/files/write-file.ts` | 路径安全、写入编排、内容警告与成功消息 |
-| `src/tools/index.ts` | 工具注册 |
-| `src/utils/paths.ts` | 路径分类、root 边界校验和 display path |
-| `src/utils/file-access-policy.ts` | policy candidate、预计 real target、deny 与写入安全复检 |
-| `src/utils/file-lock.ts` | `withFileLock()` 文件级并发锁 |
-| `src/engine/text-utils.ts` | 行尾符检测与解析 |
-| `src/engine/file-content.ts` | 完整字节内容分类与文本准入规则 |
+运行 `npm test -- write-file`，重点验证任意后缀创建与已有内容准入、探测异常不授权写入、`auto` 行尾保留，以及 placeholder warning 不改变写入成功状态。
+
+跨 root、deny 与 symlink 回归见[路径安全](../PATH-SAFETY.md)；写入锁与行尾符并发回归见 [replace_text](replace-text.md#验证重点)。通用测试约定见[测试](../TESTING.md)。

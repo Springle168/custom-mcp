@@ -9,7 +9,9 @@
 - **终端（stdout）**：实时查看，带颜色高亮。
 - **日志文件**：默认写入 `~/.custom-mcp/logs/YYYY/MM/DD/<workspace-id>_YYYY-MM-DD_HH-MM-SS.log`，每次启动按系统本地时区生成新文件，纯文本格式。
 
-日志文件根目录来自启动期 `RuntimeConfigSnapshot.logsDir`：selected workspace 可配置 `logsDir`，也可在 `envOverrides.allowedFields` 包含 `logsDir` 后通过 `MCP_LOGS_DIR` 覆盖。`logsDir` 表示日志根目录；默认 `~/.custom-mcp/logs`、configured `logsDir` 和 allowlisted `MCP_LOGS_DIR` 都必须是已存在的本地绝对目录。`MCP_LOGS_DIR` 不存在时不覆盖；存在但为空字符串、whitespace-only、含首尾 whitespace、相对路径或不存在目录时，配置加载失败。Windows 下使用 drive-absolute path，例如 `E:/Logs/custom-mcp`。`Logger` 构造时先确认日志根目录已存在且为目录，然后在该根目录下按系统本地时间创建 `YYYY/MM/DD/` 日期子目录和 `<workspace-id>_YYYY-MM-DD_HH-MM-SS.log` 日志文件。文件名前缀直接使用 selected workspace id；配置 schema 要求 workspace id 以小写字母或数字开头，且仅包含小写字母、数字、短横线 `-` 或下划线 `_`。
+日志根目录来自启动期 `RuntimeConfigSnapshot.logsDir`，必须是已存在的本地绝对目录。来源可以是默认目录、workspace `logsDir` 或获 allowlist 授权的 `MCP_LOGS_DIR`；字段与覆盖校验见 [workspace 配置](config/workspace-config.md#环境变量覆盖)。
+
+`Logger` 构造时再次确认根目录存在且为目录，再创建本地时区对应的 `YYYY/MM/DD/` 子目录和日志文件。文件名前缀直接使用 selected workspace id，其 grammar 由[全局索引](config/global-index.md#schema)约束。
 
 ---
 
@@ -87,19 +89,45 @@ external routing 摘要由 `formatExternalRoutingStartupLines()` 生成。Tool c
     Routes: 0
 ```
 
-有 route 时，摘要输出 enabled 状态、总数，以及按声明顺序排列的 route definition id、Tool name、request / response stage mode 和经过脱敏的 endpoint identity：
+有 route 时，摘要输出 enabled 状态、总数与按声明顺序排列的 route。HTTP route 展示 stages 与 endpoint，MCP route 展示 server identity：
 
 ```text
   External routing: enabled
-    Routes: 1
+    Routes: 2
     Route: external-echo
+      Routing mode: http
       Tool: external_echo
       Request stages: direct
       Response stages: canonical-filter
       Endpoint: https://external.example.invalid/tool
+    Route: downstream-echo
+      Routing mode: mcp
+      Tool: downstream_echo
+      Server: https://mcp.example.invalid/mcp
 ```
 
-endpoint identity 会剥离 URL query、credentials 与 fragment。该摘要不输出 endpoint headers、Processor config / endpoint config 文件路径、Processor executable path 或 argv。Processor post-drain diagnostics 会输出安全的 route definition id 与 Tool name，以及既有 role、Processor name、duration、byte-count、stderr truncation 和 cleanup state；不输出 endpoint、payload 或 subprocess 内容。external routing 失败与 canonical business message 的边界见 [external routing](EXTERNAL-ROUTING.md)。
+Endpoint/server identity 的脱敏与禁止输出项见[外部路由诊断边界](external-routing/runtime.md#安全诊断与业务内容边界)。配置摘要不代表下游连接已经成功；MCP warm-up 在摘要写出后非阻塞执行。
+
+### 外部资源诊断
+
+下游 MCP manager 的连接成功与失败使用独立日志。失败前缀按 phase 区分 connection、call 和 shutdown：
+
+```text
+Downstream MCP connected: server=https://mcp.example.invalid/mcp durationMs=12
+Downstream MCP connection failed: server=https://mcp.example.invalid/mcp phase=initialize classification=mcp_connection_failed durationMs=12
+Downstream MCP call failed: server=https://mcp.example.invalid/mcp phase=call classification=mcp_call_failed durationMs=12
+Downstream MCP shutdown failed: server=https://mcp.example.invalid/mcp phase=shutdown classification=mcp_transport_failed durationMs=12
+```
+
+共享 server 的一次 warm-up 只记录一次 outcome，不逐 route 重复记录。连接共享、恢复与取消见 [MCP route](external-routing/mcp-route.md)。
+
+Processor post-drain 日志使用以下字段：
+
+```text
+External Processor drain: route=external-echo tool=external_echo role=response.canonical-filter processor=response-filter cleanupFailed=false settledMs=10 drainMs=12 stdinBytes=120 stdoutBytes=140 stderrBytes=0 stderrCapturedBytes=0 stderrTruncated=false
+```
+
+这些诊断记录计量和清理结果，不记录原始 subprocess 内容；允许字段、敏感信息和业务内容的区别由[外部路由运行时](external-routing/runtime.md#安全诊断与业务内容边界)维护。
 
 ### Session 与 Call ID
 
@@ -185,22 +213,22 @@ Initialize policy rejected: rules.requestHeaders.onInitialize[0]; invalid_json
 
 ---
 
-## 扩展日志
+## 调用日志接线
 
-日志系统通过 `Logger` 类的 `logToolCall` 和 `logToolResult` 方法自动记录所有工具调用。`src/runtime/mcp/http-app.ts` 创建 session transport，MCP SDK 将对应 session ID 传入调用 metadata。
+统一 `tools/call` 入口生成 call ID 并调用 `Logger.logToolCall()` / `logToolResult()`；session ID 来自 SDK 调用 metadata。工具 handler 不自行记录 CALL/RESULT，也不接收 Logger 能力。
 
-`src/runtime/invocation/tool-call-handler.ts` 在统一 `tools/call` 入口生成 call ID 并写入 CALL 与 RESULT。**工具 handler 内部不需要写任何日志代码**。
-
-如需在 handler 内部输出调试日志，可以将 `logger` 实例通过参数传入，或扩展 `MCPTool` 接口。
+阶段实现提供安全日志摘要，通用 Logger 负责格式和输出，不解释请求头或外部协议。日志及 diagnostic 的失败隔离见[系统架构](ARCHITECTURE.md#关闭与失败隔离)。
 
 ---
 
 ## 测试与人工验证
 
-`test/logger/logger.manual.ts` 用于人工确认日志系统的终端颜色输出和日志文件；默认跳过超大 JSON 演示，避免产生大量噪音。需要验证 50KB 阈值下的大输出降级行为时，可传入 `--verbose`。
+运行 `npm test -- logger runtime`，验证终端/文件格式、纯文本边界、初始化摘要与结果 Rules 元信息、启动摘要顺序和 HTTP/MCP route identity。日志失败不能破坏握手、调用、初始化发布或关闭收尾；隐私验证目标见[请求头策略](REQUEST-HEADER-POLICY.md#验证重点)与[外部路由诊断边界](external-routing/runtime.md#安全诊断与业务内容边界)。
 
-`test/logger/request-header-rules-logging.test.ts` 覆盖结果阶段的 `Rules:` 响应日志格式、文件日志纯文本边界和隐私边界。`test/runtime/mcp-post-request-context.test.ts` 与 `test/runtime/request-header-integration.test.ts` 覆盖初始化摘要、参数错误隐私与日志失败隔离；请求头专题提供 [完整测试索引](REQUEST-HEADER-POLICY.md#源码与测试索引)。
+人工颜色与文件验证显式运行：
 
-`test/runtime/startup-logging.test.ts` 覆盖完整启动摘要的顺序与 IPv6 地址格式、文件访问策略摘要，以及 external routing disabled / configured / enabled 状态、route summary 和 endpoint identity 的安全格式。`test/runtime/start-application.test.ts` 验证 listener 启动与 signal shutdown 日志落盘。`test/runtime/application-diagnostics.test.ts` 覆盖 Processor drain 的 route / Tool 安全诊断格式。
+```bash
+node --import tsx test/logger/logger.manual.ts
+```
 
-日志演示生成的文件显式写入 `test/logs/` 目录。通用测试与手工脚本执行约定见 [docs/TESTING.md](TESTING.md)。
+默认跳过超大 JSON 演示；追加 `--verbose` 验证 50KB 阈值下的大输出降级。演示文件写入 `test/logs/`。通用测试与显式脚本约定见[测试](TESTING.md)。
