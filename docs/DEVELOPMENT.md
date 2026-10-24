@@ -21,7 +21,7 @@
 | 修改文件访问和路径校验 | [路径安全](PATH-SAFETY.md) | allowed roots、literal/glob、ignore/deny、realpath 与 symlink |
 | 修改 custom-only 工具的外部执行 | [外部路由概览](EXTERNAL-ROUTING.md) | HTTP/Processor 与下游 MCP route，以及配置、协议和共享运行时子专题 |
 | 编写可独立提供的 Tool definition 或 Processor | [自定义工具编写规范](CUSTOM-TOOL-AUTHORING.md) | 自包含的文件、进程和协议契约，不依赖仓库内部文档 |
-| 修改日志或排查可观测性问题 | [日志](LOGGING.md) | 输出位置、格式、启动摘要、关联 ID、安全诊断与人工验证 |
+| 修改日志或排查可观测性问题 | [日志概览](LOGGING.md) | 公共输出与验证规则，以及工具调用、启动诊断和请求头策略日志子专题 |
 | 修改测试组织和执行方式 | [测试](TESTING.md) | runner、selector、权限分类与验证命令 |
 
 ## 单工具契约

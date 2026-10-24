@@ -86,7 +86,7 @@ External close 在应用级 listener / session drain 之后、logger 关闭之�
 
 ## 安全诊断与业务内容边界
 
-日志格式、启动摘要示例与观测入口见[日志](../LOGGING.md)。外部路由新增诊断仅使用安全标识和计量信息，不回传底层原始异常。
+日志格式与启动摘要示例见[启动与诊断日志](../logging/startup-and-diagnostics.md)，通用验证入口见[日志概览](../LOGGING.md#测试与人工验证)。外部路由新增诊断仅使用安全标识和计量信息，不回传底层原始异常。
 
 启动摘要按 route 声明顺序关联 definition id、routing mode 与 Tool name。HTTP route 展示 stage mode 和 endpoint identity，MCP route 展示 server identity。URL identity 剥离 query、credentials 与 fragment；摘要不输出静态 headers、配置文件路径、Processor executable path 或 argv。
 

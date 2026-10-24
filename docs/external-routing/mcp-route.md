@@ -38,4 +38,4 @@ MCP `tools/call` 使用独立下游 request ID。Caller cancellation 通过 rout
 
 单个上游 session close 只取消该 session 的调用，不关闭 workspace-owned 下游 session。Workspace close 才关闭 manager，并对已有下游 session best-effort 发送 DELETE；5 秒终止窗口及与 active drain 的协调见[运行时关闭](runtime.md#取消终止与关闭)。
 
-连接 diagnostic 的安全标识、允许字段与禁止泄漏项见[安全诊断](runtime.md#安全诊断与业务内容边界)，日志格式见[日志](../LOGGING.md)。
+连接 diagnostic 的安全标识、允许字段与禁止泄漏项见[安全诊断](runtime.md#安全诊断与业务内容边界)，日志格式见[下游 MCP 诊断](../logging/startup-and-diagnostics.md#下游-mcp)。
