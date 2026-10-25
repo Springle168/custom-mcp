@@ -6,21 +6,11 @@
 
 `rules.requestHeaders.onCallToolResult` 按本次工具调用 POST 的请求头决定是否启用功能；初始化参数不决定此功能。
 
-Tool 可以自行返回 `structuredContent`。未启用 `structuredContentDup` 时，adapter 在项目 handler 边界直接返回原始 Tool result，不增加或覆盖字段。启用时，adapter 创建新对象并有意覆盖 Tool 自有 `structuredContent`：
-
-```typescript
-return {
-  ...result,
-  structuredContent: {
-    content: result.content,
-    isError: result.isError === true,
-  },
-};
-```
+Tool 可以自行返回 `structuredContent`。启用时，功能创建新结果对象，并用只含 `content` 与 `isError` 的 wrapper 完整替换 Tool 自有 `structuredContent`，不合并原有字段。
 
 ## 对象身份与字段保留
 
-wrapper 只包含原始 `content` 数组的引用和规范化的 `isError`，保留 text/image 字段与顺序。原结果对象不变；顶层 `_meta` 及其他扩展字段由对象展开保留。
+wrapper 直接引用输入结果的 `content` 数组，并复制已校验的布尔值 `isError`。输出的顶层 `content` 与 wrapper 的 `content` 引用同一数组，保留 text/image 字段与顺序。输入结果对象不变；顶层 `_meta` 及其他扩展字段由对象展开保留。
 
 这些对象身份保证属于项目 handler 边界。后续 SDK 仍会再次 parse 结果，不能据此推断 wire 对象身份。稳定 JSON 与 SDK 校验边界见[统一结果校验](../../TOOL-RESULTS.md#runtime-结果校验)。
 

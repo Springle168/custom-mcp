@@ -79,6 +79,12 @@ return result;
 
 校验失败（包括遍历或 schema evaluation 抛错）产生安全的 `malformed_result` pipeline diagnostic，并返回稳定的 `textErrorResult()` 错误文本。该受控错误仍经过 request policy adapter 和 result logger。MCP SDK 在 request handler 包装层还会执行 `CallToolResultSchema` parse，再把 parse output 交给 transport；项目 handler 内的对象身份与 wire 对象身份不是同一项保证。
 
+## 结果适配契约
+
+结果阶段功能是可信的同步内部变换，输入与输出都必须满足 `ToolCallResult`、稳定 JSON 和项目内容块契约，且不得修改输入结果。功能不能返回依赖后续功能修复的非法结果或中间产物；必须共同完成的处理步骤应封装在同一个功能内部。
+
+适配器不在每个变换后重复执行完整结果校验；变换契约由实现、静态类型和测试维护。功能选择与执行顺序见[结果功能编排](REQUEST-HEADER-POLICY.md#结果功能编排)，具体字段覆盖与对象身份由功能专题定义。
+
 ---
 
 ## 工具准入与输入校验错误

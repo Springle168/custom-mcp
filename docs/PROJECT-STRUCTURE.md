@@ -87,7 +87,9 @@ src/runtime/
     ├── initialize-header-extension.ts              # 初始化设置、会话视图和发布观察适配
     ├── request-header-policy.ts                    # 本次结果规则匹配与 feature 并集
     ├── tool-result-header-extension.ts             # 调用开始时捕获结果适配方案
-    ├── tool-result-adapter.ts                      # 结果字段的条件覆盖
+    ├── tool-result-adapter.ts                      # 有序功能表与已启用结果功能的统一编排
+    ├── tool-result-features/
+    │   └── structured-content-dup.ts               # content/isError wrapper 的纯结果变换
     └── request-header-policy-logging.ts            # 请求头策略安全摘要格式化
 ```
 

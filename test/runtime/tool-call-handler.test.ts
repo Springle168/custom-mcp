@@ -197,7 +197,7 @@ async function testHandlerAdaptsAndLogsMatchedResult(): Promise<void> {
     routerResult.content,
     'Wrapper should contain the router result content',
   );
-  assertEqual(wrapper.isError, false, 'Wrapper should use normalized success status');
+  assertEqual(wrapper.isError, false, 'Wrapper should copy the success status');
   assertEqual(
     callLogContext?.sessionId,
     'session_test',

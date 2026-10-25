@@ -16,7 +16,7 @@ export function prepareRequestHeaderToolResult(
   const metadata = toRequestHeaderPolicyLogMetadata(policy);
 
   return {
-    adaptResult: (result) => adaptToolCallResultForRequestPolicy(result, policy),
+    adaptResult: (result) => adaptToolCallResultForRequestPolicy(result, policy.enabledFeatures),
     // Formatting belongs in the protected RESULT logging path. This supplier
     // retains only safe metadata, not the raw header view or configuration.
     getLogSummary: () => formatRequestHeaderPolicyLogSummary(metadata),

@@ -1,165 +1,65 @@
 import type { ToolCallResult } from '../../src/tools/types.js';
-import { adaptToolCallResultForRequestPolicy } from '../../src/runtime/request/tool-result-adapter.js';
-import type { RequestHeaderPolicy } from '../../src/runtime/request/request-header-policy.js';
+import { REQUEST_FEATURES } from '../../src/config/request-header-rules.js';
+import {
+  adaptToolCallResultForRequestPolicy,
+  TOOL_RESULT_FEATURES,
+} from '../../src/runtime/request/tool-result-adapter.js';
 import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
-function policy(enabled: boolean): RequestHeaderPolicy {
-  return {
-    rulesConfigured: true,
-    matchedRuleIndexes: enabled ? [0] : [],
-    enabledFeatures: enabled ? ['structuredContentDup'] : [],
-  };
-}
+function testRegistryCoversEveryFeatureExactlyOnce(): void {
+  const registeredFeatures = TOOL_RESULT_FEATURES.map(({ feature }) => feature);
 
-function result(isError: boolean, extensions: Record<string, unknown> = {}): ToolCallResult {
-  return {
-    content: [{ type: 'text', text: isError ? 'failed' : 'ok' }],
-    isError,
-    ...extensions,
-  };
-}
-
-function getStructuredContent(value: ToolCallResult): Record<string, unknown> {
-  const structuredContent = value.structuredContent;
-  assert(
-    typeof structuredContent === 'object' && structuredContent !== null,
-    'Expected structuredContent wrapper',
-  );
-  return structuredContent as Record<string, unknown>;
-}
-
-function testNoMatchReturnsOriginalObject(): void {
-  const original = result(false, { structuredContent: { native: true } });
-  const adapted = adaptToolCallResultForRequestPolicy(original, policy(false));
-
-  assertEqual(adapted, original, 'No policy feature should return the original result object');
   assertEqual(
-    adapted.structuredContent,
-    original.structuredContent,
-    'No policy feature should retain native structuredContent unchanged',
+    new Set(registeredFeatures).size,
+    registeredFeatures.length,
+    'Each result feature should be registered only once',
+  );
+  assertEqual(
+    registeredFeatures.sort().join(','),
+    [...REQUEST_FEATURES].sort().join(','),
+    'Registry should cover every feature supported by configuration',
   );
 }
 
-function testMatchedSuccessAddsWrapper(): void {
+function testNoEnabledFeaturesReturnsOriginalObject(): void {
   const original: ToolCallResult = {
-    content: [
-      { type: 'text', text: 'before' },
-      { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
-      { type: 'text', text: 'after' },
-    ],
-    _meta: { 'example.com/id': 'result-1' },
-    extension: { retained: true },
+    content: [{ type: 'text', text: 'ok' }],
+    structuredContent: { native: true },
     isError: false,
   };
-  const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
-  const wrapper = getStructuredContent(adapted);
+  const adapted = adaptToolCallResultForRequestPolicy(original, []);
 
-  assert(adapted !== original, 'Matched policy should return a new result object');
-  assertEqual(wrapper.content, original.content, 'Wrapper should contain the result content');
-  assertEqual(wrapper.isError, false, 'Successful wrapper should expose isError false');
-  assertEqual(adapted._meta, original._meta, 'Matched policy should preserve top-level metadata');
-  assertEqual(
-    adapted.extension,
-    original.extension,
-    'Matched policy should preserve top-level extensions',
-  );
-  assertEqual(original.content[1]?.type, 'image', 'Adapter should preserve mixed content order');
+  assertEqual(adapted, original, 'No enabled features should return the original result object');
 }
 
-function testMatchedErrorAddsWrapper(): void {
-  const original = result(true);
-  const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
-  const wrapper = getStructuredContent(adapted);
+function testEnabledFeatureIsApplied(): void {
+  const original: ToolCallResult = {
+    content: [{ type: 'text', text: 'ok' }],
+    isError: false,
+  };
+  const adapted = adaptToolCallResultForRequestPolicy(original, ['structuredContentDup']);
 
-  assertEqual(wrapper.content, original.content, 'Error wrapper should contain the result content');
-  assertEqual(wrapper.isError, true, 'Error wrapper should expose isError true');
-}
-
-function testWrapperDoesNotCopyOtherExtensions(): void {
-  const original = result(false, { metadata: { private: true } });
-  const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
-  const wrapper = getStructuredContent(adapted);
-
+  assert(adapted !== original, 'Enabled feature should adapt the result');
   assertEqual(
-    adapted.metadata,
-    original.metadata,
-    'Top-level extensions should remain on the adapted result',
+    JSON.stringify(adapted.structuredContent),
+    JSON.stringify({ content: original.content, isError: original.isError }),
+    'Enabled structuredContentDup should produce its result wrapper',
   );
-  assertEqual(
-    Object.keys(wrapper).sort().join(','),
-    'content,isError',
-    'Wrapper should only contain content and isError',
-  );
-}
-
-function testExistingStructuredContentIsOverwrittenWithoutMutation(): void {
-  const original = result(false, {
-    structuredContent: { stale: true },
-  });
-  const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
-  const wrapper = getStructuredContent(adapted);
-
-  assertEqual(
-    (original.structuredContent as { stale?: boolean }).stale,
-    true,
-    'Original structuredContent extension should remain unchanged',
-  );
-  assertEqual(
-    wrapper.content,
-    original.content,
-    'Adapted result should overwrite structuredContent with the standard wrapper',
-  );
-  assertEqual(wrapper.isError, false, 'Adapted wrapper should use the normalized error flag');
-}
-
-function testAdapterDoesNotMutateHandlerResult(): void {
-  const original = result(true);
-  const beforeKeys = Object.keys(original).join(',');
-
-  adaptToolCallResultForRequestPolicy(original, policy(true));
-
-  assertEqual(
-    Object.keys(original).join(','),
-    beforeKeys,
-    'Adapter should not mutate the handler result keys',
-  );
-  assert(
-    !('structuredContent' in original),
-    'Adapter should not attach structuredContent to the original result',
-  );
-}
-
-function testOnlyTrueIsErrorCountsAsError(): void {
-  const original = {
-    content: [{ type: 'text', text: 'odd result' }],
-    isError: 'yes',
-  } as unknown as ToolCallResult;
-  const adapted = adaptToolCallResultForRequestPolicy(original, policy(true));
-  const wrapper = getStructuredContent(adapted);
-
-  assertEqual(wrapper.isError, false, 'Only result.isError === true should be treated as an error');
 }
 
 async function main(): Promise<void> {
   await runTestSuite({
-    title: 'Testing tool result request policy adapter',
+    title: 'Testing tool result feature adaptation',
     tests: [
-      { name: 'no match returns original object', run: testNoMatchReturnsOriginalObject },
-      { name: 'matched success adds wrapper', run: testMatchedSuccessAddsWrapper },
-      { name: 'matched error adds wrapper', run: testMatchedErrorAddsWrapper },
       {
-        name: 'wrapper does not copy other extensions',
-        run: testWrapperDoesNotCopyOtherExtensions,
+        name: 'registry covers every feature exactly once',
+        run: testRegistryCoversEveryFeatureExactlyOnce,
       },
       {
-        name: 'existing structuredContent is overwritten without mutation',
-        run: testExistingStructuredContentIsOverwrittenWithoutMutation,
+        name: 'no enabled features returns original object',
+        run: testNoEnabledFeaturesReturnsOriginalObject,
       },
-      {
-        name: 'adapter does not mutate handler result',
-        run: testAdapterDoesNotMutateHandlerResult,
-      },
-      { name: 'only true isError counts as error', run: testOnlyTrueIsErrorCountsAsError },
+      { name: 'enabled feature is applied', run: testEnabledFeatureIsApplied },
     ],
   });
 }

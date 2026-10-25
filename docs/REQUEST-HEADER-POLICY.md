@@ -95,6 +95,14 @@ workspace 配置要求 JSON number `version: 2`。全局索引、Tool config 与
 
 这些 hook 是可信同步内部实现，不是动态插件 API，也没有通用插件异常吞噬或 fail-open 行为。策略不持有 session 目录、transport、Response 或资源生命周期控制权。发布观察回调只接收已发布 session ID，核心不等待回调并隔离同步异常及异步 rejection。
 
+### 结果功能编排
+
+结果适配器只消费启用的 feature 列表，不依赖规则命中位置或日志 metadata。`TOOL_RESULT_FEATURES` 是静态有序功能表，每项绑定 feature 与对应的结果变换函数。
+
+适配器按功能表顺序遍历，仅执行已启用的功能，并将每次输出传给下一个已启用功能。配置规则、`enable` 数组及求值后 `enabledFeatures` 的排列均不决定执行顺序；配置只选择参与执行的功能。没有功能启用时，适配器返回输入结果对象。
+
+具体功能不判断自身是否启用，也不读取请求头或 policy。每个变换遵守[结果适配契约](TOOL-RESULTS.md#结果适配契约)，功能间的执行顺序和字段覆盖关系由编排层明确维护。
+
 ### 启动与调用
 
 ```text
@@ -170,6 +178,7 @@ Application lifecycle 在 shutdown 中关闭 pending 与 published 会话以释�
 - 会话隔离：工具交集的顺序、list / call 准入一致、instructions 原样传递；会话受限视图隔离，validator、binding 和 workspace 资源共享。
 - 初始化发布：合法 object / 单元素数组 envelope、对应 request ID 的公开 send 结果、HTTP 完成双条件；提前中断、connect 失败、协议拒绝与 shutdown 均不能留下可路由的未发布会话。
 - 调用管线：POST 上下文并发隔离，调用开始时捕获结果方案，业务成功、准入失败、catalog 错误和受控 malformed-result 均在校验后适配；SDK 协议错误不进入 adapter。
+- 结果功能：功能表完整覆盖配置支持的 feature，且没有重复注册；具体功能保留约定的字段与引用关系，覆盖行为明确且不修改输入结果。
 - 隐私与恢复：真实 HTTP 与生产启动组装下，参数错误响应和策略日志均不含 header name/value、客户端工具列表、instructions 或异常对象；日志失败不能破坏握手、工具调用或多资源清理。
 
 测试约定见[测试](TESTING.md)。维护新增功能时，先确定所属阶段、输入契约、生命周期和权限边界；配置层不依赖 HTTP / catalog，executor 不依赖请求头策略模块。
