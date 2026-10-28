@@ -1,23 +1,23 @@
-import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { glob } from 'glob';
+import {
+  DEFAULT_SCRIPT_TIMEOUT_MS,
+  executeTestScriptProcess,
+  validateTimeoutMs,
+  type ScriptExecutionOptions,
+  type TestExecutionResult,
+} from './runner/script-execution.js';
+
+export type { TestExecutionResult } from './runner/script-execution.js';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const AUTOMATED_TEST_PATTERN = 'test/**/*.test.ts';
-const MAX_CAPTURED_OUTPUT_BYTES = 256 * 1024;
 
 export interface TestRunnerCliOptions {
   selectors: string[];
   verbose: boolean;
-}
-
-export interface TestExecutionResult {
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
-  durationMs: number;
-  error?: Error;
-  output?: string;
+  timeoutMs: number;
 }
 
 export interface TestScriptResult extends TestExecutionResult {
@@ -30,6 +30,8 @@ export interface TestRunSummary {
   passed: number;
   failed: number;
   durationMs: number;
+  notRun: string[];
+  stopReason?: string;
 }
 
 export interface TestTopicSummary {
@@ -53,10 +55,25 @@ export interface TestRunCallbacks {
 export function parseTestRunnerArgs(args: readonly string[]): TestRunnerCliOptions {
   const selectors: string[] = [];
   let verbose = false;
+  let timeoutMs = DEFAULT_SCRIPT_TIMEOUT_MS;
+  let timeoutSpecified = false;
 
-  for (const arg of args) {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
     if (arg === '--verbose') {
       verbose = true;
+      continue;
+    }
+
+    if (arg === '--timeout-ms') {
+      if (timeoutSpecified) throw new Error('--timeout-ms may only be specified once.');
+      timeoutSpecified = true;
+      const value = args[++index];
+      if (!value || !/^[0-9]+$/u.test(value)) {
+        validateTimeoutMs(Number.NaN);
+      }
+      timeoutMs = Number(value);
+      validateTimeoutMs(timeoutMs);
       continue;
     }
 
@@ -67,7 +84,7 @@ export function parseTestRunnerArgs(args: readonly string[]): TestRunnerCliOptio
     selectors.push(arg);
   }
 
-  return { selectors, verbose };
+  return { selectors, verbose, timeoutMs };
 }
 
 export async function discoverAutomatedTests(projectRoot = PROJECT_ROOT): Promise<string[]> {
@@ -111,6 +128,7 @@ export async function runTestScripts(
 ): Promise<TestRunSummary> {
   const startedAt = performance.now();
   const results: TestScriptResult[] = [];
+  let stopReason: string | undefined;
 
   for (const testPath of tests) {
     callbacks.onStart?.(testPath);
@@ -127,7 +145,11 @@ export async function runTestScripts(
       };
     }
 
-    const passed = execution.exitCode === 0 && !execution.error;
+    const passed =
+      execution.exitCode === 0 &&
+      !execution.error &&
+      !execution.timedOut &&
+      execution.cleanupConfirmed !== false;
     const result: TestScriptResult = {
       ...execution,
       output: passed ? undefined : execution.output,
@@ -136,6 +158,10 @@ export async function runTestScripts(
     };
     results.push(result);
     callbacks.onComplete?.(result);
+    if (execution.cleanupConfirmed === false) {
+      stopReason = `Cleanup was not confirmed for ${testPath}: ${execution.cleanupError ?? 'unknown cleanup failure'}`;
+      break;
+    }
   }
 
   const passed = results.filter((result) => result.passed).length;
@@ -144,6 +170,8 @@ export async function runTestScripts(
     passed,
     failed: results.length - passed,
     durationMs: performance.now() - startedAt,
+    notRun: tests.slice(results.length),
+    stopReason,
   };
 }
 
@@ -176,46 +204,24 @@ export function summarizeTestTopics(results: readonly TestScriptResult[]): TestT
 export async function executeTestScript(
   testPath: string,
   verbose: boolean,
+  timeoutMs = DEFAULT_SCRIPT_TIMEOUT_MS,
+  options: Omit<ScriptExecutionOptions, 'projectRoot'> = {},
 ): Promise<TestExecutionResult> {
-  const args = ['--import', 'tsx', path.join(PROJECT_ROOT, testPath)];
-  if (verbose) {
-    args.push('--verbose');
-  }
-
-  const startedAt = performance.now();
-
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, args, {
-      cwd: PROJECT_ROOT,
-      stdio: verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-    });
-    const capturedOutput = verbose ? undefined : new BoundedOutputBuffer();
-    let spawnError: Error | undefined;
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      capturedOutput?.append(chunk);
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      capturedOutput?.append(chunk);
-    });
-    child.once('error', (error) => {
-      spawnError = error;
-    });
-    child.once('close', (exitCode, signal) => {
-      resolve({
-        exitCode,
-        signal,
-        durationMs: performance.now() - startedAt,
-        error: spawnError,
-        output: capturedOutput?.toString(),
-      });
-    });
+  return executeTestScriptProcess(testPath, verbose, timeoutMs, {
+    ...options,
+    projectRoot: PROJECT_ROOT,
   });
 }
 
-async function main(): Promise<void> {
-  const options = parseTestRunnerArgs(process.argv.slice(2));
-  const discoveredTests = await discoverAutomatedTests();
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+  dependencies: {
+    discover?: () => Promise<string[]>;
+    execute?: TestScriptExecutor;
+  } = {},
+): Promise<void> {
+  const options = parseTestRunnerArgs(args);
+  const discoveredTests = await (dependencies.discover ?? discoverAutomatedTests)();
   const selectedTests = selectAutomatedTests(discoveredTests, options.selectors);
   if (selectedTests.length === 0) {
     throw new Error('No automated test scripts were discovered.');
@@ -226,7 +232,8 @@ async function main(): Promise<void> {
   const summary = await runTestScripts(
     selectedTests,
     options.verbose,
-    executeTestScript,
+    dependencies.execute ??
+      ((testPath, verbose) => executeTestScript(testPath, verbose, options.timeoutMs)),
     options.verbose
       ? {
           onStart(testPath) {
@@ -247,6 +254,14 @@ async function main(): Promise<void> {
 
   printTopicSummary(summary);
 
+  if (summary.stopReason) {
+    console.error(`\nStopped: ${summary.stopReason}`);
+    console.log(`Not run: ${summary.notRun.length} test script(s)`);
+    for (const testPath of summary.notRun) {
+      console.log(`  - ${testPath}`);
+    }
+  }
+
   if (summary.failed > 0) {
     console.log('\nFailed test scripts:');
     for (const result of summary.results.filter((item) => !item.passed)) {
@@ -259,6 +274,12 @@ async function main(): Promise<void> {
 function printVerboseResult(result: TestScriptResult): void {
   const status = result.passed ? 'PASS' : 'FAIL';
   console.log(`${status} ${result.testPath} (${formatDuration(result.durationMs)})`);
+  if (result.timedOut) {
+    console.error(`  ${describeFailure(result)}; elapsed ${formatDuration(result.durationMs)}`);
+  }
+  if (result.cleanupConfirmed === false) {
+    console.error(`  Cleanup not confirmed: ${result.cleanupError}`);
+  }
   if (result.error) {
     console.error(`  ${result.error.message}`);
   } else if (result.signal) {
@@ -273,6 +294,9 @@ function printFailure(result: TestScriptResult): void {
 
   if (result.error) {
     console.log(result.error.message);
+  }
+  if (result.cleanupConfirmed === false) {
+    console.log(`Cleanup not confirmed: ${result.cleanupError}`);
   }
 
   if (result.output) {
@@ -308,6 +332,7 @@ function printTopicSummary(summary: TestRunSummary): void {
 }
 
 function describeFailure(result: TestScriptResult): string {
+  if (result.timedOut) return `timeout after ${result.timeoutMs} ms`;
   if (result.error) return 'runner error';
   if (result.signal) return `signal ${result.signal}`;
   return `exit code ${result.exitCode ?? 'unknown'}`;
@@ -344,43 +369,6 @@ function formatDuration(durationMs: number): string {
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
-}
-
-class BoundedOutputBuffer {
-  readonly #chunks: Buffer[] = [];
-  #size = 0;
-  #truncated = false;
-
-  append(chunk: Buffer): void {
-    const remaining = MAX_CAPTURED_OUTPUT_BYTES - this.#size;
-    if (remaining <= 0) {
-      this.#truncated = true;
-      return;
-    }
-
-    if (chunk.length > remaining) {
-      this.#chunks.push(chunk.subarray(0, remaining));
-      this.#size += remaining;
-      this.#truncated = true;
-      return;
-    }
-
-    this.#chunks.push(chunk);
-    this.#size += chunk.length;
-  }
-
-  toString(): string | undefined {
-    if (this.#size === 0 && !this.#truncated) {
-      return undefined;
-    }
-
-    const output = Buffer.concat(this.#chunks, this.#size).toString('utf-8');
-    if (!this.#truncated) {
-      return output;
-    }
-
-    return `${output}\n...[captured output truncated at 256 KB]\n`;
-  }
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;

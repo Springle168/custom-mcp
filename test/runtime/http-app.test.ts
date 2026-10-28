@@ -365,6 +365,81 @@ async function testFinalSessionResultPreparationOverridesDefault(): Promise<void
   }
 }
 
+async function testDefaultSessionOptionsCannotReplaceBaseSettings(): Promise<void> {
+  for (const withSessionHook of [false, true]) {
+    let replacementCalls = 0;
+    let preparedResults = 0;
+    let preparedSessions = 0;
+    const replacement: WorkspaceToolService = {
+      getDefinitions() {
+        replacementCalls++;
+        return [];
+      },
+      async routeToolCall() {
+        replacementCalls++;
+        throw new Error('Unexpected replacement service call');
+      },
+    };
+    const prepareToolResult: NonNullable<
+      RuntimeExtensions['defaultSessionOptions']
+    >['prepareToolResult'] = () => {
+      preparedResults++;
+      return {
+        adaptResult: (result) => ({ ...result, structuredContent: { source: 'allowed-default' } }),
+      };
+    };
+    // A wider object is assignable through a variable without a type assertion.
+    const defaultSessionOptions = {
+      toolService: replacement,
+      instructions: 'Unexpected default instructions',
+      prepareToolResult,
+    };
+    const harness = await createHarness({
+      defaultSessionOptions,
+      ...(withSessionHook
+        ? {
+            prepareSession: (_rawHeaders, defaults) => {
+              preparedSessions++;
+              assertEqual(
+                defaults.instructions,
+                undefined,
+                'Session hooks must not receive extra default instructions',
+              );
+              return { accepted: true, options: defaults };
+            },
+          }
+        : {}),
+    });
+    const client = new Client({ name: 'restricted-defaults-client', version: '1' });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(harness.url)));
+      assertEqual(client.getInstructions(), undefined, 'Extra defaults must not set instructions');
+      assertEqual(
+        (await client.listTools()).tools[0]?.name,
+        'probe_tool',
+        'Extra defaults must not replace the base tool service',
+      );
+      const result = await client.callTool({ name: 'probe_tool', arguments: {} });
+      assertEqual(
+        JSON.stringify(result.structuredContent),
+        JSON.stringify({ source: 'allowed-default' }),
+        'The explicitly allowed result preparer must still be forwarded',
+      );
+      assertEqual(preparedResults, 1, 'The allowed result preparer should run once');
+      assertEqual(
+        preparedSessions,
+        withSessionHook ? 1 : 0,
+        'Session hook wiring must be retained',
+      );
+      assertEqual(replacementCalls, 0, 'Extra default services must never be used');
+      assertEqual(harness.invocations.length, 1, 'Calls must reach the base service');
+    } finally {
+      await client.close();
+      await harness.close();
+    }
+  }
+}
+
 async function testMissingAndStaleSessionResponses(): Promise<void> {
   const harness = await createHarness();
   try {
@@ -468,6 +543,10 @@ await runTestSuite({
     {
       name: 'final session result preparation overrides the default',
       run: testFinalSessionResultPreparationOverridesDefault,
+    },
+    {
+      name: 'default session options cannot replace base settings',
+      run: testDefaultSessionOptionsCannotReplaceBaseSettings,
     },
     { name: 'missing and stale session responses', run: testMissingAndStaleSessionResponses },
     {

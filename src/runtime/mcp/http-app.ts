@@ -33,13 +33,18 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
   app.use(express.json());
 
   app.post('/mcp', async (req, res) => {
+    // Structural typing does not exclude extra runtime fields from extension defaults.
+    const prepareToolResult = options.extensions?.defaultSessionOptions?.prepareToolResult;
     await handleMcpPostRequest({
       req,
       res,
       sessions,
       pendingSessions,
       logger,
-      defaultSessionOptions: { toolService, ...options.extensions?.defaultSessionOptions },
+      defaultSessionOptions: {
+        toolService,
+        ...(prepareToolResult === undefined ? {} : { prepareToolResult }),
+      },
       ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
       isAcceptingNewSessions: options.isAcceptingNewSessions,
       createSession: (settings, requestId) => {
