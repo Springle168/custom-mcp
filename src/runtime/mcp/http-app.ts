@@ -39,7 +39,7 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
       sessions,
       pendingSessions,
       logger,
-      defaultSessionOptions: { toolService },
+      defaultSessionOptions: { toolService, ...options.extensions?.defaultSessionOptions },
       ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
       isAcceptingNewSessions: options.isAcceptingNewSessions,
       createSession: (settings, requestId) => {
@@ -48,9 +48,9 @@ export function createMcpHttpApp(options: CreateMcpHttpAppOptions): Express {
           logger,
           toolService: settings.toolService,
           instructions: settings.instructions,
-          ...(options.extensions?.prepareToolResult === undefined
+          ...(settings.prepareToolResult === undefined
             ? {}
-            : { prepareToolResult: options.extensions.prepareToolResult }),
+            : { prepareToolResult: settings.prepareToolResult }),
           ...(options.onToolCallDiagnostic === undefined
             ? {}
             : { onToolCallDiagnostic: options.onToolCallDiagnostic }),

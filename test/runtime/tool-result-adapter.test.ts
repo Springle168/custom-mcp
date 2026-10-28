@@ -1,12 +1,21 @@
 import type { ToolCallResult } from '../../src/tools/types.js';
-import { REQUEST_FEATURES } from '../../src/config/request-header-rules.js';
 import {
-  adaptToolCallResultForRequestPolicy,
+  INITIALIZE_REQUEST_FEATURES,
+  REQUEST_FEATURES,
+} from '../../src/config/request-header-rules.js';
+import { adaptToolCallResultForRequestPolicy } from '../../src/runtime/request/tool-result-adapter.js';
+import {
+  INITIALIZE_HEADER_FEATURES,
   TOOL_RESULT_FEATURES,
-} from '../../src/runtime/request/tool-result-adapter.js';
+} from '../../src/runtime/request/feature-registry.js';
 import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 function testRegistryCoversEveryFeatureExactlyOnce(): void {
+  assertEqual(
+    Object.keys(INITIALIZE_HEADER_FEATURES).sort().join(','),
+    [...INITIALIZE_REQUEST_FEATURES].sort().join(','),
+    'Initialization parsers should cover exactly the configured feature identities',
+  );
   const registeredFeatures = TOOL_RESULT_FEATURES.map(({ feature }) => feature);
 
   assertEqual(
@@ -27,7 +36,7 @@ function testNoEnabledFeaturesReturnsOriginalObject(): void {
     structuredContent: { native: true },
     isError: false,
   };
-  const adapted = adaptToolCallResultForRequestPolicy(original, []);
+  const adapted = adaptToolCallResultForRequestPolicy(original, [], TOOL_RESULT_FEATURES);
 
   assertEqual(adapted, original, 'No enabled features should return the original result object');
 }
@@ -37,7 +46,11 @@ function testEnabledFeatureIsApplied(): void {
     content: [{ type: 'text', text: 'ok' }],
     isError: false,
   };
-  const adapted = adaptToolCallResultForRequestPolicy(original, ['structuredContentDup']);
+  const adapted = adaptToolCallResultForRequestPolicy(
+    original,
+    ['structuredContentDup'],
+    TOOL_RESULT_FEATURES,
+  );
 
   assert(adapted !== original, 'Enabled feature should adapt the result');
   assertEqual(

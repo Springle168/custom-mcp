@@ -1,5 +1,5 @@
 import { generateToolCallId } from '../mcp/mcp-identifiers.js';
-import type { PreparedToolResult, RuntimeExtensions } from '../runtime-extensions.js';
+import type { PreparedToolResult, PrepareToolResult } from '../runtime-extensions.js';
 import type { ToolInvocationContext, ToolRequestId } from './tool-invocation-context.js';
 import type { ToolCallLogContext, ToolCallResultLogContext } from './tool-call-log-context.js';
 import { createToolRuntimeContext, type ToolRuntimeContext } from './tool-context.js';
@@ -64,7 +64,7 @@ export interface CreateToolCallRequestHandlerOptions {
   readonly generateCallId?: () => string;
   readonly now?: () => number;
   readonly onDiagnostic?: ToolCallDiagnosticSink;
-  readonly prepareToolResult?: RuntimeExtensions['prepareToolResult'];
+  readonly prepareToolResult?: PrepareToolResult;
 }
 
 export type ToolCallRequestHandler = (

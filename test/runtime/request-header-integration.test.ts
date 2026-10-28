@@ -20,6 +20,13 @@ import type {
   ToolResultLogSummary,
 } from '../../src/runtime/invocation/tool-call-log-context.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
+import type { ToolCallPipelineDiagnostic } from '../../src/runtime/invocation/tool-call-handler.js';
+import type {
+  RequestHeaderFeatureRegistry,
+  ResultFeatureBinding,
+  ResultTransform,
+} from '../../src/runtime/request/feature-contracts.js';
+import { REQUEST_HEADER_FEATURE_REGISTRY } from '../../src/runtime/request/feature-registry.js';
 import { createRequestHeaderExtensions } from '../../src/runtime/request/request-header-extensions.js';
 import { createTestConfigStore } from '../helpers/runtime-config.js';
 import {
@@ -121,11 +128,16 @@ async function post(
   });
 }
 
-async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging = false) {
+async function createHarness(
+  rules: RuntimeRulesConfig = RULES,
+  failInfoLogging = false,
+  registry?: RequestHeaderFeatureRegistry,
+) {
   const sessions = new Map<string, McpPostSession>();
   const pendingSessions = new Set<McpPendingSession>();
   const messages: string[] = [];
   const resultPolicies: (ToolResultLogSummary | undefined)[] = [];
+  const diagnostics: ToolCallPipelineDiagnostic[] = [];
   const calls: string[] = [];
   const definitions = ['alpha_tool', 'custom_only_tool'].map((name) => ({
     name,
@@ -158,11 +170,14 @@ async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging 
   };
   const app = createMcpHttpApp({
     configStore: createTestConfigStore({ rootDir: process.cwd(), rules }),
-    extensions: createRequestHeaderExtensions(rules, logger),
+    extensions: createRequestHeaderExtensions(rules, logger, registry),
     toolService: service,
     sessions,
     pendingSessions,
     logger,
+    onToolCallDiagnostic: (diagnostic) => {
+      diagnostics.push(diagnostic);
+    },
     isAcceptingNewSessions: () => lifecycle.isAcceptingNewSessions,
     closeSession: (id) => lifecycle.closeSession(id),
   });
@@ -185,6 +200,7 @@ async function createHarness(rules: RuntimeRulesConfig = RULES, failInfoLogging 
     messages,
     calls,
     resultPolicies,
+    diagnostics,
     close: () => lifecycle.close(),
   };
 }
@@ -529,6 +545,436 @@ async function testLaterHeadersAndPerRequestResultPolicy(): Promise<void> {
   }
 }
 
+async function testAllRuleCombinationsUseProductionDefaults(): Promise<void> {
+  for (const initialization of [false, true]) {
+    for (const results of [false, true]) {
+      const harness = await createHarness({
+        requestHeaders: {
+          onInitialize: initialization ? RULES.requestHeaders.onInitialize : [],
+          onCallToolResult: results ? RULES.requestHeaders.onCallToolResult : [],
+        },
+      });
+      try {
+        const selected = await startSession(
+          harness,
+          initialization
+            ? [INSTRUCTIONS_HEADER, '{"instructions":"configured"}']
+            : [INSTRUCTIONS_HEADER, 'broken', INSTRUCTIONS_HEADER, 'also broken'],
+        );
+        assertEqual(
+          selected.result.instructions,
+          initialization ? 'configured' : undefined,
+          'Only configured initialization rules should parse or apply parameters',
+        );
+        const result = await call(harness, selected.sessionId, 'alpha_tool', [
+          'x-result-client',
+          'duplicate',
+        ]);
+        assertEqual(
+          result.structuredContent !== undefined,
+          results,
+          'Production default result feature must depend only on result rules',
+        );
+        if (results) {
+          assertEqual(
+            JSON.stringify(result.structuredContent),
+            JSON.stringify({ content: result.content, isError: false }),
+            'The default registered transform must reach the real HTTP handler',
+          );
+        }
+        assertEqual(
+          harness.resultPolicies[0] !== undefined,
+          results,
+          'Only result rules should produce a result policy summary',
+        );
+      } finally {
+        await harness.close();
+      }
+    }
+  }
+}
+
+async function testBoundResultsStaySessionLocalAndRequestSelected(): Promise<void> {
+  const defaultValue = 'PRIVATE_DEFAULT_BINDING_20481';
+  const firstValue = 'PRIVATE_FIRST_BINDING_20482';
+  const secondValue = 'PRIVATE_SECOND_BINDING_20483';
+  let parsedParameters = 0;
+  let boundResults = 0;
+  const appliedValues = new Map<string, number>();
+  const transform =
+    (value: string): ResultTransform =>
+    (result) => {
+      appliedValues.set(value, (appliedValues.get(value) ?? 0) + 1);
+      return { ...result, structuredContent: { testBoundValue: value } };
+    };
+  const registry: RequestHeaderFeatureRegistry = {
+    ...REQUEST_HEADER_FEATURE_REGISTRY,
+    initialize: {
+      ...REQUEST_HEADER_FEATURE_REGISTRY.initialize,
+      setInstructions(payload, invalid) {
+        parsedParameters++;
+        const { instructions } = REQUEST_HEADER_FEATURE_REGISTRY.initialize.setInstructions(
+          payload,
+          invalid,
+        );
+        if (instructions === undefined) {
+          return invalid('instructions');
+        }
+        return {
+          resultBindings: [
+            {
+              feature: 'structuredContentDup',
+              bind() {
+                boundResults++;
+                return transform(instructions);
+              },
+            },
+          ],
+        };
+      },
+    },
+    results: [{ feature: 'structuredContentDup', apply: transform(defaultValue) }],
+  };
+  const harness = await createHarness(RULES, false, registry);
+  const matchingHeaders = ['x-result-client', 'duplicate'];
+  const damagedInitializeHeaders = [
+    INSTRUCTIONS_HEADER,
+    'not JSON',
+    INSTRUCTIONS_HEADER,
+    '{"instructions":"must not replace bound value"}',
+  ];
+  try {
+    const defaults = await startSession(harness, matchingHeaders);
+    const [first, second] = await Promise.all(
+      [firstValue, secondValue].map((instructions) =>
+        startSession(harness, [
+          INSTRUCTIONS_HEADER,
+          JSON.stringify({ instructions }),
+          ...matchingHeaders,
+        ]),
+      ),
+    );
+    assert(first !== undefined && second !== undefined, 'Both bound sessions must initialize');
+    const sessions = [
+      { session: defaults, value: defaultValue },
+      { session: first, value: firstValue },
+      { session: second, value: secondValue },
+    ];
+    assertEqual(parsedParameters, 2, 'Missing initialization header must not invoke the parser');
+    assertEqual(boundResults, 2, 'Each override must bind once during session preparation');
+    assertEqual(appliedValues.size, 0, 'Initialization must not execute result transforms');
+
+    for (const { session } of sessions) {
+      assert(
+        !('instructions' in session.result),
+        'Test result parameters must not become Server instructions',
+      );
+      const ordinary = await call(harness, session.sessionId, 'alpha_tool');
+      assert(
+        ordinary.structuredContent === undefined,
+        'A matching initialization header must not enable later result processing',
+      );
+    }
+    assertEqual(
+      appliedValues.size,
+      0,
+      'Initialization parameters alone must not enable transforms',
+    );
+
+    for (let iteration = 0; iteration < 2; iteration++) {
+      const results = await Promise.all(
+        sessions.map(({ session }) =>
+          call(harness, session.sessionId, 'alpha_tool', [
+            ...matchingHeaders,
+            ...damagedInitializeHeaders,
+          ]),
+        ),
+      );
+      for (const [index, { value }] of sessions.entries()) {
+        assertEqual(
+          JSON.stringify(results[index]?.structuredContent),
+          JSON.stringify({ testBoundValue: value }),
+          'Concurrent sessions must apply their own fixed value or the default',
+        );
+      }
+
+      const unselected = await Promise.all(
+        sessions.map(({ session }) =>
+          call(harness, session.sessionId, 'alpha_tool', [
+            'x-result-client',
+            'Duplicate',
+            ...damagedInitializeHeaders,
+          ]),
+        ),
+      );
+      assert(
+        unselected.every((result) => result.structuredContent === undefined),
+        'A previous matching call must not cache enablement into later nonmatching POSTs',
+      );
+    }
+    assertEqual(parsedParameters, 2, 'Later damaged initialization headers must not be parsed');
+    assertEqual(boundResults, 2, 'Repeated calls must reuse the original session bindings');
+    for (const value of [defaultValue, firstValue, secondValue]) {
+      assertEqual(appliedValues.get(value), 2, 'Only matching calls may execute each transform');
+      assertNotIncludes(
+        JSON.stringify({
+          messages: harness.messages,
+          resultPolicies: harness.resultPolicies,
+          diagnostics: harness.diagnostics,
+        }),
+        value,
+        'Bound result parameters must not enter policy summaries or diagnostics',
+      );
+    }
+    assertEqual(harness.resultPolicies.length, 15, 'Every call should produce a policy summary');
+    assert(
+      harness.resultPolicies.every((summary) => summary !== undefined),
+      'Configured result rules must retain safe per-call summaries',
+    );
+    assertEqual(harness.diagnostics.length, 0, 'Valid bindings must not trigger pipeline failures');
+  } finally {
+    await harness.close();
+  }
+}
+
+function assertInternalInitializationFailure(
+  harness: Harness,
+  reply: HttpReply,
+  requestId: string,
+  secret: string,
+): void {
+  assertEqual(reply.status, 500, 'Internal preparation failure must return HTTP 500');
+  const error = JSONRPCErrorSchema.parse(reply.message);
+  assertEqual(error.id, requestId, 'Internal error must retain the legal initialization ID');
+  assertEqual(
+    error.error.code,
+    -32603,
+    'Internal failure must not become a client parameter error',
+  );
+  assertEqual(
+    error.error.message,
+    'Internal initialization error',
+    'Internal exception details must be replaced by the safe core diagnostic',
+  );
+  assert(reply.sessionId === undefined, 'Failed preparation must not advertise a session ID');
+  assertEqual(harness.sessions.size, 0, 'Failed preparation must not publish a routable session');
+  assertEqual(
+    harness.pendingSessions.size,
+    0,
+    'Failed preparation must not leave pending ownership',
+  );
+  assertEqual(harness.calls.length, 0, 'Failed initialization must not execute a tool');
+  assertNotIncludes(reply.text, secret, 'Internal error response must not reflect private data');
+  const diagnostics = JSON.stringify({
+    messages: harness.messages,
+    resultPolicies: harness.resultPolicies,
+    diagnostics: harness.diagnostics,
+  });
+  assertNotIncludes(
+    diagnostics,
+    secret,
+    'Internal failure diagnostics must not reflect private data',
+  );
+  assertNotIncludes(diagnostics, 'New session:', 'Failed initialization must not log publication');
+  assertNotIncludes(
+    diagnostics,
+    'Session policy:',
+    'Failed initialization must not log policy success',
+  );
+}
+
+async function testInternalPreparationFailuresAreSafeAndRecoverable(): Promise<void> {
+  for (const stage of ['parser', 'binding', 'tool-service'] as const) {
+    const secret = `PRIVATE_${stage.toUpperCase()}_FAILURE_73291`;
+    let shouldFail = true;
+    let parserCalls = 0;
+    let preparationCalls = 0;
+    const registry: RequestHeaderFeatureRegistry = {
+      ...REQUEST_HEADER_FEATURE_REGISTRY,
+      initialize: {
+        ...REQUEST_HEADER_FEATURE_REGISTRY.initialize,
+        setInstructions(payload, invalid) {
+          parserCalls++;
+          REQUEST_HEADER_FEATURE_REGISTRY.initialize.setInstructions(payload, invalid);
+          if (stage === 'parser') {
+            if (shouldFail) {
+              throw new Error(secret);
+            }
+            return {};
+          }
+          if (stage === 'binding') {
+            return {
+              resultBindings: [
+                {
+                  feature: 'structuredContentDup',
+                  bind() {
+                    preparationCalls++;
+                    if (shouldFail) {
+                      throw new Error(secret);
+                    }
+                    return (result) => ({
+                      ...result,
+                      structuredContent: { recoveredBinding: true },
+                    });
+                  },
+                },
+              ],
+            };
+          }
+          return {
+            prepareToolService(base) {
+              preparationCalls++;
+              if (shouldFail) {
+                throw new Error(secret);
+              }
+              return base;
+            },
+          };
+        },
+      },
+    };
+    const harness = await createHarness(RULES, false, registry);
+    const headers = [INSTRUCTIONS_HEADER, JSON.stringify({ instructions: secret })];
+    try {
+      const requestId = `internal-${stage}`;
+      const failed = await post(harness.url, initialize(requestId), headers);
+      assertInternalInitializationFailure(harness, failed, requestId, secret);
+      assertEqual(parserCalls, 1, 'The failing request must enter its configured parser');
+      assertEqual(
+        preparationCalls,
+        stage === 'parser' ? 0 : 1,
+        'Binding and service failures must occur after successful parsing',
+      );
+
+      shouldFail = false;
+      const recovered = await startSession(harness, headers);
+      assertEqual(
+        (await list(harness, recovered.sessionId)).length,
+        2,
+        'The same application must accept a later legal initialization after internal failure',
+      );
+      const result = await call(harness, recovered.sessionId, 'alpha_tool', [
+        'x-result-client',
+        'duplicate',
+      ]);
+      assertEqual(result.isError, false, 'Recovered session must route tools normally');
+      if (stage === 'binding') {
+        assertEqual(
+          JSON.stringify(result.structuredContent),
+          JSON.stringify({ recoveredBinding: true }),
+          'Recovery must use the successfully bound session transform, not default fallback',
+        );
+      }
+      assertEqual(parserCalls, 2, 'Recovery must parse its own valid initialization once');
+      assertEqual(
+        preparationCalls,
+        stage === 'parser' ? 0 : 2,
+        'Successful recovery must prepare again without repeating work during tools/call',
+      );
+      assertEqual(
+        harness.messages.filter((message) => message.startsWith('New session:')).length,
+        1,
+        'Only the recovered initialization may publish a session',
+      );
+      assertEqual(
+        harness.messages.filter((message) => message.startsWith('Session policy:')).length,
+        1,
+        'Only successful recovery may report policy publication',
+      );
+      assertNotIncludes(
+        JSON.stringify([harness.messages, harness.resultPolicies, harness.diagnostics]),
+        secret,
+        'Failure and recovery observability must both keep parameters and exceptions private',
+      );
+    } finally {
+      await harness.close();
+    }
+  }
+}
+
+async function testInternalOwnershipConflictsFailBeforePreparation(): Promise<void> {
+  for (const conflict of [
+    'duplicate-binding',
+    'unknown-binding',
+    'instructions',
+    'tool-service',
+  ] as const) {
+    const secret = `PRIVATE_${conflict.toUpperCase()}_CONFLICT_81357`;
+    let shouldConflict = true;
+    let preparedServices = 0;
+    let boundResults = 0;
+    const prepareToolService = (base: WorkspaceToolService) => {
+      preparedServices++;
+      return base;
+    };
+    const binding: ResultFeatureBinding = {
+      feature: 'structuredContentDup',
+      bind() {
+        boundResults++;
+        return (result) => result;
+      },
+    };
+    const registry: RequestHeaderFeatureRegistry = {
+      ...REQUEST_HEADER_FEATURE_REGISTRY,
+      ...(conflict === 'unknown-binding' ? { results: [] } : {}),
+      initialize: {
+        setToolList(payload, invalid) {
+          REQUEST_HEADER_FEATURE_REGISTRY.initialize.setToolList(payload, invalid);
+          if (!shouldConflict) {
+            return {};
+          }
+          return conflict === 'instructions' ? { instructions: secret } : { prepareToolService };
+        },
+        setInstructions(payload, invalid) {
+          REQUEST_HEADER_FEATURE_REGISTRY.initialize.setInstructions(payload, invalid);
+          if (!shouldConflict) {
+            return {};
+          }
+          switch (conflict) {
+            case 'duplicate-binding':
+              return { resultBindings: [binding, binding] };
+            case 'unknown-binding':
+              return { resultBindings: [binding] };
+            case 'instructions':
+              return { instructions: secret };
+            case 'tool-service':
+              return { prepareToolService };
+          }
+        },
+      },
+    };
+    const harness = await createHarness(RULES, false, registry);
+    const headers = [
+      TOOL_HEADER,
+      '{"toolList":["alpha_tool"]}',
+      INSTRUCTIONS_HEADER,
+      JSON.stringify({ instructions: secret }),
+    ];
+    try {
+      const requestId = `conflict-${conflict}`;
+      const failed = await post(harness.url, initialize(requestId), headers);
+      assertInternalInitializationFailure(harness, failed, requestId, secret);
+      assertEqual(preparedServices, 0, 'Ownership conflicts must precede tool service preparation');
+      assertEqual(boundResults, 0, 'Ownership conflicts must precede every result binding factory');
+
+      shouldConflict = false;
+      const recovered = await startSession(harness, headers);
+      assertEqual(
+        (await list(harness, recovered.sessionId)).length,
+        2,
+        'A rejected internal ownership conflict must not poison later session preparation',
+      );
+      assertEqual(
+        preparedServices + boundResults,
+        0,
+        'Recovery without contributions must keep defaults',
+      );
+    } finally {
+      await harness.close();
+    }
+  }
+}
+
 async function testUnconfiguredHeadersAreNotParsedOrLogged(): Promise<void> {
   const harness = await createHarness({
     requestHeaders: { onInitialize: [], onCallToolResult: [] },
@@ -789,8 +1235,24 @@ await runTestSuite({
       run: testSafeInvalidParametersAndAtomicInitialization,
     },
     {
+      name: 'all four rule combinations use production session defaults',
+      run: testAllRuleCombinationsUseProductionDefaults,
+    },
+    {
       name: 'later initialization headers do not change per-request result policy',
       run: testLaterHeadersAndPerRequestResultPolicy,
+    },
+    {
+      name: 'bound results stay session-local and independently selected per POST',
+      run: testBoundResultsStaySessionLocalAndRequestSelected,
+    },
+    {
+      name: 'internal parser, binding, and service failures are safe and recoverable',
+      run: testInternalPreparationFailuresAreSafeAndRecoverable,
+    },
+    {
+      name: 'internal ownership conflicts fail before preparation and allow recovery',
+      run: testInternalOwnershipConflictsFailBeforePreparation,
     },
     {
       name: 'unconfigured headers are not parsed or logged',

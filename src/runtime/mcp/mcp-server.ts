@@ -7,7 +7,7 @@ import {
   type ToolCallDiagnosticSink,
   type ToolCallLogger,
 } from '../invocation/tool-call-handler.js';
-import type { McpSessionOptions, RuntimeExtensions } from '../runtime-extensions.js';
+import type { McpSessionOptions } from '../runtime-extensions.js';
 
 function loadPackageVersion(): string {
   // Package metadata is the release-version source, so runtime code does not duplicate it.
@@ -27,7 +27,6 @@ const MCP_SERVER_VERSION = loadPackageVersion();
 export interface CreateMCPServerOptions extends McpSessionOptions {
   readonly configStore: ConfigStore;
   readonly logger: ToolCallLogger;
-  readonly prepareToolResult?: RuntimeExtensions['prepareToolResult'];
   readonly onToolCallDiagnostic?: ToolCallDiagnosticSink;
 }
 

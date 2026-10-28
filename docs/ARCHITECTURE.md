@@ -63,7 +63,7 @@ POST → SDK dispatch（可带 POST-local 请求头上下文）
 - `ToolRuntimeContext` 是从 snapshot 派生的 workspace 能力，包括文件访问策略、行尾符和 Android 配置。
 - `ToolInvocationContext` 是本次调用的服务端 call ID、客户端 request ID、session ID 与 `AbortSignal`。调用身份和取消信号不放入 workspace snapshot。
 
-请求头实现通过内部阶段契约接入会话准备、POST context 和结果适配。HTTP、工具调用核心与通用 Logger 消费阶段结果，不解析功能规则；这些 hook 是可信同步内部实现，不是动态插件 API。具体阶段和隔离条件见[请求头策略](REQUEST-HEADER-POLICY.md#内部阶段扩展点)。
+请求头实现通过内部阶段契约接入会话准备、POST context 和结果适配。应用提供无初始化覆盖时的默认会话结果入口，初始化准备返回最终会话选项，HTTP 与 Server 将其中的结果准备函数传到 handler；结果参数固定于会话，每次调用仍独立计算启用方案。HTTP、工具调用核心与通用 Logger 消费阶段结果，不解析功能规则；这些 hook 是可信同步内部实现，不是动态插件 API。具体阶段和隔离条件见[请求头策略](REQUEST-HEADER-POLICY.md#内部阶段扩展点)。
 
 工具准入、输入校验与 executor 的可恢复失败进入统一工具结果管线；SDK 协议级错误不属于 `ToolCallResult`。完整结果契约、字段所有权和适配语义见[工具返回结果](TOOL-RESULTS.md)。
 
@@ -72,7 +72,7 @@ POST → SDK dispatch（可带 POST-local 请求头上下文）
 | 范围 | 持有内容 | 生命周期限制 |
 |-|-|-|
 | 应用 / selected workspace | 固定 snapshot、identity、catalog、workspace service、listener、logger、外部路由运行时 | 会话退出不能关闭这些共享资源 |
-| 上游会话 | Server、transport、初始化设置、受限工具视图 | pending 阶段也必须纳入关闭；关闭传播到该会话的调用 |
+| 上游会话 | Server、transport、初始化设置、受限工具视图、已绑定的结果准备入口 | pending 阶段也必须纳入关闭；关闭传播到该会话的调用；结果参数由会话闭包持有，不经全局查询 |
 | 单次 POST / invocation | raw header view、call identity、取消信号、捕获的 snapshot 与结果方案 | 请求头上下文不缓存为会话结果策略；并发请求相互隔离 |
 | Android workspace | 进程内共享 Gradle gate registry 中的 workspace FIFO、active lease | gate 持有到执行 drain 和报告处理结束；迟到事件不得影响新 lease |
 | 外部路由 workspace | 共享 admission、HTTP Agents、Processor runner、按 server identity 共享的下游 MCP manager | HTTP/MCP 共用容量；caller-visible settled 不等于资源 drained |

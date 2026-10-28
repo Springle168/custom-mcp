@@ -1,5 +1,5 @@
 import type { ToolCallResult } from '../../src/tools/types.js';
-import { duplicateStructuredContent } from '../../src/runtime/request/tool-result-features/structured-content-dup.js';
+import { duplicateStructuredContent } from '../../src/runtime/request/features/structured-content-dup.js';
 import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 
 function result(isError: boolean, extensions: Record<string, unknown> = {}): ToolCallResult {
