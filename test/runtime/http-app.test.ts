@@ -191,6 +191,7 @@ async function testAlternativeExtensionsReachServerAndKeepPostContextIsolated():
       return {
         accepted: true,
         options: {
+          ...defaults,
           toolService: {
             getDefinitions: () => [
               {
@@ -208,13 +209,15 @@ async function testAlternativeExtensionsReachServerAndKeepPostContextIsolated():
         },
       };
     },
-    prepareToolResult() {
-      preparedResults++;
-      const enabled = context.getStore()?.includes('http-test') === true;
-      return {
-        adaptResult: (result) =>
-          enabled ? { ...result, structuredContent: { extension: 'alternative' } } : result,
-      };
+    defaultSessionOptions: {
+      prepareToolResult() {
+        preparedResults++;
+        const enabled = context.getStore()?.includes('http-test') === true;
+        return {
+          adaptResult: (result) =>
+            enabled ? { ...result, structuredContent: { extension: 'alternative' } } : result,
+        };
+      },
     },
   });
   const first = new Client({ name: 'extension-first', version: '1' });
@@ -258,6 +261,106 @@ async function testAlternativeExtensionsReachServerAndKeepPostContextIsolated():
     assertEqual(context.getStore(), undefined, 'POST context should not leak into the caller');
   } finally {
     await Promise.all([first.close(), second.close()]);
+    await harness.close();
+  }
+}
+
+async function testDefaultResultPreparationWithoutSessionHook(): Promise<void> {
+  let preparedResults = 0;
+  const harness = await createHarness({
+    defaultSessionOptions: {
+      prepareToolResult() {
+        preparedResults++;
+        return {
+          adaptResult: (result) => ({ ...result, structuredContent: { source: 'default' } }),
+        };
+      },
+    },
+  });
+  const client = new Client({ name: 'default-result-client', version: '1' });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(harness.url)));
+    assertEqual(preparedResults, 0, 'Initialization must not prepare a tool result');
+
+    const result = await client.callTool({ name: 'probe_tool', arguments: {} });
+    assertEqual(
+      JSON.stringify(result.structuredContent),
+      JSON.stringify({ source: 'default' }),
+      'Default session result preparation should reach Server without an initialization hook',
+    );
+    assertEqual(preparedResults, 1, 'Default result preparation should run once per tools/call');
+  } finally {
+    await client.close();
+    await harness.close();
+  }
+}
+
+async function testFinalSessionResultPreparationOverridesDefault(): Promise<void> {
+  let preparedSessions = 0;
+  let preparedDefaults = 0;
+  let preparedOverrides = 0;
+  const harness = await createHarness({
+    defaultSessionOptions: {
+      prepareToolResult() {
+        preparedDefaults++;
+        return {
+          adaptResult: (result) => ({ ...result, structuredContent: { source: 'default' } }),
+        };
+      },
+    },
+    prepareSession(rawHeaders, defaults) {
+      preparedSessions++;
+      if (!rawHeaders.includes('override-result')) {
+        return { accepted: true, options: defaults };
+      }
+
+      return {
+        accepted: true,
+        options: {
+          ...defaults,
+          prepareToolResult() {
+            preparedOverrides++;
+            return {
+              adaptResult: (result) => ({ ...result, structuredContent: { source: 'session' } }),
+            };
+          },
+        },
+      };
+    },
+  });
+  const overridden = new Client({ name: 'overridden-result-client', version: '1' });
+  const fallback = new Client({ name: 'fallback-result-client', version: '1' });
+  try {
+    await overridden.connect(
+      new StreamableHTTPClientTransport(new URL(harness.url), {
+        requestInit: { headers: { 'X-Session-Result': 'override-result' } },
+      }),
+    );
+    await fallback.connect(new StreamableHTTPClientTransport(new URL(harness.url)));
+    assertEqual(preparedSessions, 2, 'Each session should prepare its final options once');
+    assertEqual(preparedDefaults + preparedOverrides, 0, 'Initialization must not prepare results');
+
+    for (let call = 0; call < 2; call++) {
+      const [overriddenResult, fallbackResult] = await Promise.all([
+        overridden.callTool({ name: 'probe_tool', arguments: {} }),
+        fallback.callTool({ name: 'probe_tool', arguments: {} }),
+      ]);
+      assertEqual(
+        JSON.stringify(overriddenResult.structuredContent),
+        JSON.stringify({ source: 'session' }),
+        'Final session result preparation must take precedence over application defaults',
+      );
+      assertEqual(
+        JSON.stringify(fallbackResult.structuredContent),
+        JSON.stringify({ source: 'default' }),
+        'Sessions without an override should retain default result preparation',
+      );
+    }
+    assertEqual(preparedOverrides, 2, 'Overridden calls must use only their session entry');
+    assertEqual(preparedDefaults, 2, 'Default entry must run only for fallback session calls');
+    assertEqual(preparedSessions, 2, 'Tools/call must not prepare session options again');
+  } finally {
+    await Promise.all([overridden.close(), fallback.close()]);
     await harness.close();
   }
 }
@@ -357,6 +460,14 @@ await runTestSuite({
     {
       name: 'alternative extensions reach server and isolate POST context',
       run: testAlternativeExtensionsReachServerAndKeepPostContextIsolated,
+    },
+    {
+      name: 'default result preparation works without a session hook',
+      run: testDefaultResultPreparationWithoutSessionHook,
+    },
+    {
+      name: 'final session result preparation overrides the default',
+      run: testFinalSessionResultPreparationOverridesDefault,
     },
     { name: 'missing and stale session responses', run: testMissingAndStaleSessionResponses },
     {

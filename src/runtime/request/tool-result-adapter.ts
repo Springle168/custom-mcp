@@ -1,25 +1,15 @@
-import type { RuntimeRequestFeature } from '../../config.js';
 import type { ToolCallResult } from '../../tools/types.js';
-import { duplicateStructuredContent } from './tool-result-features/structured-content-dup.js';
+import type { BoundResultFeature } from './feature-contracts.js';
 
-/** Registry order defines execution order, not the order of configured rules or features. */
-export const TOOL_RESULT_FEATURES = [
-  {
-    feature: 'structuredContentDup',
-    apply: duplicateStructuredContent,
-  },
-] as const satisfies readonly {
-  feature: RuntimeRequestFeature;
-  apply: (result: ToolCallResult) => ToolCallResult;
-}[];
-
-export function adaptToolCallResultForRequestPolicy(
+/** Selection never changes the order of the bound session table. */
+export function adaptToolCallResultForRequestPolicy<Feature extends string>(
   result: ToolCallResult,
-  enabledFeatures: readonly RuntimeRequestFeature[],
+  enabledFeatures: readonly Feature[],
+  features: readonly BoundResultFeature<Feature>[],
 ): ToolCallResult {
   let adapted = result;
 
-  for (const { feature, apply } of TOOL_RESULT_FEATURES) {
+  for (const { feature, apply } of features) {
     if (enabledFeatures.includes(feature)) {
       adapted = apply(adapted);
     }

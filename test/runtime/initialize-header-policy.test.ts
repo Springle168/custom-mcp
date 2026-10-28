@@ -1,10 +1,16 @@
 import type { RuntimeRulesConfig } from '../../src/config.js';
+import { evaluateInitializeHeaderPolicy } from '../../src/runtime/request/initialize-header-policy.js';
+import type {
+  InitializeContribution,
+  RequestHeaderFeatureRegistry,
+} from '../../src/runtime/request/feature-contracts.js';
+import type { WorkspaceToolService } from '../../src/tools/index.js';
+import type { ToolCallResult } from '../../src/tools/types.js';
 import {
-  evaluateInitializeHeaderPolicy,
   InitializeHeaderPolicyError,
   toInitializeHeaderPolicyErrorLogMetadata,
   type InitializeHeaderPolicyErrorCategory,
-} from '../../src/runtime/request/initialize-header-policy.js';
+} from '../../src/runtime/request/initialize-header-errors.js';
 import { createStrictRequestHeaderView } from '../../src/runtime/request/request-header-view.js';
 import { assert, assertEqual, assertNotIncludes, runTestSuite } from '../test-utils.js';
 
@@ -15,6 +21,36 @@ function rules(
   ],
 ): RuntimeRulesConfig {
   return { requestHeaders: { onInitialize, onCallToolResult: [] } };
+}
+
+function preparedToolNames(contribution: InitializeContribution | undefined): readonly string[] {
+  assert(
+    contribution?.prepareToolService !== undefined,
+    'Tool selection must produce a preparation',
+  );
+  const service: WorkspaceToolService = {
+    getDefinitions: () =>
+      [
+        'custom.Tool-1',
+        'READ_FILE',
+        'not_exposed',
+        'first',
+        'last',
+        'x'.repeat(128),
+        'Case',
+        'case',
+        '._-0',
+      ].map((name) => ({
+        name,
+        description: name,
+        inputSchema: { type: 'object' },
+      })),
+    routeToolCall: async () => ({ content: [], isError: false }),
+  };
+  return contribution
+    .prepareToolService(service)
+    .getDefinitions()
+    .map(({ name }) => name);
 }
 
 function expectFailure(
@@ -40,14 +76,9 @@ function expectFailure(
 function testMissingAndUnconfiguredHeaders(): void {
   const defaults = evaluateInitializeHeaderPolicy(rules(), createStrictRequestHeaderView([]));
   assertEqual(
-    defaults.settings.requestedToolNames,
-    undefined,
-    'Missing tools header should preserve workspace defaults',
-  );
-  assertEqual(
-    defaults.settings.instructions,
-    undefined,
-    'Missing instructions should remain absent',
+    defaults.contributions.length,
+    0,
+    'Missing headers must not contribute any overrides',
   );
   assertEqual(defaults.metadata.appliedRules.length, 0, 'Missing headers should not apply rules');
   assertEqual(
@@ -74,7 +105,7 @@ function testMissingAndUnconfiguredHeaders(): void {
     ]),
   );
   assertEqual(
-    ignored.settings.instructions,
+    ignored.contributions[0]?.instructions,
     'ok',
     'Malformed duplicate unconfigured headers must not be parsed',
   );
@@ -92,20 +123,21 @@ function testValidParametersAndImmutableMetadata(): void {
     ]),
   );
   assertEqual(
-    policy.settings.requestedToolNames?.join(','),
+    preparedToolNames(policy.contributions[0]).join(','),
     'custom.Tool-1,READ_FILE,not_exposed',
-    'Parser should preserve names without filtering or reordering',
+    'Tool contribution should retain the validated selection',
   );
   assertEqual(
-    policy.settings.instructions,
+    policy.contributions[1]?.instructions,
     instructions,
     'Instructions must retain Unicode, whitespace, escapes and control characters as data',
   );
-  assert(Object.isFrozen(policy), 'Settings should be frozen');
+  assert(Object.isFrozen(policy), 'Policy should be frozen');
   assert(
-    Object.isFrozen(policy.settings.requestedToolNames),
-    'Requested tool names should be frozen',
+    Object.isFrozen(policy.contributions) && policy.contributions.every(Object.isFrozen),
+    'Contribution array and concrete contributions should be frozen',
   );
+  assert(Object.isFrozen(policy.metadata), 'Metadata should be frozen');
   assert(
     Object.isFrozen(policy.metadata.appliedRules) &&
       policy.metadata.appliedRules.every(Object.isFrozen),
@@ -149,24 +181,34 @@ function testExplicitEmptyValuesAndJsonParseSemantics(): void {
     ]),
   );
   assertEqual(
-    empty.settings.requestedToolNames?.length,
+    preparedToolNames(empty.contributions[0]).length,
     0,
     'An explicit empty tool list is not a default',
   );
   assertEqual(
-    empty.settings.instructions,
+    empty.contributions[1]?.instructions,
     '',
     'An explicit empty instruction string remains distinguishable from absence',
   );
   assertEqual(empty.metadata.appliedRules.length, 2, 'Explicit empties count as applied');
   const lastProperty = evaluateInitializeHeaderPolicy(
     rules(),
-    createStrictRequestHeaderView(['x-tools', '{"toolList":["first"],"toolList":["last"]}']),
+    createStrictRequestHeaderView([
+      'x-tools',
+      '{"toolList":["first"],"toolList":["last"]}',
+      'x-instructions',
+      '{"instructions":false,"instructions":"last"}',
+    ]),
   );
   assertEqual(
-    lastProperty.settings.requestedToolNames?.join(','),
+    preparedToolNames(lastProperty.contributions[0]).join(','),
     'last',
     'Standard JSON.parse duplicate property semantics should be retained',
+  );
+  assertEqual(
+    lastProperty.contributions[1]?.instructions,
+    'last',
+    'Only the final same-named property should reach instructions validation',
   );
 }
 
@@ -240,7 +282,7 @@ function testStrictPayloadAndNameValidation(): void {
     ]),
   );
   assertEqual(
-    valid.settings.requestedToolNames?.length,
+    preparedToolNames(valid.contributions[0]).length,
     4,
     'Grammar limits and case-distinct names should be valid',
   );
@@ -269,6 +311,151 @@ function testAtomicFailureAndSafeErrorMetadata(): void {
   );
 }
 
+function testInjectedParserDispatchAndRuleOrder(): void {
+  const parsed: unknown[] = [];
+  const instructions = Object.freeze({ instructions: 'injected' });
+  const tools = Object.freeze({ prepareToolService: (base: WorkspaceToolService) => base });
+  const parsers: RequestHeaderFeatureRegistry['initialize'] = {
+    setToolList: (payload) => {
+      parsed.push(['setToolList', payload]);
+      return tools;
+    },
+    setInstructions: (payload) => {
+      parsed.push(['setInstructions', payload]);
+      return instructions;
+    },
+  };
+  const policy = evaluateInitializeHeaderPolicy(
+    rules([
+      { readHeader: 'x-instructions', apply: 'setInstructions' },
+      { readHeader: 'x-tools', apply: 'setToolList' },
+    ]),
+    createStrictRequestHeaderView(['x-tools', 'null', 'x-instructions', '[1,true]']),
+    parsers,
+  );
+  assertEqual(
+    JSON.stringify(parsed),
+    '[["setInstructions",[1,true]],["setToolList",null]]',
+    'Public evaluator should dispatch unknown parsed JSON in configured rather than header order',
+  );
+  assertEqual(
+    policy.contributions[0],
+    instructions,
+    'First contribution should retain parser identity',
+  );
+  assertEqual(policy.contributions[1], tools, 'Second contribution should retain parser identity');
+  assertEqual(
+    policy.metadata.appliedRules.map(({ feature }) => feature).join(','),
+    'setInstructions,setToolList',
+    'Metadata should use configured order with injected parsers too',
+  );
+
+  parsed.length = 0;
+  const absent = evaluateInitializeHeaderPolicy(
+    rules(),
+    createStrictRequestHeaderView([]),
+    parsers,
+  );
+  assertEqual(parsed.length, 0, 'Missing headers must not dispatch a parser');
+  assertEqual(absent.contributions.length, 0, 'Missing headers must not create contributions');
+}
+
+function testAllParsingPrecedesPreparationAndBinding(): void {
+  const events: string[] = [];
+  let failSecond = false;
+  const first: InitializeContribution = Object.freeze({
+    prepareToolService: (base: WorkspaceToolService) => {
+      events.push('prepare');
+      return base;
+    },
+    resultBindings: Object.freeze([
+      Object.freeze({
+        feature: 'structuredContentDup' as const,
+        bind: () => {
+          events.push('bind');
+          return (result: ToolCallResult) => result;
+        },
+      }),
+    ]),
+  });
+  const parsers: RequestHeaderFeatureRegistry['initialize'] = {
+    setToolList: () => {
+      events.push('parse tools');
+      return first;
+    },
+    setInstructions: (_payload, invalid) => {
+      events.push('parse instructions');
+      if (failSecond) invalid('instructions');
+      return Object.freeze({ instructions: 'ok' });
+    },
+  };
+  const view = createStrictRequestHeaderView(['x-tools', '{}', 'x-instructions', '{}']);
+  const policy = evaluateInitializeHeaderPolicy(rules(), view, parsers);
+  assertEqual(
+    policy.contributions[0],
+    first,
+    'Evaluator should return rather than apply contributions',
+  );
+  assertEqual(
+    events.join(','),
+    'parse tools,parse instructions',
+    'Successful parsing must not prepare or bind',
+  );
+
+  events.length = 0;
+  failSecond = true;
+  try {
+    evaluateInitializeHeaderPolicy(rules(), view, parsers);
+    throw new Error('Expected second parser failure');
+  } catch (error) {
+    assert(
+      error instanceof InitializeHeaderPolicyError,
+      'Injected invalid callback should classify errors',
+    );
+    assertEqual(
+      error.category,
+      'invalid_payload',
+      'Parser failure should use the public safe category',
+    );
+    assertEqual(error.feature, 'setInstructions', 'Failure should identify the dispatched feature');
+    assertEqual(error.field, 'instructions', 'Failure should preserve the trusted parser field');
+    assertEqual(
+      error.ruleLocation,
+      'rules.requestHeaders.onInitialize[1]',
+      'Failure should retain configured position',
+    );
+  }
+  assertEqual(
+    events.join(','),
+    'parse tools,parse instructions',
+    'Later parser failure must not execute any preparation or binding',
+  );
+}
+
+function testUnexpectedParserErrorsPropagate(): void {
+  const unexpected = new Error('private parser failure');
+  const parsers: RequestHeaderFeatureRegistry['initialize'] = {
+    setToolList: () => {
+      throw unexpected;
+    },
+    setInstructions: () => Object.freeze({}),
+  };
+  try {
+    evaluateInitializeHeaderPolicy(
+      rules(),
+      createStrictRequestHeaderView(['x-tools', '{}']),
+      parsers,
+    );
+    throw new Error('Expected parser failure');
+  } catch (error) {
+    assertEqual(
+      error,
+      unexpected,
+      'Internal parser errors must not become client payload errors or fail open',
+    );
+  }
+}
+
 await runTestSuite({
   title: 'Testing initialize header policy',
   tests: [
@@ -290,5 +477,14 @@ await runTestSuite({
     },
     { name: 'strict payload and tool name validation', run: testStrictPayloadAndNameValidation },
     { name: 'atomic failure and safe error metadata', run: testAtomicFailureAndSafeErrorMetadata },
+    {
+      name: 'injected parser dispatch and configured rule order',
+      run: testInjectedParserDispatchAndRuleOrder,
+    },
+    {
+      name: 'all parsing precedes preparation and binding',
+      run: testAllParsingPrecedesPreparationAndBinding,
+    },
+    { name: 'unexpected parser errors propagate', run: testUnexpectedParserErrorsPropagate },
   ],
 });

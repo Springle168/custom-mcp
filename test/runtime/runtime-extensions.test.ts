@@ -37,7 +37,7 @@ function testConfiguredStageCombinations(): void {
         'Only configured initialization stage should be installed',
       );
       assertEqual(
-        extensions.prepareToolResult !== undefined,
+        extensions.defaultSessionOptions?.prepareToolResult !== undefined,
         results,
         'Only configured result stage should be installed',
       );
@@ -58,7 +58,7 @@ async function testPostBridgeAndCapture(): Promise<void> {
     rules: configuration,
   });
   const run = extensions.runWithPostContext;
-  const prepare = extensions.prepareToolResult;
+  const prepare = extensions.defaultSessionOptions?.prepareToolResult;
   assert(
     run !== undefined && prepare !== undefined,
     'Result stage should include its context bridge',

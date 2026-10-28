@@ -7,6 +7,7 @@ import type { ToolResultLogSummary } from './invocation/tool-call-log-context.js
 export interface McpSessionOptions {
   readonly toolService: WorkspaceToolService;
   readonly instructions?: string;
+  readonly prepareToolResult?: PrepareToolResult;
 }
 
 export type SessionPreparation =
@@ -29,16 +30,18 @@ export interface PreparedToolResult {
   readonly getLogSummary?: () => ToolResultLogSummary | undefined;
 }
 
+export type PrepareToolResult = (snapshot: RuntimeConfigSnapshot) => PreparedToolResult;
+
 /**
  * Trusted synchronous internal stage hooks, not a general-purpose plugin API.
  * Core code retains protocol, execution, validation and resource ownership.
  */
 export interface RuntimeExtensions {
+  readonly defaultSessionOptions?: Pick<McpSessionOptions, 'prepareToolResult'>;
   readonly prepareSession?: (
     rawHeaders: readonly string[],
     defaults: McpSessionOptions,
   ) => SessionPreparation;
-  readonly prepareToolResult?: (snapshot: RuntimeConfigSnapshot) => PreparedToolResult;
   /** Carries POST-local input across SDK dispatch without caching call policy. */
   readonly runWithPostContext?: <T>(rawHeaders: readonly string[], action: () => T) => T;
 }

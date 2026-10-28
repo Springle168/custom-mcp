@@ -83,12 +83,17 @@ src/runtime/
     ├── request-header-extensions.ts                # 按已配置阶段组装请求头扩展
     ├── request-header-view.ts                      # raw header、重复状态与 strict view
     ├── request-context.ts                          # POST-local AsyncLocalStorage 上下文
-    ├── initialize-header-policy.ts                 # 初始化 JSON 参数求值与安全拒绝
-    ├── initialize-header-extension.ts              # 初始化设置、会话视图和发布观察适配
+    ├── feature-contracts.ts                        # 阶段 parser、初始化贡献与结果绑定的窄契约
+    ├── feature-registry.ts                         # 显式初始化映射与静态有序默认结果表
+    ├── initialize-header-errors.ts                 # 初始化安全错误分类与诊断
+    ├── initialize-header-policy.ts                 # 公共 header/JSON 边界、parser 分派与安全 metadata
+    ├── initialize-header-extension.ts              # 验证后贡献合并、会话准备、拒绝与发布观察
     ├── request-header-policy.ts                    # 本次结果规则匹配与 feature 并集
-    ├── tool-result-header-extension.ts             # 调用开始时捕获结果适配方案
-    ├── tool-result-adapter.ts                      # 有序功能表与已启用结果功能的统一编排
-    ├── tool-result-features/
+    ├── tool-result-header-extension.ts             # 会话结果表绑定与调用开始时的适配方案捕获
+    ├── tool-result-adapter.ts                      # 按已绑定表顺序执行本次启用的结果变换
+    ├── features/
+    │   ├── set-tool-list.ts                        # 工具名称 payload 校验与受限会话服务准备
+    │   ├── set-instructions.ts                     # instructions payload 校验与会话说明贡献
     │   └── structured-content-dup.ts               # content/isError wrapper 的纯结果变换
     └── request-header-policy-logging.ts            # 请求头策略安全摘要格式化
 ```
