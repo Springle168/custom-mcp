@@ -21,6 +21,10 @@ import {
   validateFileAccessWriteTarget,
 } from '../../../utils/file-access-policy.js';
 import { withFileLock } from '../../../utils/file-lock.js';
+import {
+  fileSystemErrorReason,
+  getFileSystemErrorCode,
+} from '../../../utils/file-system-errors.js';
 import type { SafePath } from '../../../utils/paths.js';
 import { REPLACE_TOOL_DEFINITION } from './replace-text.definition.js';
 import type { MCPTool, ToolCallResult } from '../../types.js';
@@ -341,13 +345,12 @@ async function readExistingTextFile(
 
     bytes = await fs.readFile(resolved);
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') {
+    if (getFileSystemErrorCode(err) === 'ENOENT') {
       return { exists: false };
     }
     return {
       exists: null,
-      error: formatFileReadinessError(filePath, error.message),
+      error: formatFileReadinessError(filePath, fileSystemErrorReason(err)),
     };
   }
 
@@ -389,8 +392,7 @@ async function writeTextContent(
     await fs.writeFile(resolved, applyLineEnding(content, lineEnding), 'utf-8');
     return null;
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return `Could not write file: ${error.message}. Check the path and permissions before retrying.`;
+    return `Could not write file: ${fileSystemErrorReason(err)}. Check the path and permissions before retrying.`;
   }
 }
 
@@ -474,11 +476,10 @@ async function executeReplacement(
       try {
         await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
       } catch (err: unknown) {
-        const error = err as NodeJS.ErrnoException;
         return replacementResult(
           replacement,
           false,
-          `Could not create parent directory for ${filePath}: ${error.message}. Check the path and permissions before retrying.`,
+          `Could not create parent directory for ${filePath}: ${fileSystemErrorReason(err)}. Check the path and permissions before retrying.`,
           { file_line_count: { previous: 0, current: 0 } },
         );
       }

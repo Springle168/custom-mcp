@@ -154,6 +154,7 @@ src/
     ├── file-access-policy.ts               # ignore/deny、读写目标复检与受控 glob
     ├── file-selection.ts                   # 有序 literal/glob 候选、来源下标与文件身份
     ├── file-read.ts                        # 完整文本读取、大小保护与逐文件失败
+    ├── file-system-errors.ts               # 文件系统异常的受控公开原因
     ├── bounded-workers.ts                  # 有限并发、稳定结果顺序与停止调度后的 drain
     ├── file-lock.ts                        # 按文件路径 FIFO 串行化
     ├── immutable-map.ts                    # runtime-immutable ReadonlyMap 快照
@@ -180,11 +181,13 @@ test/
 ├── tools/                                  # definitions、custom config、catalog 与 exposure
 │   └── inspect-tools.ts                    # canonical registry definition 的显式检查脚本
 ├── runtime/                                # 应用、会话、请求策略、结果管线与 HTTP/MCP 集成
+│   └── helpers/request-header-http.ts      # 请求头集成专用 raw HTTP 客户端与会话 harness
 ├── external-routing/                       # route 配置、协议、Processor、HTTP/MCP 与资源生命周期
 ├── path-safety/                            # 路径形态、allowed roots、glob 与 symlink 边界
 ├── file-access-policy/                     # 跨工具 ignore/deny 与读写访问控制
 ├── file-selection/                         # 有序候选、过滤、文件身份与取消
 ├── file-content/                           # 完整字节分类、格式样本与严格文本边界
+├── file-system-errors/                     # 公开文件错误分类与跨工具异常细节隔离
 ├── bounded-workers/                        # 并发上限、稳定顺序、取消与异常 drain
 ├── read/                                   # 选择覆盖、范围、内容准入、统计与生命周期
 ├── replace-text/                           # 匹配、批次、行尾符、并发与写入失败恢复
@@ -192,7 +195,9 @@ test/
 ├── discover-guidelines/                    # Front Matter、选择、有界读取与资源限制
 ├── android-build/                          # Gradle gate/执行/清理、输出与报告
 ├── logger/                                 # 日志隐私、策略摘要与人工颜色验证
-├── runner/                                 # 测试发现、筛选、输出与失败继续行为
+├── runner/                                 # 测试发现、筛选、输出、脚本超时与有界进程清理
+│   ├── script-execution.ts                 # 独立脚本执行、超时分类与输出捕获
+│   └── termination.ts                      # 测试子进程终止与有界清理结果
 ├── fixtures/                               # 测试生成物与共享 fixture 工作区
 └── logs/                                   # 测试日志输出
 ```

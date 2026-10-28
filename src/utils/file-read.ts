@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import { classifyFileContent } from '../engine/file-content.js';
+import { fileSystemErrorReason } from './file-system-errors.js';
 
 /** Maximum source file size in MiB, including for range reads. */
 export const MAX_FILE_SIZE_MB = 20;
@@ -32,15 +33,7 @@ export async function readTextFile(
     bytes = await fs.readFile(filePath, { signal });
   } catch (error: unknown) {
     signal.throwIfAborted();
-    // A real path can differ from the caller's display path; do not echo OS paths.
-    const code = (error as NodeJS.ErrnoException).code;
-    const reason =
-      code === 'ENOENT'
-        ? 'file not found'
-        : code === 'EACCES' || code === 'EPERM'
-          ? 'file access failed: permission denied'
-          : 'file could not be read';
-    return { ok: false, reason };
+    return { ok: false, reason: fileSystemErrorReason(error) };
   }
 
   try {

@@ -90,7 +90,7 @@ workspace 配置要求 JSON number `version: 2`。全局索引、Tool config 与
 `src/runtime/runtime-extensions.ts` 定义轻量的内部阶段契约，应用组装层通过 `createRequestHeaderExtensions()` 按已配置规则接入请求头策略。没有规则的阶段不安装 hook；没有结果规则时不安装 POST context 桥接。核心 HTTP、MCP Server、工具调用管线和通用 Logger 只消费阶段结果，不解释 header 规则或 feature。
 
 - `prepareSession` 在合法新 initialize 的资源构造前同步准备最终 `McpSessionOptions`，或返回安全的参数拒绝信息。选项包含 `toolService`、可选 `instructions` 和会话级 `prepareToolResult`；核心负责发送拒绝响应，策略负责参数分类和安全失败摘要。
-- `defaultSessionOptions` 只携带默认结果准备入口，不替换应用持有的基础工具服务。HTTP 入口将它与基础服务合成 defaults；有初始化 hook 时使用其最终选项，无初始化 hook 时直接使用 defaults。HTTP、Server 与 handler 逐层转发最终会话的函数，不按 session ID 回查参数。
+- `defaultSessionOptions` 只携带默认结果准备入口，不替换应用持有的基础工具服务。HTTP 入口只显式选取其中的 `prepareToolResult` 与基础服务合成 defaults，忽略运行时对象上的额外字段；有初始化 hook 时使用其最终选项，无初始化 hook 时直接使用 defaults。HTTP、Server 与 handler 逐层转发最终会话的函数，不按 session ID 回查参数。
 - `runWithPostContext` 从本次 POST 的 rawHeaders 建立 strict view，并在 AsyncLocalStorage 中运行 SDK dispatch。桥接只传播输入，不计算或缓存会话结果 policy。
 - 会话选项中的 `PrepareToolResult` 使用本次调用已捕获的 snapshot 和当前 strict view，一次性生成结果适配闭包和日志摘要 supplier。核心在结果校验后适配，再在受保护的日志路径中求摘要。
 

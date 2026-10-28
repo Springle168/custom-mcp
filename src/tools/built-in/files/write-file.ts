@@ -9,6 +9,10 @@ import {
 import { classifyFileContent } from '../../../engine/file-content.js';
 import { withFileLock } from '../../../utils/file-lock.js';
 import {
+  fileSystemErrorReason,
+  getFileSystemErrorCode,
+} from '../../../utils/file-system-errors.js';
+import {
   resolveFileAccessPath,
   validateFileAccessWriteTarget,
 } from '../../../utils/file-access-policy.js';
@@ -119,10 +123,9 @@ async function handleWriteFile(
 
       existingBytes = await fs.readFile(safePath.resolvedPath);
     } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
+      if (getFileSystemErrorCode(err) !== 'ENOENT') {
         return textErrorResult(
-          `Could not prepare file ${filePath}: ${error.message}. Check the path and permissions.`,
+          `Could not prepare file ${filePath}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
         );
       }
     }
@@ -158,9 +161,8 @@ async function handleWriteFile(
 
       await fs.writeFile(safePath.resolvedPath, finalContent, 'utf-8');
     } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
       return textErrorResult(
-        `Could not write file ${filePath}: ${error.message}. Check the path and permissions.`,
+        `Could not write file ${filePath}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
       );
     }
 

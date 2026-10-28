@@ -18,6 +18,7 @@ import {
   assertNotIncludes,
   runTestSuite,
 } from '../test-utils.js';
+import { DEFAULT_SCRIPT_TIMEOUT_MS, MAX_TIMER_MS } from './script-execution.js';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SAMPLE_TESTS = [
@@ -56,6 +57,35 @@ function testParsesSelectorsAndVerbose(): void {
 
   assertEqual(options.verbose, true, 'Should enable verbose output');
   assertEqual(options.selectors.join(','), 'config,runtime', 'Should retain selector order');
+  assertEqual(options.timeoutMs, DEFAULT_SCRIPT_TIMEOUT_MS, 'Should default to 120 seconds');
+}
+
+function testParsesTimeout(): void {
+  const options = parseTestRunnerArgs(['config', '--timeout-ms', '1234', '--verbose']);
+  assertEqual(options.timeoutMs, 1234, 'Should parse the one runner-wide deadline');
+  assertEqual(options.selectors.join(','), 'config', 'Timeout should not be a selector');
+  assertEqual(
+    parseTestRunnerArgs(['--timeout-ms', String(MAX_TIMER_MS)]).timeoutMs,
+    MAX_TIMER_MS,
+    'Should accept the maximum Node timer delay',
+  );
+}
+
+function testRejectsInvalidTimeouts(): void {
+  for (const value of ['', '0', '-1', '1.5', 'NaN', 'Infinity', '1e3', '1ms', '2147483648']) {
+    assertThrows(
+      () => parseTestRunnerArgs(['--timeout-ms', value]),
+      `--timeout-ms must be a positive integer between 1 and ${MAX_TIMER_MS}.`,
+    );
+  }
+  assertThrows(
+    () => parseTestRunnerArgs(['--timeout-ms']),
+    `--timeout-ms must be a positive integer between 1 and ${MAX_TIMER_MS}.`,
+  );
+  assertThrows(
+    () => parseTestRunnerArgs(['--timeout-ms', '1', '--timeout-ms', '2']),
+    '--timeout-ms may only be specified once.',
+  );
 }
 
 function testRejectsUnknownOptions(): void {
@@ -219,7 +249,7 @@ async function testTruncatesExcessiveCapturedOutput(): Promise<void> {
 }
 
 function testDefaultCliUsesCompactOutput(): void {
-  const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts']);
+  const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts', '--timeout-ms', '10000']);
 
   assertEqual(result.status, 0, 'Compact runner invocation should pass');
   assertIncludes(result.stdout, 'Test module summary', 'Should print the module summary');
@@ -230,6 +260,55 @@ function testDefaultCliUsesCompactOutput(): void {
     'Testing MCP identifier generation',
     'Should suppress successful child output by default',
   );
+}
+
+function testCliRejectsInvalidTimeout(): void {
+  const result = runRunnerCli(['--timeout-ms', '0', 'runner']);
+  assertEqual(result.status, 1, 'Invalid deadline should fail before execution');
+  assertIncludes(
+    result.stderr,
+    '--timeout-ms must be a positive integer',
+    'Should explain the bound',
+  );
+  assertNotIncludes(result.stdout, 'Running ', 'Should not spawn selected tests');
+}
+
+function testTimeoutCliDiagnostics(): void {
+  for (const verbose of [false, true]) {
+    const result = runRunnerCli(
+      ['--timeout-ms', '12', ...(verbose ? ['--verbose'] : [])],
+      'test/runner/fixtures/cli-driver.ts',
+    );
+    const output = result.stdout + result.stderr;
+    assertEqual(result.status, 1, 'Even a late zero exit must fail the CLI');
+    assertIncludes(output, 'test/sample/timeout.test.ts', 'Should identify the timed-out path');
+    assertIncludes(output, 'timeout after 12 ms', 'Should report the configured deadline');
+    assertIncludes(output, '22 ms', 'Should include elapsed time');
+    assertIncludes(output, 'FAIL 1/2 test scripts', 'Confirmed cleanup should allow continuation');
+    if (!verbose) assertIncludes(output, 'timeout output marker', 'Should unfold bounded output');
+  }
+}
+
+function testUnconfirmedCleanupCliReportsNotRun(): void {
+  const result = runRunnerCli(
+    ['--timeout-ms', '12', '--unconfirmed-cleanup'],
+    'test/runner/fixtures/cli-driver.ts',
+  );
+  const output = result.stdout + result.stderr;
+  assertEqual(result.status, 1, 'Unconfirmed cleanup should fail the CLI');
+  assertIncludes(
+    output,
+    'Stopped: Cleanup was not confirmed',
+    'Should state why execution stopped',
+  );
+  assertIncludes(output, 'injected taskkill failure', 'Should preserve cleanup diagnosis');
+  assertIncludes(
+    output,
+    'Not run: 1 test script(s)',
+    'Should distinguish selected but unrun scripts',
+  );
+  assertIncludes(output, 'test/sample/next.test.ts', 'Should list the unrun script');
+  assertIncludes(output, 'FAIL 0/1 test scripts', 'Aggregate should count only executed scripts');
 }
 
 function testVerboseCliStreamsChildOutput(): void {
@@ -258,14 +337,19 @@ function scriptResult(testPath: string, passed: boolean, durationMs: number): Te
   };
 }
 
-function runRunnerCli(args: string[]): {
+function runRunnerCli(
+  args: string[],
+  script = 'test/run-tests.ts',
+): {
   status: number | null;
   stdout: string;
   stderr: string;
 } {
-  const result = spawnSync(process.execPath, ['--import', 'tsx', 'test/run-tests.ts', ...args], {
+  const result = spawnSync(process.execPath, ['--import', 'tsx', script, ...args], {
     cwd: PROJECT_ROOT,
     encoding: 'utf-8',
+    timeout: 15_000,
+    windowsHide: true,
   });
 
   if (result.error) {
@@ -299,6 +383,8 @@ async function main(): Promise<void> {
     tests: [
       { name: 'discovers only automated scripts', run: testDiscoversOnlyAutomatedScripts },
       { name: 'parses selectors and verbose', run: testParsesSelectorsAndVerbose },
+      { name: 'parses timeout', run: testParsesTimeout },
+      { name: 'rejects invalid timeouts', run: testRejectsInvalidTimeouts },
       { name: 'rejects unknown options', run: testRejectsUnknownOptions },
       { name: 'selects a topic', run: testSelectsTopic },
       {
@@ -320,11 +406,23 @@ async function main(): Promise<void> {
       },
       { name: 'default CLI uses compact output', run: testDefaultCliUsesCompactOutput },
       { name: 'verbose CLI streams child output', run: testVerboseCliStreamsChildOutput },
+      { name: 'CLI rejects invalid timeout', run: testCliRejectsInvalidTimeout },
+      { name: 'timeout CLI diagnostics', run: testTimeoutCliDiagnostics },
+      {
+        name: 'unconfirmed cleanup CLI reports not run',
+        run: testUnconfirmedCleanupCliReportsNotRun,
+      },
     ],
   });
 }
 
-main().catch((error) => {
-  console.error('Fatal error:', error);
+const watchdog = setTimeout(() => {
+  process.stderr.write('Runner CLI suite watchdog expired.\n');
   process.exit(1);
-});
+}, 30_000);
+void main()
+  .catch((error) => {
+    console.error('Fatal error:', error);
+    process.exitCode = 1;
+  })
+  .finally(() => clearTimeout(watchdog));

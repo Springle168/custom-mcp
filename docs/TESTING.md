@@ -17,9 +17,17 @@
 
 `runTestSuite()` 默认输出 suite 标题、失败用例与 `Results: ...` 汇总，静默用例内部 `console.*`。通过 `beforeAll` / `afterAll` 管理 fixture；`afterAll` 在测试失败后仍执行。
 
-runner 使用独立 Node 子进程逐脚本串行执行，避免共享 fixture 的跨脚本竞态。成功脚本的内部输出折叠，按主题汇总数量与耗时；失败脚本展开捕获输出并继续执行剩余脚本，最终返回非零退出码。每个脚本最多捕获 256 KB 输出，超出部分显示截断提示。
+runner 使用独立 Node 子进程逐脚本串行执行，避免共享 fixture 的跨脚本竞态。成功脚本的内部输出折叠，按主题汇总数量与耗时；失败脚本展开捕获输出，最终返回非零退出码。每个脚本最多捕获 256 KB 输出，超出部分显示截断提示。
 
 `--verbose` 传给被选中的脚本，显示逐用例结果与测试内部输出，并由 runner 实时透传。
+
+### 脚本期限与清理
+
+每个脚本默认限时 120 秒，期限覆盖从 spawn 到 `close` 的完整生命周期，包括根进程退出后仍被后代持有的输出 pipe。单一 CLI 参数 `--timeout-ms <正整数>` 对本次全部选中脚本生效，范围为 `1` 至 `2147483647` 毫秒，不能用 `0` 禁用，也没有环境变量、配置文件或主题级覆盖。超时始终计为失败，迟到的退出码 `0` 不能改写结果；compact 与 verbose 均报告脚本路径、期限和耗时。
+
+超时清理最多使用独立的 5 秒总预算。Windows 对本次 spawn 且尚未观察到退出的根 PID 执行 `taskkill /pid <pid> /t /f`，隐藏 helper 窗口；helper 尝试最多 3 秒，终止 helper 后最多再等待 1 秒，所有等待都受同一个总预算约束。只有 helper 成功且子进程 `close` 均已确认，才允许继续执行后续脚本。若根进程已退出，runner 不会对可能复用的旧 PID 调用 `taskkill`。
+
+普通失败和已确认清理的超时允许继续执行；清理失败、超期或无法确认停止时，runner 释放本地 stdio 与进程引用并立即停止调度，明确报告停止原因和未运行路径，汇总只统计实际执行的脚本。本地句柄释放不等于 OS 进程已死亡。非 Windows 仅尽力终止直接子进程，不建立 Unix 进程组；runner 不保证终止已经脱离的后代，也不提供强 OS 隔离，不删除共享 fixture。
 
 ## 选择与显式执行
 
@@ -31,9 +39,12 @@ npm test -- <topic-a> <topic-b>
 npm test -- test/<topic>/<name>.test.ts
 npm test -- <name>.test.ts
 npm test -- <topic> --verbose
+npm test -- <topic> --timeout-ms 180000
 ```
 
 manual 和 privileged 脚本使用 `node --import tsx <script>` 显式执行。人工日志验证见[日志](LOGGING.md#测试与人工验证)，Windows 进程树终止验证见[Android 工具](tools/android-build.md#验证重点)。
+
+runner 主题的普通测试使用真实挂住但没有后代的 fixture、直接子进程终止和 fake helper，覆盖期限、输出、迟到事件与有界清理失败；测试 watchdog 和 fixture 自身退出期限独立于被测机制。真实 Windows 进程树终止使用 `node --import tsx test/runner/timeout.privileged.ts` 显式验证，需要先取得进程树终止权限，不属于 `npm test` 的自动化发现范围。
 
 ## 验证命令与覆盖边界
 

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 // The bundled entry embeds matching code that transitive dependency updates cannot replace.
 import { glob, Ignore } from 'glob/raw';
+import { fileSystemErrorReason, getFileSystemErrorCode } from './file-system-errors.js';
 import {
   formatPathSafetyError,
   resolveSafeGlobEntry,
@@ -176,14 +177,13 @@ export async function validateFileAccessReadTarget(
   try {
     realPath = await fs.realpath(safePath.resolvedPath);
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') {
+    if (getFileSystemErrorCode(err) === 'ENOENT') {
       return { ok: false, code: 'not_found', reason: 'file not found' };
     }
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not resolve real path for ${safePath.input}: ${error.message}. Check the path and permissions.`,
+      reason: `Could not resolve real path for ${safePath.input}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
     };
   }
 
@@ -202,11 +202,11 @@ export async function validateFileAccessReadTarget(
   try {
     stats = await fs.stat(realPath);
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
+    const code = getFileSystemErrorCode(err);
     return {
       ok: false,
-      code: error.code === 'ENOENT' ? 'not_found' : 'io_error',
-      reason: error.code === 'ENOENT' ? 'file not found' : error.message,
+      code: code === 'ENOENT' ? 'not_found' : 'io_error',
+      reason: fileSystemErrorReason(err),
     };
   }
 
@@ -264,11 +264,10 @@ export async function validateFileAccessWriteTarget(
           };
     }
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not validate write path ${safePath.input}: ${error.message}. Check the path and permissions.`,
+      reason: `Could not validate write path ${safePath.input}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
     };
   }
 
@@ -276,12 +275,11 @@ export async function validateFileAccessWriteTarget(
   try {
     stats = await fs.lstat(safePath.resolvedPath);
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') return { ok: true };
+    if (getFileSystemErrorCode(err) === 'ENOENT') return { ok: true };
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not validate write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
+      reason: `Could not validate write target ${safePath.input}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
     };
   }
 
@@ -289,15 +287,15 @@ export async function validateFileAccessWriteTarget(
   try {
     realPath = await fs.realpath(safePath.resolvedPath);
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (stats.isSymbolicLink() && error.code === 'ENOENT') {
+    const code = getFileSystemErrorCode(err);
+    if (stats.isSymbolicLink() && code === 'ENOENT') {
       return symbolicLinkWriteResult(safePath.input);
     }
-    if (error.code === 'ENOENT') return { ok: true };
+    if (code === 'ENOENT') return { ok: true };
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not resolve write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
+      reason: `Could not resolve write target ${safePath.input}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
     };
   }
 
@@ -321,11 +319,10 @@ export async function validateFileAccessWriteTarget(
       return denyWriteResult(safePath.input);
     }
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not inspect write target ${safePath.input}: ${error.message}. Check the path and permissions.`,
+      reason: `Could not inspect write target ${safePath.input}: ${fileSystemErrorReason(err)}. Check the path and permissions.`,
     };
   }
 
@@ -410,9 +407,12 @@ export async function expandFileAccessGlob(
     return {
       ok: false,
       code: 'io_error',
+      // Glob can reject for parser failures as well as I/O; neither may echo
+      // arbitrary exception text or implicit traversal paths.
       reason:
-        `Glob pattern error: ${err instanceof Error ? err.message : String(err)}. ` +
-        'Check that the include pattern is valid.',
+        getFileSystemErrorCode(err) === undefined
+          ? 'Glob pattern could not be expanded. Check that the include pattern is valid.'
+          : `Glob expansion failed: ${fileSystemErrorReason(err)}. Check the include pattern and file access permissions.`,
     };
   }
 
@@ -524,11 +524,10 @@ async function validateGlobStaticBase(
       return denyGlobResult(globPattern.input);
     }
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not validate glob static base ${globPattern.input}: ${error.message}.`,
+      reason: `Could not validate glob static base ${globPattern.input}: ${fileSystemErrorReason(err)}.`,
     };
   }
 
@@ -536,14 +535,13 @@ async function validateGlobStaticBase(
     const stats = await fs.stat(globPattern.resolvedStaticBase);
     return { ok: true, existsAsDirectory: stats.isDirectory() };
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') {
+    if (getFileSystemErrorCode(err) === 'ENOENT') {
       return { ok: true, existsAsDirectory: true };
     }
     return {
       ok: false,
       code: 'io_error',
-      reason: `Could not inspect glob static base ${globPattern.input}: ${error.message}.`,
+      reason: `Could not inspect glob static base ${globPattern.input}: ${fileSystemErrorReason(err)}.`,
     };
   }
 }
@@ -584,8 +582,7 @@ async function validateTraversalDirectory(
       };
     }
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return { ok: false, code: 'io_error', reason: error.message };
+    return { ok: false, code: 'io_error', reason: fileSystemErrorReason(err) };
   }
 
   try {
@@ -610,8 +607,7 @@ async function validateTraversalDirectory(
     }
     return { ok: true };
   } catch (err: unknown) {
-    const error = err as NodeJS.ErrnoException;
-    return { ok: false, code: 'io_error', reason: error.message };
+    return { ok: false, code: 'io_error', reason: fileSystemErrorReason(err) };
   }
 }
 
@@ -705,10 +701,9 @@ async function findExistingAncestor(targetPath: string): Promise<string> {
       await fs.lstat(current);
       return current;
     } catch (err: unknown) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') throw error;
+      if (getFileSystemErrorCode(err) !== 'ENOENT') throw err;
       const parent = path.dirname(current);
-      if (parent === current) throw error;
+      if (parent === current) throw err;
       current = parent;
     }
   }
