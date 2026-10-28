@@ -21,6 +21,7 @@ import {
 import { DEFAULT_SCRIPT_TIMEOUT_MS, MAX_TIMER_MS } from './script-execution.js';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const CLI_WATCHDOG_MS = 15_000;
 const SAMPLE_TESTS = [
   'test/config/value-policy.test.ts',
   'test/config/workspace-selection.test.ts',
@@ -249,7 +250,7 @@ async function testTruncatesExcessiveCapturedOutput(): Promise<void> {
 }
 
 function testDefaultCliUsesCompactOutput(): void {
-  const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts', '--timeout-ms', '10000']);
+  const result = runRunnerCli(['test/runtime/mcp-identifiers.test.ts']);
 
   assertEqual(result.status, 0, 'Compact runner invocation should pass');
   assertIncludes(result.stdout, 'Test module summary', 'Should print the module summary');
@@ -271,6 +272,16 @@ function testCliRejectsInvalidTimeout(): void {
     'Should explain the bound',
   );
   assertNotIncludes(result.stdout, 'Running ', 'Should not spawn selected tests');
+}
+
+function testRealCliDeadlineMustExceedWatchdog(): void {
+  for (const timeoutMs of [1, 10_000, CLI_WATCHDOG_MS]) {
+    assertThrows(
+      () =>
+        runRunnerCli(['test/runtime/mcp-identifiers.test.ts', '--timeout-ms', String(timeoutMs)]),
+      'Assertion failed: Real CLI deadlines must exceed the independent watchdog to avoid taskkill',
+    );
+  }
 }
 
 function testTimeoutCliDiagnostics(): void {
@@ -345,10 +356,25 @@ function runRunnerCli(
   stdout: string;
   stderr: string;
 } {
+  if (script === 'test/run-tests.ts') {
+    let timeoutMs: number | undefined;
+    try {
+      timeoutMs = parseTestRunnerArgs(args).timeoutMs;
+    } catch {
+      // Invalid arguments must still reach the real CLI's rejection path.
+    }
+    // Real CLI smoke tests must stop before Windows tree cleanup; deliberate
+    // timeout scenarios use the injected cli-driver fixture instead.
+    assert(
+      timeoutMs === undefined || timeoutMs > CLI_WATCHDOG_MS,
+      'Real CLI deadlines must exceed the independent watchdog to avoid taskkill',
+    );
+  }
+
   const result = spawnSync(process.execPath, ['--import', 'tsx', script, ...args], {
     cwd: PROJECT_ROOT,
     encoding: 'utf-8',
-    timeout: 15_000,
+    timeout: CLI_WATCHDOG_MS,
     windowsHide: true,
   });
 
@@ -407,6 +433,10 @@ async function main(): Promise<void> {
       { name: 'default CLI uses compact output', run: testDefaultCliUsesCompactOutput },
       { name: 'verbose CLI streams child output', run: testVerboseCliStreamsChildOutput },
       { name: 'CLI rejects invalid timeout', run: testCliRejectsInvalidTimeout },
+      {
+        name: 'real CLI deadlines must exceed the independent watchdog',
+        run: testRealCliDeadlineMustExceedWatchdog,
+      },
       { name: 'timeout CLI diagnostics', run: testTimeoutCliDiagnostics },
       {
         name: 'unconfirmed cleanup CLI reports not run',
