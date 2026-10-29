@@ -4,7 +4,7 @@
 
 ## Built-in 工具
 
-- `read`：按 literal 路径或 glob 读取文本，支持逐请求行号/正则范围、行号前缀和 shallow 统计。
+- `read`：按 literal 路径或 glob 读取文本与 PNG、JPEG、WebP 图片，支持文本范围、行号前缀和 shallow 统计。
 - `discover_guidelines`：从 Markdown 文件开头的 YAML Front Matter 发现指南元数据，不返回正文。
 - `write_file`：写入完整文本文件。
 - `replace_text`：通过精确文本或正则表达式执行局部替换。

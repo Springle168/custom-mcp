@@ -1,6 +1,6 @@
 {
   "name": "read",
-  "description": "Reads whole text files from literal paths and glob patterns. Use shallow_read to inspect selected content sizes before requesting bodies.",
+  "description": "Reads whole text files and PNG, JPEG, or WebP images from literal paths and glob patterns. Content, not the extension, determines the type. Use shallow_read=true to inspect the selection without returning bodies.",
   "inputSchema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -37,11 +37,11 @@
             "maximum": 9007199254740991
           }
         ],
-        "description": "False includes successful bodies; true omits them. A positive integer includes all successful bodies only when their combined UTF-8 size is within that byte limit. Statistics and failures are always returned."
+        "description": "False includes successful bodies; true omits them. A positive integer includes all successful text and image bodies only when the combined UTF-8 size of successful text bodies is within that byte limit. Images do not contribute to the threshold. Statistics and failures are always returned."
       },
       "show_line_numbers": {
         "type": "boolean",
-        "description": "Prefix returned content lines with their original 1-based line numbers. Defaults to false."
+        "description": "Prefix returned text lines with their original 1-based line numbers. Defaults to false."
       }
     },
     "required": [

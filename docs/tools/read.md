@@ -2,7 +2,7 @@
 
 ## 职责与入口
 
-`read` 从 literal 路径或 glob 选择文本文件，返回整文件或指定连续范围。它支持同一文件的多个独立片段、原始行号前缀和基于实际返回正文的 shallow 统计，只返回 MCP text 内容。
+`read` 从 literal 路径或 glob 选择文本与 PNG、JPEG、WebP 图片，返回文本整文件、连续范围或完整原图。内容类型由完整字节决定，不依赖后缀；一次调用可混合 text/image 内容块。
 
 工具入口是 `src/tools/built-in/files/read.ts`，对外 description 和 Draft 2020-12 input schema 位于共置的 `read.definition.ts`。路径分类、allowed roots、deny、realpath 与 symlink 规则由[路径安全](../PATH-SAFETY.md)承接；工具不自行读取 workspace 配置或绕过共享文件访问层。
 
@@ -13,8 +13,8 @@
 | `include` | `(string \| object)[]` | 必填 | 至少一个非空路径/glob 字符串或 literal 文件 object。相对输入基于 primary root，drive-absolute 输入可命中任一 allowed root。 |
 | `exclude` | `string[]` | `[]` | 仅过滤 glob 自动发现的文件；literal 字符串和 object 均绕过。 |
 | `use_ignore_files` | `boolean` | `true` | 是否使用 matched root 的 `ignoreFiles` 过滤 glob 发现结果；不关闭 `exclude` 或 deny。 |
-| `shallow_read` | `boolean \| integer` | `false` | `false` 返回成功正文，`true` 省略成功正文；正整数表示按整批成功正文 UTF-8 字节数决定是否附带全部正文。 |
-| `show_line_numbers` | `boolean` | `false` | 给正文添加原始 1-based 行号；object 可逐请求覆盖。 |
+| `shallow_read` | `boolean \| integer` | `false` | `false` 返回成功正文，`true` 省略成功正文；正整数按整批成功文本正文 UTF-8 字节数决定是否附带全部文本与图片正文。 |
+| `show_line_numbers` | `boolean` | `false` | 给文本正文添加原始 1-based 行号；object 可逐请求覆盖。 |
 
 每个 object 只允许以下字段：
 
@@ -28,7 +28,9 @@
 
 Schema 拒绝未知字段，行号值域为正整数，pattern 为非空字符串。数值 `shallow_read` 范围为 `1..Number.MAX_SAFE_INTEGER`。模式与范围类型的关系、起止顺序和正则合法性属于逐请求语义校验，不把同批其他有效请求变成整次拒绝。
 
-宽泛文件集合宜先用 `shallow_read=true` 检查范围和大小；数值阈值适合在结果较小时一次附带正文。需要检查被 ignore 的候选时，先收窄 glob 再显式关闭 ignore，或使用已知 literal 路径，不为此扩大 deny 边界。
+范围和行号选项只影响文本，但所有请求仍须先通过 schema 和可预先完成的范围语义校验。合法的图片范围不会执行 EOF 或正则匹配检查，也不产生选项忽略警告。
+
+宽泛文件集合宜先用 `shallow_read=true` 检查选择结果；数值阈值只约束文本正文，不是整批图片响应的大小预算。需要检查被 ignore 的候选时，先收窄 glob 再显式关闭 ignore，或使用已知 literal 路径，不为此扩大 deny 边界。
 
 ## 选择顺序、去重与覆盖
 
@@ -62,11 +64,11 @@ Schema 拒绝未知字段，行号值域为正整数，pattern 为非空字符�
 
 ## 文本与范围
 
-每个实际源文件在单次调用中只执行一次完整文本读取，各选入请求使用同一份文本独立定位和格式化。这不构成跨文件快照，也没有跨调用缓存。
+每个实际源文件在单次调用中只完整读取、分类一次，文本请求复用同一份行数据，图片请求引用同一份原始字节。这不构成跨文件快照，也没有跨调用缓存。
 
-文本入口只接受共享[内容分类规则](#内容分类规则)中的 `text`，分类和解码使用同一次完整读取的字节。文件后缀不影响准入：实际文本可使用 `.png`、`.bin` 等后缀，`.txt`、`.ts` 等后缀也不能绕过内容检查。
+源读取层 `readSourceFile()` 返回 text/image/受控失败的判别联合；只对共享[内容分类规则](#内容分类规则)中的 `text` 解码。探测、解码和返回使用同一次完整读取的字节，图片不额外打开文件、校验完整性、缩放或转码；动画 WebP 也原样返回。
 
-单文件大小上限为 `20 * 1024 * 1024` bytes（20 MiB），范围读取同样受该限制。图片返回逐文件失败并说明不支持图片读取，不进入解码、范围定位或成功统计；其他非文本内容与分类异常也按源文件隔离，不影响同批有效文本。
+单文件大小上限为 `20 * 1024 * 1024` bytes（20 MiB），等于上限允许。读取前检查文件大小，读取后复检实际字节长度；范围和 shallow 均不能绕过准入。其他非文本内容与分类异常按源文件隔离，不影响同批有效请求。
 
 正文不限制行数或单行长度。文本按 `split(/\r?\n/)` 拆行，片段使用 LF 连接；空文件计为一个空行，末尾换行保留末尾空行。行号前缀形如 `12: content`，使用源文件的原始行号。
 
@@ -104,7 +106,7 @@ Schema 拒绝未知字段，行号值域为正整数，pattern 为非空字符�
 
 工具在去重和 object 覆盖后只处理前 100 个最终请求。每个默认请求、object 或选择失败各占一个名额；成功展开的 glob 本身不额外占名额。被去重、覆盖或过滤掉的项不计数，选入请求失败不从后续请求补位。超限时返回已处理结果并附带限制说明，未处理项不生成失败块或进入内容统计。
 
-数量限制先于按源文件分组。读取层最多使用 8 个 worker，并发与同文件文本复用均不改变最终结果顺序。此限制不是 glob 遍历上限或整批响应字节硬上限；只读工具不使用文件写入锁。
+数量限制与范围预编译先于按源文件分组；没有合法请求的源文件不读取内容。读取层最多使用 8 个 worker，并发与同源复用均不改变最终结果顺序。此限制不是 glob 遍历上限或整批响应字节硬上限；只读工具不使用文件写入锁。
 
 共享 `mapWithWorkers()` 在取消或不可继续的内部异常后停止领取新任务，等待已启动任务 settle/drain 后再传播错误。工具在选择和读取边界响应 `AbortSignal`，取消返回整次错误，不返回可能被误认为完整结果的部分业务内容。Helper 不负责业务失败文案、文件选择、数量限制或 `isError` 判定。
 
@@ -112,21 +114,21 @@ Schema 拒绝未知字段，行号值域为正整数，pattern 为非空字符�
 
 摘要统计成功片段的实际起止行、源文件总行数、片段行数和正文 UTF-8 字节数。同文件重复或重叠片段分别累计，不按不同源文件数或磁盘大小计算。
 
-字节数按实际正文的 `Buffer.byteLength(content, 'utf8')` 计算：行号前缀和返回 LF 计入，摘要、标题、错误块与 MCP 包装不计入。空正文可以是 0 bytes，但成功空文件仍有 1 lines。
+字节数按实际文本正文的 `Buffer.byteLength(content, 'utf8')` 计算：行号前缀和返回 LF 计入，摘要、标题、错误块与 MCP 包装不计入。空正文可以是 0 bytes，但成功空文件仍有 1 lines。图片原始字节、base64 与包装标签不贡献行数、字节数或数值 shallow 阈值。
 
 | `shallow_read` | 返回行为 |
 |-|-|
 | 缺失或 `false` | 统计、全部成功正文和失败块。 |
 | `true` | 统计和失败块，省略全部成功正文。 |
-| 正整数 | 成功正文总字节数小于或等于阈值时附带全部正文，否则全部省略；统计和失败块始终保留。 |
+| 正整数 | 成功文本正文总字节数小于或等于阈值时附带全部文本与图片正文，否则全部省略；统计和失败块始终保留。 |
 
-阈值采用整批判断，不按顺序填预算，不部分附带或截断片段；省略正文不改变成功状态。Shallow 仍读取并解析文本，不是仅查询文件 metadata。
+阈值采用整批判断，不按顺序填预算，不部分附带或截断；纯图片调用的文本字节数为 0，通过任意合法数值阈值。省略正文不改变成功状态，仍完整读取和分类源文件，不是 metadata-only 探测；省略图片时不执行 base64 编码或生成包装块。
 
 ## 返回结构与状态
 
-正常完成时先返回一个摘要 text 块，随后每个已处理请求各有一个正文块或失败块，顺序与最终请求一致。Shallow 省略成功正文时保留摘要和所有失败块，剩余块的相对顺序不变。
+正常完成时先返回一个摘要 text 块，随后按最终请求顺序输出正文或失败块。文本正文和失败各占一个 text 块，图片正文占三个连续块。Shallow 省略成功正文时保留摘要和所有失败块，剩余块的相对顺序不变。
 
-摘要包含 `Selected content: <lines> lines, <bytes> bytes.`，并在 `Files:` 下逐项标注 `include[index]`、显示路径、实际范围/总行数、片段行数和字节数，或 `failed`。没有已处理请求时省略 `Files:`。字节数使用整数 `bytes`，不换算 KB；不为失败伪造统计。
+摘要包含 `Selected content: <lines> lines, <bytes> bytes.`，仅统计文本。存在成功图片时补充 `Image content is not included in line or byte statistics.`。`Files:` 中，文本保留实际范围与正文统计，图片只列 `include[index]` 与安全显示路径，失败标注 `failed`；无请求时省略 `Files:`。所有 shallow 模式使用同一条目格式，不展示图片 metadata 或大小。
 
 以下三个代码块各代表一个独立 text 块：
 
@@ -134,7 +136,7 @@ Schema 拒绝未知字段，行号值域为正整数，pattern 为非空字符�
 Selected content: 2 lines, 10 bytes.
 Files:
 - include[0] src/a.ts: lines 2-3 of 5, 2 lines, 10 bytes.
-- include[1] logo.png: failed.
+- include[1] missing.txt: failed.
 ```
 
 ```text
@@ -145,34 +147,31 @@ beta
 ```
 
 ```text
---- include[1] logo.png: failed ---
+--- include[1] missing.txt: failed ---
 
-image reading is not supported (png)
+file not found
 ```
+
+每个图片正文依次为开标签 text、原始字节的裸 base64 image、`</image>` text。开标签形如 `<image path="assets/logo.png" include_index="1" mime_type="image/png">`；下标来自原始 `include`，路径使用请求自身的安全 display path，MIME 与 image 块一致。路径属性转义 `&`、`"`、`<`、`>` 和 CR/LF/TAB，开标签保持单行；标签只是来源说明，不要求客户端解析 XML。
+
+结果构造由无 I/O 的 `read-result.ts` 负责，消费 `read-model.ts` 的请求级判别联合。允许返回正文时，按源图片对象在单次渲染中复用 base64；显式重复请求仍各自输出完整三块，不共享可变输出块。渲染或编码异常进入 handler 的整次安全错误边界，不返回部分正文或半组标签。统一结果校验、适配和日志遵守[工具返回结果](../TOOL-RESULTS.md)，不在 handler 实现图片结果策略。
 
 摘要按需附带 shallow 与 100 requests 限制说明，以及 `Notes:`：
 
-- 实际存在 glob 结果被 ignore 过滤且至少有一个成功片段时，报告 `Some glob-discovered paths were filtered by configured ignoreFiles rules.`。
-- 返回的显式请求中存在 deny 失败，或自动发现隐藏了 deny 项且至少有一个成功片段时，报告 `Some paths were blocked by the file access deny policy.`。
+- 实际存在 glob 结果被 ignore 过滤且至少有一个成功文本或图片请求时，报告 `Some glob-discovered paths were filtered by configured ignoreFiles rules.`。
+- 返回的显式请求中存在 deny 失败，或自动发现隐藏了 deny 项且至少有一个成功文本或图片请求时，报告 `Some paths were blocked by the file access deny policy.`。
 - ignore 与 deny 各最多一行，不列自动过滤路径或数量；`exclude` 不生成策略提示。纯自动发现零结果不区分零匹配与全部被 deny 隐藏。
 
 | 情况 | `isError` |
 |-|-|
-| 至少一个片段成功，包括 shallow 省略正文或空文件成功 | `false` |
+| 至少一个文本或图片请求成功，包括 shallow 省略正文或空文件成功 | `false` |
 | 零匹配或所有请求失败 | `true` |
 | Schema 拒绝、取消或不可继续的内部异常 | `true` |
 
 整次拒绝、取消或内部异常可以返回单错误块，不伪装成已完成的逐请求结果。逐请求错误与显示路径遵循路径安全层的隐私边界，不泄露调用方未显式提供的 denied realpath。
 
-## 验证重点
+## 验证入口
 
-运行 `npm test -- read file-content bounded-workers`，重点验证：
-
-- object 覆盖、去重与最终顺序，100 请求限制在覆盖之后执行，失败不补位。
-- 同一源文件只读取一次，范围失败与源文件失败的隔离，以及正文与 shallow 统计按片段计算。
-- 全文字节分类、严格 UTF-8、控制字节阈值与探测异常，不能按后缀或片段内容放行。
-- 有限并发不改变结果顺序，取消或内部异常停止调度并等待已启动任务收尾。
-
-跨工具路径与策略验证见[路径安全](../PATH-SAFETY.md)，通用测试约定见[测试](../TESTING.md)。
+运行 `npm test -- read file-content bounded-workers`。跨工具路径与策略验证见[路径安全](../PATH-SAFETY.md)，通用测试约定见[测试](../TESTING.md)。
 
 `discover_guidelines` 复用文件选择和 worker helper，但自己执行文件去重、Markdown 筛选与有界前缀读取，不复用 `read` 的全文读取、object、范围或 shallow 结果协议，详见[指南发现](discover-guidelines.md)。

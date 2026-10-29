@@ -112,7 +112,9 @@ src/tools/
 ├── built-in/
 │   ├── files/
 │   │   ├── read.definition.ts                       # read 描述、schema 与请求上限
-│   │   ├── read.ts                                  # 请求覆盖/去重、源文件分组、范围与统计编排
+│   │   ├── read.ts                                  # 请求覆盖/去重、源文件分组与范围编排
+│   │   ├── read-model.ts                            # 请求、文本/图片结果与源读取契约
+│   │   ├── read-result.ts                           # 文本统计、shallow 与有序图文渲染
 │   │   ├── replace-text.definition.ts               # replace_text 描述与 schema
 │   │   ├── replace.ts                               # 有序替换、文件锁、写入与逐项结果
 │   │   ├── write-file.definition.ts                 # write_file 描述与 schema
@@ -153,7 +155,7 @@ src/
     ├── paths.ts                            # allowed roots、lexical/realpath 边界与路径展示
     ├── file-access-policy.ts               # ignore/deny、读写目标复检与受控 glob
     ├── file-selection.ts                   # 有序 literal/glob 候选、来源下标与文件身份
-    ├── file-read.ts                        # 完整文本读取、大小保护与逐文件失败
+    ├── file-read.ts                        # 完整源文件读取、文本/图片分类与大小保护
     ├── file-system-errors.ts               # 文件系统异常的受控公开原因
     ├── bounded-workers.ts                  # 有限并发、稳定结果顺序与停止调度后的 drain
     ├── file-lock.ts                        # 按文件路径 FIFO 串行化
