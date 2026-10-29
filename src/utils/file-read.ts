@@ -1,24 +1,30 @@
 import * as fs from 'node:fs/promises';
-import { classifyFileContent } from '../engine/file-content.js';
+import { classifyFileContent, type FileContentClassification } from '../engine/file-content.js';
 import { fileSystemErrorReason } from './file-system-errors.js';
 
 /** Maximum source file size in MiB, including for range reads. */
 export const MAX_FILE_SIZE_MB = 20;
 
-export type TextFileResult =
-  | { readonly ok: true; readonly lines: readonly string[] }
+export type SourceFileResult =
+  | { readonly ok: true; readonly kind: 'text'; readonly lines: readonly string[] }
+  | {
+      readonly ok: true;
+      readonly kind: 'image';
+      readonly format: Extract<FileContentClassification, { kind: 'image' }>['format'];
+      readonly bytes: Buffer;
+    }
   | { readonly ok: false; readonly reason: string };
 
 /**
  * Loads and classifies one complete source for all requests in a call. Only
- * admitted text is decoded; ranges reuse the same validated bytes as lines.
+ * admitted text is decoded; images retain the same classified source bytes.
  * The caller supplies a real path approved by the file access policy.
  */
-export async function readTextFile(
+export async function readSourceFile(
   filePath: string,
   signal: AbortSignal,
   classify: typeof classifyFileContent = classifyFileContent,
-): Promise<TextFileResult> {
+): Promise<SourceFileResult> {
   signal.throwIfAborted();
   let bytes: Buffer;
   try {
@@ -31,6 +37,11 @@ export async function readTextFile(
     }
     signal.throwIfAborted();
     bytes = await fs.readFile(filePath, { signal });
+    signal.throwIfAborted();
+    // The source may grow after stat; oversized bytes must never reach classification.
+    if (bytes.length > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      return { ok: false, reason: `exceeds ${MAX_FILE_SIZE_MB} MiB size limit` };
+    }
   } catch (error: unknown) {
     signal.throwIfAborted();
     return { ok: false, reason: fileSystemErrorReason(error) };
@@ -42,11 +53,13 @@ export async function readTextFile(
     signal.throwIfAborted();
     switch (classification.kind) {
       case 'text':
-        return { ok: true, lines: bytes.toString('utf8').split(/\r?\n/) };
+        return { ok: true, kind: 'text', lines: bytes.toString('utf8').split(/\r?\n/) };
       case 'image':
         return {
-          ok: false,
-          reason: `image reading is not supported (${classification.format})`,
+          ok: true,
+          kind: 'image',
+          format: classification.format,
+          bytes,
         };
       case 'other':
         return { ok: false, reason: 'non-text file (recognized binary format)' };

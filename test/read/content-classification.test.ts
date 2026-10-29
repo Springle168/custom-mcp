@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { classifyFileContent } from '../../src/engine/file-content.js';
 import { readInternalForTests } from '../../src/tools/built-in/files/read.js';
-import { readTextFile } from '../../src/utils/file-read.js';
+import { readSourceFile } from '../../src/utils/file-read.js';
 import { createFileAccessPolicyContext } from '../../src/utils/file-access-policy.js';
 import { supportedImages, recognizedBinary, unsupportedImage } from '../file-content/fixtures.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
@@ -69,28 +69,38 @@ async function testImagesAndMixedShallow(): Promise<void> {
       'Selected content: 1 lines, 6 bytes.',
       'Only actual text contributes to shallow statistics',
     );
-    const offset = shallow_read === false ? 2 : 1;
-    for (const [index, image] of supportedImages.entries()) {
-      assertIncludes(
-        block(result, offset + index),
-        'image reading is not supported',
-        'Images fail without decoding',
-      );
-      assertIncludes(
-        block(result, offset + index),
-        image.format,
-        'Image identity comes from bytes',
-      );
-    }
     assertIncludes(
-      block(result, offset + names.length),
+      block(result, 0),
+      'Image content is not included in line or byte statistics.',
+      'Image successes explain their exclusion from text statistics',
+    );
+    const includeBodies = shallow_read === false;
+    if (includeBodies) {
+      for (const [index, image] of supportedImages.entries()) {
+        const offset = 2 + index * 3;
+        assertIncludes(block(result, offset), names[index]!, 'Image wrapper identifies the source');
+        const content = result.content[offset + 1];
+        assert(content?.type === 'image', 'Supported images succeed without text decoding');
+        assertEqual(content.mimeType, `image/${image.format}`, 'MIME comes from classified bytes');
+        assertEqual(content.data, image.bytes.toString('base64'), 'Original bytes are returned');
+        assertEqual(block(result, offset + 2), '</image>', 'Each image wrapper is closed');
+      }
+    }
+    const failureOffset = includeBodies ? 2 + names.length * 3 : 1;
+    assertIncludes(
+      block(result, failureOffset),
       'recognized binary',
       'Known non-text formats fail distinctly',
     );
     assertIncludes(
-      block(result, offset + names.length + 1),
+      block(result, failureOffset + 1),
       'recognized binary',
       'Other image formats are not supported',
+    );
+    assertEqual(
+      result.content.length,
+      failureOffset + 2,
+      'Shallow omits all successful text and image bodies together',
     );
   }
 }
@@ -108,7 +118,7 @@ async function testSourceClassificationReuseAndErrors(): Promise<void> {
     context(),
     invocation,
     (file, signal) =>
-      readTextFile(file.readPath, signal, async (bytes, detectedSignal) => {
+      readSourceFile(file.readPath, signal, async (bytes, detectedSignal) => {
         calls++;
         assertEqual(
           detectedSignal,
@@ -126,7 +136,7 @@ async function testSourceClassificationReuseAndErrors(): Promise<void> {
     context(),
     invocation,
     (file, signal) =>
-      readTextFile(file.readPath, signal, async () => {
+      readSourceFile(file.readPath, signal, async () => {
         if (path.basename(file.readPath) === 'a.txt') {
           throw Object.assign(new Error('private-realpath-detector-detail'), { code: 'ENOENT' });
         }
@@ -151,7 +161,7 @@ async function testCancellationDuringClassification(): Promise<void> {
     context(),
     createTestToolInvocationContext({ signal: controller.signal }),
     (file, signal) =>
-      readTextFile(file.readPath, signal, async (_bytes, detectorSignal) => {
+      readSourceFile(file.readPath, signal, async (_bytes, detectorSignal) => {
         assertEqual(detectorSignal, controller.signal, 'Signal reaches detector');
         controller.abort();
         detectorSignal!.throwIfAborted();
@@ -195,7 +205,7 @@ async function testSafetyBeforeContent(): Promise<void> {
       createTestToolInvocationContext(),
       async () => {
         calls++;
-        return { ok: true, lines: ['never'] };
+        return { ok: true, kind: 'text', lines: ['never'] };
       },
     );
     assert(result.isError === true, 'Unsafe selections fail');
@@ -215,7 +225,7 @@ await runTestSuite({
       run: testContentRatherThanSuffix,
     },
     {
-      name: 'images fail locally and shallow statistics count only text',
+      name: 'images succeed and shallow statistics count only text',
       run: testImagesAndMixedShallow,
     },
     {

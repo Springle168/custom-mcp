@@ -7,7 +7,7 @@
 | 工具名 | 功能 | 契约与机制 |
 |-|-|-|
 | `replace_text` | 按输入顺序批量替换，支持 default 精确字面匹配与显式 JavaScript regex | [replace_text](tools/replace-text.md) |
-| `read` | literal/glob 文本读取、行号/正则范围、行号前缀和 shallow 统计 | [read](tools/read.md) |
+| `read` | literal/glob 文本与图片读取、文本范围和 shallow 统计 | [read](tools/read.md) |
 | `discover_guidelines` | 从 Markdown Front Matter 发现指南元数据，不返回正文 | [discover_guidelines](tools/discover-guidelines.md) |
 | `write_file` | 完整文本写入、自动创建父目录与内容警告 | [write_file](tools/write-file.md) |
 | `android_assembleDebug` | Android Debug 构建 | [Android 工具](tools/android-build.md) |

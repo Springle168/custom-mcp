@@ -6,17 +6,19 @@ export const MAX_READ_WORKERS = 8;
 
 export const READ_TOOL_DEFINITION = {
   name: 'read',
-  description: `Reads text files or selected continuous ranges from literal paths and glob patterns.
-For broad file sets, use shallow_read to inspect selected ranges and content sizes before requesting their bodies.
-Text only. Binary files and files larger than ${MAX_FILE_SIZE_MB} MiB are rejected.
-Processes at most the first 100 final requests after deduplication and object overrides. Excess requests are not processed, and the summary reports the limit.`,
+  description: `Reads whole text files, selected continuous text ranges, and PNG, JPEG, or WebP images from literal paths and glob patterns.
+File content, not the filename extension, determines the type. Other binary formats and files larger than ${MAX_FILE_SIZE_MB} MiB are rejected.
+For broad file sets, use shallow_read=true to inspect the selection without returning text or image bodies.
+Processes at most the first ${MAX_READ_REQUESTS} final requests after deduplication and object overrides. Excess requests are not processed, and the summary reports the limit.`,
   inputSchema: {
     type: 'object',
     properties: {
       include: {
         type: 'array',
         minItems: 1,
-        description: `File paths, glob patterns, or literal-file objects with optional range settings. Relative inputs resolve from the primary workspace root; drive-absolute inputs may target any configured workspace root.
+        description: `File paths, glob patterns, or literal-file objects with optional text range settings. Text and supported images may be mixed.
+Range and line-number options affect only text.
+Relative inputs resolve from the primary workspace root; drive-absolute inputs may target any configured workspace root.
 Input order is preserved, with each glob's results sorted by display path. Default whole-file requests are deduplicated by real path, keeping the first occurrence.
 Each object keeps its declared position and replaces all default whole-file requests for the same real file. Objects are never merged, even when their paths and ranges are identical. An invalid range does not restore the replaced whole-file request.`,
         items: {
@@ -28,7 +30,7 @@ Each object keeps its declared position and replaces all default whole-file requ
                 file_path: {
                   type: 'string',
                   minLength: 1,
-                  description: 'Path to one literal text file.',
+                  description: 'Path to one literal text file or supported image.',
                 },
                 start_line: {
                   type: ['integer', 'string'],
@@ -78,18 +80,19 @@ Each object keeps its declared position and replaces all default whole-file requ
           { type: 'boolean' },
           { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
         ],
-        description: `Controls whether successful content bodies are included:
+        description: `Controls whether successful text and image bodies are included:
 - false or omitted: Include all successful bodies.
-- true: Omit successful bodies.
-- positive integer: Include all successful bodies only when their combined UTF-8 size is at most this many bytes; otherwise omit them all.
+- true: Omit all successful bodies.
+- positive integer: Include all successful bodies only when the combined UTF-8 size of successful text bodies is at most this many bytes; otherwise omit them all.
 
-Statistics and per-request failures are always returned.
-Keep numeric thresholds at or below the recommended 50 KiB batch size unless larger output is intentional.`,
+Images do not contribute to the threshold.
+The summary and per-request failures are always returned.
+For text, prefer thresholds at or below 50 KiB unless larger output is intentional.`,
       },
       show_line_numbers: {
         type: 'boolean',
         description:
-          'Prefix returned content lines with their original 1-based line numbers. Defaults to false. Each literal-file object can override this setting.',
+          'Prefix returned text lines with their original 1-based line numbers. Defaults to false. Each literal-file object can override this setting.',
       },
     },
     required: ['include'],

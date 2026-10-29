@@ -65,7 +65,7 @@ async function testOncePerSourceAndNoCrossCallCache(): Promise<void> {
   const reader: Parameters<typeof readInternalForTests.read>[3] = async (_file, signal) => {
     assertEqual(signal, invocation.signal, 'Source reads receive the invocation signal');
     calls++;
-    return { ok: true, lines: ['alpha', 'beta', `generation-${calls}`] };
+    return { ok: true, kind: 'text', lines: ['alpha', 'beta', `generation-${calls}`] };
   };
   const first = await readInternalForTests.read(args, context(), invocation, reader);
   assertEqual(calls, 1, 'All ranges, including regex positioning, share one source read');
@@ -101,7 +101,7 @@ async function testIdentityAndSourceFailures(): Promise<void> {
         calls++;
         return path.basename(file.readPath) === 'a.txt'
           ? { ok: false, reason: 'controlled source failure' }
-          : { ok: true, lines: ['surviving-body'] };
+          : { ok: true, kind: 'text', lines: ['surviving-body'] };
       },
     );
     assertEqual(calls, 2, 'Different lexical aliases share the same actual source identity');
@@ -144,7 +144,7 @@ async function testBoundedWorkersAndStableOrder(): Promise<void> {
       if (started === 8) firstWave.resolve();
       try {
         await release.promise;
-        return { ok: true, lines: [path.basename(file.readPath)] };
+        return { ok: true, kind: 'text', lines: [path.basename(file.readPath)] };
       } finally {
         active--;
       }
@@ -187,7 +187,7 @@ async function testCancellationDrainsAndStopsScheduling(): Promise<void> {
         if (++started === 8) firstWave.resolve();
         try {
           await release.promise;
-          return { ok: true, lines: ['partial-business-result'] };
+          return { ok: true, kind: 'text', lines: ['partial-business-result'] };
         } finally {
           active--;
         }
@@ -237,7 +237,7 @@ async function testInternalExceptionDrainsAndStopsScheduling(): Promise<void> {
           throw new Error('private-internal-detail');
         }
         await release.promise;
-        return { ok: true, lines: ['partial-business-result'] };
+        return { ok: true, kind: 'text', lines: ['partial-business-result'] };
       } finally {
         active--;
       }
@@ -283,7 +283,7 @@ async function testPreCancelledAndLimitBeforeSources(): Promise<void> {
     createTestToolInvocationContext({ signal: controller.signal }),
     async () => {
       calls++;
-      return { ok: true, lines: ['never'] };
+      return { ok: true, kind: 'text', lines: ['never'] };
     },
   );
   assert(cancelled.isError === true, 'An already-cancelled call fails');
@@ -305,7 +305,7 @@ async function testPreCancelledAndLimitBeforeSources(): Promise<void> {
         'a.txt',
         'A source used only by an over-limit request is never opened',
       );
-      return { ok: true, lines: ['a'] };
+      return { ok: true, kind: 'text', lines: ['a'] };
     },
   );
   assert(limited.isError === true, 'All first-100 fragments fail without backfill');

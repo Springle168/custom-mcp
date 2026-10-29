@@ -13,7 +13,7 @@ import {
   validateFileAccessReadTarget,
   validateFileAccessWriteTarget,
 } from '../../src/utils/file-access-policy.js';
-import { readTextFile } from '../../src/utils/file-read.js';
+import { readSourceFile } from '../../src/utils/file-read.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
@@ -199,7 +199,7 @@ async function testReadContentFailures(): Promise<void> {
   for (const method of ['stat', 'readFile'] as const) {
     for (const error of [injectedError('ENOTDIR'), null]) {
       await withFailure(method, TARGET, error, async () => {
-        const result = await readTextFile(TARGET, new AbortController().signal);
+        const result = await readSourceFile(TARGET, new AbortController().signal);
         assert(!result.ok, 'A failed source returns a local failure');
         assertEqual(
           result.reason,
