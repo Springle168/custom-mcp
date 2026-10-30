@@ -1,7 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ToolRuntimeContext } from '../../../runtime/invocation/tool-context.js';
-import { detectLineEnding, resolveLineEnding } from '../../../engine/text-utils.js';
+import {
+  applyLineEnding,
+  detectLineEnding,
+  resolveLineEnding,
+} from '../../../engine/text-utils.js';
 import { classifyFileContent } from '../../../engine/file-content.js';
 import { withFileLock } from '../../../utils/file-lock.js';
 import {
@@ -15,13 +19,6 @@ import {
 import { WRITE_FILE_TOOL_DEFINITION } from './write-file.definition.js';
 import type { MCPTool, ToolCallResult } from '../../types.js';
 import { textErrorResult } from '../../results.js';
-
-function normalizeLineEndings(content: string, lineEnding: '\r\n' | '\n'): string {
-  if (lineEnding === '\r\n') {
-    return content.replace(/\r\n|\r|\n/g, '\r\n');
-  }
-  return content.replace(/\r\n|\r/g, '\n');
-}
 
 function countLines(content: string): number {
   return content.split(/\r?\n/).length;
@@ -86,7 +83,7 @@ async function handleWriteFile(
     }
 
     const lineEnding = resolveLineEnding(context.lineEnding, detectedLineEnding);
-    const finalContent = normalizeLineEndings(content, lineEnding);
+    const finalContent = applyLineEnding(content, lineEnding);
 
     try {
       await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });

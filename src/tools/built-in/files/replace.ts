@@ -10,7 +10,12 @@ import {
   type ReplaceParams,
   type ReplacementResult,
 } from '../../../engine/replacement.js';
-import { detectLineEnding, resolveLineEnding } from '../../../engine/text-utils.js';
+import {
+  applyLineEnding,
+  detectLineEnding,
+  normalizeToLf,
+  resolveLineEnding,
+} from '../../../engine/text-utils.js';
 import { MAX_FILE_SIZE_MB } from '../../../utils/file-read.js';
 import {
   resolveFileAccessPath,
@@ -88,19 +93,8 @@ function getAllowMultiple(file: FileInput): boolean {
   return file.allow_multiple ?? false;
 }
 
-function normalizeTextLineEndings(text: string): string {
-  return text.replace(/\r\n|\r/g, '\n');
-}
-
-function applyLineEnding(content: string, lineEnding: '\r\n' | '\n'): string {
-  if (lineEnding === '\r\n') {
-    return content.replace(/\r\n|\r|\n/g, '\r\n');
-  }
-  return content.replace(/\r\n|\r/g, '\n');
-}
-
 function countLines(text: string): number {
-  return text === '' ? 0 : normalizeTextLineEndings(text).split('\n').length;
+  return text === '' ? 0 : normalizeToLf(text).split('\n').length;
 }
 
 function replacementResult(
@@ -285,7 +279,7 @@ async function readExistingTextFile(
   }
 
   const raw = bytes.toString('utf-8');
-  const content = normalizeTextLineEndings(raw);
+  const content = normalizeToLf(raw);
   return {
     exists: true,
     content,
@@ -381,7 +375,7 @@ async function executeReplacement(
 
   if (!existingFile.exists) {
     if (matchMode === 'default' && target === '') {
-      const normalizedReplacement = normalizeTextLineEndings(replacementText);
+      const normalizedReplacement = normalizeToLf(replacementText);
       const lineEnding = resolveLineEnding(context.lineEnding, null);
       try {
         await fs.mkdir(path.dirname(safePath.resolvedPath), { recursive: true });
