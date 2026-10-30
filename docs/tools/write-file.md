@@ -15,7 +15,7 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |-|-|-|-|-|
 | `file_path` | `string` | ✅ | — | 要写入的文件路径；相对路径基于 primary `rootDir`，drive-absolute 路径可位于任一 allowed root 内 |
-| `content` | `string` | ✅ | — | 要写入的完整文本内容；疑似省略占位符会写入但触发 Warning |
+| `content` | `string` | ✅ | — | 要写入的完整文本内容 |
 
 `inputSchema` 设置 `additionalProperties: false`，未知字段会在进入 handler 前由 built-in implementation validator 拒绝。
 
@@ -39,7 +39,7 @@ Tool description 对多个大文件的新建或整文件重写建议每次处理
 - 文件不存在须由文件系统操作明确确认；该分支不分类路径或后缀，`lineEnding=auto` 默认使用 LF。分类异常即使携带 `ENOENT` 也只导致失败，不授权创建或覆盖。
 - `write_file` 没有 `read` / `replace_text` 的 20 MiB 读取上限。
 - 输入字符串和最终写出字节不参与分类，允许写出 NUL 等非文本内容；成功保持有效，后续调用按磁盘实际内容重新分类并可能拒绝。
-- 内容中如果包含疑似省略占位符，会继续写入并在成功消息后追加 Warning，提醒调用方确认是否为有意的文档或示例文本。
+- 输入中的换行按行尾符策略规范化，尾换行的有无和数量由输入内容决定，不额外补删。
 - 目标不是普通文件、已有内容属于 `image` / `other` / `unknown`、分类异常，或无法读取/写入时返回错误。内容准入失败不修改目标；分类异常不回显探测器原始错误。
 
 ### 成功输出
@@ -56,6 +56,6 @@ Success: wrote nested/example.txt. Total lines: 2.
 
 ## 验证重点
 
-运行 `npm test -- write-file`，重点验证任意后缀创建与已有内容准入、探测异常不授权写入、`auto` 行尾保留，以及 placeholder warning 不改变写入成功状态。
+运行 `npm test -- write-file`，重点验证任意后缀创建与已有内容准入、探测异常不授权写入、`auto` 行尾保留、输入换行规范化与尾换行数量。
 
 跨 root、deny 与 symlink 回归见[路径安全](../PATH-SAFETY.md)；写入锁与行尾符并发回归见 [replace_text](replace-text.md#验证重点)。通用测试约定见[测试](../TESTING.md)。

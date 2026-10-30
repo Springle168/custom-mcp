@@ -69,6 +69,8 @@ files[1].replacements[0]
 
 ## 匹配模式
 
+两种模式均按匹配范围替换，不额外补删尾换行。写回行尾符由 `ToolRuntimeContext.lineEnding` 决定，`auto` 保留已有主要行尾符，新文件使用 LF。
+
 ### default
 
 `default` 把 `target` 和 `replacement` 作为普通文本处理。输入在匹配前规范化为 LF；缩进、空白和文本必须精确一致，不解释 replacement 特殊语法。
@@ -167,7 +169,6 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 
 警告只附加到产生它的成功 replacement，不提升或跨项合并：
 
-- 新增疑似省略占位符；
 - regex replacement 中可疑的 `$!`；
 - 显式包含冗余 `g`；
 - regex 匹配跨行；
@@ -179,8 +180,7 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 - 每个 replacement 在读取入口和正式写入前检查目标；
 - 创建父目录后再次检查 same-root、deny 和实际目标；
 - 目录、非普通文件、符号链接、已有非文本内容和初始大小超过 `20MB` 的文件被拒绝；实际文本使用 `.png`、`.bin` 等后缀也允许修改；
-- 一个 replacement 可以把小文件写到超过限制，后项会在下一次读取时拒绝；
-- 写回行尾符由 `ToolRuntimeContext.lineEnding` 决定，`auto` 保留已有主要行尾符，新文件使用 LF。
+- 一个 replacement 可以把小文件写到超过限制，后项会在下一次读取时拒绝。
 
 ---
 
@@ -192,6 +192,7 @@ handler 直接构造单文本块结果，并根据 payload 的 `success` 设置�
 - 文件项内锁与跨调用 FIFO、同路径多阶段顺序、部分成功，以及每项重新读取实际落盘状态。
 - 写入失败后的安全恢复读取：可能已修改文件但仍判失败，无法确认内容时返回 `current=null`。
 - 内容分类与文件不存在分离；非文本写出可成功但后项必须重新拒绝，探测器 `ENOENT` 不能授权创建。
-- LF / CRLF、`auto` 行尾保留与跨调用并发，不能把配置或其它调用的行尾策略串入本次修改。
+- LF / CRLF、混合行尾检测、`auto` 行尾保留与跨调用并发，不能把配置或其它调用的行尾策略串入本次修改。
+- default / regex 的尾换行增删、多个尾换行、空结果与匹配范围外内容保留；仅改变尾换行也应成功写入。
 
 批量编排和 I/O 边界由 handler 持有，`src/engine/replacement.ts` 只执行单次 replacement 的纯计算。文件锁以 lexical resolved path 为 key，只提供进程内 FIFO，不构成跨进程锁或 realpath alias 互斥。共享路径与策略验证见[路径安全](../PATH-SAFETY.md)，通用测试约定见[测试](../TESTING.md)。

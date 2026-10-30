@@ -18,8 +18,7 @@ Parallel batching best practice: When creating or overwriting multiple files wit
       },
       content: {
         type: 'string',
-        description:
-          'Complete text content to write. Provide the full file; possible omission placeholders are written but reported as warnings.',
+        description: 'Complete text content to write.',
       },
     },
     required: ['file_path', 'content'],

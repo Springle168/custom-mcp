@@ -61,7 +61,7 @@ built-in `inputSchema` 是参数结构的校验边界，表达 required、类型
 
 文件工具消费 `ToolRuntimeContext.fileAccessPolicyContext`，遵守[路径安全接入要求](PATH-SAFETY.md#工具接入要求)，不自行实现 allowed roots、glob、ignore/deny 或 realpath 边界。
 
-已有内容按完整字节分类，只对 `text` 解码并执行文本操作；后缀不参与准入。缺失文件与分类异常分开处理，分类失败不授予文本访问。共享分类规则见[内容分类](tools/read.md#内容分类规则)。写入类工具使用 `resolveLineEnding()` 解析 workspace 行尾符策略；保留尾换行、遗漏占位符警告与写入恢复由单工具契约约束。
+已有内容按完整字节分类，只对 `text` 解码并执行文本操作；后缀不参与准入。缺失文件与分类异常分开处理，分类失败不授予文本访问。共享分类规则见[内容分类](tools/read.md#内容分类规则)。写入类工具使用 `resolveLineEnding()` 解析 workspace 行尾符策略；内容替换与写入恢复由单工具契约约束。
 
 ## 并发与共享资源
 

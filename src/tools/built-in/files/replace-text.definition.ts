@@ -51,7 +51,7 @@ export const REPLACE_TOOL_DEFINITION = {
                   replacement: {
                     type: 'string',
                     description:
-                      'Complete replacement text without omission placeholders. In regex mode only $!n capture references and $$ dollar escaping are interpreted; JavaScript native replacement tokens remain literal.',
+                      'Replacement text. In regex mode only $!n capture references and $$ dollar escaping are interpreted; JavaScript native replacement tokens remain literal.',
                   },
                 },
                 required: ['target', 'replacement'],

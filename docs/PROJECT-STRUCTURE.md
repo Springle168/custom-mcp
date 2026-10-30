@@ -145,7 +145,7 @@ src/tools/
 src/
 ├── engine/
 │   ├── replacement.ts                      # default/regex 替换计算与匹配范围
-│   ├── text-utils.ts                       # 行尾符、尾换行、字面替换与遗漏占位符检测
+│   ├── text-utils.ts                       # 主要行尾符检测与配置策略解析
 │   ├── read-range.ts                       # 行号/正则范围编译、选择与格式化
 │   ├── file-content.ts                     # 完整字节分类、严格 UTF-8 与文本准入
 │   ├── guideline-front-matter.ts           # Front Matter delimiter、YAML AST 与元数据校验
