@@ -1,3 +1,5 @@
+import { normalizeToLf } from './text-utils.js';
+
 export interface ReplaceParams {
   file_path: string;
   target: string;
@@ -30,10 +32,6 @@ export type RegexReplacementResult =
       hasMultilineMatch: boolean;
     } & ReplacementResult)
   | { ok: false; reason: 'invalid_regex' | 'zero_length_match'; message: string };
-
-function normalizeInput(text: string): string {
-  return text.replace(/\r\n|\r/g, '\n');
-}
 
 function findLiteralRanges(content: string, target: string): MatchRange[] {
   if (target === '') return [];
@@ -105,10 +103,11 @@ export function calculateMatchedSpan(content: string, ranges: MatchRange[]): Mat
   };
 }
 
-function exactMatch(currentContent: string, params: ReplaceParams): ReplacementResult | null {
-  const normalizedReplace = normalizeInput(params.replacement);
-  const normalizedSearch = normalizeInput(params.target);
-  const matchRanges = findLiteralRanges(currentContent, normalizedSearch);
+function exactMatch(
+  currentContent: string,
+  normalizedParams: ReplaceParams,
+): ReplacementResult | null {
+  const matchRanges = findLiteralRanges(currentContent, normalizedParams.target);
   const matchedTargets = matchRanges.length;
 
   if (matchedTargets === 0) return null;
@@ -116,8 +115,8 @@ function exactMatch(currentContent: string, params: ReplaceParams): ReplacementR
   let newContent = currentContent;
   let replacementCount = 0;
 
-  if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
-    newContent = replaceLiteralRanges(currentContent, matchRanges, normalizedReplace);
+  if (shouldApplyReplacement(matchedTargets, normalizedParams.allow_multiple)) {
+    newContent = replaceLiteralRanges(currentContent, matchRanges, normalizedParams.replacement);
     replacementCount = matchedTargets;
   }
 
@@ -183,6 +182,10 @@ function expandRegexReplacement(
   return { text, invalidReplacementSyntax };
 }
 
+/**
+ * 在调用方准备的 LF 内容上执行正则替换。
+ * 仅规范化 replacement；target 是正则源码，必须原样编译。
+ */
 export function calculateRegexReplacement(
   currentContent: string,
   params: ReplaceParams,
@@ -200,7 +203,7 @@ export function calculateRegexReplacement(
     };
   }
 
-  const normalizedReplace = normalizeInput(params.replacement);
+  const normalizedReplace = normalizeToLf(params.replacement);
   let matchedTargets = 0;
   let firstRange: MatchRange | null = null;
   let lastRange: MatchRange | null = null;
@@ -271,12 +274,13 @@ export function calculateRegexReplacement(
   };
 }
 
+/** 在调用方准备的 LF 内容上执行字面替换；入口统一规范化 target 和 replacement。 */
 export function calculateReplacement(
   currentContent: string,
   params: ReplaceParams,
 ): ReplacementResult {
-  const normalizedReplace = normalizeInput(params.replacement);
-  const normalizedSearch = normalizeInput(params.target);
+  const normalizedReplace = normalizeToLf(params.replacement);
+  const normalizedSearch = normalizeToLf(params.target);
 
   if (normalizedSearch === '') {
     return {
