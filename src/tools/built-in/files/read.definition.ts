@@ -1,8 +1,6 @@
-import { MAX_FILE_SIZE_MB } from '../../../utils/file-read.js';
+import { MAX_FILE_SIZE_MB } from '../../../utils/file-read-policy.js';
 import type { MCPTool } from '../../types.js';
-
-export const MAX_READ_REQUESTS = 100;
-export const MAX_READ_WORKERS = 8;
+import { MAX_READ_REQUESTS } from './read.limits.js';
 
 export const READ_TOOL_DEFINITION = {
   name: 'read',

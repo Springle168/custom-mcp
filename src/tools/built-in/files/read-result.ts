@@ -1,6 +1,6 @@
 import type { SelectedTextRange } from '../../../engine/read-range.js';
 import type { ToolCallResult } from '../../types.js';
-import { MAX_READ_REQUESTS } from './read.definition.js';
+import { MAX_READ_REQUESTS } from './read.limits.js';
 import type { ReadResult, RequestSource, SourceImage } from './read-model.js';
 
 const IMAGE_MIME_TYPES = {

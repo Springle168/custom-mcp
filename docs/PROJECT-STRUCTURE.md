@@ -111,7 +111,8 @@ src/tools/
 ├── results.ts                                       # 单文本块错误结果 helper
 ├── built-in/
 │   ├── files/
-│   │   ├── read.definition.ts                       # read 描述、schema 与请求上限
+│   │   ├── read.definition.ts                       # read 描述与 schema
+│   │   ├── read.limits.ts                           # 最终请求数量上限
 │   │   ├── read.ts                                  # 请求覆盖/去重、源文件分组与范围编排
 │   │   ├── read-model.ts                            # 请求、文本/图片结果与源读取契约
 │   │   ├── read-result.ts                           # 文本统计、shallow 与有序图文渲染
@@ -120,7 +121,8 @@ src/tools/
 │   │   ├── write-file.definition.ts                 # write_file 描述与 schema
 │   │   └── write-file.ts                            # 完整写入、创建目录、内容警告与结果
 │   ├── guidelines/
-│   │   ├── discover-guidelines.definition.ts        # 指南发现描述、schema 与资源上限
+│   │   ├── discover-guidelines.definition.ts        # 指南发现描述与 schema
+│   │   ├── discover-guidelines.limits.ts            # Markdown 文件数量与前缀读取上限
 │   │   └── discover-guidelines.ts                   # Markdown 选择、有界前缀读取与元数据汇总
 │   └── android/
 │       ├── android-build.definition.ts              # 两个 Android 工具的描述与共享 schema
@@ -156,6 +158,7 @@ src/
     ├── file-access-policy.ts               # ignore/deny、读写目标复检与受控 glob
     ├── file-selection.ts                   # 有序 literal/glob 候选、来源下标与文件身份
     ├── file-read.ts                        # 完整源文件读取、文本/图片分类与大小保护
+    ├── file-read-policy.ts                 # 单次调用读取并发与完整源文件大小策略
     ├── file-system-errors.ts               # 文件系统异常的受控公开原因
     ├── bounded-workers.ts                  # 有限并发、稳定结果顺序与停止调度后的 drain
     ├── file-lock.ts                        # 按文件路径 FIFO 串行化

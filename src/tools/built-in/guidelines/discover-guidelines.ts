@@ -14,12 +14,9 @@ import {
   type SelectedReadableFile,
 } from '../../../utils/file-selection.js';
 import { mapWithWorkers } from '../../../utils/bounded-workers.js';
-import {
-  DISCOVER_GUIDELINES_TOOL_DEFINITION,
-  MAX_GUIDELINE_FILES,
-  MAX_GUIDELINE_PREFIX_BYTES,
-  MAX_GUIDELINE_READ_WORKERS,
-} from './discover-guidelines.definition.js';
+import { FILE_READ_CONCURRENCY } from '../../../utils/file-read-policy.js';
+import { DISCOVER_GUIDELINES_TOOL_DEFINITION } from './discover-guidelines.definition.js';
+import { MAX_GUIDELINE_FILES, MAX_GUIDELINE_PREFIX_BYTES } from './discover-guidelines.limits.js';
 import { textErrorResult } from '../../results.js';
 import type { MCPTool, ToolCallResult } from '../../types.js';
 
@@ -220,7 +217,7 @@ async function discoverGuidelines(
     const inspectedFiles = markdownFiles.slice(0, MAX_GUIDELINE_FILES);
     const inspectionResults = await mapWithWorkers(
       inspectedFiles,
-      MAX_GUIDELINE_READ_WORKERS,
+      FILE_READ_CONCURRENCY,
       invocation.signal,
       (file) => inspector(file, invocation.signal),
     );

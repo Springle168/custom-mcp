@@ -1,9 +1,5 @@
 import type { MCPTool } from '../../types.js';
 
-export const MAX_GUIDELINE_FILES = 100;
-export const MAX_GUIDELINE_PREFIX_BYTES = 64 * 1024;
-export const MAX_GUIDELINE_READ_WORKERS = 8;
-
 export const DISCOVER_GUIDELINES_TOOL_DEFINITION = {
   name: 'discover_guidelines',
   description: `Discovers available guidelines and what they are for without reading their full Markdown contents.
