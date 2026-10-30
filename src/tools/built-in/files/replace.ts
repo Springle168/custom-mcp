@@ -16,7 +16,7 @@ import {
   normalizeToLf,
   resolveLineEnding,
 } from '../../../engine/text-utils.js';
-import { MAX_FILE_SIZE_MB } from '../../../utils/file-read.js';
+import { MAX_FILE_SIZE_MB } from '../../../utils/file-read-policy.js';
 import {
   resolveFileAccessPath,
   validateFileAccessWriteTarget,

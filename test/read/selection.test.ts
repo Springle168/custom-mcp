@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { MAX_READ_REQUESTS } from '../../src/tools/built-in/files/read.limits.js';
 import {
   assert,
   assertEqual,
@@ -139,11 +140,23 @@ async function testSelectionFailuresAndEmptyResults(): Promise<void> {
   );
 }
 
+async function testExactLimit(): Promise<void> {
+  const result = await read({
+    include: Array.from({ length: MAX_READ_REQUESTS }, () => ({ file_path: 'b.txt' })),
+  });
+  assert(result.isError === false, 'An exact-limit batch succeeds');
+  assertEqual(result.content.length, MAX_READ_REQUESTS + 1, 'Every request gets a body block');
+  assertEqual(body(result, MAX_READ_REQUESTS), 'B-body', 'The last within-limit request is read');
+  assertNotIncludes(block(result, 0), 'Only the first', 'An exact-limit batch is not truncated');
+}
+
 async function testLimitAfterOverridesAndDeduplication(): Promise<void> {
+  const defaultCount = MAX_READ_REQUESTS + 1;
+  const successfulCount = MAX_READ_REQUESTS - 1;
   const result = await read({
     include: [
-      ...Array.from({ length: 150 }, () => 'a.txt'),
-      ...Array.from({ length: 101 }, (_, index) => ({
+      ...Array.from({ length: defaultCount }, () => 'a.txt'),
+      ...Array.from({ length: MAX_READ_REQUESTS + 1 }, (_, index) => ({
         file_path: 'a.txt',
         start_line: index === 0 ? 99 : 2,
         end_line: index === 0 ? 99 : 2,
@@ -151,67 +164,80 @@ async function testLimitAfterOverridesAndDeduplication(): Promise<void> {
     ],
   });
   assert(result.isError === false, 'Limited mixed requests still return successful fragments');
-  assertEqual(result.content.length, 101, 'Exactly the first 100 final requests are processed');
-  assertIncludes(block(result, 1), 'include[150]', 'The failed first object consumes its slot');
+  assertEqual(
+    result.content.length,
+    MAX_READ_REQUESTS + 1,
+    'Exactly the request limit plus the summary is returned',
+  );
   assertIncludes(
-    block(result, 100),
-    'include[249]',
+    block(result, 1),
+    `include[${defaultCount}]`,
+    'The failed first object consumes its slot',
+  );
+  assertIncludes(
+    block(result, MAX_READ_REQUESTS),
+    `include[${defaultCount + MAX_READ_REQUESTS - 1}]`,
     'The last retained request uses the original input index',
   );
   assertNotIncludes(
     block(result, 0),
-    'include[250]',
-    'A failed request is not replaced by the 101st request',
+    `include[${defaultCount + MAX_READ_REQUESTS}]`,
+    'A failed request is not replaced by the first over-limit request',
   );
   assertIncludes(
     block(result, 0),
-    'Selected content: 99 lines, 396 bytes.',
+    `Selected content: ${successfulCount} lines, ${successfulCount * Buffer.byteLength('beta', 'utf8')} bytes.`,
     'Only processed successful fragments count',
   );
-  assertIncludes(block(result, 0), '100', 'The summary discloses the processing limit');
   assertIncludes(
     block(result, 0),
-    'requests',
+    `Only the first ${MAX_READ_REQUESTS} final requests were processed.`,
     'Limit is stated in requests rather than source files',
   );
 }
 
 async function testSelectionFailuresConsumeLimit(): Promise<void> {
   const result = await read({
-    include: [...Array.from({ length: 100 }, () => 'missing.txt'), 'b.txt'],
+    include: [...Array.from({ length: MAX_READ_REQUESTS }, () => 'missing.txt'), 'b.txt'],
   });
   assert(result.isError === true, 'Failures use all slots without backfilling a later success');
-  assertEqual(result.content.length, 101, 'Each selected failure consumes one request');
+  assertEqual(
+    result.content.length,
+    MAX_READ_REQUESTS + 1,
+    'Each selected failure consumes one request',
+  );
   assertNotIncludes(block(result, 0), 'b.txt', 'Unprocessed inputs have no per-file entry');
   assertIncludes(
-    block(result, 100),
-    'include[99]',
+    block(result, MAX_READ_REQUESTS),
+    `include[${MAX_READ_REQUESTS - 1}]`,
     'Failure positions are preserved through the limit',
   );
 }
 
 async function testGlobLimitAndSlashCompatibility(): Promise<void> {
   const dir = path.join(FIXTURES_DIR, 'limit');
+  const fileName = (index: number) =>
+    `${String(index).padStart(String(MAX_READ_REQUESTS).length, '0')}.txt`;
   await fs.mkdir(dir);
-  for (let index = 100; index >= 0; index--) {
-    await fs.writeFile(path.join(dir, `${String(index).padStart(3, '0')}.txt`), String(index));
+  for (let index = MAX_READ_REQUESTS; index >= 0; index--) {
+    await fs.writeFile(path.join(dir, fileName(index)), String(index));
   }
   const result = await read({ include: ['limit/*.txt'], shallow_read: true });
   assert(result.isError === false, 'Large globs return a limited successful batch');
   assertIncludes(
     block(result, 0),
-    path.join('limit', '000.txt'),
+    path.join('limit', fileName(0)),
     'Glob ordering is display-path sorted before limiting',
   );
   assertIncludes(
     block(result, 0),
-    path.join('limit', '099.txt'),
-    'The 100th glob request is selected',
+    path.join('limit', fileName(MAX_READ_REQUESTS - 1)),
+    'The last within-limit glob request is selected',
   );
   assertNotIncludes(
     block(result, 0),
-    path.join('limit', '100.txt'),
-    'The 101st glob request is not processed',
+    path.join('limit', fileName(MAX_READ_REQUESTS)),
+    'The first over-limit glob request is not processed',
   );
 
   const slashGlob = await read({ include: ['/**/z.txt'] });
@@ -250,7 +276,11 @@ await runTestSuite({
       run: testSelectionFailuresAndEmptyResults,
     },
     {
-      name: '100-request limit follows deduplication and overrides without backfilling',
+      name: 'an exact-limit batch is complete without a truncation note',
+      run: testExactLimit,
+    },
+    {
+      name: 'request limit follows deduplication and overrides without backfilling',
       run: testLimitAfterOverridesAndDeduplication,
     },
     { name: 'selection failures consume request slots', run: testSelectionFailuresConsumeLimit },

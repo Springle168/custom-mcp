@@ -3,9 +3,11 @@ import * as path from 'node:path';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { classifyFileContent } from '../../src/engine/file-content.js';
 import { readInternalForTests } from '../../src/tools/built-in/files/read.js';
+import { MAX_READ_REQUESTS } from '../../src/tools/built-in/files/read.limits.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import { createFileAccessPolicyContext } from '../../src/utils/file-access-policy.js';
 import { readSourceFile } from '../../src/utils/file-read.js';
+import { FILE_READ_CONCURRENCY } from '../../src/utils/file-read-policy.js';
 import { supportedImages, unsupportedImage, animatedPng } from '../file-content/fixtures.js';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
@@ -27,9 +29,16 @@ import {
 } from './fixtures.js';
 
 const imageNames = supportedImages.map((image) => `image-${image.format}.txt`);
-const workerNames = Array.from({ length: 12 }, (_, index) => `image-worker-${index}.png`);
+const workerNames = Array.from(
+  { length: FILE_READ_CONCURRENCY + 1 },
+  (_, index) => `image-worker-${index}.png`,
+);
 
 async function setup(): Promise<void> {
+  assert(
+    workerNames.length <= MAX_READ_REQUESTS,
+    'Image worker tests require within-limit sources beyond the first worker wave',
+  );
   await prepareFixtures();
   for (const [index, image] of supportedImages.entries()) {
     await fs.writeFile(path.join(FIXTURES_DIR, imageNames[index]!), image.bytes);
@@ -406,7 +415,7 @@ async function testImageCancellationDrainsWorkers(): Promise<void> {
           'Image readers receive the invocation cancellation signal',
         );
         active++;
-        if (++started === 8) startedWave.resolve();
+        if (++started === FILE_READ_CONCURRENCY) startedWave.resolve();
         try {
           await release.promise;
           return { ok: true, kind: 'image', format: 'png', bytes };
@@ -429,7 +438,7 @@ async function testImageCancellationDrainsWorkers(): Promise<void> {
     ]);
     controller.abort();
     await nextTurn();
-    assertEqual(started, 8, 'Cancellation never starts queued image sources');
+    assertEqual(started, FILE_READ_CONCURRENCY, 'Cancellation never starts queued image sources');
     assert(!settled, 'Cancellation waits for already-started image readers');
   } finally {
     clearTimeout(timer);
@@ -438,7 +447,11 @@ async function testImageCancellationDrainsWorkers(): Promise<void> {
   }
   const result = await pending;
   assertEqual(active, 0, 'All active image readers drain before returning');
-  assertEqual(started, 8, 'Remaining image sources stay unscheduled after drain');
+  assertEqual(
+    started,
+    FILE_READ_CONCURRENCY,
+    'Remaining image sources stay unscheduled after drain',
+  );
   assertEqual(encodings, 0, 'Cancelled images never reach encoding');
   assertEqual(result.isError, true, 'Image cancellation fails the entire call');
   assertEqual(result.content.length, 1, 'No partial image business result is returned');

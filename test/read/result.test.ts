@@ -1,4 +1,5 @@
 import { renderReadResult } from '../../src/tools/built-in/files/read-result.js';
+import { MAX_READ_REQUESTS } from '../../src/tools/built-in/files/read.limits.js';
 import type { SourceFileResult } from '../../src/utils/file-read.js';
 import {
   assert,
@@ -203,7 +204,11 @@ function testSuccessAndPolicyNotes(): void {
   assertEqual(result.isError, false, 'Summary-only image success remains successful');
   assertEqual(result.content.length, 1, 'Boolean shallow omits the complete image group');
   const summary = block(result, 0);
-  assertIncludes(summary, '100', 'Image-only results retain request-limit diagnostics');
+  assertIncludes(
+    summary,
+    `Only the first ${MAX_READ_REQUESTS} final requests were processed.`,
+    'Image-only results retain request-limit diagnostics',
+  );
   assertIncludes(
     summary,
     'Some glob-discovered paths were filtered by configured ignoreFiles rules.',
