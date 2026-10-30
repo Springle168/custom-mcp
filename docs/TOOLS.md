@@ -16,7 +16,9 @@
 
 ## Definition 与 executor
 
-built-in definition 定义 `name`、`description` 与 Draft 2020-12 `inputSchema`，通过 `satisfies MCPTool['definition']` 保留 identity 与 schema 的静态约束。handler 模块绑定 definition 与 executor；两者共置但责任分离。共享稳定常量由 definition 或已有基础设施提供，不在 schema 与 handler 中重复维护。
+built-in definition 定义 `name`、`description` 与 Draft 2020-12 `inputSchema`，通过 `satisfies MCPTool['definition']` 保留 identity 与 schema 的静态约束。handler 模块绑定 definition 与 executor；两者共置但责任分离。
+
+共享常量应有明确归属，避免为获取常量而引入无关实现依赖。
 
 `TOOL_NAMES` 定义 built-in identity 与 canonical 顺序。名称目录和实现 registry 必须一一对应；registry 构建会拒绝缺失、额外或重复实现，深冻结 definitions，并编译各自的 implementation validator。
 
@@ -64,6 +66,8 @@ built-in `inputSchema` 是参数结构的校验边界，表达 required、类型
 已有内容按完整字节分类，只对 `text` 解码并执行文本操作；后缀不参与准入。缺失文件与分类异常分开处理，分类失败不授予文本访问。共享分类规则见[内容分类](tools/read.md#内容分类规则)。写入类工具使用 `resolveLineEnding()` 解析 workspace 行尾符策略；内容替换与写入恢复由单工具契约约束。
 
 ## 并发与共享资源
+
+`read` 与 `discover_guidelines` 共享每次调用的文件读取并发策略，不共享全局 worker 池。
 
 写入类工具通过 `withFileLock()` 按文件路径 FIFO 串行化，不同文件互不阻塞；只读工具不获取写锁。锁 registry 清理 idle entry。批次是否构成事务、锁持有范围与失败后的继续行为见[replace_text](tools/replace-text.md#执行顺序与锁)和[write_file](tools/write-file.md#写入策略)。
 

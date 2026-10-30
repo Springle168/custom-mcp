@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { readInternalForTests } from '../../src/tools/built-in/files/read.js';
+import { MAX_READ_REQUESTS } from '../../src/tools/built-in/files/read.limits.js';
+import { FILE_READ_CONCURRENCY } from '../../src/utils/file-read-policy.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
 import {
   assert,
@@ -45,9 +47,16 @@ async function deadline(promise: Promise<void>): Promise<void> {
   }
 }
 
-const files = Array.from({ length: 20 }, (_, index) => `worker-${index}.txt`);
+const files = Array.from(
+  { length: FILE_READ_CONCURRENCY + 1 },
+  (_, index) => `worker-${index}.txt`,
+);
 
 async function setup(): Promise<void> {
+  assert(
+    files.length <= MAX_READ_REQUESTS,
+    'Worker lifecycle tests require within-limit sources beyond the first worker wave',
+  );
   await prepareFixtures();
   await Promise.all(files.map((name) => fs.writeFile(path.join(FIXTURES_DIR, name), name)));
 }
@@ -141,7 +150,7 @@ async function testBoundedWorkersAndStableOrder(): Promise<void> {
       started++;
       active++;
       peak = Math.max(peak, active);
-      if (started === 8) firstWave.resolve();
+      if (started === FILE_READ_CONCURRENCY) firstWave.resolve();
       try {
         await release.promise;
         return { ok: true, kind: 'text', lines: [path.basename(file.readPath)] };
@@ -152,13 +161,25 @@ async function testBoundedWorkersAndStableOrder(): Promise<void> {
   );
   try {
     await deadline(firstWave.promise);
-    assertEqual(started, 8, 'Only eight reads may start before any source settles');
-    assertEqual(active, 8, 'The first eight workers are held at the read boundary');
+    assertEqual(
+      started,
+      FILE_READ_CONCURRENCY,
+      'Only the configured number of reads may start before any source settles',
+    );
+    assertEqual(
+      active,
+      FILE_READ_CONCURRENCY,
+      'The first worker wave is held at the read boundary',
+    );
   } finally {
     release.resolve();
   }
   const result = await pending;
-  assertEqual(peak, 8, 'Concurrent source reads stay within eight workers');
+  assertEqual(
+    peak,
+    FILE_READ_CONCURRENCY,
+    'Concurrent source reads stay within the configured limit',
+  );
   assertEqual(started, files.length, 'A completed call eventually processes all selected sources');
   files.forEach((name, index) =>
     assertEqual(
@@ -184,7 +205,7 @@ async function testCancellationDrainsAndStopsScheduling(): Promise<void> {
       async (_file, signal) => {
         assertEqual(signal, controller.signal, 'Readers share the cancellation signal');
         active++;
-        if (++started === 8) firstWave.resolve();
+        if (++started === FILE_READ_CONCURRENCY) firstWave.resolve();
         try {
           await release.promise;
           return { ok: true, kind: 'text', lines: ['partial-business-result'] };
@@ -202,13 +223,13 @@ async function testCancellationDrainsAndStopsScheduling(): Promise<void> {
     controller.abort();
     await nextTurn();
     assert(!settled, 'Cancellation waits for already-started source cleanup');
-    assertEqual(started, 8, 'Cancellation does not start queued source reads');
+    assertEqual(started, FILE_READ_CONCURRENCY, 'Cancellation does not start queued source reads');
   } finally {
     release.resolve();
   }
   const result = await pending;
   assertEqual(active, 0, 'All active readers have finished before returning');
-  assertEqual(started, 8, 'Queued files remain unscheduled after drain');
+  assertEqual(started, FILE_READ_CONCURRENCY, 'Queued files remain unscheduled after drain');
   assert(result.isError === true, 'Cancelled calls are whole-call errors');
   assertEqual(result.content.length, 1, 'Cancellation never returns partial business blocks');
   assertIncludes(getResultText(result), 'cancel', 'The whole-call error explains cancellation');
@@ -230,7 +251,7 @@ async function testInternalExceptionDrainsAndStopsScheduling(): Promise<void> {
     .read({ include: files }, context(), createTestToolInvocationContext(), async () => {
       const index = started++;
       active++;
-      if (started === 8) firstWave.resolve();
+      if (started === FILE_READ_CONCURRENCY) firstWave.resolve();
       try {
         if (index === 0) {
           await fail.promise;
@@ -250,7 +271,11 @@ async function testInternalExceptionDrainsAndStopsScheduling(): Promise<void> {
     await deadline(firstWave.promise);
     fail.resolve();
     await nextTurn();
-    assertEqual(started, 8, 'An uncontinuable exception stops new source scheduling');
+    assertEqual(
+      started,
+      FILE_READ_CONCURRENCY,
+      'An uncontinuable exception stops new source scheduling',
+    );
     assert(!settled, 'Internal failure waits for the other started readers to clean up');
   } finally {
     fail.resolve();
@@ -258,7 +283,7 @@ async function testInternalExceptionDrainsAndStopsScheduling(): Promise<void> {
   }
   const result = await pending;
   assertEqual(active, 0, 'All workers are drained before returning an internal failure');
-  assertEqual(started, 8, 'No queued source starts after the internal failure');
+  assertEqual(started, FILE_READ_CONCURRENCY, 'No queued source starts after the internal failure');
   assert(result.isError === true, 'Uncontinuable exceptions fail the whole call');
   assertEqual(result.content.length, 1, 'Internal exceptions are not ordinary request failures');
   assertNotIncludes(
@@ -292,7 +317,10 @@ async function testPreCancelledAndLimitBeforeSources(): Promise<void> {
   const limited = await readInternalForTests.read(
     {
       include: [
-        ...Array.from({ length: 100 }, () => ({ file_path: 'a.txt', start_line: 99 })),
+        ...Array.from({ length: MAX_READ_REQUESTS }, () => ({
+          file_path: 'a.txt',
+          start_line: 99,
+        })),
         'b.txt',
       ],
     },
@@ -308,7 +336,7 @@ async function testPreCancelledAndLimitBeforeSources(): Promise<void> {
       return { ok: true, kind: 'text', lines: ['a'] };
     },
   );
-  assert(limited.isError === true, 'All first-100 fragments fail without backfill');
+  assert(limited.isError === true, 'All within-limit fragments fail without backfill');
   assertEqual(calls, 1, 'The limit precedes source grouping and one source is read once');
 }
 
@@ -326,7 +354,7 @@ await runTestSuite({
       run: testIdentityAndSourceFailures,
     },
     {
-      name: 'at most eight workers preserve final request order',
+      name: 'bounded workers preserve final request order',
       run: testBoundedWorkersAndStableOrder,
     },
     {

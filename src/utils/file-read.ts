@@ -1,9 +1,7 @@
 import * as fs from 'node:fs/promises';
 import { classifyFileContent, type FileContentClassification } from '../engine/file-content.js';
 import { fileSystemErrorReason } from './file-system-errors.js';
-
-/** Maximum source file size in MiB, including for range reads. */
-export const MAX_FILE_SIZE_MB = 20;
+import { MAX_FILE_SIZE_MB } from './file-read-policy.js';
 
 export type SourceFileResult =
   | { readonly ok: true; readonly kind: 'text'; readonly lines: readonly string[] }

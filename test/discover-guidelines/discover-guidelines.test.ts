@@ -9,8 +9,7 @@ import discoverGuidelinesTool, {
 import {
   MAX_GUIDELINE_FILES,
   MAX_GUIDELINE_PREFIX_BYTES,
-  MAX_GUIDELINE_READ_WORKERS,
-} from '../../src/tools/built-in/guidelines/discover-guidelines.definition.js';
+} from '../../src/tools/built-in/guidelines/discover-guidelines.limits.js';
 import { getAllToolDefinitions } from '../../src/tools/index.js';
 import { TOOL_NAMES } from '../../src/tools/names.js';
 import {
@@ -18,8 +17,7 @@ import {
   type FileAccessPolicyQuery,
   type RootFileAccessPolicy,
 } from '../../src/utils/file-access-policy.js';
-import { mapWithWorkers } from '../../src/utils/bounded-workers.js';
-import type { SelectedReadableFile } from '../../src/utils/file-selection.js';
+import { FILE_READ_CONCURRENCY } from '../../src/utils/file-read-policy.js';
 import { callBuiltInTool } from '../helpers/built-in-tool-call.js';
 import { createTestToolRuntimeContext } from '../helpers/runtime-config.js';
 import { createTestToolInvocationContext } from '../helpers/tool-invocation-context.js';
@@ -37,6 +35,35 @@ const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'discover-guidelines');
 const ADDITIONAL_ROOT = path.join(__dirname, '..', 'fixtures', 'discover-guidelines-additional');
 
+function numberedGuidelinePath(index: number): string {
+  return path.join('many', `${String(index).padStart(String(MAX_GUIDELINE_FILES).length, '0')}.md`);
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function deadline(promise: Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Timed out waiting for the controlled inspection boundary')),
+          5000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function guideline(name: string, description = `Description for ${name}`): string {
   return `---
 name: ${name}
@@ -49,6 +76,10 @@ PRIVATE BODY CONTENT
 }
 
 async function resetFixtures(): Promise<void> {
+  assert(
+    MAX_GUIDELINE_FILES > FILE_READ_CONCURRENCY,
+    'Worker lifecycle tests require within-limit files beyond the first worker wave',
+  );
   await Promise.all([
     fs.rm(FIXTURES_DIR, { recursive: true, force: true }),
     fs.rm(ADDITIONAL_ROOT, { recursive: true, force: true }),
@@ -76,7 +107,7 @@ async function resetFixtures(): Promise<void> {
   await Promise.all(
     Array.from({ length: MAX_GUIDELINE_FILES + 1 }, (_, index) =>
       fs.writeFile(
-        path.join(FIXTURES_DIR, 'many', `${String(index).padStart(3, '0')}.md`),
+        path.join(FIXTURES_DIR, numberedGuidelinePath(index)),
         guideline(`guide-${index}`),
       ),
     ),
@@ -417,6 +448,23 @@ async function testControlledInspectionFailuresRemainPartialResults(): Promise<v
 }
 
 async function testFileLimit(): Promise<void> {
+  const exact = await discoverGuidelinesTool.handler(
+    {
+      include: Array.from({ length: MAX_GUIDELINE_FILES }, (_, index) =>
+        numberedGuidelinePath(index),
+      ),
+    },
+    createContext(),
+    createTestToolInvocationContext(),
+  );
+  const exactValue = payload(exact);
+  assertEqual(
+    exactValue.guidelines.length,
+    MAX_GUIDELINE_FILES,
+    'An exact-limit batch is complete',
+  );
+  assertEqual(exactValue.note, undefined, 'An exact-limit batch needs no completeness note');
+
   const result = await discoverGuidelinesTool.handler(
     { include: ['many/*.md'] },
     createContext(),
@@ -426,18 +474,29 @@ async function testFileLimit(): Promise<void> {
   assertEqual(
     value.guidelines.length,
     MAX_GUIDELINE_FILES,
-    'Only the first 100 Markdown files should be inspected',
+    'Only the configured number of Markdown files should be inspected',
   );
   assertEqual(value.guidelines[0]?.name, 'guide-0', 'The first sorted file should be inspected');
   assertEqual(
     value.guidelines.at(-1)?.name,
-    'guide-99',
-    'The last inspected file should be index 99',
+    `guide-${MAX_GUIDELINE_FILES - 1}`,
+    'The last within-limit file should be inspected',
   );
-  assertIncludes(value.note, 'Only the first 100', 'File limit should add a completeness note');
+  assertIncludes(
+    value.note,
+    `Only the first ${MAX_GUIDELINE_FILES} matched Markdown files were inspected.`,
+    'File limit should add a completeness note',
+  );
 
   const ordered = await discoverGuidelinesTool.handler(
-    { include: ['guides/plain.txt', 'many/100.md', 'many/100.md', 'many/*.md'] },
+    {
+      include: [
+        'guides/plain.txt',
+        numberedGuidelinePath(MAX_GUIDELINE_FILES),
+        numberedGuidelinePath(MAX_GUIDELINE_FILES),
+        'many/*.md',
+      ],
+    },
     createContext(),
     createTestToolInvocationContext(),
   );
@@ -447,74 +506,105 @@ async function testFileLimit(): Promise<void> {
     MAX_GUIDELINE_FILES,
     'The limit follows dedup and Markdown filtering',
   );
-  assertEqual(orderedValue.guidelines[0]?.name, 'guide-100', 'An explicit first file stays first');
-  assertEqual(orderedValue.guidelines.at(-1)?.name, 'guide-98', 'Glob order fills remaining slots');
+  assertEqual(
+    orderedValue.guidelines[0]?.name,
+    `guide-${MAX_GUIDELINE_FILES}`,
+    'An explicit first file stays first',
+  );
+  assertEqual(
+    orderedValue.guidelines.at(-1)?.name,
+    `guide-${MAX_GUIDELINE_FILES - 2}`,
+    'Glob order fills remaining slots',
+  );
 }
 
-async function testWorkerLimitAndCancellation(): Promise<void> {
-  const files: SelectedReadableFile[] = Array.from({ length: 20 }, (_, index) => ({
-    readPath: `file-${index}.md`,
-    displayPath: `file-${index}.md`,
-  }));
+async function testBoundedWorkersAndStableOrder(): Promise<void> {
+  const firstWave = deferred();
+  const release = deferred();
+  let started = 0;
   let active = 0;
   let maxActive = 0;
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const inspection = mapWithWorkers(
-    files,
-    MAX_GUIDELINE_READ_WORKERS,
-    new AbortController().signal,
-    async () => {
+  const inspection = discoverGuidelinesInternalForTests.discoverGuidelines(
+    { include: ['many/*.md'] },
+    createContext(),
+    createTestToolInvocationContext(),
+    async (file) => {
+      started += 1;
       active += 1;
       maxActive = Math.max(maxActive, active);
-      await gate;
-      active -= 1;
-      return { ok: true as const, metadata: null };
+      if (started === FILE_READ_CONCURRENCY) firstWave.resolve();
+      try {
+        await release.promise;
+        return {
+          ok: true as const,
+          metadata: { name: file.displayPath, description: 'Inspected guideline' },
+        };
+      } finally {
+        active -= 1;
+      }
     },
   );
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  assertEqual(maxActive, MAX_GUIDELINE_READ_WORKERS, 'At most eight inspections should be active');
-  release?.();
-  await inspection;
+  try {
+    await deadline(firstWave.promise);
+    assertEqual(
+      started,
+      FILE_READ_CONCURRENCY,
+      'Only the configured number of inspections start before any settle',
+    );
+    assertEqual(active, FILE_READ_CONCURRENCY, 'The first worker wave remains active');
+  } finally {
+    release.resolve();
+  }
+  const result = await inspection;
+  assertEqual(maxActive, FILE_READ_CONCURRENCY, 'The tool uses the configured concurrency');
+  assertEqual(started, MAX_GUIDELINE_FILES, 'Every within-limit file is eventually inspected');
+  const value = payload(result);
+  assertEqual(value.guidelines.length, MAX_GUIDELINE_FILES, 'Every inspection result is returned');
+  value.guidelines.forEach((entry, index) =>
+    assertEqual(entry.name, numberedGuidelinePath(index), 'Worker scheduling preserves file order'),
+  );
+}
 
+async function testCancellationDrainsStartedInspections(): Promise<void> {
+  const firstWave = deferred();
+  const release = deferred();
   const controller = new AbortController();
   let started = 0;
-  let inspectionsStarted: (() => void) | undefined;
-  const inspectionsStartedPromise = new Promise<void>((resolve) => {
-    inspectionsStarted = resolve;
-  });
-  let releaseCancelled: (() => void) | undefined;
-  const cancelledGate = new Promise<void>((resolve) => {
-    releaseCancelled = resolve;
-  });
+  let cleaned = 0;
+  let settled = false;
   const resultPromise = discoverGuidelinesInternalForTests.discoverGuidelines(
     { include: ['many/*.md'] },
     createContext(),
     createTestToolInvocationContext({ signal: controller.signal }),
     async () => {
       started += 1;
-      if (started === MAX_GUIDELINE_READ_WORKERS) {
-        inspectionsStarted?.();
+      if (started === FILE_READ_CONCURRENCY) firstWave.resolve();
+      try {
+        await release.promise;
+        return { ok: true as const, metadata: { name: 'late', description: 'late' } };
+      } finally {
+        cleaned += 1;
       }
-      await cancelledGate;
-      return { ok: true as const, metadata: { name: 'late', description: 'late' } };
     },
   );
-  await inspectionsStartedPromise;
-  let settled = false;
   void resultPromise.then(() => {
     settled = true;
   });
-  controller.abort();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assertEqual(settled, false, 'Cancellation must wait for already-started inspections to finish');
-  releaseCancelled?.();
+  try {
+    await deadline(firstWave.promise);
+    controller.abort();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assertEqual(settled, false, 'Cancellation must wait for already-started inspections to finish');
+    assertEqual(started, FILE_READ_CONCURRENCY, 'Cancellation stops scheduling queued files');
+  } finally {
+    controller.abort();
+    release.resolve();
+  }
   const result = await resultPromise;
   assert(result.isError, 'Cancellation after reads start should be an error');
   assertIncludes(getResultText(result), 'cancelled', 'Cancellation should use stable error text');
-  assertEqual(started, MAX_GUIDELINE_READ_WORKERS, 'Cancellation should stop scheduling new files');
+  assertEqual(started, FILE_READ_CONCURRENCY, 'Queued files remain unscheduled after drain');
+  assertEqual(cleaned, FILE_READ_CONCURRENCY, 'Every started inspector settles before returning');
 }
 
 async function testInternalFailureDrainsStartedInspections(): Promise<void> {
@@ -539,7 +629,7 @@ async function testInternalFailureDrainsStartedInspections(): Promise<void> {
     createTestToolInvocationContext(),
     async () => {
       const index = started++;
-      if (started === MAX_GUIDELINE_READ_WORKERS) allStarted();
+      if (started === FILE_READ_CONCURRENCY) allStarted();
       try {
         if (index === 0) {
           await failureGate;
@@ -555,14 +645,18 @@ async function testInternalFailureDrainsStartedInspections(): Promise<void> {
   void resultPromise.then(() => {
     settled = true;
   });
-  await startedGate;
-  releaseFailure();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assertEqual(started, MAX_GUIDELINE_READ_WORKERS, 'Internal failure stops claiming files');
-  assertEqual(settled, false, 'The tool must not return before peer cleanup');
-  releasePeers();
+  try {
+    await deadline(startedGate);
+    releaseFailure();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assertEqual(started, FILE_READ_CONCURRENCY, 'Internal failure stops claiming files');
+    assertEqual(settled, false, 'The tool must not return before peer cleanup');
+  } finally {
+    releaseFailure();
+    releasePeers();
+  }
   const result = await resultPromise;
-  assertEqual(cleaned, MAX_GUIDELINE_READ_WORKERS, 'Every started inspector must settle');
+  assertEqual(cleaned, FILE_READ_CONCURRENCY, 'Every started inspector must settle');
   assert(result.isError, 'Unexpected errors remain whole-call errors after drain');
   assertNotIncludes(
     getResultText(result),
@@ -656,7 +750,11 @@ await runTestSuite({
       run: testControlledInspectionFailuresRemainPartialResults,
     },
     { name: 'Markdown candidate limit is deterministic', run: testFileLimit },
-    { name: 'Worker limit and cancellation stop scheduling', run: testWorkerLimitAndCancellation },
+    { name: 'Tool worker limit preserves file order', run: testBoundedWorkersAndStableOrder },
+    {
+      name: 'Cancellation stops scheduling and drains inspections',
+      run: testCancellationDrainsStartedInspections,
+    },
     {
       name: 'Internal failure drains started inspections',
       run: testInternalFailureDrainsStartedInspections,

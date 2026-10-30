@@ -8,9 +8,11 @@ import {
 } from '../../../utils/file-selection.js';
 import { mapWithWorkers } from '../../../utils/bounded-workers.js';
 import { readSourceFile } from '../../../utils/file-read.js';
+import { FILE_READ_CONCURRENCY } from '../../../utils/file-read-policy.js';
 import { textErrorResult } from '../../results.js';
 import type { MCPTool, ToolCallResult } from '../../types.js';
-import { READ_TOOL_DEFINITION, MAX_READ_REQUESTS, MAX_READ_WORKERS } from './read.definition.js';
+import { READ_TOOL_DEFINITION } from './read.definition.js';
+import { MAX_READ_REQUESTS } from './read.limits.js';
 import type {
   LiteralReadRequest,
   PreparedRequest,
@@ -84,7 +86,7 @@ async function read(
       }
     }
     const files = [...filesByIdentity.values()];
-    const sources = await mapWithWorkers(files, MAX_READ_WORKERS, signal, (file) =>
+    const sources = await mapWithWorkers(files, FILE_READ_CONCURRENCY, signal, (file) =>
       sourceReader(file, signal),
     );
     const sourceByIdentity = new Map(
