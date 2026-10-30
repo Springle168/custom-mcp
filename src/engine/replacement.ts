@@ -1,5 +1,3 @@
-import { restoreTrailingNewline } from './text-utils.js';
-
 export interface ReplaceParams {
   file_path: string;
   target: string;
@@ -120,7 +118,6 @@ function exactMatch(currentContent: string, params: ReplaceParams): ReplacementR
 
   if (shouldApplyReplacement(matchedTargets, params.allow_multiple)) {
     newContent = replaceLiteralRanges(currentContent, matchRanges, normalizedReplace);
-    newContent = restoreTrailingNewline(currentContent, newContent);
     replacementCount = matchedTargets;
   }
 

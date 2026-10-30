@@ -1,4 +1,4 @@
-import { assert, assertEqual, assertNotIncludes, runTestSuite } from '../test-utils.js';
+import { assert, assertEqual, runTestSuite } from '../test-utils.js';
 import {
   assertErrorResult,
   assertJsonNoteIncludes,
@@ -393,58 +393,11 @@ async function testReplacementLineCountVariants(): Promise<void> {
   }
 }
 
-async function testPlaceholderWarningWritesSuccessfully(): Promise<void> {
-  await resetFixtures();
-  await writeFixture('placeholder-warning.txt', 'function demo() {\n  return 1;\n}\n');
-
-  const result = await callReplace({
-    file_path: 'placeholder-warning.txt',
-    target: '  return 1;',
-    replacement: '  // ...\n  return 2;',
-    match_mode: 'default',
-  });
-
-  const json = assertSuccessResult(result);
-  assert(typeof json.note === 'string', 'Placeholder warning should include note');
-  assertJsonNoteIncludes(json, '...', 'Placeholder warning should identify ellipsis');
-  await assertFixtureContent(
-    'placeholder-warning.txt',
-    'function demo() {\n  // ...\n  return 2;\n}\n',
-    'Placeholder warning should not block writing',
-  );
-}
-
-async function testExistingPlaceholderDoesNotWarnAgain(): Promise<void> {
-  await resetFixtures();
-  await writeFixture('placeholder-existing.txt', 'before\n// ...\nafter\n');
-
-  const result = await callReplace({
-    file_path: 'placeholder-existing.txt',
-    target: '// ...',
-    replacement: '// ...\nactual content',
-    match_mode: 'default',
-  });
-
-  const json = assertSuccessResult(result);
-  if (json.note !== undefined) {
-    assertNotIncludes(
-      json.note,
-      '...',
-      'Existing placeholder should not produce a new ellipsis warning',
-    );
-  }
-  await assertFixtureContent(
-    'placeholder-existing.txt',
-    'before\n// ...\nactual content\nafter\n',
-    'Existing placeholder should still be written literally',
-  );
-}
-
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'replace_text v2 default mode tests',
     details:
-      'Covers default matching, literal replacement behavior, counts, spans, creation, warnings, and no-op.',
+      'Covers default matching, literal replacement behavior, counts, spans, creation, and no-op.',
     afterAll: cleanupFixtures,
     tests: [
       {
@@ -504,14 +457,6 @@ async function main(): Promise<void> {
       {
         name: 'replacement_line_count follows spec variants',
         run: testReplacementLineCountVariants,
-      },
-      {
-        name: 'Placeholder warning writes successfully',
-        run: testPlaceholderWarningWritesSuccessfully,
-      },
-      {
-        name: 'Existing placeholder does not warn again',
-        run: testExistingPlaceholderDoesNotWarnAgain,
       },
     ],
   });

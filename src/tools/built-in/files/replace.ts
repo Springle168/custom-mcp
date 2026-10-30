@@ -10,11 +10,7 @@ import {
   type ReplaceParams,
   type ReplacementResult,
 } from '../../../engine/replacement.js';
-import {
-  detectLineEnding,
-  resolveLineEnding,
-  detectOmissionPlaceholders,
-} from '../../../engine/text-utils.js';
+import { detectLineEnding, resolveLineEnding } from '../../../engine/text-utils.js';
 import { MAX_FILE_SIZE_MB } from '../../../utils/file-read.js';
 import {
   resolveFileAccessPath,
@@ -194,90 +190,6 @@ function validateFileSemantics(file: FileInput): ValidationResult {
   }
 
   return validateRegexFlagCharactersAndRepetition(file.regex_flags);
-}
-
-function isDotsOnly(text: string): boolean {
-  if (text.length < 3) return false;
-  return [...text].every((char) => char === '.');
-}
-
-function stripPlaceholderLineDecorators(line: string): string {
-  let text = line.trim();
-  const prefixes = ['//', '#', '--', '*', '/*', '<!--'];
-  const suffixes = ['*/', '-->'];
-
-  for (const prefix of prefixes) {
-    if (text.startsWith(prefix)) {
-      text = text.slice(prefix.length).trim();
-      break;
-    }
-  }
-
-  for (const suffix of suffixes) {
-    if (text.endsWith(suffix)) {
-      text = text.slice(0, -suffix.length).trim();
-      break;
-    }
-  }
-
-  if (text.startsWith('(') && text.endsWith(')')) {
-    text = text.slice(1, -1).trim();
-  }
-
-  return text;
-}
-
-function normalizeStandaloneOmissionPhrase(text: string): string | null {
-  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  const phrase = normalized.replace(/\s*\.{3,}\s*$/, '').trim();
-
-  const patterns = [
-    /^rest of(?: the)?(?: code| file| method| methods| implementation)?$/,
-    /^unchanged(?: code| file| method| methods| implementation)?$/,
-    /^existing(?: code| implementation)?$/,
-    /^same as (?:above|before)$/,
-  ];
-
-  if (patterns.some((pattern) => pattern.test(phrase))) {
-    return `${phrase} ...`;
-  }
-  return null;
-}
-
-function detectPotentialOmissionPlaceholders(text: string): string[] {
-  const placeholders = new Set(detectOmissionPlaceholders(text));
-
-  for (const line of text.split(/\r\n|\r|\n/)) {
-    const stripped = stripPlaceholderLineDecorators(line);
-    if (isDotsOnly(stripped)) {
-      placeholders.add('...');
-      continue;
-    }
-
-    const standalonePhrase = normalizeStandaloneOmissionPhrase(stripped);
-    if (standalonePhrase) {
-      placeholders.add(standalonePhrase);
-    }
-  }
-
-  return [...placeholders];
-}
-
-function getOmissionPlaceholderWarning(target: string, replacement: string): string | null {
-  const targetPlaceholders = new Set(detectPotentialOmissionPlaceholders(target));
-  const replacementPlaceholders = detectPotentialOmissionPlaceholders(replacement).filter(
-    (placeholder) => !targetPlaceholders.has(placeholder),
-  );
-
-  if (replacementPlaceholders.length === 0) return null;
-
-  const shownPlaceholders = [...new Set(replacementPlaceholders)]
-    .slice(0, 3)
-    .map((placeholder) => `'${placeholder}'`)
-    .join(', ');
-  const more = replacementPlaceholders.length > 3 ? ' and more' : '';
-
-  return `Warning: replacement contains possible omission placeholder(s) ${shownPlaceholders}${more}. If this is intentional literal text, for example documentation, you can ignore this warning; otherwise use read to verify and provide complete replacement text.`;
 }
 
 function getInvalidRegexReplacementWarning(
@@ -467,8 +379,6 @@ async function executeReplacement(
     return replacementResult(replacement, false, existingFile.error);
   }
 
-  const placeholderWarning = getOmissionPlaceholderWarning(target, replacementText);
-
   if (!existingFile.exists) {
     if (matchMode === 'default' && target === '') {
       const normalizedReplacement = normalizeTextLineEndings(replacementText);
@@ -514,17 +424,12 @@ async function executeReplacement(
         );
       }
 
-      return replacementResult(
-        replacement,
-        true,
-        joinNotes(`File created at ${filePath}.`, placeholderWarning),
-        {
-          file_line_count: {
-            previous: 0,
-            current: countLines(normalizedReplacement),
-          },
+      return replacementResult(replacement, true, `File created at ${filePath}.`, {
+        file_line_count: {
+          previous: 0,
+          current: countLines(normalizedReplacement),
         },
-      );
+      });
     }
 
     return replacementResult(
@@ -662,7 +567,6 @@ async function executeReplacement(
     replacement,
     true,
     joinNotes(
-      placeholderWarning,
       getRegexFlagsWarning(matchMode, regexFlags),
       getInvalidRegexReplacementWarning(matchMode, invalidReplacementSyntax),
       getRegexMultilineMatchWarning(matchMode, hasMultilineRegexMatch),

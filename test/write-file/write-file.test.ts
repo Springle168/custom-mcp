@@ -96,6 +96,38 @@ async function testOverwriteExistingFilePreservesLineEnding() {
   assertEqual(raw, 'new1\r\nnew2', 'Should preserve the original CRLF line endings');
 }
 
+async function testInputLineEndingsAndTrailingNewlines() {
+  const cases = [
+    { content: 'alpha\rbeta', normalized: 'alpha\nbeta' },
+    { content: 'alpha\r\nbeta\ngamma\r', normalized: 'alpha\nbeta\ngamma\n' },
+    { content: 'alpha', normalized: 'alpha' },
+    { content: 'alpha\n', normalized: 'alpha\n' },
+    { content: 'alpha\n\n', normalized: 'alpha\n\n' },
+    { content: '', normalized: '' },
+  ];
+
+  for (const existing of [false, true]) {
+    for (const [index, testCase] of cases.entries()) {
+      const filePath = `line-endings-${existing}-${index}.txt`;
+      const targetPath = path.join(FIXTURES_DIR, filePath);
+      if (existing) {
+        await fs.writeFile(targetPath, 'old\r\n', 'utf-8');
+      }
+
+      const result = await writeFileTool.handler(
+        { file_path: filePath, content: testCase.content },
+        createToolContext(),
+        createTestToolInvocationContext(),
+      );
+
+      assert(result.isError !== true, 'Should write the provided content');
+      const expected = existing ? testCase.normalized.replace(/\n/g, '\r\n') : testCase.normalized;
+      const raw = await fs.readFile(targetPath, 'utf-8');
+      assertEqual(raw, expected, 'Line ending style must not change the trailing newline count');
+    }
+  }
+}
+
 async function testRejectOutsideWorkspace() {
   const outsidePath = path.join(__dirname, 'write-file-outside.txt');
   const result = await writeFileTool.handler(
@@ -274,38 +306,6 @@ async function testSafetyBeforeClassification() {
   }
 }
 
-async function testWarnButWritePlaceholderContent() {
-  const cases = ['// rest of code ...', '...', '...\ractual code'];
-  for (const [index, content] of cases.entries()) {
-    const filePath = `placeholder-${index}.txt`;
-    const result = await writeFileTool.handler(
-      { file_path: filePath, content },
-      createToolContext(),
-      createTestToolInvocationContext(),
-    );
-
-    assert(result.isError !== true, `Should succeed for ${JSON.stringify(content)}`);
-    const text = getResultText(result);
-    assertIncludes(
-      text,
-      `Success: wrote ${filePath}.`,
-      'Should report successful write before the warning',
-    );
-    assertIncludes(
-      text,
-      'Warning: content contains possible omission placeholder',
-      'Should warn about possible incomplete content',
-    );
-
-    const raw = await fs.readFile(path.join(FIXTURES_DIR, filePath), 'utf-8');
-    assertEqual(
-      raw,
-      content.replace(/\r\n|\r/g, '\n'),
-      'Should write placeholder content literally',
-    );
-  }
-}
-
 async function testRejectSymlinkEscapingWorkspace() {
   const outsideDir = path.join(__dirname, '..', 'fixtures', 'write-file-outside');
   const linkPath = path.join(FIXTURES_DIR, 'escape-link');
@@ -357,6 +357,10 @@ async function main(): Promise<void> {
         name: 'Overwrite existing file and keep CRLF',
         run: testOverwriteExistingFilePreservesLineEnding,
       },
+      {
+        name: 'Normalize input line endings and honor trailing newline count',
+        run: testInputLineEndingsAndTrailingNewlines,
+      },
       { name: 'Reject path outside workspace', run: testRejectOutsideWorkspace },
       { name: 'Reject binary target', run: testRejectBinaryTarget },
       {
@@ -369,7 +373,6 @@ async function main(): Promise<void> {
       },
       { name: 'No extra 20MiB limit for write_file', run: testNoExtraSizeLimit },
       { name: 'Safety checks precede content classification', run: testSafetyBeforeClassification },
-      { name: 'Warn but write placeholder content', run: testWarnButWritePlaceholderContent },
       { name: 'Reject symlink escaping workspace', run: testRejectSymlinkEscapingWorkspace },
     ],
   });
