@@ -1,6 +1,6 @@
 {
   "name": "read",
-  "description": "Reads whole text files and PNG, JPEG, or WebP images from literal paths and glob patterns. Content, not the extension, determines the type. Use shallow_read=true to inspect the selection without returning bodies.",
+  "description": "Reads whole files from literal paths or glob patterns.",
   "inputSchema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -12,36 +12,7 @@
           "type": "string",
           "minLength": 1
         },
-        "description": "Literal file paths or glob patterns. This override accepts whole-file string requests only."
-      },
-      "exclude": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        },
-        "description": "Additional glob patterns that filter automatically discovered files, not literal paths."
-      },
-      "use_ignore_files": {
-        "type": "boolean",
-        "description": "Whether configured ignoreFiles rules filter glob results. Defaults to true; literal paths bypass ignore rules."
-      },
-      "shallow_read": {
-        "oneOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
-          }
-        ],
-        "description": "False includes successful bodies; true omits them. A positive integer includes all successful text and image bodies only when the combined UTF-8 size of successful text bodies is within that byte limit. Images do not contribute to the threshold. Statistics and failures are always returned."
-      },
-      "show_line_numbers": {
-        "type": "boolean",
-        "description": "Prefix returned text lines with their original 1-based line numbers. Defaults to false."
+        "description": "Literal file paths or glob patterns."
       }
     },
     "required": [

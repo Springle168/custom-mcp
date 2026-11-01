@@ -53,7 +53,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 Schema 的隔离编译、引用解析与校验行为见[工具校验分工](../TOOLS.md#schema-与-handler-的校验分工)。Tool config 中不能有两个 definition 声明同一个 `name`。
 
-内置工具 override 示例见 [read definition](../../examples/read.override.example.json)。该示例使用 `read` 名称覆盖对外定义，并将 `include` 收窄为字符串数组；它只允许整文件 literal/glob 请求，调用仍需通过内置 implementation schema。
+内置工具 override 示例见 [read definition](../../examples/read.override.example.json)。
 
 ---
 
