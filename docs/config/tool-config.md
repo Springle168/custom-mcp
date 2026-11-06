@@ -72,21 +72,18 @@ Schema 的隔离编译、引用解析与校验行为见[工具校验分工](../T
 
 ## 加载、binding 与调用行为
 
-Tool config、全部 Tool definition、已配置的 External routing config、其显式 Processor registry 和每条 route 引用的 HTTP endpoint 或 MCP server config 都在启动期读取、校验并编译。Processor registry 即使未被任何 route 使用也会被读取和校验；相同 HTTP endpoint path 可共享已编译 snapshot，解析到相同 real path 的 MCP server config 共享 server identity。运行期不重新读取这些配置；修改后需要重启服务。
+Tool config、全部源 definitions 与已引用的外部路由配置在启动期读取和校验，隐藏工具也不跳过校验。运行期不重新读取这些配置；修改后需要重启服务。
 
-编译器按稳定名称判定 built-in override 与 custom-only，别名不参与分类。override 使用编译后的对外 definition，同时保留内置 executor 和 implementation contract；显式 Schema 需要双层校验，继承内置 Schema 则复用 implementation validator。External route 只能绑定 custom-only definition；override 即使配置别名也不能绑定 route。
+源 definition 的稳定 `name` 与内置 Tool 同名时属于 built-in override，`$alias` 不参与匹配。override 可以定制对外 definition，但不能更换内置执行实现，也不能通过放宽显式 `inputSchema` 解除内置实现的输入限制。External route 只能绑定 custom-only definition；override 即使配置别名也不能绑定 route。
 
 custom-only definition 的 executor 由其 definition reference `id` 决定：
 
 - External routing config 为该 `id` 声明 route 时，配置后的输入校验成功会进入该 route 的外部 executor。
 - 没有 route 时，definition 仍可暴露且输入仍会校验；调用返回 deterministic unavailable route 工具错误。
-- route 不按稳定名称或别名匹配，因此修改名称不会改变 reference id binding identity。HTTP canonical request 的 `name` 与下游 MCP `tools/call` 的目标名都使用源 definition 的稳定名称，不使用对外别名。
 
-全部 definition 编译、route binding、workspace selector 与对外名称冲突校验成功后才构造外部运行资源。隐藏 definition 和 route 仍完成完整校验；资源按完整已配置 route 集合创建，不按 exposure 裁剪。
+Route 不按稳定名称或别名匹配；引用校验和下游名称规则见[外部路由配置](../external-routing/configuration.md#route-union-与-binding-校验)。外部 artifact 的加载与空 route 行为见[外部路由启动与 binding](../EXTERNAL-ROUTING.md#启动与-binding)。
 
-`routes: []` 表示 external routing 已配置但没有执行 route。此状态不创建 external admission runtime、Processor runner、HTTP Agents 或 MCP connection manager；custom-only definitions 仍保留 unavailable binding。隐藏名称不会出现在 `tools/list`，调用返回 `Unknown tool`。
-
-effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](../TOOLS.md)。
+catalog 的合并、exposure、名称冲突与调用校验机制见[工具开发](../TOOLS.md#catalogexposure-与调用)；启动资源装配与失败清理见[系统架构](../ARCHITECTURE.md#启动与固定运行时)。
 
 ---
 

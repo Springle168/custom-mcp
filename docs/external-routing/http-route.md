@@ -38,7 +38,9 @@ Request 是只含一个 call 的 JSON object：
 - call 包含 `id`、`name` 和 object 类型的 `arguments`；
 - 可选 `extensions` 只接受非空、非 `custom-mcp` namespace 的 object 值。
 
-`id` 使用 MCP invocation call id，`name` 使用源 definition 的稳定名称，不使用对外别名；`definitionId` 不进入 canonical protocol。
+`id` 使用 MCP invocation call id；`definitionId` 不进入 canonical protocol。
+
+进入 request stage 前，`name` 使用源 definition 的稳定名称，不使用对外别名。发送给 endpoint 的名称与参数取决于 request stage 的输出，遵循前述 [stage 契约](#stage-与-http-exchange)。
 
 Response 只允许两种互斥形状之一：
 

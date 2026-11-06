@@ -46,7 +46,9 @@
 
 `definitionId` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，在整个有序 `routes[]` 内唯一，并引用所属 Tool config 中的 definition reference。调用按唯一 `definitionId` 直接定位 route，声明顺序只用于稳定加载、诊断和启动日志，不提供 route 优先级。
 
-Binding 不按稳定名称或对外别名匹配。HTTP canonical request 与下游 MCP `tools/call` 使用源 definition 的稳定 `name`，不使用 `$alias` 编译出的对外名称。MCP route 不调用 `tools/list`，不导入下游 Tool，也不额外映射下游 Tool name。
+Binding 不按稳定名称或对外别名匹配，`$alias` 不改变 route 的绑定身份。
+
+HTTP route 的 request stage 接收以稳定名称构造的 canonical request，后续名称与参数处理见[HTTP stage 契约](http-route.md#stage-与-http-exchange)。MCP route 直接使用稳定名称作为下游 `tools/call` 目标，不调用 `tools/list` 或映射下游 Tool，见[MCP route](mcp-route.md)。
 
 Route 只能引用 custom-only definition。编译层按源 definition 的稳定 `name` 判定 built-in override，保留内置 executor；为它声明 route 会使启动失败，配置别名不改变该限制。custom-only definition 可以不配置 route，此时为 deterministic unavailable binding。
 
