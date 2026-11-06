@@ -38,6 +38,8 @@ handler 接收两类独立输入：workspace `ToolRuntimeContext` 与单次 `Too
 - built-in 保持 canonical 顺序，override 保持原位置。合并后按稳定名称校验并应用 workspace selector，过滤不重排。
 - 仅在 workspace exposed entries 中检查最终对外名称唯一性，然后派生 definitions view 和以对外名称为 key 的调用 lookup。隐藏工具仍完成源声明、继承、Schema 与 route 校验，但不参与对外名称冲突检查。
 
+绑定阶段只为已验证的执行意图填入 executor，不重新分类、合并或编译。已配置 route 的 entry 必须取得对应的 external executor，缺少 executor 时绑定失败，不能降为 unavailable。
+
 对外名称冲突在启动期拒绝，不能依赖会话收窄消除。名称交换或占用另一个别名释放的稳定名称合法；例如 `a → b`、`b → c` 暴露 `b` 和 `c`，各自直接指向对应 entry。调用不递归解析别名，也不按名称再次选择 executor；配置别名后稳定名称没有额外入口。
 
 `createWorkspaceToolService()` 包装已绑定 catalog，`tools/list` 与 `tools/call` 共享 exposure 边界。隐藏与未知名称统一返回 `Unknown tool: <调用名称>`，不运行 validator 或 executor。会话工具视图只能进一步收窄这个边界，见 [setToolList](request-header-policy/on-initialize/set-tool-list.md)。
@@ -48,7 +50,9 @@ handler 接收两类独立输入：workspace `ToolRuntimeContext` 与单次 `Too
 - 使用显式 Schema 的 override 同时满足 workspace 对外 contract 和 built-in implementation contract；显式 Schema 由 definition 编译器编译一次，catalog 和 session 不重复编译。
 - custom-only 通过 configured contract 后进入绑定的外部 route；没有 route 时返回标准 unavailable 工具错误。
 
-客户端错误和 CALL/RESULT 主日志使用本次对外调用名称。external executor 接收 entry 的稳定名称，HTTP canonical request 的 `name` 和下游 MCP 的目标名都使用稳定名称；别名不改写参数、调用 identity 或取消信号。
+客户端错误和 CALL/RESULT 主日志使用本次对外调用名称。external executor 接收 entry 的稳定名称与原始参数；别名映射不改写参数、调用 identity 或取消信号。
+
+HTTP route 在 request stage 前用稳定名称构造 canonical request，后续 stage 仍可按其契约处理名称和参数，见[HTTP route](external-routing/http-route.md#stage-与-http-exchange)。MCP route 直接使用稳定名称作为下游调用目标，见[MCP route](external-routing/mcp-route.md#下游共享与身份隔离)。
 
 catalog 固定性、snapshot 分工与共享 service 生命周期见[系统架构](ARCHITECTURE.md#启动与固定运行时)。
 

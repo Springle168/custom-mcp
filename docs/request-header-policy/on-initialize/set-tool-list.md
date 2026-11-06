@@ -18,7 +18,7 @@ grammar 合法但未在 `W` 中暴露的名称正常过滤，不透露它属于�
 
 选择依据是编译后的对外调用名称，适用于内置与 custom-only 工具；workspace exposure 则使用稳定名称。配置 `$alias` 后，稳定名称不是额外的会话 selector，definition reference id 也不参与选择。
 
-例如 `read` 的对外名称为 `read_tool`，且没有其他工具对外使用 `read` 时，`{"toolList":["read_tool"]}` 选中该工具，`{"toolList":["read"]}` 不选中。不能通过任一名称重新启用 workspace 隐藏工具、替换 definition 或改变 external binding。workspace 对外名称冲突在启动期拒绝，不依赖本功能消除。
+例如 `read` 的对外名称为 `read_tool`，且没有其他工具对外使用 `read` 时，`{"toolList":["read_tool"]}` 选中该工具，`{"toolList":["read"]}` 不选中。不能通过任一名称重新启用 workspace 隐藏工具、替换 definition 或改变 external binding。
 
 ## 准入与资源边界
 

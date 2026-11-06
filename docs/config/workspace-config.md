@@ -107,7 +107,7 @@ Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny
 
 例如源 definition 为 `{"name":"read","$alias":"read_tool","$inheritInputSchema":true}` 时，workspace 使用 `enabled: ["read"]` 选择它，客户端使用 `read_tool` 列出和调用它。会话 [setToolList](../request-header-policy/on-initialize/set-tool-list.md) 使用对外名称，只能进一步收窄 workspace 集合。
 
-全部源 definition 和 route 均完成启动期校验，然后仅检查 workspace 暴露集合的最终对外名称冲突；隐藏工具不参与该冲突检查。完整合并与调用规则见[工具开发](../TOOLS.md#catalogexposure-与调用)。
+workspace 暴露集合的最终对外名称必须唯一，隐藏工具不参与该冲突检查。完整合并与冲突规则见[工具开发](../TOOLS.md#catalogexposure-与调用)。
 
 ---
 

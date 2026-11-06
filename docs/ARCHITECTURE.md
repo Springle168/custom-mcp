@@ -38,11 +38,11 @@ CLI workspace id
 
 snapshot 与 catalog 在启动期构建，职责独立：snapshot 提供 workspace 运行能力，catalog 持有 definitions、validators、executor bindings、source metadata 与 exposure。`ConfigStore` 只提供只读 snapshot、identity 和状态，不提供 reload 或 mutation API；修改配置、策略、definition 或 route 后需要重启。
 
-源声明、编译结果和已绑定 catalog 分开建模。加载层只读取 Tool config 与源声明、保留来源及可选 external routing config 路径；独立编译层通过只读 built-in contracts 解释别名和继承，产出标准 definition、类别和 validator。外部路由层消费 reference id、稳定名称与类别的 binding 摘要，不解释源指令；业务 executor、workspace service 和 session service 只消费最终 catalog。
+源声明、编译结果和已绑定 catalog 分开建模。definition 编译层只消费源声明与原始 built-in contracts，不读取文件或持有执行资源；外部路由层消费已编译的 binding 摘要，工具服务消费最终 catalog。名称身份、校验与绑定契约见[工具开发](TOOLS.md#definition-与-executor)。
 
-应用运行时串联各阶段。catalog 无资源准备阶段保留已验证的执行意图，不持有 endpoint/server 配置或 external executor；绑定阶段只填入 executor，不重新分类、编译或解释配置。稳定名称匹配内置实现，reference id 选择 external route，对外名称定位调用 entry；具体契约见[工具开发](TOOLS.md#catalogexposure-与调用)。
+全部 definition、route binding、selector 和对外名称冲突校验成功后才构造 workspace-owned runner、HTTP Agents 和下游连接管理器。隐藏 definition 与 route 仍完整校验，资源按全部已配置 route 创建，不因 exposure 裁剪。
 
-全部 definition、route binding、selector 和对外名称冲突校验成功后才构造 workspace-owned runner、HTTP Agents 和下游连接管理器。隐藏 definition 与 route 仍完整校验，资源按全部已配置 route 创建，不因 exposure 裁剪。已配置 route 缺少 executor 时绑定失败，不能降为 unavailable；异步 `loadApplicationRuntime()` 等待已创建 external runtime 关闭后才传播绑定失败，不发布 service。
+资源创建后若 catalog 绑定失败，异步 `loadApplicationRuntime()` 等待已创建 external runtime 关闭后才传播启动错误，不发布工具服务。
 
 资源构造不发出下游请求；MCP warm-up 在 listener 监听并写入启动摘要后启动，失败由安全 diagnostic 报告，不阻止其他工具工作。具体装配关系见[外部路由](EXTERNAL-ROUTING.md)。
 
@@ -76,7 +76,7 @@ POST → SDK dispatch（可带 POST-local 请求头上下文）
 
 工具准入、输入校验与 executor 的可恢复失败进入统一工具结果管线；SDK 协议级错误不属于 `ToolCallResult`。完整结果契约、字段所有权和适配语义见[工具返回结果](TOOL-RESULTS.md)。
 
-workspace exposure 使用稳定名称，会话选择与调用使用对外名称，二者都不能绕过隐藏边界。别名只改变列表和调用入口，不影响 invocation identity、取消或结果适配；external executor 接收稳定名称，CALL/RESULT 主日志使用本次调用名称。
+workspace exposure 使用稳定名称，会话选择与调用使用对外名称，二者都不能绕过隐藏边界。调用名称映射不改变 invocation identity、取消或结果适配。
 
 ## 状态与资源所有权
 
