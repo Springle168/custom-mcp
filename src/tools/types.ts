@@ -16,7 +16,7 @@ export type ToolCallResult = Omit<MCPCallToolResult, 'content' | 'isError'> & {
 
 export interface ToolDefinition {
   readonly name: string;
-  readonly description: string;
+  readonly description?: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
 }
 
@@ -27,6 +27,9 @@ export type ToolExecutor = (
 ) => Promise<ToolCallResult>;
 
 export interface MCPTool {
-  readonly definition: ToolDefinition & { readonly name: ToolName };
+  readonly definition: ToolDefinition & {
+    readonly name: ToolName;
+    readonly description: string;
+  };
   readonly handler: ToolExecutor;
 }

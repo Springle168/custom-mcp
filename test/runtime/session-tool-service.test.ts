@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileWorkspaceToolCatalog, type CompiledBuiltInTool } from '../../src/tools/catalog.js';
-import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
+import type { CompiledCustomToolDefinition } from '../../src/tools/definition-compiler.js';
 import { createWorkspaceToolService, type WorkspaceToolService } from '../../src/tools/index.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { JsonObject } from '../../src/config/json-file.js';
@@ -155,8 +155,14 @@ async function testDefaultEmptyAndSessionIsolation(): Promise<void> {
   );
 }
 
-function custom(name: string, schema: JsonObject): CompiledCustomToolDefinition {
+function custom(
+  name: string,
+  schema: JsonObject,
+  kind: CompiledCustomToolDefinition['kind'] = 'custom-only',
+): CompiledCustomToolDefinition {
   return {
+    stableName: name,
+    kind,
     definition: Object.freeze({ name, description: name, inputSchema: schema }),
     validator: compileInputSchemaValidator(schema),
     source: {
@@ -189,7 +195,7 @@ async function testCatalogContractsAndExternalBindingsRemainShared(): Promise<vo
   const catalog = compileWorkspaceToolCatalog({
     builtInTools: [builtIn],
     customDefinitions: [
-      custom('override_tool', { type: 'object', required: ['effective'] }),
+      custom('override_tool', { type: 'object', required: ['effective'] }, 'built-in-override'),
       custom('external_tool', { type: 'object', required: ['value'] }),
       custom('unavailable_tool', { type: 'object' }),
       custom('disabled_tool', { type: 'object' }),

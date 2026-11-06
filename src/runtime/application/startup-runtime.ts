@@ -4,14 +4,16 @@ import {
   type LoadRuntimeConfigOptions,
 } from '../../config.js';
 import {
-  compileWorkspaceToolCatalog,
+  bindWorkspaceToolCatalog,
+  prepareWorkspaceToolCatalog,
   type CompiledWorkspaceToolCatalog,
 } from '../../tools/catalog.js';
+import { loadCustomToolConfig } from '../../tools/custom-tool-config.js';
+import { compileCustomToolDefinitions } from '../../tools/definition-compiler.js';
 import {
-  loadCustomToolConfig,
-  type LoadedCustomToolConfig,
-} from '../../tools/custom-tool-config.js';
-import type { CompiledExternalRoutingConfig } from '../../tools/external-routing/config.js';
+  loadExternalRoutingConfig,
+  type CompiledExternalRoutingConfig,
+} from '../../tools/external-routing/config.js';
 import {
   createExternalRoutingExecutor,
   type CreatedExternalRoutingExecutor,
@@ -39,42 +41,63 @@ export interface LoadedApplicationRuntime extends LoadedRuntimeConfig {
   close(): Promise<void>;
 }
 
-/** Loads and compiles every startup artifact before the HTTP listener is created. */
-export function loadApplicationRuntime(
+export interface StartupRuntimeDependencies {
+  readonly createExternalRouting: typeof createExternalRoutingExecutor;
+}
+
+/** Validates every startup artifact before constructing application-owned resources. */
+export async function loadApplicationRuntime(
   options: LoadApplicationRuntimeOptions,
-): LoadedApplicationRuntime {
+  dependencies: StartupRuntimeDependencies = {
+    createExternalRouting: createExternalRoutingExecutor,
+  },
+): Promise<LoadedApplicationRuntime> {
   const loadedConfig = loadRuntimeConfigWithIdentity(options);
   const builtInTools = getCompiledBuiltInTools();
-  const builtInToolNames = new Set(builtInTools.map((tool) => tool.definition.name));
-  const loadedTools = loadConfiguredTools(
-    loadedConfig.workspaceTools.toolConfigFile,
-    builtInToolNames,
-  );
-  const catalogOptions = {
+  const toolConfigFile = loadedConfig.workspaceTools.toolConfigFile;
+  const loadedTools =
+    toolConfigFile === undefined ? undefined : loadCustomToolConfig(toolConfigFile);
+  const customDefinitions = compileCustomToolDefinitions(
+    loadedTools?.definitions ?? [],
     builtInTools,
-    customDefinitions: loadedTools?.definitions ?? [],
+  );
+  const externalRoutingConfig =
+    loadedTools?.externalRoutingConfigFilePath === undefined
+      ? undefined
+      : loadExternalRoutingConfig(
+          loadedTools.externalRoutingConfigFilePath,
+          customDefinitions.map((custom) =>
+            Object.freeze({
+              definitionId: custom.source.referenceId,
+              toolName: custom.stableName,
+              builtIn: custom.kind === 'built-in-override',
+            }),
+          ),
+        );
+
+  // Preparation retains route identities, not endpoint/server configuration or
+  // executors. Hidden definitions and routes are validated before resources exist.
+  const preparedCatalog = prepareWorkspaceToolCatalog({
+    builtInTools,
+    customDefinitions,
     exposure: loadedConfig.workspaceTools.exposure,
     workspaceConfigFilePath: loadedConfig.snapshot.workspaceConfigFilePath,
-  } as const;
-
-  // Complete all config, cross-file binding, and exposure validation before
-  // constructing application-owned runner and Agent resources.
-  const validatedCatalog = compileWorkspaceToolCatalog(catalogOptions);
-  const externalRoutingConfig = loadedTools?.externalRouting;
+    externalRouteDefinitionIds: new Set(externalRoutingConfig?.routesByDefinitionId.keys()),
+  });
   if (
     externalRoutingConfig === undefined ||
     externalRoutingConfig.routesByDefinitionId.size === 0
   ) {
     return Object.freeze({
       ...loadedConfig,
-      toolCatalog: validatedCatalog,
+      toolCatalog: bindWorkspaceToolCatalog(preparedCatalog),
       ...(externalRoutingConfig === undefined ? {} : { externalRoutingConfig }),
       warmUp: () => CLOSED_APPLICATION_RUNTIME,
       close: () => CLOSED_APPLICATION_RUNTIME,
     });
   }
 
-  const externalRouting = createExternalRoutingExecutor(externalRoutingConfig, {
+  const externalRouting = dependencies.createExternalRouting(externalRoutingConfig, {
     ...(options.onExternalProcessorDrain === undefined
       ? {}
       : { onProcessorDrain: options.onExternalProcessorDrain }),
@@ -82,10 +105,23 @@ export function loadApplicationRuntime(
       ? {}
       : { onMcpConnectionDiagnostic: options.onMcpConnectionDiagnostic }),
   });
-  const toolCatalog = compileWorkspaceToolCatalog({
-    ...catalogOptions,
-    externalBindingsByDefinitionId: externalRouting.bindingsByDefinitionId,
-  });
+  let toolCatalog: CompiledWorkspaceToolCatalog;
+  try {
+    toolCatalog = bindWorkspaceToolCatalog(preparedCatalog, externalRouting.bindingsByDefinitionId);
+  } catch (error: unknown) {
+    // A binding omission is a startup failure, never an unavailable route. Wait
+    // for the resource owner to drain before allowing startup rejection to escape.
+    try {
+      await externalRouting.executor.close();
+    } catch (closeError: unknown) {
+      throw new AggregateError(
+        [error, closeError],
+        'Catalog binding and external runtime cleanup failed.',
+        { cause: closeError },
+      );
+    }
+    throw error;
+  }
 
   return Object.freeze({
     ...loadedConfig,
@@ -95,14 +131,4 @@ export function loadApplicationRuntime(
     warmUp: () => externalRouting.executor.warmUp(),
     close: () => externalRouting.executor.close(),
   });
-}
-
-function loadConfiguredTools(
-  toolConfigFile: string | undefined,
-  builtInToolNames: ReadonlySet<string>,
-): LoadedCustomToolConfig | undefined {
-  if (toolConfigFile === undefined) {
-    return undefined;
-  }
-  return loadCustomToolConfig(toolConfigFile, builtInToolNames);
 }

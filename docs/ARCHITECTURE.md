@@ -10,7 +10,7 @@
 | 配置 | 加载全局索引和 selected workspace，校验值与路径、编译访问策略、应用允许的环境变量覆盖，构建 snapshot 与 identity | 工具不直接读取配置文件或环境变量 |
 | 应用运行时 | 组合 snapshot、catalog、日志、HTTP listener、会话与外部资源，控制启动和关闭 | 配置、catalog 校验先于外部资源构造；资源由创建它的所有者关闭 |
 | HTTP/MCP | 接入 Streamable HTTP，管理会话准备、初始化发布和 SDK list/call 接线 | 协议校验交给 SDK；核心接线不解释请求头功能规则 |
-| 工具目录与执行 | 编译 definition、validator、executor binding 和 exposure，通过同一 service 提供列表与调用 | 对外 definition 与内部 executor 分离；隐藏工具不能绕过 exposure 调用 |
+| 工具目录与执行 | 编译源 definition，准备 effective/exposed catalog，绑定 executor，通过同一 service 提供列表与调用 | 稳定身份、对外名称和 reference id 分离；声明编译不读取文件或持有执行资源 |
 | 业务工具 | 消费 workspace 能力和单次 invocation，执行工具特有的编排 | 复用文件访问、锁、进程执行等基础设施，不重建共享安全边界 |
 | 引擎 | 文本替换、范围选择、字节分类、输出与报告解析 | 算法与文件系统、网络、进程 I/O 分离 |
 | 系统基础设施 | 文件访问与读取、有限并发、日志、锁和 Gradle 执行 | 持有实际 I/O 与并发保护；领域特有资源不包装成通用调度框架 |
@@ -24,8 +24,10 @@ CLI workspace id
   → 全局索引校验与 reference 选择
   → selected workspace 校验、策略编译、env override
   → immutable runtime snapshot + identity
-  → Tool definitions / external routing artifacts 加载与交叉校验
-  → effective catalog → exposure 校验
+  → Tool config / 源 definitions 加载
+  → definition 编译（传入 built-in contracts）
+  → external routing artifacts 加载与 binding 校验
+  → catalog 准备：稳定身份合并 → exposure → 对外名称冲突校验
   → 构造需要的 external runtime，绑定最终 catalog
   → ConfigStore + shared workspace tool service + logger
   → HTTP/MCP 接线与 listener
@@ -36,7 +38,13 @@ CLI workspace id
 
 snapshot 与 catalog 在启动期构建，职责独立：snapshot 提供 workspace 运行能力，catalog 持有 definitions、validators、executor bindings、source metadata 与 exposure。`ConfigStore` 只提供只读 snapshot、identity 和状态，不提供 reload 或 mutation API；修改配置、策略、definition 或 route 后需要重启。
 
-外部路由的配置、binding 与 exposure 校验成功后才构造 workspace-owned runner、HTTP Agents 和下游连接管理器。构造不发出下游请求；MCP warm-up 在 listener 监听并写入启动摘要后启动，失败由安全 diagnostic 报告，不阻止其他工具工作。具体装配关系见[外部路由](EXTERNAL-ROUTING.md)。
+源声明、编译结果和已绑定 catalog 分开建模。加载层只读取 Tool config 与源声明、保留来源及可选 external routing config 路径；独立编译层通过只读 built-in contracts 解释别名和继承，产出标准 definition、类别和 validator。外部路由层消费 reference id、稳定名称与类别的 binding 摘要，不解释源指令；业务 executor、workspace service 和 session service 只消费最终 catalog。
+
+应用运行时串联各阶段。catalog 无资源准备阶段保留已验证的执行意图，不持有 endpoint/server 配置或 external executor；绑定阶段只填入 executor，不重新分类、编译或解释配置。稳定名称匹配内置实现，reference id 选择 external route，对外名称定位调用 entry；具体契约见[工具开发](TOOLS.md#catalogexposure-与调用)。
+
+全部 definition、route binding、selector 和对外名称冲突校验成功后才构造 workspace-owned runner、HTTP Agents 和下游连接管理器。隐藏 definition 与 route 仍完整校验，资源按全部已配置 route 创建，不因 exposure 裁剪。已配置 route 缺少 executor 时绑定失败，不能降为 unavailable；异步 `loadApplicationRuntime()` 等待已创建 external runtime 关闭后才传播绑定失败，不发布 service。
+
+资源构造不发出下游请求；MCP warm-up 在 listener 监听并写入启动摘要后启动，失败由安全 diagnostic 报告，不阻止其他工具工作。具体装配关系见[外部路由](EXTERNAL-ROUTING.md)。
 
 ## 会话与单次工具调用
 
@@ -49,7 +57,8 @@ POST → SDK dispatch（可带 POST-local 请求头上下文）
   → tools/call：创建 invocation identity，读取一次 snapshot
   → 派生 ToolRuntimeContext，捕获本次结果适配方案
   → CALL 日志
-  → 会话工具准入
+  → 会话工具准入（对外名称）
+  → workspace 对外名称 lookup
   → workspace effective input validation
   → built-in implementation validation（适用时）
   → executor
@@ -66,6 +75,8 @@ POST → SDK dispatch（可带 POST-local 请求头上下文）
 请求头实现通过内部阶段契约接入会话准备、POST context 和结果适配。应用提供无初始化覆盖时的默认会话结果入口，初始化准备返回最终会话选项，HTTP 与 Server 将其中的结果准备函数传到 handler；结果参数固定于会话，每次调用仍独立计算启用方案。HTTP、工具调用核心与通用 Logger 消费阶段结果，不解析功能规则；这些 hook 是可信同步内部实现，不是动态插件 API。具体阶段和隔离条件见[请求头策略](REQUEST-HEADER-POLICY.md#内部阶段扩展点)。
 
 工具准入、输入校验与 executor 的可恢复失败进入统一工具结果管线；SDK 协议级错误不属于 `ToolCallResult`。完整结果契约、字段所有权和适配语义见[工具返回结果](TOOL-RESULTS.md)。
+
+workspace exposure 使用稳定名称，会话选择与调用使用对外名称，二者都不能绕过隐藏边界。别名只改变列表和调用入口，不影响 invocation identity、取消或结果适配；external executor 接收稳定名称，CALL/RESULT 主日志使用本次调用名称。
 
 ## 状态与资源所有权
 

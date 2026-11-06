@@ -96,7 +96,7 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
       },
     ],
   });
-  const application = startApplication({
+  const application = await startApplication({
     homeDir: HOME_DIR,
     workspaceId: 'header-stages',
     env: {},
@@ -238,6 +238,204 @@ async function testProductionCompositionInstallsBothStages(): Promise<void> {
   }
 }
 
+async function testAliasesThroughProductionSessionAndLogs(): Promise<void> {
+  const port = await availablePort();
+  const toolConfigFile = path.join(FIXTURES_DIR, 'alias-tools.json');
+  const definitions = [
+    {
+      id: 'custom-reference',
+      declaration: {
+        name: 'custom_tool',
+        $alias: 'custom_call',
+        inputSchema: {
+          type: 'object',
+          properties: { value: { type: 'string' } },
+          required: ['value'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      id: 'read-reference',
+      declaration: { name: 'read', $alias: 'read_call', $inheritInputSchema: true },
+    },
+    {
+      id: 'write-reference',
+      declaration: {
+        name: 'write_file',
+        $alias: 'write_call',
+        $inheritInputSchema: true,
+        $inheritTopDescription: true,
+      },
+    },
+  ];
+  for (const { id, declaration } of definitions) {
+    await fs.writeFile(path.join(FIXTURES_DIR, `${id}.json`), JSON.stringify(declaration), 'utf8');
+  }
+  await fs.writeFile(
+    toolConfigFile,
+    JSON.stringify({
+      version: 2,
+      definitions: definitions.map(({ id }) => ({
+        id,
+        toolDefinitionFile: path.join(FIXTURES_DIR, `${id}.json`),
+      })),
+    }),
+    'utf8',
+  );
+  await writeSplitConfigFixture(CONFIG_FILE, {
+    workspaces: [
+      {
+        id: 'alias-session',
+        rootDir: ROOT_DIR,
+        host: '127.0.0.1',
+        port,
+        lineEnding: 'auto',
+        tools: { toolConfigFile, enabled: ['custom_tool', 'write_file', 'read'] },
+        rules: {
+          requestHeaders: {
+            onInitialize: [{ readHeader: 'x-session-tools', apply: 'setToolList' }],
+          },
+        },
+      },
+    ],
+  });
+  const application = await startApplication({
+    homeDir: HOME_DIR,
+    workspaceId: 'alias-session',
+    env: {},
+  });
+  try {
+    await once(application.listener, 'listening');
+    const url = `http://127.0.0.1:${port}/mcp`;
+    async function session(toolList: string[], id: number) {
+      const initialized = await post(
+        url,
+        {
+          jsonrpc: '2.0',
+          id,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            capabilities: {},
+            clientInfo: { name: 'alias-session-test', version: '1' },
+          },
+        },
+        { 'x-session-tools': JSON.stringify({ toolList }) },
+      );
+      assertEqual(initialized.status, 200, 'Alias session initialize must succeed');
+      assert(initialized.sessionId !== null, 'Alias session must receive a session ID');
+      const result = InitializeResultSchema.parse(responseResult(initialized.message));
+      const headers = {
+        'mcp-session-id': initialized.sessionId,
+        'mcp-protocol-version': result.protocolVersion,
+      };
+      const notification = await post(
+        url,
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        headers,
+      );
+      assertEqual(notification.status, 202, 'Alias session must complete initialization');
+      return headers;
+    }
+
+    const headers = await session(
+      ['custom_call', 'read', 'custom_tool', 'read_call', 'write_file', 'unknown_call'],
+      101,
+    );
+    const listed = await post(url, { jsonrpc: '2.0', id: 102, method: 'tools/list' }, headers);
+    const tools = ListToolsResultSchema.parse(responseResult(listed.message)).tools;
+    assertEqual(
+      tools.map((tool) => tool.name).join(','),
+      'read_call,custom_call',
+      'setToolList must use public names and retain catalog order rather than selector order',
+    );
+    for (const tool of tools) {
+      assert(!('description' in tool), 'Omitted descriptions must remain absent on the wire');
+      for (const directive of ['$alias', '$inheritInputSchema', '$inheritTopDescription']) {
+        assert(!(directive in tool), 'Source directives must not escape into MCP definitions');
+      }
+    }
+    const rawList = responseResult(listed.message);
+    assert(
+      typeof rawList === 'object' &&
+        rawList !== null &&
+        'tools' in rawList &&
+        Array.isArray(rawList.tools),
+      'Raw MCP list must contain tool definitions',
+    );
+    for (const tool of rawList.tools) {
+      assert(
+        typeof tool === 'object' && tool !== null && !('description' in tool),
+        'Raw MCP tools must omit top-level descriptions without removing schema descriptions',
+      );
+    }
+
+    const calls = [
+      { name: 'read_call', arguments: { include: [path.join(ROOT_DIR, 'sample.txt')] }, ok: true },
+      { name: 'custom_call', arguments: { value: 'accepted' }, error: 'no execution route' },
+      { name: 'custom_call', arguments: {}, error: 'custom_call' },
+      { name: 'read', arguments: {}, error: 'Unknown tool: read' },
+      { name: 'custom_tool', arguments: {}, error: 'Unknown tool: custom_tool' },
+      { name: 'write_call', arguments: {}, error: 'Unknown tool: write_call' },
+    ];
+    for (const [index, call] of calls.entries()) {
+      const reply = await post(
+        url,
+        {
+          jsonrpc: '2.0',
+          id: 110 + index,
+          method: 'tools/call',
+          params: { name: call.name, arguments: call.arguments },
+        },
+        headers,
+      );
+      assertEqual(reply.status, 200, 'Alias calls must retain the normal MCP result envelope');
+      const result = CallToolResultSchema.parse(responseResult(reply.message));
+      assertEqual(result.isError === true, !call.ok, 'Alias calls must keep execution/error state');
+      if (call.error !== undefined) {
+        assertIncludes(JSON.stringify(result.content), call.error, 'Errors must use public names');
+      } else {
+        assertIncludes(
+          JSON.stringify(result.content),
+          'Production fixture.',
+          'Built-in alias must execute the original read implementation',
+        );
+      }
+      for (const secret of ['read-reference', 'custom-reference', toolConfigFile]) {
+        assertNotIncludes(JSON.stringify(result), secret, 'Tool results must not reveal sources');
+      }
+    }
+
+    const stableOnlyHeaders = await session(['read', 'custom_tool', 'write_file'], 120);
+    const stableOnly = await post(
+      url,
+      { jsonrpc: '2.0', id: 121, method: 'tools/list' },
+      stableOnlyHeaders,
+    );
+    assertEqual(
+      ListToolsResultSchema.parse(responseResult(stableOnly.message)).tools.length,
+      0,
+      'Stable names must not act as compatibility session selectors',
+    );
+  } finally {
+    await application.close();
+  }
+
+  const logs = await fs.readdir(LOGS_DIR, { recursive: true });
+  const log = (
+    await Promise.all(
+      logs
+        .filter((file) => file.endsWith('.log'))
+        .map((file) => fs.readFile(path.join(LOGS_DIR, file), 'utf8')),
+    )
+  ).join('\n');
+  assertIncludes(log, '← CALL read_call\n', 'CALL main log must use the requested built-in alias');
+  assertIncludes(log, '→ OK read_call ', 'RESULT main log must use the requested built-in alias');
+  assertIncludes(log, '← CALL custom_call\n', 'CALL main log must use the custom-only alias');
+  assertIncludes(log, '→ FAIL custom_call ', 'RESULT main log must use the custom-only alias');
+}
+
 await runTestSuite({
   title: 'Testing production request-header extension composition',
   beforeAll: async () => {
@@ -257,6 +455,10 @@ await runTestSuite({
     {
       name: 'production composition installs initialization and result extensions',
       run: testProductionCompositionInstallsBothStages,
+    },
+    {
+      name: 'aliases preserve production MCP session selection, omission and main log names',
+      run: testAliasesThroughProductionSessionAndLogs,
     },
   ],
 });

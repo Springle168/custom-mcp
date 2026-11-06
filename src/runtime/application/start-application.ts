@@ -20,9 +20,11 @@ export interface RunningApplication {
 }
 
 /** Composes application-owned resources and starts the listener without installing process handlers. */
-export function startApplication(options: LoadRuntimeConfigOptions): RunningApplication {
+export async function startApplication(
+  options: LoadRuntimeConfigOptions,
+): Promise<RunningApplication> {
   const diagnostics = new ApplicationDiagnostics();
-  const runtime = loadApplicationRuntime({
+  const runtime = await loadApplicationRuntime({
     ...options,
     onExternalProcessorDrain: diagnostics.onExternalProcessorDrain,
     onMcpConnectionDiagnostic: diagnostics.onMcpConnectionDiagnostic,

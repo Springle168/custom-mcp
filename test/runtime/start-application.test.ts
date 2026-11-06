@@ -63,7 +63,11 @@ async function testApplicationComposesSelectedServiceAndClosesResources(): Promi
     ],
   });
   const signalCounts = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
-  const application = startApplication({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
+  const application = await startApplication({
+    homeDir: HOME_DIR,
+    workspaceId: 'selected',
+    env: {},
+  });
   const first = new Client({ name: 'application-first', version: '1.0.0' });
   const second = new Client({ name: 'application-second', version: '1.0.0' });
   let closed = false;
@@ -142,10 +146,10 @@ async function testApplicationComposesSelectedServiceAndClosesResources(): Promi
   }
 }
 
-function testInvalidSelectionFailsBeforeListening(): void {
+async function testInvalidSelectionFailsBeforeListening(): Promise<void> {
   let failure: unknown;
   try {
-    startApplication({ homeDir: HOME_DIR, workspaceId: 'missing', env: {} });
+    await startApplication({ homeDir: HOME_DIR, workspaceId: 'missing', env: {} });
   } catch (error: unknown) {
     failure = error;
   }

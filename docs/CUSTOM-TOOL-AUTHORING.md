@@ -2,7 +2,7 @@
 
 本文说明如何为 `custom-mcp` 编写 custom-only Tool 的 definition，以及与该 Tool 配合的 Processor 程序。
 
-这里的 custom-only Tool 是具有独立名称和外部执行实现的自定义工具。与内置 Tool 重名的 definition 是合法的 override，而不是 custom-only Tool，不属于本文范围。为避免意外覆盖，应使用明确、稳定且不会与内置 Tool 冲突的名称；采用项目或用途前缀通常更容易保持唯一。
+这里的 custom-only Tool 是具有独立稳定名称和外部执行实现的自定义工具。源 definition 的 `name` 与内置 Tool 同名时属于 built-in override，不属于本文范围；`$alias` 不参与该判定。为避免意外覆盖，应使用明确、稳定且不会与内置 Tool 冲突的 `name`；采用项目或用途前缀通常更容易保持唯一。
 
 本文是可脱离仓库独立提供的编写规范，只描述文件与进程本身必须满足的契约，不依赖其他仓库文档或链接。
 本文不涉及如何注册 definition、注册 Processor、选择处理阶段、绑定执行 route 或配置 HTTP endpoint。
@@ -11,15 +11,22 @@
 
 ## 编写 Tool definition
 
-每个 Tool definition 是一个 JSON object，顶层只能包含以下三个必填字段：
+源 Tool definition 是一个 JSON object，顶层只允许以下字段。编译后提供给 MCP 客户端的是标准 definition，不包含 `$alias` 或继承指令。
 
 | 字段 | 类型 | 要求 |
 |-|-|-|
-| `name` | string | Tool identity，必须匹配 `^[A-Za-z0-9._-]{1,128}$`；要作为 custom-only Tool，还不得与内置 Tool 名称冲突。 |
-| `description` | string | 至少包含一个非 whitespace 字符；内容会直接提供给调用 Tool 的 AI。 |
-| `inputSchema` | JSON Schema object | Tool 参数的 JSON Schema Draft 2020-12 schema；根 `type` 必须精确为 `"object"`。 |
+| `name` | 必填 string | 稳定名称；作为 custom-only Tool 时不得与内置 Tool 稳定名称冲突。 |
+| `$alias` | 可选 string | MCP 列表和调用使用的对外名称；省略时使用稳定名称。 |
+| `description` | 可选 string | 至少包含一个非 whitespace 字符；内容直接提供给调用 Tool 的 AI。 |
+| `inputSchema` | 必填 JSON Schema object | custom-only Tool 的完整输入 Schema；根 `type` 必须精确为 `"object"`。 |
+| `$inheritTopDescription` | 可选 boolean | custom-only 只允许省略或 `false`；`true` 因缺少内置继承对象而报错。 |
+| `$inheritInputSchema` | 可选 boolean | custom-only 只允许省略或 `false`；不能替代必填的 `inputSchema`。 |
 
-不能添加 executor、Processor、route、输出格式或其他顶层字段。definition 只负责告诉 MCP 客户端 Tool 的名称、用途与输入契约。
+`name` 与 `$alias` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，区分大小写，不 trim 或归一化；别名可以等于自身稳定名称。未知字段、错误类型与 `null` 均无效，不能添加 executor、Processor、route 或输出格式等顶层字段。
+
+同一组 custom definitions 的稳定名称必须唯一，即使别名不同或工具被隐藏也不能重复。对外名称仅在 workspace 暴露集合内要求唯一，冲突在启动期拒绝，不能依赖会话工具筛选消除。别名可以使用另一个工具通过改名释放的稳定名称；调用直接定位最终对外名称，不递归解析别名。
+
+稳定名称、对外名称和注册 definition 时使用的 reference id 各自独立。配置别名后，稳定名称没有额外的调用入口；workspace 工具启停仍使用稳定名称，会话工具选择使用对外名称。外部 route 通过 reference id 绑定，HTTP canonical request 与下游 MCP `tools/call` 都使用稳定名称；别名不改写参数或下游调用名称。
 
 ### `description` 与参数说明
 
@@ -32,6 +39,8 @@ Tool description 和 property description 都是 AI 选择并调用 Tool 时使�
 
 不要在 description 中展开 Processor、HTTP 协议、内部算法、本地路径或其他调用方不需要了解的实现细节。过长的描述会增加上下文成本，也可能弱化关键约束。
 
+省略顶层 `description` 时，最终 definition 不包含该属性，不补空字符串；输入 Schema 中的参数描述仍保留。custom-only 不能通过 `$inheritTopDescription: true` 获取其他工具的描述，`false` 与省略等价，可以与显式描述并存。
+
 ### `inputSchema` 约束
 
 `inputSchema` 遵循以下规则：
@@ -43,7 +52,9 @@ Tool description 和 property description 都是 AI 选择并调用 Tool 时使�
 - `properties` 的每个直接 property schema 必须使用 object form，不能使用 `true` 或 `false` boolean schema；
 - schema 在隔离的 resolver context 中编译，不会通过网络、文件或其他 definition 解析外部 reference；需要使用 `$ref` 时，应让引用保持在同一份 schema 内；
 - schema 必须能够同步编译；不支持 `$async: true` 或其他会产生 asynchronous validator 的 schema；
-- 同一组 custom definitions 中不能有两个 definition 声明相同的 `name`。
+- custom-only 必须显式提供完整 Schema，不从其他 custom definition 或下游工具继承，也不执行 Schema 合并。
+
+Schema 内的 `$schema`、`$ref` 按标准 JSON Schema 语义处理，不是项目指令；编译器不递归扫描 Schema 或普通数据解释项目指令。
 
 输入校验只判断值是否符合 schema，不会执行类型转换、填充 `default` 或删除未知字段。definition 因此应完整表达调用契约：
 
@@ -61,6 +72,7 @@ Tool description 和 property description 都是 AI 选择并调用 Tool 时使�
 ```json
 {
   "name": "acme_text_summary",
+  "$alias": "summarize_text",
   "description": "Summarizes the supplied text. Use this only when the complete source text is already available.",
   "inputSchema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -178,7 +190,7 @@ Canonical request 只包含一次调用：
 
 - `calls` 必须恰好包含一个元素；
 - `id` 是非空 opaque string；
-- `name` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`；
+- `name` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`；进入 request Processor 前使用源 definition 的稳定名称，不使用 MCP 对外别名；
 - `arguments` 必须是 JSON object；
 - `request.canonical-filter` 输出的 `id` 必须与输入完全相同；
 - filter 可以修改 `name` 与 `arguments`，但修改后的值仍须满足 canonical request 形状。
@@ -355,9 +367,9 @@ catch error:
 
 ### Definition
 
-- `name` 是否匹配 identity 规则，并确认不会覆盖内置 Tool？
-- 顶层是否只有 `name`、`description`、`inputSchema`？
-- description 是否面向 AI 说明用途和边界，而不是暴露实现细节？
+- `name` 与可选 `$alias` 是否符合名称 grammar，稳定名称是否唯一且不会覆盖内置 Tool？
+- 顶层是否仅包含允许的声明字段，custom-only 是否避免将继承指令设为 `true`？
+- 提供 description 时，是否面向 AI 说明用途和边界，而不是暴露实现细节？
 - `inputSchema.type` 是否精确为 `"object"`？
 - 是否完整声明 required、值域和未知字段策略？
 - 是否避免依赖外部 `$ref`、asynchronous validator、`format` 校验、类型转换、default 注入或字段删除？

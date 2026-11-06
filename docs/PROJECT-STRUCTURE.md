@@ -58,7 +58,7 @@ src/runtime/
 ├── runtime-extensions.ts                           # 会话准备、POST context 与结果阶段的内部契约
 ├── application/
 │   ├── start-application.ts                        # 配置、service、日志、listener 与 lifecycle 组装
-│   ├── startup-runtime.ts                          # snapshot/catalog 组合与外部运行时装配
+│   ├── startup-runtime.ts                          # 加载、definition 编译、catalog 准备/绑定与失败清理
 │   ├── config-store.ts                             # 固定 snapshot、identity 与状态的只读访问
 │   ├── application-lifecycle.ts                    # listener、pending/published 会话和共享资源关闭
 │   ├── application-diagnostics.ts                  # 工具管线、Processor drain 与 MCP 连接安全诊断
@@ -104,8 +104,10 @@ src/runtime/
 src/tools/
 ├── names.ts                                         # 内置工具 identity 与 canonical 顺序
 ├── index.ts                                         # built-in registry 编译与 workspace service facade
-├── catalog.ts                                       # effective/exposed catalog、validator 与 executor 路由
-├── custom-tool-config.ts                            # Tool config、definition 与外部路由入口加载
+├── catalog.ts                                       # effective/exposed catalog 准备、对外名称 lookup 与 executor 绑定
+├── custom-tool-config.ts                            # Tool config、源 definition 外壳与路由配置路径加载
+├── custom-tool-definition.ts                        # 源声明、来源 metadata、不可变副本与文件诊断
+├── definition-compiler.ts                           # 别名/继承解释、工具类别与 effective validator 编译
 ├── input-schema-validator.ts                        # Draft 2020-12 validator facade
 ├── types.ts                                         # definition、executor 与 ToolCallResult 公共契约
 ├── results.ts                                       # 单文本块错误结果 helper
@@ -215,8 +217,8 @@ examples/
 ├── config.example.json                     # home-level workspace reference 索引
 ├── workspace-config.example.json           # workspace 参数与文件访问策略引用
 ├── tool-config.example.json                # definitions、override 与外部路由入口
-├── tool-definition.example.json            # custom-only Tool definition
-├── read.override.example.json              # 内置 read 的对外 definition override
+├── tool-definition.example.json            # custom-only 稳定名称、别名与显式 Schema
+├── read.override.example.json              # 内置 read 别名与描述/输入 Schema 继承
 ├── external-routing-config.example.json    # HTTP/MCP route 与 Processor stage
 ├── processor-config.example.json           # Processor executable 与调用参数 registry
 ├── http-endpoint-config.example.json       # HTTP endpoint URL、headers 与 timeout

@@ -6,6 +6,7 @@ import { loadApplicationRuntime } from '../../src/runtime/application/startup-ru
 import { createToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
 import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import { createWorkspaceToolService } from '../../src/tools/index.js';
+import { ExternalRoutingExecutor } from '../../src/tools/external-routing/executor.js';
 import {
   assert,
   assertEqual,
@@ -200,7 +201,7 @@ async function testStartupCompilesCustomCatalogAndExposure(): Promise<void> {
     ],
   });
 
-  const runtime = loadSelected();
+  const runtime = await loadSelected();
   assertEqual(
     runtime.toolCatalog.definitions.map((definition) => definition.name).join(','),
     'read,custom_tool',
@@ -227,7 +228,7 @@ async function testSelectorMembershipUsesEffectiveCatalog(): Promise<void> {
   });
 
   try {
-    loadSelected();
+    await loadSelected();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Unknown effective selector should be a ConfigError');
     assertEqual(error.fieldPath, 'tools.enabled[0]', 'Error should identify the selector item');
@@ -265,7 +266,7 @@ async function testUnselectedWorkspaceToolFilesAreNotRead(): Promise<void> {
     ],
   });
 
-  const runtime = loadSelected();
+  const runtime = await loadSelected();
   try {
     assertEqual(
       runtime.toolCatalog.definitions.length > 0,
@@ -289,7 +290,7 @@ async function testCustomOnlyDefinitionBindsExternalRouteByReferenceId(): Promis
     ],
   });
 
-  const runtime = loadSelected();
+  const runtime = await loadSelected();
   try {
     const externalEntry = runtime.toolCatalog.effectiveEntries.find(
       (entry) => entry.definition.name === 'custom_tool',
@@ -355,7 +356,7 @@ async function testConfiguredExternalRouteRejectsBuiltInOverride(): Promise<void
   });
 
   try {
-    loadSelected();
+    await loadSelected();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'A route for a built-in override should be a ConfigError');
     assertEqual(
@@ -390,7 +391,7 @@ async function testHiddenCustomOnlyToolStillLoadsExternalRouteButCannotBeCalled(
     ],
   });
 
-  const runtime = loadSelected();
+  const runtime = await loadSelected();
   try {
     const externalEntry = runtime.toolCatalog.effectiveEntries.find(
       (entry) => entry.definition.name === 'custom_tool',
@@ -447,7 +448,7 @@ async function testEmptyRoutesExposeConfiguredConfigWithoutResources(): Promise<
     ],
   });
 
-  const runtime = loadSelected();
+  const runtime = await loadSelected();
   try {
     assert(
       runtime.externalRoutingConfig !== undefined,
@@ -500,7 +501,7 @@ async function testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors(): Promi
     ],
   });
 
-  const directRuntime = loadSelected();
+  const directRuntime = await loadSelected();
   try {
     assert(
       directRuntime.externalRouting !== undefined,
@@ -534,7 +535,7 @@ async function testProcessorRunnerIsCreatedOnlyWhenARouteUsesProcessors(): Promi
     ],
   });
 
-  const processorRuntime = loadSelected();
+  const processorRuntime = await loadSelected();
   try {
     assert(
       processorRuntime.externalRouting !== undefined,
@@ -570,7 +571,7 @@ async function testHiddenInvalidDefinitionStillFailsStartup(): Promise<void> {
   });
 
   try {
-    loadSelected();
+    await loadSelected();
   } catch (error: unknown) {
     assert(error instanceof ConfigError, 'Invalid hidden definition should be a ConfigError');
     assertEqual(
@@ -598,7 +599,7 @@ async function testCompiledCatalogDoesNotRereadFiles(): Promise<void> {
       }),
     ],
   });
-  const runtime = loadSelected();
+  const runtime = await loadSelected();
   try {
     const service = createWorkspaceToolService(runtime.toolCatalog);
 
@@ -626,12 +627,136 @@ async function testCompiledCatalogDoesNotRereadFiles(): Promise<void> {
   }
 }
 
+async function testAliasConflictFailsBeforeResourceCreation(): Promise<void> {
+  await writeExternalRoutingFiles();
+  await writeCustomToolFiles({ externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE });
+  await fs.writeFile(
+    DEFINITION_FILE,
+    JSON.stringify({
+      name: 'custom_tool',
+      $alias: 'read',
+      inputSchema: { type: 'object' },
+    }),
+    'utf-8',
+  );
+  await writeSplitConfigFixture(CONFIG_FILE, {
+    workspaces: [workspace('selected', ROOT_DIR, { toolConfigFile: TOOL_CONFIG_FILE })],
+  });
+  let creations = 0;
+  let caught: unknown;
+  try {
+    await loadApplicationRuntime(
+      { homeDir: HOME_DIR, workspaceId: 'selected', env: {} },
+      {
+        createExternalRouting: () => {
+          creations++;
+          throw new Error('External resources must not be constructed.');
+        },
+      },
+    );
+  } catch (error: unknown) {
+    caught = error;
+  }
+  assert(caught instanceof ConfigError, 'Exposed alias conflict must fail as configuration error');
+  assertEqual(caught.configFilePath, TOOL_CONFIG_FILE, 'Alias conflict belongs to Tool config');
+  assertEqual(
+    caught.fieldPath,
+    'definitions[0].toolDefinitionFile',
+    'Alias conflict locates reference',
+  );
+  assertEqual(creations, 0, 'All call-name checks must finish before constructing resources');
+}
+
+async function testBindingFailureWaitsForExternalCleanup(): Promise<void> {
+  await writeExternalRoutingFiles();
+  await writeCustomToolFiles({ externalRoutingConfigFile: EXTERNAL_ROUTING_CONFIG_FILE });
+  await writeSplitConfigFixture(CONFIG_FILE, {
+    workspaces: [
+      workspace('selected', ROOT_DIR, {
+        toolConfigFile: TOOL_CONFIG_FILE,
+        enabled: [],
+      }),
+    ],
+  });
+  let releaseCleanup!: () => void;
+  let announceCleanup!: () => void;
+  const cleanupBlocked = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  const cleanupStarted = new Promise<void>((resolve) => {
+    announceCleanup = resolve;
+  });
+  let cleaned = false;
+  let settled = false;
+  let startupError: unknown;
+  const startup = loadApplicationRuntime(
+    { homeDir: HOME_DIR, workspaceId: 'selected', env: {} },
+    {
+      createExternalRouting: () => ({
+        executor: new ExternalRoutingExecutor({
+          routes: {
+            exchange: () => {
+              throw new Error('No call expected during startup.');
+            },
+          },
+          closeResources: async () => {
+            announceCleanup();
+            await cleanupBlocked;
+            cleaned = true;
+          },
+        }),
+        bindingsByDefinitionId: new Map(),
+        mcpConnectionManagers: new Map(),
+      }),
+    },
+  ).then(
+    () => {
+      settled = true;
+    },
+    (error: unknown) => {
+      startupError = error;
+      settled = true;
+    },
+  );
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error('External cleanup did not start before the deadline.')),
+      2_000,
+    );
+  });
+  try {
+    await Promise.race([cleanupStarted, deadline]);
+    assert(!settled, 'Startup rejection must wait for asynchronous cleanup');
+    assert(!cleaned, 'Cleanup should still be blocked by its owner');
+  } finally {
+    clearTimeout(timeout);
+    releaseCleanup();
+    await startup;
+  }
+  assert(cleaned, 'Startup must complete external resource cleanup');
+  assert(startupError instanceof Error, 'Missing hidden route executor must reject startup');
+  assertIncludes(
+    startupError.message,
+    'Missing external executor',
+    'Binding omissions must not silently become unavailable',
+  );
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing application startup tool catalog compilation',
     beforeAll: prepareFixtures,
     afterAll: cleanupFixtures,
     tests: [
+      {
+        name: 'alias conflict fails before external resource creation',
+        run: testAliasConflictFailsBeforeResourceCreation,
+      },
+      {
+        name: 'binding failure waits for external cleanup',
+        run: testBindingFailureWaitsForExternalCleanup,
+      },
       {
         name: 'startup compiles custom catalog and exposure',
         run: testStartupCompilesCustomCatalogAndExposure,

@@ -9,7 +9,7 @@ External routing 为 selected workspace 的 custom-only Tool 提供 HTTP endpoin
 | 维度 | HTTP route | MCP route |
 |-|-|-|
 | 对接边界 | 配置且受信任的 HTTP endpoint 与本地 Processor。 | 独立 MCP Client 调用配置的 Streamable HTTP Server。 |
-| 调用协议 | 单调用 canonical JSON，可通过一个 request stage 和一个 response stage 编解码或过滤。 | 下游 `tools/call`，直接使用本地 definition 的 Tool name 与已校验 arguments。 |
+| 调用协议 | 单调用 canonical JSON，可通过一个 request stage 和一个 response stage 编解码或过滤。 | 下游 `tools/call`，直接使用源 definition 的稳定名称与已校验 arguments，不使用对外别名。 |
 | 结果适配 | 校验 canonical response，将 text/image/unknown 逐块映射为 MCP 结果。 | 接受项目支持的下游 text/image 结果字段，不把不支持的内容转成文本。 |
 | 共享资源 | Owner-scoped HTTP/HTTPS Agents；需要时共享 Processor runner。 | 按 server config real path 共享 Client、transport 和下游 session。 |
 | 下游发现 | 不适用。 | 不调用 `tools/list`，不导入或映射下游 Tool。 |
@@ -36,7 +36,7 @@ Tool config 与 definition 字段由[自定义 Tool 配置](config/tool-config.m
 
 ## 启动与 binding
 
-启动期先读取并编译 Tool config 和全部 definition，再加载 External routing config、显式 Processor registry 以及 route 引用的 endpoint/server config。随后校验 definition binding、Processor reference 与 workspace exposure，构建 effective / exposed catalog。
+启动期先读取并编译 Tool config 和全部 definition，再加载 External routing config、显式 Processor registry 以及 route 引用的 endpoint/server config。随后校验 definition binding、Processor reference、workspace exposure 与暴露集合的对外名称唯一性，准备 effective / exposed catalog。
 
 Binding 使用 `definitions[].id`，不是 Tool `name`。Custom-only definition 有 route 时绑定对应 executor，没有 route 时绑定 deterministic unavailable executor；built-in override 保持 built-in executor，不能声明 route。隐藏 definition 和 route 仍完成全部启动校验，但调用隐藏 Tool 返回 `Unknown tool`。
 
