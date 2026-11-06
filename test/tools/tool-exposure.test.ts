@@ -1,4 +1,6 @@
 import {
+  bindWorkspaceToolCatalog,
+  prepareWorkspaceToolCatalog,
   compileWorkspaceToolCatalog,
   type CompiledBuiltInTool,
   type ExternalToolExecutor,
@@ -7,7 +9,8 @@ import {
 import type { JsonObject } from '../../src/config/json-file.js';
 import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
 import type { ToolRuntimeContext } from '../../src/runtime/invocation/tool-context.js';
-import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
+import type { CompiledCustomToolDefinition } from '../../src/tools/definition-compiler.js';
+import { ConfigError } from '../../src/config/errors.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import {
@@ -51,6 +54,11 @@ function customDefinition(
   },
   description = `Custom definition for ${name}`,
   index = 0,
+  kind: CompiledCustomToolDefinition['kind'] = getCompiledBuiltInTools().some(
+    (tool) => tool.definition.name === name,
+  )
+    ? 'built-in-override'
+    : 'custom-only',
 ): CompiledCustomToolDefinition {
   const definition = Object.freeze({
     name,
@@ -58,6 +66,8 @@ function customDefinition(
     inputSchema: Object.freeze(inputSchema),
   });
   return Object.freeze({
+    stableName: name,
+    kind,
     definition,
     validator: compileInputSchemaValidator(definition.inputSchema),
     source: Object.freeze({
@@ -162,16 +172,19 @@ function testExposureFiltersWithoutReordering(): void {
 }
 
 async function testOverrideUsesBothContracts(): Promise<void> {
-  const override = customDefinition('read', {
-    type: 'object',
-    properties: { alias: { type: 'string' } },
-    required: ['alias'],
-    additionalProperties: false,
-  });
+  const override = alias(
+    customDefinition('read', {
+      type: 'object',
+      properties: { alias: { type: 'string' } },
+      required: ['alias'],
+      additionalProperties: false,
+    }),
+    'read_call',
+  );
   const service = createWorkspaceToolService(createCatalog({ customDefinitions: [override] }));
 
   const effectiveFailure = await service.routeToolCall(
-    'read',
+    'read_call',
     {},
     createContext(),
     createInvocationContext(),
@@ -187,7 +200,7 @@ async function testOverrideUsesBothContracts(): Promise<void> {
   );
 
   const implementationFailure = await service.routeToolCall(
-    'read',
+    'read_call',
     { alias: 'x' },
     createContext(),
     createInvocationContext(),
@@ -452,7 +465,7 @@ async function testOverrideRemainsBoundToBuiltInExecutor(): Promise<void> {
       return textResult('External tool completed.');
     },
   };
-  const override = customDefinition('bound_tool', inputSchema);
+  const override = customDefinition('bound_tool', inputSchema, undefined, 0, 'built-in-override');
   const catalog = createCatalog({
     builtInTools: [builtIn],
     customDefinitions: [override],
@@ -511,12 +524,18 @@ async function testPreAbortedBuiltInCallsRespectValidationOrdering(): Promise<vo
       return textResult('Unexpected built-in execution.');
     },
   });
-  const override = customDefinition('cancelled_tool', {
-    type: 'object',
-    properties: { alias: { type: 'string' } },
-    required: ['alias'],
-    additionalProperties: false,
-  });
+  const override = customDefinition(
+    'cancelled_tool',
+    {
+      type: 'object',
+      properties: { alias: { type: 'string' } },
+      required: ['alias'],
+      additionalProperties: false,
+    },
+    undefined,
+    0,
+    'built-in-override',
+  );
   const service = createWorkspaceToolService(
     createCatalog({
       builtInTools: [builtIn],
@@ -644,10 +663,288 @@ function testCatalogAndServiceFacadesAreFrozen(): void {
   );
 }
 
+function alias(custom: CompiledCustomToolDefinition, name: string): CompiledCustomToolDefinition {
+  return Object.freeze({
+    ...custom,
+    definition: Object.freeze({ ...custom.definition, name }),
+  });
+}
+
+function captureConfigError(run: () => unknown): ConfigError {
+  try {
+    run();
+  } catch (error: unknown) {
+    assert(error instanceof ConfigError, 'Configuration mistakes should retain ConfigError');
+    return error;
+  }
+  throw new Error('Expected configuration failure.');
+}
+
+async function testAliasLookupUsesStableBindingsWithoutRecursion(): Promise<void> {
+  const calls: string[] = [];
+  const schema = Object.freeze({ type: 'object', additionalProperties: false });
+  const validator = compileInputSchemaValidator(schema);
+  let validations = 0;
+  const implementationValidator = Object.freeze({
+    validate(value: unknown) {
+      validations++;
+      return validator.validate(value);
+    },
+  });
+  const builtIns: CompiledBuiltInTool[] = ['a', 'b'].map((name) => ({
+    definition: Object.freeze({ name, description: name, inputSchema: schema }),
+    implementationValidator,
+    executor: async (_args, _context, invocation) => {
+      calls.push(`${name}:${invocation.callId}`);
+      return textResult(name);
+    },
+  }));
+  const override = (stableName: string, callName: string, index: number) =>
+    Object.freeze({
+      ...alias(
+        customDefinition(stableName, schema, undefined, index, 'built-in-override'),
+        callName,
+      ),
+      validator: implementationValidator,
+    });
+
+  for (const names of [
+    ['b', 'a'],
+    ['b', 'c'],
+    ['a', 'b'],
+  ] as const) {
+    const catalog = createCatalog({
+      builtInTools: builtIns,
+      customDefinitions: [override('a', names[0], 0), override('b', names[1], 1)],
+    });
+    assertEqual(
+      definitionNames(catalog.definitions).join(','),
+      names.join(','),
+      'Aliases should preserve stable canonical positions',
+    );
+    for (const [index, name] of names.entries()) {
+      const result = await catalog.routeToolCall(
+        name,
+        {},
+        createContext(),
+        createInvocationContext(),
+      );
+      assertEqual(
+        getResultText(result),
+        index === 0 ? 'a' : 'b',
+        'Call lookup must not resolve aliases recursively',
+      );
+    }
+    if (!names.some((name) => name === 'a')) {
+      assertEqual(
+        getResultText(
+          await catalog.routeToolCall('a', null, createContext(), createInvocationContext()),
+        ),
+        'Unknown tool: a',
+        'A released stable name must not remain an implicit entry point',
+      );
+    }
+  }
+  assertEqual(calls.length, 6, 'Every allowed alias should execute exactly one stable binding');
+  assertEqual(
+    validations,
+    6,
+    'Inherited implementation validator should execute only once per call',
+  );
+}
+
+async function testAliasExternalAndUnavailableErrorsUseCallName(): Promise<void> {
+  const custom = alias(customDefinition('stable', undefined, undefined, 4), 'external_alias');
+  let seen: ExternalToolInvocation | undefined;
+  const executor: ExternalToolExecutor = {
+    async execute(invocation) {
+      seen = invocation;
+      return textResult('done');
+    },
+  };
+  const catalog = createCatalog({
+    builtInTools: [],
+    customDefinitions: [custom],
+    externalBindingsByDefinitionId: new Map([[custom.source.referenceId, executor]]),
+    exposure: { mode: 'enable', names: ['stable'] },
+  });
+  const args = {};
+  const invocation = createInvocationContext();
+  await catalog.routeToolCall('external_alias', args, createContext(), invocation);
+  assertEqual(seen?.name, 'stable', 'External protocol must receive the stable name');
+  assertEqual(seen?.arguments, args, 'Aliases must not rewrite arguments');
+  assertEqual(seen?.signal, invocation.signal, 'Aliases must preserve cancellation');
+  assertEqual(seen?.callId, invocation.callId, 'Aliases must preserve invocation identity');
+  assertEqual(
+    getResultText(await catalog.routeToolCall('stable', {}, createContext(), invocation)),
+    'Unknown tool: stable',
+    'External aliases must not preserve stable-name calls',
+  );
+
+  const unavailable = createCatalog({ builtInTools: [], customDefinitions: [custom] });
+  assertIncludes(
+    getResultText(
+      await unavailable.routeToolCall('external_alias', null, createContext(), invocation),
+    ),
+    'Tool "external_alias" arguments',
+    'Validation diagnostics must use the actual call name',
+  );
+  assertEqual(
+    getResultText(
+      await unavailable.routeToolCall('external_alias', {}, createContext(), invocation),
+    ),
+    'Tool "external_alias" is exposed, but no execution route is configured for it.',
+    'Unavailable diagnostics must use the actual call name',
+  );
+}
+
+function testAliasCollisionsAndStableExposure(): void {
+  const first = alias(customDefinition('first', undefined, undefined, 0), 'shared');
+  const second = alias(customDefinition('second', undefined, undefined, 1), 'shared');
+  const error = captureConfigError(() => createCatalog({ customDefinitions: [first, second] }));
+  assertEqual(
+    error.configFilePath,
+    first.source.toolConfigFilePath,
+    'Collision belongs to Tool config',
+  );
+  assertEqual(
+    error.fieldPath,
+    'definitions[1].toolDefinitionFile',
+    'Collision locates a custom reference',
+  );
+  for (const text of ['shared', 'first', 'second', 'ref-0', 'ref-1']) {
+    assertIncludes(error.message, text, 'Collision diagnostic must explain both identities');
+  }
+
+  const builtInCollision = captureConfigError(() =>
+    createCatalog({ customDefinitions: [alias(first, 'read')] }),
+  );
+  assertIncludes(
+    builtInCollision.message,
+    'unmodified built-in',
+    'Collision should identify built-in origin',
+  );
+
+  for (const exposure of [
+    { mode: 'enable', names: ['first'] },
+    { mode: 'disable', names: ['second'] },
+    { mode: 'enable', names: [] },
+  ] as const) {
+    const catalog = createCatalog({ customDefinitions: [first, second], exposure });
+    assert(
+      catalog.definitions.length <= 1 || exposure.mode === 'disable',
+      'Hidden collisions should be permitted',
+    );
+  }
+
+  const selectorError = captureConfigError(() =>
+    createCatalog({
+      customDefinitions: [first],
+      exposure: { mode: 'enable', names: ['shared'] },
+    }),
+  );
+  assertEqual(
+    selectorError.configFilePath,
+    'E:/config/workspace.json',
+    'Selectors belong to workspace config',
+  );
+  assertEqual(
+    selectorError.fieldPath,
+    'tools.enabled[0]',
+    'Unknown alias selector should locate the item',
+  );
+  assertIncludes(
+    selectorError.suggestion,
+    'stable names',
+    'Selector diagnostic must explain the identity boundary',
+  );
+
+  // "read" selects the built-in identity even when another tool calls itself read.
+  const releasedRead = alias(customDefinition('read', undefined, undefined, 2), 'read_alias');
+  const occupyingRead = alias(first, 'read');
+  const catalog = createCatalog({
+    customDefinitions: [releasedRead, occupyingRead],
+    exposure: { mode: 'enable', names: ['read'] },
+  });
+  assertEqual(
+    definitionNames(catalog.definitions).join(','),
+    'read_alias',
+    'Exposure must never interpret selectors as aliases',
+  );
+}
+
+function testPreparationRetainsHiddenRouteIntentAndRequiresBinding(): void {
+  const custom = alias(customDefinition('hidden_route'), 'hidden_alias');
+  const prepared = prepareWorkspaceToolCatalog({
+    builtInTools: [],
+    customDefinitions: [custom],
+    exposure: { mode: 'enable', names: [] },
+    workspaceConfigFilePath: 'workspace.json',
+    externalRouteDefinitionIds: new Set([custom.source.referenceId]),
+  });
+  assertEqual(
+    prepared.effectiveEntries[0]?.binding,
+    'external',
+    'Hidden route must retain its execution intent',
+  );
+  assertEqual(prepared.definitions.length, 0, 'Preparation must apply exposure');
+  let missingBinding: unknown;
+  try {
+    bindWorkspaceToolCatalog(prepared);
+  } catch (error: unknown) {
+    missingBinding = error;
+  }
+  assert(
+    missingBinding instanceof Error,
+    'Missing configured executor must fail, not become unavailable',
+  );
+  assertIncludes(
+    missingBinding.message,
+    custom.source.referenceId,
+    'Internal binding error should identify the missing reference',
+  );
+  const executor: ExternalToolExecutor = { execute: async () => textResult('hidden') };
+  const bound = bindWorkspaceToolCatalog(
+    prepared,
+    new Map([[custom.source.referenceId, executor]]),
+  );
+  assertEqual(
+    bound.effectiveEntries[0]?.binding,
+    'external',
+    'Binding must retain hidden external route',
+  );
+  assertEqual(
+    bound.definitions,
+    prepared.definitions,
+    'Binding must reuse the prepared definitions view',
+  );
+  assertEqual(
+    bound.effectiveEntries[0]?.effectiveValidator,
+    custom.validator,
+    'Binding must reuse compiled validators',
+  );
+}
+
 async function main(): Promise<void> {
   await runTestSuite({
     title: 'Testing effective workspace tool catalog',
     tests: [
+      {
+        name: 'alias swaps, released names and direct stable bindings',
+        run: testAliasLookupUsesStableBindingsWithoutRecursion,
+      },
+      {
+        name: 'external stable identity and public alias errors',
+        run: testAliasExternalAndUnavailableErrorsUseCallName,
+      },
+      {
+        name: 'exposed name collisions and stable exposure selectors',
+        run: testAliasCollisionsAndStableExposure,
+      },
+      {
+        name: 'preparation retains hidden route intents and requires executors',
+        run: testPreparationRetainsHiddenRouteIntentAndRequiresBinding,
+      },
       { name: 'built-in registry remains canonical', run: testRegistryMatchesCanonicalNames },
       { name: 'override and custom-only ordering', run: testOverrideAndCustomOnlyOrdering },
       { name: 'exposure filters without reordering', run: testExposureFiltersWithoutReordering },

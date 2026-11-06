@@ -31,7 +31,7 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 | `id` | string | 是 | 配置内稳定的 definition reference identity。 |
 | `toolDefinitionFile` | local absolute path | 是 | 对应 Tool definition 文件。 |
 
-`id` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，并且在同一 Tool config 内唯一。它用于 definition 文件错误的 source metadata，也作为 External routing config 中 route 的 `definitionId` binding key。`id` 不改变 MCP Tool identity：canonical request 的 `name` 使用 Tool definition 的 `name`。
+`id` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，并且在同一 Tool config 内唯一。它用于 definition 文件错误的 source metadata，也作为 External routing config 中 route 的 `definitionId` binding key，不是工具调用名称。
 
 `toolDefinitionFile` 和 `externalRoutingConfigFile` 都遵循与 `toolConfigFile` 相同的本地绝对路径边界。引用文件不要求位于 workspace allowed roots 内。
 
@@ -41,19 +41,32 @@ Tool config 必须是合法 JSON object，顶层只允许下列字段：
 
 ## Tool definition 文件
 
-每份 definition 必须是合法 JSON object，且只允许以下全部必填字段：
+源 definition 必须是合法 JSON object，且顶层只允许以下字段。加载器保留声明和文件来源，definition 编译器解释指令并生成标准 MCP definition；项目指令不会进入 `tools/list`、调用参数或下游协议。
 
 | 字段 | 类型 | 说明 |
 |-|-|-|
-| `name` | string | MCP Tool identity，必须匹配 `^[A-Za-z0-9._-]{1,128}$`。 |
-| `description` | string | `tools/list` 中暴露给客户端的描述，至少包含一个非 whitespace 字符。 |
-| `inputSchema` | JSON Schema object | `tools/list` 中暴露的输入 schema。 |
+| `name` | 必填 string | 稳定名称，用于内置 override 匹配、workspace exposure 和内部执行身份。 |
+| `$alias` | 可选 string | 对外调用名称；省略时使用稳定名称。 |
+| `description` | 可选 string | 对外顶层描述；至少包含一个非 whitespace 字符。 |
+| `$inheritTopDescription` | 可选 boolean | `true` 表示沿用同名 built-in 的顶层描述。 |
+| `inputSchema` | 可选 JSON Schema object | 显式的完整输入 Schema；未继承时必填。 |
+| `$inheritInputSchema` | 可选 boolean | `true` 表示沿用同名 built-in 的完整输入 Schema。 |
 
-`inputSchema` 使用 JSON Schema Draft 2020-12，根 `type` 必须精确为 `"object"`。`$schema` 可省略；出现时必须精确为 `https://json-schema.org/draft/2020-12/schema`。若包含 `properties`，其每个直接 property schema 都必须使用 object 形式，不能使用 boolean schema。
+`name` 与 `$alias` 都必须匹配 `^[A-Za-z0-9._-]{1,128}$`，区分大小写，不 trim 或归一化。别名可以等于自身稳定名称。未知顶层字段、错误类型与 `null` 均无效，不因字段以 `$` 开头就放行。同一 Tool config 内稳定名称必须唯一，即使别名不同或工具被隐藏也不能重复。
 
-Schema 的隔离编译、引用解析与校验行为见[工具校验分工](../TOOLS.md#schema-与-handler-的校验分工)。Tool config 中不能有两个 definition 声明同一个 `name`。
+### 描述与 Schema 的选择
 
-内置工具 override 示例见 [read definition](../../examples/read.override.example.json)。
+- 显式 `description` 与 `$inheritTopDescription: true` 互斥。两者都不提供时，最终 definition 省略描述，不补空字符串；内置继承对象本身没有描述时也省略。
+- 显式 `inputSchema` 与 `$inheritInputSchema: true` 互斥。两者都不提供时启动失败，包括 built-in override。
+- 两个继承指令各自独立。`false` 与省略等价，可以与对应显式字段并存。
+- 继承只读取 registry 中同稳定名称 built-in 的原始定义，不受别名、其他 custom definition 或文件顺序影响。custom-only 设置任一继承指令为 `true` 都会启动失败，不支持 custom 链式继承或下游 Schema 发现。
+- 未被 custom definition 覆盖的 built-in 保持自身定义；源 definition 省略描述不表示自动沿用内置描述。
+
+显式 `inputSchema` 使用 JSON Schema Draft 2020-12，根 `type` 必须精确为 `"object"`。`$schema` 可省略；出现时必须精确为 `https://json-schema.org/draft/2020-12/schema`。若包含 `properties`，其每个直接 property schema 都必须使用 object 形式，不能使用 boolean schema。
+
+显式 Schema 完整替换对外输入契约，不与内置 Schema 合并；继承则保留完整参数描述、required 和未知字段约束。Schema 内的标准 `$schema`、`$ref` 按 JSON Schema 语义处理，不作为项目指令，编译器不递归扫描 Schema 或普通数据解释指令。
+
+Schema 的隔离编译、引用解析与校验行为见[工具校验分工](../TOOLS.md#schema-与-handler-的校验分工)。内置工具的别名与继承示例见 [read definition](../../examples/read.override.example.json)。
 
 ---
 
@@ -61,15 +74,17 @@ Schema 的隔离编译、引用解析与校验行为见[工具校验分工](../T
 
 Tool config、全部 Tool definition、已配置的 External routing config、其显式 Processor registry 和每条 route 引用的 HTTP endpoint 或 MCP server config 都在启动期读取、校验并编译。Processor registry 即使未被任何 route 使用也会被读取和校验；相同 HTTP endpoint path 可共享已编译 snapshot，解析到相同 real path 的 MCP server config 共享 server identity。运行期不重新读取这些配置；修改后需要重启服务。
 
-custom definition 与内置工具同名时，完整替换 `tools/list` 暴露的 description 与 input schema，同时保留内置 executor 和 implementation contract。调用时必须同时通过 custom 对外 schema 和内置 implementation schema。External route 只能绑定 custom-only definition；route 引用 built-in override 是启动期配置错误。
+编译器按稳定名称判定 built-in override 与 custom-only，别名不参与分类。override 使用编译后的对外 definition，同时保留内置 executor 和 implementation contract；显式 Schema 需要双层校验，继承内置 Schema 则复用 implementation validator。External route 只能绑定 custom-only definition；override 即使配置别名也不能绑定 route。
 
 custom-only definition 的 executor 由其 definition reference `id` 决定：
 
 - External routing config 为该 `id` 声明 route 时，配置后的输入校验成功会进入该 route 的外部 executor。
 - 没有 route 时，definition 仍可暴露且输入仍会校验；调用返回 deterministic unavailable route 工具错误。
-- route 不按 Tool `name` 匹配，因此修改 definition 文件中的 `name` 不会改变配置 binding identity。
+- route 不按稳定名称或别名匹配，因此修改名称不会改变 reference id binding identity。HTTP canonical request 的 `name` 与下游 MCP `tools/call` 的目标名都使用源 definition 的稳定名称，不使用对外别名。
 
-`routes: []` 表示 external routing 已配置但没有执行 route。此状态不创建 external admission runtime、Processor runner、HTTP Agents 或 MCP connection manager；custom-only definitions 仍保留 unavailable binding。被 `enabled` / `disabled` 隐藏的 definition 和 route 也会完成启动期加载与校验，但隐藏名称不会出现在 `tools/list`，调用返回 `Unknown tool`。
+全部 definition 编译、route binding、workspace selector 与对外名称冲突校验成功后才构造外部运行资源。隐藏 definition 和 route 仍完成完整校验；资源按完整已配置 route 集合创建，不按 exposure 裁剪。
+
+`routes: []` 表示 external routing 已配置但没有执行 route。此状态不创建 external admission runtime、Processor runner、HTTP Agents 或 MCP connection manager；custom-only definitions 仍保留 unavailable binding。隐藏名称不会出现在 `tools/list`，调用返回 `Unknown tool`。
 
 effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](../TOOLS.md)。
 
@@ -77,10 +92,12 @@ effective catalog 的合并顺序、exposure 和调用管线见 [工具开发](.
 
 ## 错误归属
 
-Tool config、Tool definition、External routing config、Processor registry、HTTP endpoint config 或 MCP server config 的文件读取、JSON、严格外壳和 schema 错误归属实际出错的 referenced 文件；definition 诊断会附带对应 reference `id`。route union、binding、重复 binding 和 Processor reference 错误归属 External routing config。workspace `enabled` / `disabled` selector 不存在的错误仍归属 workspace 配置。
+Tool config、Tool definition、External routing config、Processor registry、HTTP endpoint config 或 MCP server config 的文件读取、JSON、严格外壳和 schema 错误归属实际出错的 referenced 文件。definition 指令组合、继承与 Schema 编译错误归属 definition 文件，附 reference `id` 和字段位置。
+
+重复 reference id 或稳定名称归属 Tool config 的对应 reference。对外名称冲突归属 Tool config 中一个 custom reference 的 `definitions[i].toolDefinitionFile`，诊断列出冲突名称、双方稳定名称及 reference id 或未覆盖 built-in 身份。route union、binding、重复 binding 和 Processor reference 错误归属 External routing config；workspace selector 不存在仍归属 workspace 配置。
 
 ## 验证重点
 
-运行 `npm test -- tools external-routing runtime`，重点验证严格外壳与隔离 schema 编译、built-in override 的双层输入校验、effective / exposed catalog、definition id binding 和 unavailable route。
+运行 `npm test -- tools external-routing runtime`，重点验证严格外壳、可选描述、继承组合与隔离 Schema 编译，built-in override 双层输入校验及继承 validator 复用，以及稳定名 exposure、对外名称冲突、definition id binding 和 unavailable route。
 
 跨文件集成应覆盖 selected workspace 到真实 MCP / loopback HTTP endpoint 的调用链；隐藏 definition 和空 route 仍需通过配置校验，空 route 不创建外部运行资源。External routing 的传输与生命周期验证由其[专题文档](../EXTERNAL-ROUTING.md)承接，通用测试约定见 [测试](../TESTING.md)。

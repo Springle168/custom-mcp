@@ -1,5 +1,6 @@
 {
   "name": "external_echo",
+  "$alias": "echo_message",
   "description": "Sends a message to the configured external endpoint and returns its canonical result.",
   "inputSchema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

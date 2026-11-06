@@ -46,9 +46,9 @@
 
 `definitionId` 必须匹配 `^[A-Za-z0-9._-]{1,128}$`，在整个有序 `routes[]` 内唯一，并引用所属 Tool config 中的 definition reference。调用按唯一 `definitionId` 直接定位 route，声明顺序只用于稳定加载、诊断和启动日志，不提供 route 优先级。
 
-Binding 不按 MCP Tool `name` 匹配。HTTP canonical request 与下游 MCP `tools/call` 使用 definition 的 `name`。MCP route 不调用 `tools/list`，不导入下游 Tool，也不映射 Tool name。
+Binding 不按稳定名称或对外别名匹配。HTTP canonical request 与下游 MCP `tools/call` 使用源 definition 的稳定 `name`，不使用 `$alias` 编译出的对外名称。MCP route 不调用 `tools/list`，不导入下游 Tool，也不额外映射下游 Tool name。
 
-Route 只能引用 custom-only definition。definition 的 `name` 属于 built-in registry 时是 built-in override，保留内置 executor；为它声明 route 会使启动失败。custom-only definition 可以不配置 route，此时为 deterministic unavailable binding。
+Route 只能引用 custom-only definition。编译层按源 definition 的稳定 `name` 判定 built-in override，保留内置 executor；为它声明 route 会使启动失败，配置别名不改变该限制。custom-only definition 可以不配置 route，此时为 deterministic unavailable binding。
 
 全部 definition、route 和引用 artifact 在 workspace exposure 过滤前加载和校验。隐藏 route 不绕过校验，也不绕过 exposure 到达 executor；调用隐藏 Tool 返回 `Unknown tool`。
 

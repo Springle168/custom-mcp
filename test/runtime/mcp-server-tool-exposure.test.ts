@@ -6,7 +6,7 @@ import { createMCPServer } from '../../src/runtime/mcp/mcp-server.js';
 import { prepareRequestHeaderToolResult } from '../../src/runtime/request/tool-result-header-extension.js';
 import type { RuntimeRulesConfig } from '../../src/config.js';
 import { compileWorkspaceToolCatalog } from '../../src/tools/catalog.js';
-import type { CompiledCustomToolDefinition } from '../../src/tools/custom-tool-config.js';
+import type { CompiledCustomToolDefinition } from '../../src/tools/definition-compiler.js';
 import { compileInputSchemaValidator } from '../../src/tools/input-schema-validator.js';
 import type { ToolCallResult } from '../../src/tools/types.js';
 import type { ToolInvocationContext } from '../../src/runtime/invocation/tool-invocation-context.js';
@@ -131,6 +131,8 @@ function createCustomOnlyService(): WorkspaceToolService {
     additionalProperties: false,
   });
   const custom: CompiledCustomToolDefinition = Object.freeze({
+    stableName: 'custom_tool',
+    kind: 'custom-only',
     definition: Object.freeze({
       name: 'custom_tool',
       description: 'Custom-only MCP integration tool',

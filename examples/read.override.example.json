@@ -1,23 +1,6 @@
 {
   "name": "read",
-  "description": "Reads whole files from literal paths or glob patterns.",
-  "inputSchema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "properties": {
-      "include": {
-        "type": "array",
-        "minItems": 1,
-        "items": {
-          "type": "string",
-          "minLength": 1
-        },
-        "description": "Literal file paths or glob patterns."
-      }
-    },
-    "required": [
-      "include"
-    ],
-    "additionalProperties": false
-  }
+  "$alias": "read_tool",
+  "$inheritTopDescription": true,
+  "$inheritInputSchema": true
 }

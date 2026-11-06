@@ -8,7 +8,7 @@ MCP route 以独立 MCP Client 调用配置的下游 Streamable HTTP Server，�
 
 Workspace 按不同 MCP server config real path 维护 connection manager。一个 manager 共享一个 MCP Client、Streamable HTTP transport 和下游 session；多个 route、调用和上游 MCP session 可复用它。
 
-上下游 request ID、session ID、initialize 和能力协商相互独立。下游 `tools/call` 只发送本地 Tool definition 的 `name` 与已校验 `arguments`，不发送 definition ID、本地 call ID、上游 session、workspace roots、上游请求 headers 或 canonical wrapper。
+上下游 request ID、session ID、initialize 和能力协商相互独立。下游 `tools/call` 只发送源 Tool definition 的稳定 `name` 与已校验 `arguments`，不使用对外别名，不发送 definition ID、本地 call ID、上游 session、workspace roots、上游请求 headers 或 canonical wrapper。
 
 下游使用 server config 的静态 headers，不透传上游认证或请求头策略输入。Manager 不调用 `tools/list`，也不导入、映射或预先验证下游 Tool name。
 

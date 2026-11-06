@@ -6,7 +6,7 @@ import { startApplication } from './runtime/application/start-application.js';
 import { formatStartupError } from './runtime/application/startup-errors.js';
 
 async function main(): Promise<void> {
-  const application = startApplication(parseCliArgs(process.argv.slice(2)));
+  const application = await startApplication(parseCliArgs(process.argv.slice(2)));
 
   const requestShutdown = (signal: 'SIGINT' | 'SIGTERM'): void => {
     void application.close(signal).catch(() => {

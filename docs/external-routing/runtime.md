@@ -17,7 +17,7 @@ Workspace external runtime 统一负责 HTTP / MCP route 的 admission、调用�
 
 Tool 调用触发的 MCP connect 位于 admission 之后；后台 warm-up 不占用 Tool exchange slot。单个上游 session close 只取消该 session 的调用，不关闭共享 external runtime 或下游 session。
 
-External invocation 只接收 invocation call id、Tool name、已校验 arguments 和 caller `AbortSignal`，不接收 `ToolRuntimeContext`、workspace roots 或本地文件访问能力。此边界限制 executor 输入，不把配置的本地 Processor 变成 sandbox。
+External invocation 只接收 invocation call id、稳定 Tool name、已校验 arguments 和 caller `AbortSignal`，不接收 `ToolRuntimeContext`、workspace roots 或本地文件访问能力。此边界限制 executor 输入，不把配置的本地 Processor 变成 sandbox。
 
 ## 字节与时间限制
 
@@ -88,7 +88,7 @@ External close 在应用级 listener / session drain 之后、logger 关闭之�
 
 日志格式与启动摘要示例见[启动与诊断日志](../logging/startup-and-diagnostics.md)，通用验证入口见[日志概览](../LOGGING.md#测试与人工验证)。外部路由新增诊断仅使用安全标识和计量信息，不回传底层原始异常。
 
-启动摘要按 route 声明顺序关联 definition id、routing mode 与 Tool name。HTTP route 展示 stage mode 和 endpoint identity，MCP route 展示 server identity。URL identity 剥离 query、credentials 与 fragment；摘要不输出静态 headers、配置文件路径、Processor executable path 或 argv。
+启动摘要按 route 声明顺序关联 definition id、routing mode 与稳定 Tool name。HTTP route 展示 stage mode 和 endpoint identity，MCP route 展示 server identity。URL identity 剥离 query、credentials 与 fragment；摘要不输出静态 headers、配置文件路径、Processor executable path 或 argv。
 
 MCP manager diagnostic 按 server identity 记录 connected / failed、phase、classification 和 duration。Shared server 的一次 warm-up 只产生一次 outcome；诊断不含静态 header name/value、下游 request/session ID、arguments、result payload、下游 raw error 或 URL query。
 

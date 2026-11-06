@@ -93,17 +93,21 @@ Ignore 只过滤自动发现的结果，literal 路径可以绕过 ignore；deny
 | 字段 | 类型 | 说明 |
 |-|-|-|
 | `toolConfigFile` | string | 可选；指向 Tool config v2 的本地绝对路径，格式、加载规则与示例见 [自定义 Tool 配置](tool-config.md)。 |
-| `enabled` | string[] | 可选；只暴露列出的 effective tool names。 |
-| `disabled` | string[] | 可选；暴露未列出的 effective tool names。 |
+| `enabled` | string[] | 可选；只暴露列出的稳定名称对应的工具。 |
+| `disabled` | string[] | 可选；暴露未列出的稳定名称对应的工具。 |
 
 规则：
 
 - `tools` 缺失与 `tools: {}` 等价；两者都暴露全部 effective tools。
 - `toolConfigFile` 可以与 `enabled` 或 `disabled` 并存；`enabled` 与 `disabled` 不能同时出现。
 - `enabled: []` 表示不暴露工具；`disabled: []` 表示暴露全部 effective tools。
-- selector 名称使用 `^[A-Za-z0-9._-]{1,128}$`，区分大小写且数组内不能重复。
-- workspace 结构解析只校验 selector grammar。名称成员在 custom definitions 与内置 registry 合并成 effective catalog 后校验，因此 selector 可以引用 custom-only 工具。
-- selector 成员不存在时，错误归属 workspace 配置的 `tools.enabled[i]` 或 `tools.disabled[i]`。
+- selector 使用源 definition／内置 definition 的稳定 `name`，不使用 `$alias`。名称 grammar 为 `^[A-Za-z0-9._-]{1,128}$`，区分大小写、不 trim，数组内不能重复。
+- workspace 结构解析只校验 selector grammar。名称成员在已编译 custom definitions 与内置 registry 按稳定名称合并后校验，因此可以引用 custom-only 工具；过滤不改变 catalog 顺序。
+- selector 成员不存在时，错误归属 workspace 配置的 `tools.enabled[i]` 或 `tools.disabled[i]`，并说明使用稳定名称。某字符串同时是其他工具的别名时，仍只按稳定名称解释。
+
+例如源 definition 为 `{"name":"read","$alias":"read_tool","$inheritInputSchema":true}` 时，workspace 使用 `enabled: ["read"]` 选择它，客户端使用 `read_tool` 列出和调用它。会话 [setToolList](../request-header-policy/on-initialize/set-tool-list.md) 使用对外名称，只能进一步收窄 workspace 集合。
+
+全部源 definition 和 route 均完成启动期校验，然后仅检查 workspace 暴露集合的最终对外名称冲突；隐藏工具不参与该冲突检查。完整合并与调用规则见[工具开发](../TOOLS.md#catalogexposure-与调用)。
 
 ---
 

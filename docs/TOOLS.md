@@ -22,26 +22,33 @@ built-in definition 定义 `name`、`description` 与 Draft 2020-12 `inputSchema
 
 `TOOL_NAMES` 定义 built-in identity 与 canonical 顺序。名称目录和实现 registry 必须一一对应；registry 构建会拒绝缺失、额外或重复实现，深冻结 definitions，并编译各自的 implementation validator。
 
-workspace custom definition 只描述对外契约，不携带 executor。文件格式、引用路径和 definitionId binding 见[自定义 Tool 配置](config/tool-config.md)。
+workspace 源 definition 只声明稳定名称、对外字段和编译指令，不携带 executor。独立 definition 编译器按稳定名称匹配 built-in contract，生成标准对外 definition、工具类别和 effective validator；不读取文件或创建运行资源。标准 definition 的 `description` 可省略，内置 definition 的编写约束仍要求描述。文件格式与继承组合见[自定义 Tool 配置](config/tool-config.md#tool-definition-文件)。
+
+稳定名称来自 built-in 或源 definition 的 `name`，用于 override、workspace selector 与内部执行身份；对外名称来自 `$alias`，省略时使用稳定名称，用于 `tools/list`、`tools/call` 和会话选择。definition reference id 仅用于来源诊断与外部 route binding。三者互不替代，别名与内置名称相同不会使 custom-only 变成 override。
 
 handler 接收两类独立输入：workspace `ToolRuntimeContext` 与单次 `ToolInvocationContext`。后者承载调用 identity 和 `AbortSignal`，不消费调用信息的 handler 可以省略第三个形参。工具不读取配置文件、解析全局配置或自行应用环境变量；能力来源见[系统架构](ARCHITECTURE.md#会话与单次工具调用)。
 
 ## Catalog、exposure 与调用
 
-`compileWorkspaceToolCatalog()` 构建 exposure 前的 effective catalog：
+`prepareWorkspaceToolCatalog()` 无资源地准备 catalog，`bindWorkspaceToolCatalog()` 为已验证的 entries 绑定 executor：
 
 - 未覆盖 built-in 使用内置 definition、executor 与 implementation contract。
-- 同名 custom definition 完整替换对外 description/input schema，保留 built-in executor 与 implementation contract。
-- custom-only definition 按 Tool config reference 顺序追加；有 route 时绑定 external executor，没有 route 时绑定 unavailable executor。
-- built-in 保持 canonical 顺序，override 保持原位置；selector 在 effective names 构建后校验和过滤，过滤不重排。
+- 同稳定名称的 custom definition 使用编译后的对外 definition，保留 built-in executor 与 implementation contract。
+- custom-only 按 Tool config reference 顺序追加；准备阶段保留 `external(referenceId)` 或 `unavailable` 执行意图，不复制 endpoint/server 配置。
+- built-in 保持 canonical 顺序，override 保持原位置。合并后按稳定名称校验并应用 workspace selector，过滤不重排。
+- 仅在 workspace exposed entries 中检查最终对外名称唯一性，然后派生 definitions view 和以对外名称为 key 的调用 lookup。隐藏工具仍完成源声明、继承、Schema 与 route 校验，但不参与对外名称冲突检查。
 
-exposed catalog 同时派生 definitions view 与 route lookup。`createWorkspaceToolService()` 包装已编译 catalog，`tools/list` 与 `tools/call` 因此共享 exposure 边界。隐藏与未知名称统一返回 `Unknown tool`，不运行 validator 或 executor。会话工具视图只能进一步收窄这个边界，见 [setToolList](request-header-policy/on-initialize/set-tool-list.md)。
+对外名称冲突在启动期拒绝，不能依赖会话收窄消除。名称交换或占用另一个别名释放的稳定名称合法；例如 `a → b`、`b → c` 暴露 `b` 和 `c`，各自直接指向对应 entry。调用不递归解析别名，也不按名称再次选择 executor；配置别名后稳定名称没有额外入口。
+
+`createWorkspaceToolService()` 包装已绑定 catalog，`tools/list` 与 `tools/call` 共享 exposure 边界。隐藏与未知名称统一返回 `Unknown tool: <调用名称>`，不运行 validator 或 executor。会话工具视图只能进一步收窄这个边界，见 [setToolList](request-header-policy/on-initialize/set-tool-list.md)。
 
 调用顺序为 effective input validation → built-in implementation validation（适用时）→ executor：
 
-- 未覆盖 built-in 复用同一 validator，不重复执行相同校验。
-- override 同时满足 workspace 对外 contract 和 built-in implementation contract。
+- 未覆盖 built-in 或继承内置输入 Schema 的 override 复用 implementation validator，不重复编译或执行相同校验。
+- 使用显式 Schema 的 override 同时满足 workspace 对外 contract 和 built-in implementation contract；显式 Schema 由 definition 编译器编译一次，catalog 和 session 不重复编译。
 - custom-only 通过 configured contract 后进入绑定的外部 route；没有 route 时返回标准 unavailable 工具错误。
+
+客户端错误和 CALL/RESULT 主日志使用本次对外调用名称。external executor 接收 entry 的稳定名称，HTTP canonical request 的 `name` 和下游 MCP 的目标名都使用稳定名称；别名不改写参数、调用 identity 或取消信号。
 
 catalog 固定性、snapshot 分工与共享 service 生命周期见[系统架构](ARCHITECTURE.md#启动与固定运行时)。
 

@@ -53,6 +53,8 @@ const SECOND_ENDPOINT_CONFIG_FILE = path.join(FIXTURES_DIR, 'second-endpoint-con
 const MCP_SERVER_CONFIG_FILE = path.join(FIXTURES_DIR, 'mcp-server-config.json');
 const FIRST_TOOL_NAME = 'external_custom_tool';
 const SECOND_TOOL_NAME = 'second_external_custom_tool';
+const FIRST_TOOL_ALIAS = 'external_custom_call';
+const SECOND_TOOL_ALIAS = 'second_external_custom_call';
 const FIRST_COMPLETED_MESSAGE = 'First loopback endpoint completed the custom tool.';
 const SECOND_COMPLETED_MESSAGE = 'Second loopback endpoint completed the custom tool.';
 
@@ -115,6 +117,7 @@ async function writeExternalRoutingFixture(
   firstEndpointUrl: string,
   secondEndpointUrl: string,
   structuredContentDup = false,
+  aliases = false,
 ): Promise<void> {
   const inputSchema = {
     type: 'object',
@@ -130,6 +133,7 @@ async function writeExternalRoutingFixture(
       JSON.stringify(
         {
           name: FIRST_TOOL_NAME,
+          ...(aliases ? { $alias: FIRST_TOOL_ALIAS } : {}),
           description: 'Routes the first custom-only test tool.',
           inputSchema,
         },
@@ -143,6 +147,7 @@ async function writeExternalRoutingFixture(
       JSON.stringify(
         {
           name: SECOND_TOOL_NAME,
+          ...(aliases ? { $alias: SECOND_TOOL_ALIAS } : {}),
           description: 'Routes the second custom-only test tool.',
           inputSchema,
         },
@@ -570,7 +575,11 @@ async function testCanonicalContentThroughMcpAndPolicy(): Promise<void> {
     const logged: ToolCallResult[] = [];
     try {
       await writeExternalRoutingFixture(endpoint.baseUrl, endpoint.baseUrl, true);
-      runtime = loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
+      runtime = await loadApplicationRuntime({
+        homeDir: HOME_DIR,
+        workspaceId: 'selected',
+        env: {},
+      });
       pair = await connectMcpServer(runtime, {
         rawHeaders: ['X-Client', duplicate ? 'canonical-content-test' : 'unmatched-client'],
         onResult: (result) => logged.push(result),
@@ -726,6 +735,7 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
         FIRST_TOOL_DEFINITION_FILE,
         JSON.stringify({
           name: FIRST_TOOL_NAME,
+          $alias: FIRST_TOOL_ALIAS,
           description: 'First MCP routed tool.',
           inputSchema,
         }),
@@ -735,6 +745,7 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
         SECOND_TOOL_DEFINITION_FILE,
         JSON.stringify({
           name: SECOND_TOOL_NAME,
+          $alias: SECOND_TOOL_ALIAS,
           description: 'Second MCP routed tool.',
           inputSchema,
         }),
@@ -795,12 +806,27 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
       ],
     });
 
-    runtime = loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
+    runtime = await loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
     await runtime.warmUp();
     pair = await connectMcpServer(runtime);
+    const listed = await pair.client.listTools();
+    assert(
+      listed.tools.some((tool) => tool.name === FIRST_TOOL_ALIAS) &&
+        listed.tools.some((tool) => tool.name === SECOND_TOOL_ALIAS),
+      'MCP routes must publish aliases without changing their downstream targets.',
+    );
+    for (const name of [FIRST_TOOL_NAME, SECOND_TOOL_NAME]) {
+      const rejected = await pair.client.callTool({ name, arguments: { value: 'not routed' } });
+      assertEqual(
+        getTextContent(rejected),
+        `Unknown tool: ${name}`,
+        'Stable names must not remain implicit call entrances.',
+      );
+    }
+    assertEqual(downstream.calls.length, 0, 'Rejected stable names must not reach downstream MCP.');
     const [first, second] = await Promise.all([
-      pair.client.callTool({ name: FIRST_TOOL_NAME, arguments: { value: 'one' } }),
-      pair.client.callTool({ name: SECOND_TOOL_NAME, arguments: { value: 'two' } }),
+      pair.client.callTool({ name: FIRST_TOOL_ALIAS, arguments: { value: 'one' } }),
+      pair.client.callTool({ name: SECOND_TOOL_ALIAS, arguments: { value: 'two' } }),
     ]);
     assertEqual(
       getTextContent(first),
@@ -827,12 +853,71 @@ async function testMcpRoutesShareOneDownstreamSession(): Promise<void> {
       2,
       'Each upstream call should be sent downstream exactly once.',
     );
+    for (const [name, value] of [
+      [FIRST_TOOL_NAME, 'one'],
+      [SECOND_TOOL_NAME, 'two'],
+    ]) {
+      const params = downstream.calls
+        .map((call) => call.params as Record<string, unknown>)
+        .find((params) => params.name === name);
+      assert(params !== undefined, 'Downstream must receive the stable target, not its alias.');
+      assertEqual(
+        JSON.stringify(params.arguments),
+        JSON.stringify({ value }),
+        'Alias mapping must not rewrite downstream arguments.',
+      );
+    }
   } finally {
     try {
       await cleanupRuntimeResources({ pair, runtime, endpoints: [] });
     } finally {
       await downstream.close();
     }
+  }
+}
+
+async function testHttpAliasesPreserveCanonicalIdentity(): Promise<void> {
+  const endpoint = await startLoopbackEndpoint(FIRST_COMPLETED_MESSAGE);
+  let runtime: LoadedApplicationRuntime | undefined;
+  let pair: ConnectedMcpPair | undefined;
+  try {
+    await writeExternalRoutingFixture(endpoint.baseUrl, endpoint.baseUrl, false, true);
+    runtime = await loadApplicationRuntime({ homeDir: HOME_DIR, workspaceId: 'selected', env: {} });
+    pair = await connectMcpServer(runtime);
+    assertEqual(
+      (await pair.client.listTools()).tools.map((tool) => tool.name).join(','),
+      `${FIRST_TOOL_ALIAS},${SECOND_TOOL_ALIAS}`,
+      'Stable workspace selectors must expose aliases in definition order.',
+    );
+    for (const name of [FIRST_TOOL_NAME, SECOND_TOOL_NAME]) {
+      assertEqual(
+        getTextContent(await pair.client.callTool({ name, arguments: { value: 'rejected' } })),
+        `Unknown tool: ${name}`,
+        'HTTP route stable names must not remain callable.',
+      );
+    }
+    assertEqual(endpoint.requestCount(), 0, 'Stable-name rejection must precede HTTP execution.');
+
+    for (const [alias, stableName] of [
+      [FIRST_TOOL_ALIAS, FIRST_TOOL_NAME],
+      [SECOND_TOOL_ALIAS, SECOND_TOOL_NAME],
+    ] as const) {
+      const args = { value: `called ${alias}` };
+      const result = await pair.client.callTool({ name: alias, arguments: args });
+      assertEqual(getTextContent(result), FIRST_COMPLETED_MESSAGE, 'Alias must execute its route.');
+      const captured = endpoint.calls.at(-1)?.request.calls[0];
+      assert(captured !== undefined, 'Alias call must reach the canonical endpoint.');
+      assertEqual(captured.name, stableName, 'HTTP canonical name must retain stable identity.');
+      assertEqual(
+        JSON.stringify(captured.arguments),
+        JSON.stringify(args),
+        'HTTP alias calls must preserve arguments.',
+      );
+    }
+    assertEqual(endpoint.failures.length, 0, 'Alias calls must form valid canonical requests.');
+    assertEqual(endpoint.requestCount(), 2, 'Each alias call must execute exactly once.');
+  } finally {
+    await cleanupRuntimeResources({ pair, runtime, endpoints: [endpoint] });
   }
 }
 
@@ -849,7 +934,7 @@ async function testExternalRoutingThroughRuntimeAndMcp(): Promise<void> {
       `${firstEndpoint.baseUrl}/canonical-tool`,
       `${secondEndpoint.baseUrl}/canonical-tool`,
     );
-    runtime = loadApplicationRuntime({
+    runtime = await loadApplicationRuntime({
       homeDir: HOME_DIR,
       workspaceId: 'selected',
       env: {},
@@ -1073,6 +1158,10 @@ async function main(): Promise<void> {
       {
         name: 'shares one downstream MCP session across two routes',
         run: testMcpRoutesShareOneDownstreamSession,
+      },
+      {
+        name: 'HTTP aliases retain stable canonical identities',
+        run: testHttpAliasesPreserveCanonicalIdentity,
       },
     ],
   });
